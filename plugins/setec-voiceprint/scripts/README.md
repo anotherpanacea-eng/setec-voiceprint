@@ -769,6 +769,39 @@ complete grammar, ceilings, and claim boundary.
 
 ---
 
+## reconstructibility_probe_set.py
+
+Builds a deterministic private probe-selection package from the high
+leave-one-document-out DJ-Search coverage tail of an exact owner-attested
+training snapshot. The M1 builder is stdlib-only, local-only, CPU-only, and
+model-free. It does not run a tokenizer, model, generator, evaluator, trainer,
+GPU job, or network call.
+
+```text
+python3 reconstructibility_probe_set.py \
+  --population-manifest meta/population.jsonl \
+  --population-attestation meta/population-attestation.json \
+  --plan meta/probe-plan.json \
+  --private-root /absolute/owner-only/private-root \
+  --checkpoint-dir state/reconstructibility-checkpoint \
+  --output-dir outputs/reconstructibility-probes
+```
+
+The population, attestation, plan, checkpoint, and output arguments are
+portable paths relative to the absolute private root. The tool preserves source
+bytes and manifests, writes prose-bearing artifacts only inside that private
+root, and emits a no-prose aggregate receipt. A successful receipt proves a
+hash-bound selection build, **not** that any text or model is memorized,
+contaminated, unsafe, or suitable for training. Any future matched-arm
+generation battery must separately bind the same prompt set, tokenizer,
+decoding policy, seeds, evaluator, and model arms.
+
+Mutating M1 is intentionally Darwin-only. Linux and native Windows refuse
+before private input access or checkpoint/output mutation; their CI lanes
+exercise that refusal and the portable parsing contracts.
+
+---
+
 ## validation_harness.py
 
 Empirical validation over labeled manifest entries. MVP scope evaluates the

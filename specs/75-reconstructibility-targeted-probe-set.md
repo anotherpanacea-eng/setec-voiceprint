@@ -5,7 +5,7 @@
 > matched memorization battery can spend its probes where corpus-only evidence
 > says reproduction risk may be highest.
 
-- **Status:** Draft — build-blocked pending independent spec review
+- **Status:** M1 implementation complete — independently reviewed; native exact-head CI gate pending
 - **Tier:** near-term M1 builder; optional M2 consumer seams are deferred
 - **GPU required:** no for M1; any tokenizer, generation, checkpoint, or GPU use
   is an operator-authorized M2 action outside this build
@@ -177,8 +177,14 @@ lexical parser for the other five CLI values—`POPULATION.jsonl`,
   `CHECKPOINT_DIR`/`OUTPUT_DIR` plus their derived
   siblings must not equal, contain, or be contained by any input/text path
   under exact or collision-key component comparison. At each descriptor-
-  traversed parent, an alternate on-disk sibling spelling with the requested
-  component's collision key refuses rather than being guessed through.
+  traversed parent, descriptor-relative enumeration must prove that the
+  requested component occurs with its exact filesystem-entry bytes before the
+  opened child is admitted. An `openat` that succeeds only because Darwin's
+  filesystem treats a differently cased or differently normalized spelling as
+  equivalent is not exact-name proof and refuses. Any alternate on-disk sibling
+  spelling with the requested component's collision key, or any non-exact
+  spelling that resolves to the same held object, is an alias collision and
+  refuses rather than being guessed through.
 
 Darwin M1 enforces every rule above before descriptor traversal and additionally
 applies the Section 10 direct-object, no-link, identity, mode, device, and
@@ -215,7 +221,10 @@ private-file access or mutation.
 under both exact and collision-key comparison and must also remain distinct by
 held-object identity wherever both objects exist. Their already-existing
 parent chains are opened relative to the root and held through
-staging/publication. The checkpoint basename `C` and output basename `O` are
+staging/publication. Every existing component in those chains, and in every
+other admitted input/source/staging/output chain, must pass the exact-entry
+enumeration check above; successful lookup under an OS-equivalent alias never
+licenses use of that entry. The checkpoint basename `C` and output basename `O` are
 exactly their final parsed components, not values recovered from an ambient or
 normalized path.
 
@@ -640,6 +649,11 @@ MAX_DOCUMENT_TOKENS = 250_000
 MAX_TOTAL_TOKENS = 2_000_000
 MAX_LOO_DOCUMENT_PAIR_OPERATIONS = 25_000_000
 MAX_LOO_TOKEN_PAIR_OPERATIONS = 4_000_000_000_000
+MAX_DIRECTORY_ENTRIES_PER_PARENT = MAX_UNITS
+MAX_DIRECTORY_ENTRY_NAME_BYTES = 4_096
+MAX_DIRECTORY_NAME_BYTES_PER_PARENT = MAX_MANIFEST_BYTES
+MAX_DIRECTORY_ENTRIES_PER_RUN = MAX_LOO_DOCUMENT_PAIR_OPERATIONS
+MAX_DIRECTORY_NAME_BYTES_PER_RUN = MAX_TOTAL_DOCUMENT_BYTES
 MAX_BINDING_BYTES = 16_384
 MAX_SCORE_SHARD_BYTES = 4_096
 MAX_CHECKPOINT_INTENT_BYTES = 1_024
@@ -650,8 +664,14 @@ MAX_OUTPUT_INTENT_BYTES = 1_024
 MAX_OUTPUT_RESERVED_BYTES = 2_147_483_648      # 2 GiB
 ```
 
-All byte counts are exact file-content bytes; directory metadata consumes no
-budget. Manifest line limits include the terminating LF. Document limits apply
+File-content byte counts exclude directory metadata. Directory enumeration has
+the separate exact entry/name-byte budgets above: the per-parent entry ceiling
+reuses the frozen maximum population size; the per-entry name ceiling reuses
+the portable path's 4,096-byte ceiling; the per-parent name-byte ceiling reuses
+the 64-MiB manifest ceiling; and the invocation-wide entry and name-byte
+ceilings reuse the frozen leave-one-out document-pair and 512-MiB total-document
+ceilings. These are mechanical reuse of existing v1 constants, not new
+operator-tunable policy. Manifest line limits include the terminating LF. Document limits apply
 to raw source bytes before UTF-8 decode. Token limits count exact `_tokens`
 members. File readers enforce their byte and running-total caps incrementally:
 the JSONL reader stops before buffering byte `65_537` of a line, and no
@@ -2189,6 +2209,40 @@ stricter, and single-link files. Re-read/hashes use held descriptors. Final
 publication and post-publication verification stay relative to the pinned
 root/parent fds.
 
+Opening a component is not proof of its spelling. For every component of the
+absolute private-root walk after `/`, and for every existing component below
+that root, enumerate the already-held parent through its descriptor and require
+exactly one directory entry whose raw filesystem-entry bytes equal
+`os.fsencode(requested_component)`. Then require the no-follow identity of that
+exact enumerated entry to equal the opened child fd. The enumeration performs
+no case folding, Unicode normalization, or display-path reopen. If the exact
+entry is absent even though `openat` succeeded, or if a differently spelled
+entry is the OS-equivalent route to the held object, return
+`portable_private_path_refused` before reading child bytes or mutating disk.
+For the ASCII-only relative grammar, exhaustive sibling enumeration also
+rejects every non-exact entry with the same component collision key. This
+check applies again whenever an existing parent or child is re-admitted on
+resume or at a publication/replay boundary; holding a previously accepted fd
+does not waive exact-entry proof for a later namespace operation.
+
+Each parent enumeration is one streaming `os.scandir(held_parent_fd)` pass (or
+an equivalently reviewed fd-relative iterator), never a `list`, `tuple`, sorted
+collection, or other materialization of all entries. It counts every yielded
+entry, including unrelated names, and charges
+`len(os.fsencode(entry.name))` before retaining only constant-size match,
+collision, and identity state. Per-parent counters reset for each pass;
+invocation-wide counters increase monotonically across the absolute-root walk,
+all descendant admissions, resume replay, and publication rechecks. The five
+closed ceilings are exactly those in Section 4.6. Equality is admissible only
+after exhausting the iterator and passing the exact-name, identity, and
+collision checks. On the first entry or name byte that would make any
+per-entry, per-parent, or invocation-wide counter exceed its ceiling, close the
+iterator immediately and return
+`private_directory_enumeration_limit_refused` / exit `3`; do not request
+another entry, read a child byte, enumerate a child, or perform the pending
+mutation. Finding the requested spelling early never permits skipping the
+remaining entries or their charges.
+
 **Darwin ACL policy and exact API.** Mode bits are necessary but not privacy
 evidence by themselves. Every object admitted by the descriptor contract also
 passes one closed ACL checker implemented with Python stdlib `ctypes` calls
@@ -2208,7 +2262,11 @@ into `/usr/lib/libSystem.B.dylib`:
    `ACL_FIRST_ENTRY == 0` and then with `ACL_NEXT_ENTRY == -1`. First require
    `acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, acl_t) == 0`; the fd/type-specific
    validator does not reorder the ACL, and any validation failure is inspection
-   unavailable. Before every
+   unavailable for acceptance. After validation failure, enumerate only to
+   detect a recognizable `ACL_EXTENDED_ALLOW`, which takes precedence as
+   `private_acl_refused`; no allow, a malformed entry, or any enumeration
+   anomaly remains `private_acl_inspection_unavailable` and never passes.
+   Before every
    call set `errno = 0` and initialize the output entry pointer to null.
    Darwin returns `0` for each successfully returned entry; process that
    non-null entry, then request the next one. After at least one successful
@@ -2372,8 +2430,8 @@ Refusal classes include:
   group/split crossings;
 - too-small partitions, invalid counts/caps/policy, a declared tail larger than
   its usable partition, tail underfill, or prompt quota underfill;
-- any Section 4.6 line/unit/byte/token/operation/shard/checkpoint/output
-  resource ceiling;
+- any Section 4.6 line/unit/byte/token/operation/directory-enumeration/
+  shard/checkpoint/output resource ceiling;
 - a direct or inherited granting Darwin ACL at/below the private root, an
   inheritable granting ACL above it, ACL drift, or unavailable ACL
   enumeration/interpretation;
@@ -2536,7 +2594,20 @@ and public synthetic goldens. Required acceptance tests:
     152-byte output-intent derived maxima are pinned. The same vectors run for all five CLI values and
     `text_path`. Absolute/traversing paths,
     final/intermediate symlinks, hard links, special files, and non-private
-    roots refuse. Actual ordinary, linked, separate-git-dir, and local-submodule
+    roots refuse. Descriptor-enumeration spies prove every held parent and
+    every existing component is enumerated and matched by exact entry bytes,
+    with no path-based `listdir`/`scandir` authority. Real Darwin adversarial
+    fixtures on the native filesystem prove that an exact-case ASCII spelling
+    passes, while a case-only alias that `openat` accepts is refused before
+    child-byte access or mutation. A second native fixture creates a Unicode
+    name for which an alternate normalization spelling reaches the same
+    filesystem entry and proves that the alias is likewise refused; the test
+    must exercise actual Darwin lookup/enumeration behavior rather than a
+    monkeypatch or a case-sensitive-filesystem exclusion. If the hosted
+    filesystem cannot expose the required alias behavior directly, the job
+    must construct a native case-insensitive/Unicode-normalizing Darwin test
+    volume; it may not skip the vectors. Actual ordinary, linked,
+    separate-git-dir, and local-submodule
     worktrees refuse at their root and deep descendants; `.git` symlink/special,
     missing linked target, lookup failure, ancestor drift/loop, and unproved
     filesystem root fail closed before mutation, while a safe non-worktree tree
@@ -2553,6 +2624,18 @@ and public synthetic goldens. Required acceptance tests:
     publication while preserving the valid checkpoint prefix. A golden proves
     this commit-oid field is distinct from both `builder_source_sha256` and
     `author_corpus_export.py`'s unchanged script-SHA-1 receipt field.
+    Separate synthetic scanner vectors exercise exact equality and one-over
+    for `MAX_DIRECTORY_ENTRIES_PER_PARENT`,
+    `MAX_DIRECTORY_ENTRY_NAME_BYTES`,
+    `MAX_DIRECTORY_NAME_BYTES_PER_PARENT`,
+    `MAX_DIRECTORY_ENTRIES_PER_RUN`, and
+    `MAX_DIRECTORY_NAME_BYTES_PER_RUN`. Equality exhausts the iterator and can
+    admit the exact child. At one-over, iterator/read/mutation spies prove the
+    scanner closes immediately without requesting the following entry,
+    touching child bytes, descending into the child, or executing the pending
+    create/replay/publication operation. A generator-only fixture and a
+    materialization trap prove enumeration is streaming and retains no
+    directory-sized collection.
 19. Focused preflight arithmetic tests exercise equality and one-over refusal
     for every Section 4.6 manifest-line/line-count/unit, manifest/plan/
     attestation, per-document/total byte, per-document/total
@@ -2647,9 +2730,10 @@ and public synthetic goldens. Required acceptance tests:
     that poisoned output name refuses without mutation, while resume from the
     unchanged valid checkpoint to a new absent output name succeeds
     byte-identically and leaves the poisoned object untouched.
-24. Real Darwin dirfd traversal, ACL enumeration, collision grammar, native
-    no-replace directory rename, parent durability, and identity replay pass
-    and fail closed when unavailable. Native Windows runs `--help`, then a
+24. Real Darwin dirfd traversal, exact-entry enumeration (including native
+    case and Unicode-normalization aliases), ACL enumeration, collision
+    grammar, native no-replace directory rename, parent durability, and
+    identity replay pass and fail closed when unavailable. Native Windows runs `--help`, then a
     real M1 invocation proves exit
     `4`/`windows_publication_unsupported`; Linux proves
     `4`/`linux_acl_backend_unsupported`; both occur before private input access
@@ -2762,6 +2846,21 @@ and public synthetic goldens. Required acceptance tests:
 36. `git diff --check`, spec/readiness/docs gates, and the full affected stdlib
     test slice pass.
 
+### Native CI acceptance
+
+The implementation PR must update `.github/workflows/tests.yml` so the exact
+file
+`plugins/setec-voiceprint/scripts/tests/test_reconstructibility_probe_set.py`
+is an explicit argument in both existing native jobs:
+`macos-descriptor-confinement` and `windows-descriptor-backend`. It must not
+rely only on the Ubuntu catch-all job or on local execution. Both native jobs
+must set `timeout-minutes` to at least `60` for this focused suite; a timeout,
+skip of a required Darwin-native alias/ACL/publication vector, cancellation, or
+platform-emulated result is not green evidence. Before the implementation PR
+is ready for review, GitHub Actions for that exact implementation head must
+finish successfully in both jobs. A later push invalidates the evidence and
+requires both native jobs to pass again.
+
 Private corpus, private identifiers, real prompts, model assets, and generated
 continuations never enter tests or goldens.
 
@@ -2791,9 +2890,12 @@ not a memorization result.
 ## 15. Build acceptance and run-time owner choices
 
 The spec is build-ready only after independent review resolves every P1/P2 and
-the spec hash is recorded. The implementation is ready for PR only after a
-separate independent implementation review clears the exact head and the
-tests/gates in Section 13 pass.
+the spec hash is recorded; implementation may begin only from those exact
+reviewed spec bytes. The implementation may be opened as a draft PR after a
+separate independent implementation review clears its exact head and the
+locally runnable tests/gates in Section 13 pass. It is not ready for human
+review until the exact-head native macOS and Windows jobs required by
+Section 13 have both completed successfully.
 
 No private run is authorized by merging the builder. Before each real run the
 owner must freeze, in `PLAN.json`:

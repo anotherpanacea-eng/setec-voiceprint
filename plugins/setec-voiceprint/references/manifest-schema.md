@@ -41,8 +41,17 @@ Every entry must carry these. Missing any → error.
 | `language_status` | string enum | ESL ratchet warns when non-native entries land in voiceprint-sourced uses |
 | `pov` | string | Multi-POV fiction; `pov_voice_profile.py` groups by this |
 | `adversarial_class` | string | Adversarial-fixture work; `validation_harness.py` slices by this |
+| `source_id` | string | Existing document-level provenance identifier; it does not define a source family or a prose register |
+| `source_family` | closed string enum | Optional coarse source grouping for corpus analysis: `facebook`, `metafilter`, `wordpress`, or `unclassified`. It is independently declared; do not infer it from a path, acquisition method, `source_id`, or register. |
 | `source` | string | Provenance breadcrumb |
 | `notes` | string | Free-text |
+
+`source_family` is intentionally only a coarse analytic axis. `source_id`
+remains the document-level provenance identifier, while `register` names the
+prose register; neither determines `source_family`. Leave the field absent
+when no family is declared, and use `unclassified` when a family was
+considered but remains unresolved. The validator rejects non-string, empty,
+padded, or unrecognized values rather than treating them as extensible.
 
 ## Owner-corrections sidecar
 
@@ -112,6 +121,7 @@ For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Req
 | `use` | `baseline`, `validation`, `voice_validation`, `voice_profile`, `voice_impostor`, `idiolect`, `negative_baseline`, `exclude` |
 | `editing_status` | `raw_draft`, `revised_human`, `published_cleaned`, `coauthored` |
 | `language_status` | `native`, `non_native_advanced`, `non_native_intermediate`, `learner`, `unknown` |
+| `source_family` | `facebook`, `metafilter`, `wordpress`, `unclassified` |
 | `corpus_role` | `identity_baseline`, `impostor`, `distractor`, `adversarial` |
 | `register_match` / `topic_match` | `high`, `medium`, `low` |
 | `consent_status` | `public_record`, `cc_licensed`, `fair_use_research`, `author_consent`, `undocumented` |
@@ -140,7 +150,7 @@ The validator enforces these beyond the per-field schema. All emit warnings unle
 1. **Required-field check** (error). Every entry must have `id`, `path`, `ai_status`, `use`. Missing → error.
 2. **Path integrity** (error). The path must resolve to an existing file, not a directory.
 3. **Duplicate id / two-ids-one-file** (error / warning). Same id twice → error; two ids pointing at one file → warning.
-4. **Unknown enum values** (warning). Any enum-valued field with a value outside its allowed set warns.
+4. **Unknown enum values** (warning). Any extensible enum-valued field with a value outside its allowed set warns. `source_family` is the exception: its initial closed vocabulary rejects invalid values as errors.
 5. **Unknown field name** (warning). Top-level fields not in the schema warn (typo catcher).
 6. **`use: validation` + `split: baseline`** (error). Validation entries must live outside the baseline split.
 7. **Voiceprint privacy ratchet** (warning). Entries with `use: voice_profile` or `use: idiolect` and `privacy != "private"` warn. Voiceprint sources are voice-cloning inputs.
