@@ -363,8 +363,8 @@ def validate_entry(
         issues.append(Issue(
             "warning", lineno, entry_id, "language_status",
             f"Unknown language_status '{language_status}'. "
-                f"Known values: {', '.join(sorted(ALLOWED_LANGUAGE_STATUS))}.",
-            ))
+            f"Known values: {', '.join(sorted(ALLOWED_LANGUAGE_STATUS))}.",
+        ))
     source_family = entry.get("source_family")
     if "source_family" in entry:
         if not isinstance(source_family, str):
