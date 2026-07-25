@@ -12,3 +12,9 @@
 # force LF checkout on every platform. Do NOT widen this to all fixtures: some
 # fixture trees hold binaries (e.g. PDFs) that eol=lf would corrupt.
 plugins/setec-voiceprint/scripts/tests/fixtures/imessage_atomic_export_seam/** text eol=lf
+
+# The H1 closeout checker pins the receipt's raw canonical JSON bytes.  Keep
+# it and the reviewed classifier byte-identical on core.autocrlf Windows
+# checkouts.
+plugins/setec-voiceprint/references/register-classifier-h1-receipt.json text eol=lf
+plugins/setec-voiceprint/scripts/register_classifier.py text eol=lf

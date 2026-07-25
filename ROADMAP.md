@@ -296,11 +296,13 @@ yet operator-visible — a documented Spec 76 scope choice, not an oversight,
 and the follow-up that forwards both `refusal_reason` and the classifier
 `warning` is still open. This
 does not itself build the H2 register-composition sweep. Spec 73's exact
-repaired contract is independently clear at SHA-256 `c2202380…`; H2
-implementation remains blocked only on authoring and validating the immutable
-H1 closeout receipt against merged PR #352 and successful main-push run
-`30131248170` attempt 1. The spec and receipt gate authorize no private corpus
-run. APODICTIC and setec-voicewright fixture/pin migrations remain required
+repaired contract is independently clear at SHA-256 `c2202380…`. The
+immutable H1 receipt/checker closeout is now implemented and has strictly
+validated merged PR #352, its preserved review heads/artifact bytes, and
+landed-main push run `30131248170` attempt 1. H2 implementation remains blocked
+until that closeout lands and H2 pins the receipt's raw SHA-256. The spec and
+receipt gate authorize no private corpus run. APODICTIC and setec-voicewright
+fixture/pin migrations remain required
 before consumer-ready promotion.
 
 ### Corpus-scale and registry-contract gaps (2026-07-24)
