@@ -68,7 +68,7 @@ jobs:
 
   macos-descriptor-confinement:
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -85,11 +85,12 @@ jobs:
           python -m pytest \
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py \
             plugins/setec-voiceprint/scripts/tests/test_atomic_publish.py \
+            plugins/setec-voiceprint/scripts/tests/test_reconstructibility_probe_set.py \
             -q -rs
 
   windows-descriptor-backend:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -106,6 +107,7 @@ jobs:
           python -m pytest `
             plugins/setec-voiceprint/scripts/tests/test_manifest_validator_conflict_copies.py `
             plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
+            plugins/setec-voiceprint/scripts/tests/test_reconstructibility_probe_set.py `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_approved_refuses_output_outside_private_root_without_writes `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_bootstrap_resumes_interrupted_approved_snapshot_copy `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_bootstrap_refuses_foreign_staging_artifact `

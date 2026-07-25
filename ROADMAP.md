@@ -272,6 +272,16 @@ Unimodality itself needs no build *at reference scale*: `homogeneity_audit.py --
 
 **Status (spec 36 M1 built, Codex fixes 2026-07-24).** The passage-level dedup mode shipped as `near_dup_dedup.py --passages`, but **not** as the single-pass reuse of the LSH path sketched in the first bullet above — spec review's arithmetic retracted that: a 41-token span shared between two ~120-word passages scores Jaccard ≈ 0.19, so the motivating case is invisible to *any* passage-unit similarity threshold, and greedy coalescing of short paragraphs makes it worse. The shipped design is two-stage: **Stage A** near-duplicate raw-paragraph units (uncoalesced; token-empty sub-floor units use raw-text equality; a complete frequency-ordered Jaccard prefix index with length/positional upper bounds prevents LSH false negatives without a common-boilerplate exact-comparison explosion; exact rational arithmetic preserves equality boundaries and exact Jaccard alone decides) and **Stage B** an exact stdlib inverted-8-shingle span scan whose continuation follows repeated occurrence subsets, preserving the arithmetic guarantee even when one shingle has extra occurrences. Passage runs emit flushed progress and transactionally checkpoint Stage-A passage/pair shards plus Stage-B per-document token/key/region/span shards under exact bindings; corpus-derived shards live in a tool-owned private 0700 directory/0600 SQLite database without changing the user checkpoint parent's mode. Exports refuse skipped rows, portable filename collisions, and nested output layouts in either direction, stage sidecars, and publish the manifest last. The mechanical guard shipped as `pool_guard.py` — a per-surface file-level marker scan (a shared-loader kwarg cannot reach the clean-room copies) plus `plugins/setec-voiceprint/scripts/tests/test_pool_guard_coverage.py`, which pins the complete nine-module classification map with a mandatory rationale on every entry, firing and exempt alike. The **register sweep CLI was deferred, not dropped**. Spec 37 repaired the former taxonomy/scorer/tie defects; re-scoped Spec 73 now carries the source-free aggregate hygiene-screen contract. Its repaired candidate requires fresh independent review and remains externally blocked on the Spec 76 land plus immutable H1 receipt/checker gate; it authorizes no corpus run. The memorization-probe bullet is unchanged and still a training-side project.
 
+**Status (Spec 75 H6 M1 implementation, 2026-07-24).** The targeted-probe
+builder now freezes a distinct, pre-generation qualification/sealed probe
+package from the owner-attested training snapshot's high reconstructibility
+tail. This does not replace or reinterpret the completed SHA-ordered `n=500`
+battery: that battery remains the identical-set historical characterization,
+while the new builder prepares a separately hash-bound input for a future
+matched-arm re-baseline. Building the package is not a memorization result and
+authorizes no model run, training continuation, corpus activation, checkpoint
+selection, or deployment.
+
 **Status (Spec 37 H1 merged in PR #348; Spec 76 H1 built and merged, 2026-07-24).** The classifier-only prerequisite now uses the versioned
 `register_families/v2` vocabulary: all canonical manifest registers and ten
 deprecated classifier inputs resolve through one family-first mapping, all
