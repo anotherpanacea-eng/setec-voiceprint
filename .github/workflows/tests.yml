@@ -25,6 +25,10 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the diff-scoped spec-anchor lint below needs a merge
+          # base against the PR base ref, and a shallow clone has none.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -65,6 +69,27 @@ jobs:
           python3 tools/check_capabilities_drift.py
           python3 tools/check_docs_freshness.py
           python3 tools/gen_calibration_readiness.py --check
+
+      # Spec-anchor lint, DIFF-SCOPED. tools/spec_anchor_lint.py catches the
+      # "a spec asserts a symbol / file:line / sibling-spec / env-var that does
+      # not exist" class, which the build retrospective puts behind ~40% of P1s.
+      # It caught a real gating phantom in spec 37 -- six references to a
+      # sibling spec number that was never allocated -- that nothing in CI ran.
+      #
+      # Scoped to specs CHANGED in this PR, deliberately. 19 of the 51 specs on
+      # main gate today, and sampling shows those are overwhelmingly shorthand-
+      # path false positives (a spec writes `tests/test_explain.py` for a file
+      # that really lives at plugins/.../scripts/tests/test_explain.py), not
+      # real phantoms. Gating the whole tree would fail CI on day one and teach
+      # everyone to ignore the signal. Ratchet instead: new and edited specs
+      # must be clean, historical shorthand is left alone until someone touches
+      # that spec. MEDIUM-confidence hits stay advisory (no --strict).
+      - name: Spec anchor lint (changed specs)
+        if: always() && github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.base_ref }}"
+          python3 tools/check_changed_spec_anchors.py --repo . --base "$base"
 
   macos-descriptor-confinement:
     runs-on: macos-latest
