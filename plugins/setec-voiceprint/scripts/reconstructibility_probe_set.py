@@ -1071,8 +1071,9 @@ class _DarwinPrivateTree:
             raise ProbeSetError("private_acl_inspection_unavailable", 4)
         failure: ProbeSetError | None = None
         try:
-            if lib.acl_valid_fd_np(fd, cls.ACL_TYPE_EXTENDED, acl) != 0:
-                raise ProbeSetError("private_acl_inspection_unavailable", 4)
+            validation_failed = (
+                lib.acl_valid_fd_np(fd, cls.ACL_TYPE_EXTENDED, acl) != 0
+            )
             processed = 0
             which = cls.ACL_FIRST_ENTRY
             while True:
@@ -1091,6 +1092,8 @@ class _DarwinPrivateTree:
                 if tag.value not in (cls.ACL_EXTENDED_ALLOW, cls.ACL_EXTENDED_DENY):
                     raise ProbeSetError("private_acl_inspection_unavailable", 4)
                 if tag.value == cls.ACL_EXTENDED_ALLOW:
+                    if validation_failed:
+                        raise ProbeSetError("private_acl_refused")
                     if inside:
                         raise ProbeSetError("private_acl_refused")
                     flags = ctypes.c_void_p()
@@ -1106,6 +1109,8 @@ class _DarwinPrivateTree:
                             raise ProbeSetError("private_acl_refused")
                 processed += 1
                 which = cls.ACL_NEXT_ENTRY
+            if validation_failed:
+                raise ProbeSetError("private_acl_inspection_unavailable", 4)
         except ProbeSetError as exc:
             failure = exc
         finally:

@@ -2262,7 +2262,11 @@ into `/usr/lib/libSystem.B.dylib`:
    `ACL_FIRST_ENTRY == 0` and then with `ACL_NEXT_ENTRY == -1`. First require
    `acl_valid_fd_np(fd, ACL_TYPE_EXTENDED, acl_t) == 0`; the fd/type-specific
    validator does not reorder the ACL, and any validation failure is inspection
-   unavailable. Before every
+   unavailable for acceptance. After validation failure, enumerate only to
+   detect a recognizable `ACL_EXTENDED_ALLOW`, which takes precedence as
+   `private_acl_refused`; no allow, a malformed entry, or any enumeration
+   anomaly remains `private_acl_inspection_unavailable` and never passes.
+   Before every
    call set `errno = 0` and initialize the output entry pointer to null.
    Darwin returns `0` for each successfully returned entry; process that
    non-null entry, then request the next one. After at least one successful

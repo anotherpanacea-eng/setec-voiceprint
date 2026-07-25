@@ -22,6 +22,49 @@ import originality_audit as oa  # noqa: E402
 import reconstructibility_probe_set as probe  # noqa: E402
 
 
+class _FakeCFunction:
+    def __init__(self, implementation):
+        self._implementation = implementation
+        self.argtypes = None
+        self.restype = None
+
+    def __call__(self, *args):
+        return self._implementation(*args)
+
+
+class _DarwinGrantingAclLib:
+    def __init__(self, *, validation_result: int, tag: int) -> None:
+        self.validation_calls = 0
+        self.entry_calls = 0
+        self.validation_result = validation_result
+        self.tag = tag
+        self.acl_get_fd_np = _FakeCFunction(lambda _fd, _kind: 0x1000)
+        self.acl_valid_fd_np = _FakeCFunction(self._validate)
+        self.acl_get_entry = _FakeCFunction(self._get_entry)
+        self.acl_get_tag_type = _FakeCFunction(self._get_tag_type)
+        self.acl_get_flagset_np = _FakeCFunction(lambda _entry, _flags: 0)
+        self.acl_get_flag_np = _FakeCFunction(lambda _flags, _flag: 0)
+        self.acl_free = _FakeCFunction(lambda _acl: 0)
+
+    def _validate(self, *_args) -> int:
+        self.validation_calls += 1
+        return self.validation_result
+
+    def _get_entry(self, _acl, which, entry_pointer) -> int:
+        self.entry_calls += 1
+        if self.entry_calls > 1:
+            assert which == probe._DarwinPrivateTree.ACL_NEXT_ENTRY
+            probe.ctypes.set_errno(probe.errno.EINVAL)
+            return -1
+        assert which == probe._DarwinPrivateTree.ACL_FIRST_ENTRY
+        entry_pointer._obj.value = 0x2000
+        return 0
+
+    def _get_tag_type(self, _entry, tag_pointer) -> int:
+        tag_pointer._obj.value = self.tag
+        return 0
+
+
 def _digest(label: str) -> str:
     return "sha256:" + hashlib.sha256(label.encode("ascii")).hexdigest()
 
@@ -134,6 +177,48 @@ def test_module_is_model_network_and_trainer_import_free() -> None:
         "--upload", "--activate", "--train",
     ):
         assert forbidden not in option_strings
+
+
+def test_darwin_acl_validation_failure_with_allow_prefers_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lib = _DarwinGrantingAclLib(
+        validation_result=-1,
+        tag=probe._DarwinPrivateTree.ACL_EXTENDED_ALLOW,
+    )
+    monkeypatch.setattr(probe.ctypes, "CDLL", lambda *_args, **_kwargs: lib)
+
+    with pytest.raises(probe.ProbeSetError, match="^private_acl_refused$"):
+        probe._DarwinPrivateTree._acl_check(7, inside=True)
+
+    assert lib.validation_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("validation_result", "tag", "error"),
+    [
+        (-1, probe._DarwinPrivateTree.ACL_EXTENDED_DENY,
+         "private_acl_inspection_unavailable"),
+        (-1, 999, "private_acl_inspection_unavailable"),
+        (0, probe._DarwinPrivateTree.ACL_EXTENDED_DENY, None),
+    ],
+)
+def test_darwin_acl_validation_precedence_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    validation_result: int,
+    tag: int,
+    error: str | None,
+) -> None:
+    lib = _DarwinGrantingAclLib(validation_result=validation_result, tag=tag)
+    monkeypatch.setattr(probe.ctypes, "CDLL", lambda *_args, **_kwargs: lib)
+
+    if error is None:
+        probe._DarwinPrivateTree._acl_check(7, inside=True)
+    else:
+        with pytest.raises(probe.ProbeSetError, match=f"^{error}$"):
+            probe._DarwinPrivateTree._acl_check(7, inside=True)
+
+    assert lib.validation_calls == 1
 
 
 def test_cli_help_states_private_model_free_non_activation() -> None:
