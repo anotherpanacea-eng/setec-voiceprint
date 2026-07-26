@@ -14,9 +14,17 @@ binding layer:
     and the closed public-result validation, including a table of hostile
     results.
   * Acceptance test 8's equality pins for the fixed ``F``/``D``/``R``/``A``
-    domains.
+    domains, and the value domains every builder enforces against them: the
+    closed canonical JSON domain, the shard metadata scalars and their
+    contiguous row block, the checkpoint row's family/reason domains, and the
+    aggregate delta's key sets and cell domain.
   * The receipt schema half of acceptance test 1: every missing, extra,
-    wrong-type, and noncanonical-byte receipt refuses.
+    wrong-type, and noncanonical-byte receipt refuses, and the three H1
+    identity digests are pinned to the same constants the CI-side gate holds.
+
+Where a refusal site is not obvious from the call under test — a case that
+could plausibly refuse at an earlier gate — the test names the site in a
+comment, so no test passes green for a reason other than the one it claims.
 
 All fixtures are generated synthetic data. No private corpus, aggregate,
 identifier, path, or prose enters the repository.
@@ -81,6 +89,60 @@ def test_canonical_json_refuses_non_finite_and_unencodable() -> None:
         rs.canonical_json({"a": object()})
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        # Floats are forbidden everywhere, not only as non-finite values, and
+        # not only at the top level.
+        1.0,
+        {"a": 1.0},
+        {"a": 0.0},
+        {"a": [1, 2.5]},
+        {"a": {"b": [{"c": 3.0}]}},
+        # Integers must fit signed 64 bits.
+        {"a": 2**63},
+        {"a": -(2**63) - 1},
+        {"a": [2**63]},
+        # Keys must be strings.
+        {1: "a"},
+        {"a": {2: "b"}},
+        # Unsupported leaf types.
+        {"a": object()},
+        {"a": b"bytes"},
+        {"a": (1, 2)},
+        {"a": {"b"}},
+        # Non-NFC keys and values: the decomposed sequence U+0041 U+030A,
+        # which NFC folds to the single code point U+00C5. Written as an
+        # escape so no editor can silently normalize the fixture away.
+        {"a": "A\u030a"},
+        {"A\u030a": "a"},
+        {"a": ["A\u030a"]},
+    ],
+)
+def test_canonical_json_walks_a_closed_domain(value: object) -> None:
+    with pytest.raises(rs.InternalError):
+        rs.canonical_json(value)
+
+
+def test_canonical_json_admits_the_closed_domain() -> None:
+    assert rs.canonical_json(
+        {"a": None, "b": True, "c": -1, "d": "é", "e": [], "f": {}}
+    ) == b'{"a":null,"b":true,"c":-1,"d":"\xc3\xa9","e":[],"f":{}}'
+    assert rs.canonical_json({"a": rs.INT64_MAX}) == (
+        b'{"a":9223372036854775807}'
+    )
+    assert rs.canonical_json({"a": rs.INT64_MIN}) == (
+        b'{"a":-9223372036854775808}'
+    )
+
+
+def test_canonical_json_refuses_a_cyclic_value() -> None:
+    cycle: dict[str, object] = {}
+    cycle["self"] = cycle
+    with pytest.raises(rs.InternalError):
+        rs.canonical_json(cycle)
+
+
 def test_framed_sha256_preimage_is_domain_length_payload() -> None:
     domain = b"setec-register-sweep-scope-v2\n"
     payload = b"payload"
@@ -95,6 +157,23 @@ def test_framed_sha256_requires_ascii_domain_with_terminal_lf() -> None:
         rs.framed_sha256(b"no-terminal-lf", b"")
     with pytest.raises(rs.InternalError):
         rs.framed_sha256("setec-register-sweep-scope-v2\n", b"")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "domain",
+    [
+        b"setec-register-sweep-scope-v3\n",
+        b"setec-register-sweep-scope-v1\n",
+        b"setec-register-sweep-shard-v2\n\n",
+        b"setec-register-family-mapping-v2\n ",
+        b"\n",
+    ],
+)
+def test_framed_sha256_refuses_an_unfrozen_domain(domain: bytes) -> None:
+    # An unfrozen domain has no payload schema at all; framing under one would
+    # mint an identity the spec never defined.
+    with pytest.raises(rs.InternalError):
+        rs.framed_sha256(domain, b'{"rows":[]}')
 
 
 def test_every_frozen_domain_is_ascii_and_lf_terminated() -> None:
@@ -283,6 +362,26 @@ def test_empty_scope_frames_the_empty_row_list() -> None:
     assert payload == b'{"rows":[]}'
 
 
+def _scoped_entry(manifest_ordinal: int, scoped_ordinal: int) -> dict[str, object]:
+    return {
+        "manifest_ordinal": manifest_ordinal,
+        "projected_row_sha256": rs.prefixed(ROW_DIGEST),
+        "scoped_ordinal": scoped_ordinal,
+    }
+
+
+def test_scoped_rows_require_strictly_ascending_manifest_ordinals() -> None:
+    # The scoped slice is in manifest order, so a filtered slice skips manifest
+    # ordinals but never repeats or reverses one.
+    rs.scoped_rows_binding([_scoped_entry(0, 0), _scoped_entry(7, 1)])
+    for entries in (
+        [_scoped_entry(7, 0), _scoped_entry(0, 1)],
+        [_scoped_entry(3, 0), _scoped_entry(3, 1)],
+    ):
+        with pytest.raises(rs.InternalError):
+            rs.scoped_rows_binding(entries)
+
+
 def test_vector_target_path_digest() -> None:
     payload, digest = rs.target_path_binding("/repo/docs/a.txt")
     assert payload == b"/repo/docs/a.txt"
@@ -428,6 +527,39 @@ def test_checkpoint_row_requires_exactly_one_of_family_or_refusal() -> None:
     rs.checkpoint_row_binding(scored)
 
 
+def test_checkpoint_row_pins_the_family_and_reason_domains() -> None:
+    scored = {**CANONICAL_ROW, "classified_family": "academic", "refusal_reason": None}
+    # ``unknown`` is a declared value only; it is never a classified family.
+    rs.checkpoint_row_binding({**CANONICAL_ROW, "declared_family": "unknown"})
+    for bad in (
+        {**CANONICAL_ROW, "declared_family": "not_a_family"},
+        {**CANONICAL_ROW, "declared_family": None},
+        {**CANONICAL_ROW, "declared_family": "Academic"},
+        {**scored, "classified_family": "unknown"},
+        {**scored, "classified_family": "not_a_family"},
+        {**scored, "classified_family": True},
+        {**CANONICAL_ROW, "refusal_reason": "not_a_reason"},
+        {**CANONICAL_ROW, "refusal_reason": "unknown"},
+    ):
+        with pytest.raises(rs.InternalError):
+            rs.checkpoint_row_binding(bad)
+
+
+def test_checkpoint_row_accepts_every_family_and_reason_in_domain() -> None:
+    for declared in rs.H1_DECLARED_FAMILIES:
+        rs.checkpoint_row_binding({**CANONICAL_ROW, "declared_family": declared})
+    for classified in rs.H1_CLASSIFIED_FAMILIES:
+        rs.checkpoint_row_binding(
+            {
+                **CANONICAL_ROW,
+                "classified_family": classified,
+                "refusal_reason": None,
+            }
+        )
+    for reason in rs.H1_REFUSAL_REASONS:
+        rs.checkpoint_row_binding({**CANONICAL_ROW, "refusal_reason": reason})
+
+
 def test_checkpoint_row_rejects_extra_and_out_of_range_fields() -> None:
     with pytest.raises(rs.InternalError):
         rs.checkpoint_row_binding({**CANONICAL_ROW, "path": "docs/a.txt"})
@@ -481,6 +613,123 @@ def test_aggregate_delta_requires_the_six_closed_keys(
         rs.aggregate_delta_binding({**delta, "dominant_family": "academic"})
 
 
+def test_aggregate_delta_pins_the_counts_key_set(binding: rs.H1Binding) -> None:
+    delta = _coherent_delta(binding)
+    counts = delta["counts"]
+    assert set(counts) == set(rs.SHARD_COUNT_KEYS)  # type: ignore[arg-type]
+    assert len(rs.SHARD_COUNT_KEYS) == 11
+    for broken in (
+        {
+            k: v
+            for k, v in counts.items()  # type: ignore[union-attr]
+            if k != "scoped_words"
+        },
+        {**counts, "mixture_score": 0},  # type: ignore[dict-item]
+    ):
+        with pytest.raises(rs.InternalError):
+            rs.aggregate_delta_binding({**delta, "counts": broken})
+
+
+@pytest.mark.parametrize("value", [True, False, -1, 2**63, 1.0, "1", None])
+def test_aggregate_delta_refuses_hostile_count_values(
+    binding: rs.H1Binding, value: object
+) -> None:
+    delta = _coherent_delta(binding)
+    counts = {**delta["counts"], "scoped_words": value}  # type: ignore[dict-item]
+    with pytest.raises(rs.InternalError):
+        rs.aggregate_delta_binding({**delta, "counts": counts})
+
+
+@pytest.mark.parametrize("value", [True, -1, 2**63, 1.0, "1", None])
+def test_aggregate_delta_refuses_hostile_cell_values(
+    binding: rs.H1Binding, value: object
+) -> None:
+    delta = _coherent_delta(binding)
+    inventory = {
+        **delta["refusal_inventory"],  # type: ignore[dict-item]
+        "short_text": {"documents": 1, "words": value},
+    }
+    with pytest.raises(rs.InternalError):
+        rs.aggregate_delta_binding({**delta, "refusal_inventory": inventory})
+
+
+def test_aggregate_delta_refuses_a_non_domain_cell_shape(
+    binding: rs.H1Binding,
+) -> None:
+    delta = _coherent_delta(binding)
+    for cell in (
+        {"documents": 1},
+        {"documents": 1, "words": 5, "share": 1},
+        {"documents": 1, "chars": 5},
+        [1, 5],
+        1,
+    ):
+        inventory = {
+            **delta["match_inventory"],  # type: ignore[dict-item]
+            "same": cell,
+        }
+        with pytest.raises(rs.InternalError):
+            rs.aggregate_delta_binding({**delta, "match_inventory": inventory})
+
+
+def test_aggregate_delta_pins_every_inventory_domain(
+    binding: rs.H1Binding,
+) -> None:
+    delta = _coherent_delta(binding)
+    for key, extra_key in (
+        ("declared_family_inventory", "not_a_family"),
+        ("classified_family_inventory", "unknown"),
+        ("refusal_inventory", "not_a_reason"),
+        ("match_inventory", "partial"),
+    ):
+        inventory = delta[key]
+        widened = {**inventory, extra_key: rs.zero_cell()}  # type: ignore[dict-item]
+        narrowed = {
+            k: v
+            for k, v in list(inventory.items())[1:]  # type: ignore[union-attr]
+        }
+        for broken in (widened, narrowed):
+            with pytest.raises(rs.InternalError):
+                rs.aggregate_delta_binding({**delta, key: broken})
+
+
+def test_aggregate_delta_pins_the_crosstab_shape(binding: rs.H1Binding) -> None:
+    delta = _coherent_delta(binding)
+    crosstab = delta["declared_by_classified_family"]
+    assert set(crosstab) == set(rs.H1_DECLARED_FAMILIES)  # type: ignore[arg-type]
+    for row in crosstab.values():  # type: ignore[union-attr]
+        assert set(row) == set(rs.H1_CLASSIFIED_FAMILIES)
+    outer_widened = {
+        **crosstab,  # type: ignore[dict-item]
+        "not_a_family": dict(crosstab["unknown"]),  # type: ignore[index]
+    }
+    inner_widened = {
+        **crosstab,
+        "unknown": {
+            **crosstab["unknown"],  # type: ignore[index]
+            "unknown": rs.zero_cell(),
+        },
+    }
+    for broken in (outer_widened, inner_widened):
+        with pytest.raises(rs.InternalError):
+            rs.aggregate_delta_binding(
+                {**delta, "declared_by_classified_family": broken}
+            )
+
+
+def test_aggregate_delta_records_no_cross_cell_equation(
+    binding: rs.H1Binding,
+) -> None:
+    # This encoder is a structural/domain check only. Equation checking (row
+    # sums, per-shard document ceilings, match derivation) belongs to the
+    # runner increment, so an internally inconsistent but well-formed delta
+    # still frames here.
+    delta = _coherent_delta(binding)
+    counts = {**delta["counts"], "scoped_documents": 999}  # type: ignore[dict-item]
+    _, digest = rs.aggregate_delta_binding({**delta, "counts": counts})
+    assert digest != AGGREGATE_DELTA_DIGEST
+
+
 def test_vector_logical_shard_digest(binding: rs.H1Binding) -> None:
     _, delta_digest = rs.aggregate_delta_binding(_coherent_delta(binding))
     _, row_blob = rs.checkpoint_row_binding(CANONICAL_ROW)
@@ -506,11 +755,8 @@ def test_vector_logical_shard_digest(binding: rs.H1Binding) -> None:
     assert digest == SHARD_DIGEST
 
 
-def test_shard_binding_rejects_unsorted_or_duplicate_ordinals(
-    binding: rs.H1Binding,
-) -> None:
-    _, delta_digest = rs.aggregate_delta_binding(_coherent_delta(binding))
-    metadata = {
+def _shard_metadata(**overrides: object) -> dict[str, object]:
+    metadata: dict[str, object] = {
         "checkpoint_binding_sha256": rs.prefixed(CHECKPOINT_BINDING_DIGEST),
         "first_scoped_ordinal": 0,
         "kind": "register",
@@ -519,35 +765,154 @@ def test_shard_binding_rejects_unsorted_or_duplicate_ordinals(
         "schema_version": "setec-register-sweep-checkpoint/2",
         "shard_number": 0,
     }
-    rows = [
-        {"row_json_sha256": rs.prefixed("1" * 64), "scoped_ordinal": 1},
-        {"row_json_sha256": rs.prefixed("2" * 64), "scoped_ordinal": 0},
+    metadata.update(overrides)
+    return metadata
+
+
+def _shard_rows(first: int, count: int) -> list[dict[str, object]]:
+    return [
+        {
+            "row_json_sha256": rs.prefixed(f"{index:064x}"),
+            "scoped_ordinal": first + index,
+        }
+        for index in range(count)
     ]
+
+
+def _frame_shard(
+    binding: rs.H1Binding,
+    metadata: dict[str, object],
+    rows: list[dict[str, object]],
+) -> tuple[bytes, str]:
+    _, delta_digest = rs.aggregate_delta_binding(_coherent_delta(binding))
+    return rs.shard_binding(
+        aggregate_delta_sha256=rs.prefixed(delta_digest),
+        metadata=metadata,
+        rows=rows,
+    )
+
+
+def test_shard_binding_rejects_noncontiguous_unsorted_and_duplicate_ordinals(
+    binding: rs.H1Binding,
+) -> None:
+    # Row k carries scoped ordinal ``first_scoped_ordinal + k``, so a reversed
+    # or repeated pair is caught as a contiguity break at the first offending
+    # offset rather than only as an ordering break.
+    metadata = _shard_metadata()
+    for rows in (
+        [
+            {"row_json_sha256": rs.prefixed("1" * 64), "scoped_ordinal": 1},
+            {"row_json_sha256": rs.prefixed("2" * 64), "scoped_ordinal": 0},
+        ],
+        [
+            {"row_json_sha256": rs.prefixed("1" * 64), "scoped_ordinal": 0},
+            {"row_json_sha256": rs.prefixed("2" * 64), "scoped_ordinal": 0},
+        ],
+        [
+            {"row_json_sha256": rs.prefixed("1" * 64), "scoped_ordinal": 0},
+            {"row_json_sha256": rs.prefixed("2" * 64), "scoped_ordinal": 2},
+        ],
+    ):
+        with pytest.raises(rs.InternalError):
+            _frame_shard(binding, metadata, rows)
+
+
+def test_shard_rows_start_at_the_first_scoped_ordinal(
+    binding: rs.H1Binding,
+) -> None:
+    metadata = _shard_metadata(first_scoped_ordinal=250, next_scoped_ordinal=252)
+    _frame_shard(binding, metadata, _shard_rows(250, 2))
     with pytest.raises(rs.InternalError):
-        rs.shard_binding(
-            aggregate_delta_sha256=rs.prefixed(delta_digest),
-            metadata=metadata,
-            rows=rows,
-        )
-    duplicate = [
-        {"row_json_sha256": rs.prefixed("1" * 64), "scoped_ordinal": 0},
-        {"row_json_sha256": rs.prefixed("2" * 64), "scoped_ordinal": 0},
-    ]
+        _frame_shard(binding, metadata, _shard_rows(0, 2))
+
+
+def test_shard_row_count_bounds_and_next_ordinal_agree(
+    binding: rs.H1Binding,
+) -> None:
+    # A full shard is exactly SHARD_ROWS rows; an empty shard is never framed
+    # (an empty scope creates no shard at all).
+    _frame_shard(
+        binding,
+        _shard_metadata(next_scoped_ordinal=rs.SHARD_ROWS),
+        _shard_rows(0, rs.SHARD_ROWS),
+    )
     with pytest.raises(rs.InternalError):
-        rs.shard_binding(
-            aggregate_delta_sha256=rs.prefixed(delta_digest),
-            metadata=metadata,
-            rows=duplicate,
+        _frame_shard(binding, _shard_metadata(next_scoped_ordinal=1), [])
+    with pytest.raises(rs.InternalError):
+        _frame_shard(
+            binding,
+            _shard_metadata(next_scoped_ordinal=rs.SHARD_ROWS + 1),
+            _shard_rows(0, rs.SHARD_ROWS + 1),
         )
+    # next_scoped_ordinal must equal first + len(rows), not merely be in range.
+    with pytest.raises(rs.InternalError):
+        _frame_shard(binding, _shard_metadata(next_scoped_ordinal=3), _shard_rows(0, 2))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"checkpoint_binding_sha256": CHECKPOINT_BINDING_DIGEST},  # unprefixed
+        {"checkpoint_binding_sha256": None},
+        {"prior_shard_sha256": "0" * 64},  # unprefixed
+        {"prior_shard_sha256": 0},
+        {"shard_number": -1},
+        {"shard_number": rs.MAX_FINAL_SHARDS},
+        {"shard_number": True},
+        {"shard_number": "0"},
+        {"first_scoped_ordinal": -1},
+        {"first_scoped_ordinal": rs.MAX_SCOPED_DOCUMENTS},
+        {"first_scoped_ordinal": True},
+        {"next_scoped_ordinal": 0},
+        {"next_scoped_ordinal": rs.MAX_SCOPED_DOCUMENTS + 1},
+        {"next_scoped_ordinal": True},
+        {"first_scoped_ordinal": 0, "next_scoped_ordinal": rs.SHARD_ROWS + 1},
+        {"kind": "sweep"},
+        {"kind": None},
+        {"schema_version": "setec-register-sweep-checkpoint/1"},
+        {"schema_version": None},
+    ],
+)
+def test_shard_metadata_values_are_domain_checked(
+    binding: rs.H1Binding, overrides: dict[str, object]
+) -> None:
+    with pytest.raises(rs.InternalError):
+        _frame_shard(binding, _shard_metadata(**overrides), _shard_rows(0, 2))
+
+
+def test_shard_metadata_accepts_a_prefixed_prior_shard_digest(
+    binding: rs.H1Binding,
+) -> None:
+    payload, _ = _frame_shard(
+        binding,
+        _shard_metadata(
+            shard_number=1,
+            first_scoped_ordinal=250,
+            next_scoped_ordinal=252,
+            prior_shard_sha256=rs.prefixed(SHARD_DIGEST),
+        ),
+        _shard_rows(250, 2),
+    )
+    assert json.loads(payload)["metadata"]["prior_shard_sha256"] == rs.prefixed(
+        SHARD_DIGEST
+    )
 
 
 def test_shard_metadata_key_set_is_closed(binding: rs.H1Binding) -> None:
+    # Refusal site: the metadata key-set check, which runs before any row or
+    # value domain check, so the empty row list here is not what refuses.
     _, delta_digest = rs.aggregate_delta_binding(_coherent_delta(binding))
     with pytest.raises(rs.InternalError):
         rs.shard_binding(
             aggregate_delta_sha256=rs.prefixed(delta_digest),
             metadata={"shard_number": 0},
             rows=[],
+        )
+    with pytest.raises(rs.InternalError):
+        rs.shard_binding(
+            aggregate_delta_sha256=rs.prefixed(delta_digest),
+            metadata=_shard_metadata(shard_sha256=rs.prefixed(SHARD_DIGEST)),
+            rows=_shard_rows(0, 2),
         )
 
 
@@ -574,6 +939,15 @@ def test_fixed_domains_are_equality_pinned(binding: rs.H1Binding) -> None:
     assert binding.refusal_domain == ("short_text", "all_weak", "exact_top_tie")
     assert rs.MATCH_DOMAIN == ("same", "different", "unresolved")
     assert "unknown" not in binding.classified_domain
+    # The module constants are the same freeze, and the loaded namespace is
+    # equality-pinned to them: D == REGISTER_FAMILIES.
+    assert tuple(families) == rs.H1_REGISTER_FAMILIES
+    assert rs.H1_DECLARED_FAMILIES == rs.H1_REGISTER_FAMILIES
+    assert rs.H1_CLASSIFIED_FAMILIES == rs.H1_REGISTER_FAMILIES[:-1]
+    assert rs.H1_REGISTER_FAMILIES[-1] == "unknown"
+    assert binding.classified_domain is rs.H1_CLASSIFIED_FAMILIES
+    assert binding.declared_domain is rs.H1_DECLARED_FAMILIES
+    assert binding.refusal_domain is rs.H1_REFUSAL_REASONS
 
 
 def test_zero_inventories_cover_every_fixed_cell(binding: rs.H1Binding) -> None:
@@ -667,6 +1041,45 @@ def test_receipt_rejects_an_extra_field() -> None:
 def test_receipt_rejects_wrong_field_values(key: str, value: object) -> None:
     with pytest.raises(rs.PolicyRefused):
         rs.validate_h1_receipt({**_real_receipt(), key: value})
+
+
+@pytest.mark.parametrize(
+    "key,constant",
+    [
+        ("classifier_sha256", "H1_FINAL_CLASSIFIER_SHA256"),
+        ("mapping_sha256", "H1_MAPPING_SHA256"),
+        ("refusal_contract_sha256", "H1_REFUSAL_CONTRACT_SHA256"),
+    ],
+)
+def test_receipt_identity_digests_are_pinned_to_the_ci_gate_constants(
+    key: str, constant: str
+) -> None:
+    # Parity with tools/check_register_sweep_h1_gate.py: each of the three H1
+    # identity digests is equality-pinned on its own, so dropping any one pin
+    # is caught here rather than masked by a sibling pin.
+    receipt = _real_receipt()
+    assert receipt[key] == getattr(rs, constant)
+    with pytest.raises(rs.PolicyRefused):
+        rs.validate_h1_receipt({**receipt, key: "0" * 64})
+
+
+def test_receipt_pins_match_the_ci_checker_source() -> None:
+    # The checker is frozen; read its constants out of the file rather than
+    # restating them, so a future divergence is visible here.
+    checker = (
+        Path(rs.__file__).resolve().parents[3]
+        / "tools"
+        / "check_register_sweep_h1_gate.py"
+    ).read_text(encoding="utf-8")
+    for value in (
+        rs.H1_FINAL_CLASSIFIER_SHA256,
+        rs.H1_MAPPING_SHA256,
+        rs.H1_REFUSAL_CONTRACT_SHA256,
+        rs.H1_BASE_CLASSIFIER_SHA256,
+        rs.H1_SPEC_SHA256,
+        rs.H1_REFUSAL_SPEC_SHA256,
+    ):
+        assert value in checker
 
 
 @pytest.mark.parametrize(
@@ -794,6 +1207,49 @@ def test_receipt_read_refuses_oversize(tmp_path: Path) -> None:
         rs.read_h1_receipt(target)
 
 
+def _receipt_of_exactly(total_bytes: int) -> tuple[dict[str, object], bytes]:
+    """A canonical receipt whose bytes-with-terminal-LF are exactly n."""
+    # b'{"a":"' + padding + b'"}' is 8 bytes of framing; +1 for the LF.
+    value = {"a": "x" * (total_bytes - 9)}
+    data = rs.canonical_json(value) + b"\n"
+    assert len(data) == total_bytes
+    return value, data
+
+
+def test_receipt_read_boundary_is_the_ceiling_byte(tmp_path: Path) -> None:
+    # Schema validation is not applied by read_h1_receipt, so this isolates the
+    # ceiling itself: exactly MAX_H1_RECEIPT_BYTES reads, one more refuses.
+    value, data = _receipt_of_exactly(rs.MAX_H1_RECEIPT_BYTES)
+    at_ceiling = tmp_path / "at_ceiling.json"
+    at_ceiling.write_bytes(data)
+    parsed, raw = rs.read_h1_receipt(at_ceiling)
+    assert parsed == value
+    assert len(raw) == rs.MAX_H1_RECEIPT_BYTES
+
+    _, over = _receipt_of_exactly(rs.MAX_H1_RECEIPT_BYTES + 1)
+    over_ceiling = tmp_path / "over_ceiling.json"
+    over_ceiling.write_bytes(over)
+    with pytest.raises(rs.PolicyRefused):
+        rs.read_h1_receipt(over_ceiling)
+
+
+def test_receipt_read_refuses_a_value_outside_the_canonical_domain(
+    tmp_path: Path,
+) -> None:
+    # Refusal site: the canonical_json comparison inside read_h1_receipt. A
+    # float or an out-of-range integer parses and round-trips as JSON text but
+    # is outside H2's closed canonical domain, and that failure belongs to the
+    # H1-identity taxonomy (PolicyRefused), not to InternalError.
+    for name, data in (
+        ("float.json", b'{"a":1.0}\n'),
+        ("bigint.json", b'{"a":9223372036854775808}\n'),
+    ):
+        target = tmp_path / name
+        target.write_bytes(data)
+        with pytest.raises(rs.PolicyRefused):
+            rs.read_h1_receipt(target)
+
+
 def test_receipt_read_refuses_symlink_and_missing(tmp_path: Path) -> None:
     real = tmp_path / "real.json"
     _write_receipt(real, _real_receipt())
@@ -861,28 +1317,19 @@ def test_load_refuses_an_oversize_classifier(tmp_path: Path) -> None:
         rs.load_h1_binding(receipt_path=receipt_path, classifier_path=big)
 
 
-def _synthetic_pair(
-    tmp_path: Path, source: bytes
-) -> tuple[Path, Path, str]:
-    """Write a synthetic classifier plus a receipt coherent with its digests."""
+def _synthetic_namespace(tmp_path: Path, source: bytes) -> dict[str, object]:
+    """Write and execute synthetic classifier source in a private namespace.
+
+    A synthetic classifier can no longer reach ``load_h1_binding``: its raw
+    digest is not ``H1_FINAL_CLASSIFIER_SHA256``, and a receipt forged to agree
+    with it refuses in ``validate_h1_receipt`` against that pinned constant.
+    Namespace-level hostility is therefore covered at the inner seams the
+    loader runs after ``exec`` — which is where those refusals actually live —
+    with the end-to-end digest-mismatch path covered separately below.
+    """
     classifier = tmp_path / "register_classifier.py"
     classifier.write_bytes(source)
-    namespace = rs._execute_classifier(source, classifier)
-    receipt = dict(_real_receipt())
-    receipt["classifier_sha256"] = rs.raw_sha256(source)
-    try:
-        receipt["mapping_sha256"] = rs.mapping_binding(namespace)[1]
-    except rs.PolicyRefused:
-        receipt["mapping_sha256"] = "0" * 64
-    try:
-        receipt["refusal_contract_sha256"] = rs.refusal_contract_binding(
-            namespace
-        )[1]
-    except rs.PolicyRefused:
-        receipt["refusal_contract_sha256"] = "0" * 64
-    receipt_path = tmp_path / "receipt.json"
-    digest = _write_receipt(receipt_path, receipt)
-    return receipt_path, classifier, digest
+    return rs._execute_classifier(source, classifier)
 
 
 def _faithful_source() -> bytes:
@@ -915,86 +1362,217 @@ def _faithful_source() -> bytes:
     ).encode("utf-8")
 
 
-def test_synthetic_faithful_classifier_binds(tmp_path: Path) -> None:
-    receipt_path, classifier, digest = _synthetic_pair(
-        tmp_path, _faithful_source()
-    )
-    bound = rs.load_h1_binding(
-        receipt_path=receipt_path,
-        classifier_path=classifier,
-        expected_receipt_sha256=digest,
-    )
-    assert bound.mapping_sha256 == MAPPING_DIGEST
-    assert bound.refusal_contract_sha256 == REFUSAL_DIGEST
-
-
-def test_mapping_drift_refuses_even_when_the_receipt_agrees(
+def test_synthetic_faithful_namespace_reproduces_the_pinned_identities(
     tmp_path: Path,
 ) -> None:
-    # The receipt is regenerated to match the drifted mapping, so only the
-    # pinned-digest comparison against the real H1 identity can catch this.
+    namespace = _synthetic_namespace(tmp_path, _faithful_source())
+    rs._validate_h1_callables(namespace)
+    mapping_payload, mapping_digest = rs.mapping_binding(namespace)
+    refusal_payload, refusal_digest = rs.refusal_contract_binding(namespace)
+    assert len(mapping_payload) == 1_147
+    assert len(refusal_payload) == 140
+    assert mapping_digest == MAPPING_DIGEST == rs.H1_MAPPING_SHA256
+    assert refusal_digest == REFUSAL_DIGEST == rs.H1_REFUSAL_CONTRACT_SHA256
+
+
+def test_mapping_drift_refuses_against_the_pinned_receipt_constants(
+    tmp_path: Path,
+) -> None:
+    # A length-preserving remap: 'formal_legal_policy' and
+    # 'formal_first_person' are both nineteen characters, so the canonical
+    # mapping payload is still exactly 1,147 bytes and only the digest moves.
     drifted = _faithful_source().replace(
-        b"'personal': 'first_person_essay'", b"'personal': 'academic'"
+        b"'policy_brief': 'formal_legal_policy'",
+        b"'policy_brief': 'formal_first_person'",
     )
     assert drifted != _faithful_source()
-    receipt_path, classifier, digest = _synthetic_pair(tmp_path, drifted)
-    bound = rs.load_h1_binding(
-        receipt_path=receipt_path,
-        classifier_path=classifier,
-        expected_receipt_sha256=digest,
-    )
-    assert bound.mapping_sha256 != MAPPING_DIGEST
-
-
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        "REGISTER_TAXONOMY = 'register_families/v1'",
-        "KNOWN_REGISTERS = ()",
-        "REGISTER_FAMILIES = ['a', 'b']",
-        "REGISTER_REFUSAL_REASONS = ('short_text', 'all_weak')",
-        "REGISTER_REFUSAL_REASONS = ('all_weak', 'short_text', 'exact_top_tie')",
-        "CANONICAL_REGISTER_TO_FAMILY = {'personal': 'not_a_family'}",
-        "LEGACY_REGISTER_TO_FAMILY = {1: 'academic'}",
-        "del resolve_family",
-        "del classify_register",
-        "def classify_register(text, hint=None, min_words=100): return RESULT",
-        "def classify_register(text, *, hint=None, min_words=50): return RESULT",
-        "def classify_register(text, *, min_words=100): return RESULT",
-        "def resolve_family(v): return 'unknown'",
-        "def resolve_family(value='x'): return 'unknown'",
-        "resolve_family = 3",
-    ],
-)
-def test_hostile_classifier_namespaces_refuse(
-    tmp_path: Path, mutation: str
-) -> None:
-    source = _faithful_source() + mutation.encode("utf-8") + b"\n"
-    receipt_path, classifier, digest = _synthetic_pair(tmp_path, source)
+    # The drift is visible at the identity seam itself: the framed mapping no
+    # longer reproduces the pinned public digest.
+    namespace = _synthetic_namespace(tmp_path, drifted)
+    drifted_payload, drifted_digest = rs.mapping_binding(namespace)
+    assert len(drifted_payload) == 1_147
+    assert drifted_digest != rs.H1_MAPPING_SHA256
+    # And a receipt regenerated to agree with the drift buys nothing: the
+    # schema pins classifier/mapping/refusal to the module constants, so this
+    # refuses inside ``validate_h1_receipt`` rather than at the later
+    # namespace-derived comparison.
+    receipt = dict(_real_receipt())
+    receipt["classifier_sha256"] = rs.raw_sha256(drifted)
+    receipt["mapping_sha256"] = drifted_digest
+    receipt_path = tmp_path / "receipt.json"
+    digest = _write_receipt(receipt_path, receipt)
     with pytest.raises(rs.PolicyRefused):
         rs.load_h1_binding(
             receipt_path=receipt_path,
-            classifier_path=classifier,
+            classifier_path=tmp_path / "register_classifier.py",
             expected_receipt_sha256=digest,
+        )
+
+
+def _seam_callables(namespace: dict[str, object]) -> None:
+    rs._validate_h1_callables(namespace)
+
+
+def _seam_mapping(namespace: dict[str, object]) -> None:
+    rs.mapping_binding(namespace)
+
+
+def _seam_refusal(namespace: dict[str, object]) -> None:
+    rs.refusal_contract_binding(namespace)
+
+
+SEAMS = {
+    "callables": _seam_callables,
+    "mapping": _seam_mapping,
+    "refusal": _seam_refusal,
+}
+
+
+@pytest.mark.parametrize(
+    "mutation,seam",
+    [
+        ("REGISTER_TAXONOMY = 'register_families/v1'", "mapping"),
+        ("KNOWN_REGISTERS = ()", "mapping"),
+        ("REGISTER_FAMILIES = ['a', 'b']", "mapping"),
+        ("REGISTER_REFUSAL_REASONS = ('short_text', 'all_weak')", "refusal"),
+        (
+            "REGISTER_REFUSAL_REASONS = ('all_weak', 'short_text', 'exact_top_tie')",
+            "refusal",
+        ),
+        ("CANONICAL_REGISTER_TO_FAMILY = {'personal': 'not_a_family'}", "mapping"),
+        ("LEGACY_REGISTER_TO_FAMILY = {1: 'academic'}", "mapping"),
+        ("del resolve_family", "callables"),
+        ("del classify_register", "callables"),
+        (
+            "def classify_register(text, hint=None, min_words=100): return RESULT",
+            "callables",
+        ),
+        (
+            "def classify_register(text, *, hint=None, min_words=50): return RESULT",
+            "callables",
+        ),
+        ("def classify_register(text, *, min_words=100): return RESULT", "callables"),
+        ("def resolve_family(v): return 'unknown'", "callables"),
+        ("def resolve_family(value='x'): return 'unknown'", "callables"),
+        ("resolve_family = 3", "callables"),
+    ],
+)
+def test_hostile_classifier_namespaces_refuse_at_their_seam(
+    tmp_path: Path, mutation: str, seam: str
+) -> None:
+    # Each case names the seam that must refuse, so no case can pass by
+    # refusing somewhere unrelated.
+    namespace = _synthetic_namespace(
+        tmp_path, _faithful_source() + mutation.encode("utf-8") + b"\n"
+    )
+    with pytest.raises(rs.PolicyRefused):
+        SEAMS[seam](namespace)
+
+
+def test_mapping_binding_refuses_an_off_length_payload(tmp_path: Path) -> None:
+    # A structurally valid mapping that encodes to a different canonical length
+    # is not the landed H1 identity. This is the CI checker's 1,147-byte pin.
+    source = _faithful_source() + (
+        "CANONICAL_REGISTER_TO_FAMILY = dict(CANONICAL_REGISTER_TO_FAMILY)\n"
+        "CANONICAL_REGISTER_TO_FAMILY['zz_extra'] = 'academic'\n"
+    ).encode("utf-8")
+    namespace = _synthetic_namespace(tmp_path, source)
+    with pytest.raises(rs.PolicyRefused):
+        rs.mapping_binding(namespace)
+
+
+def test_h1_binding_pins_the_register_family_tuple(tmp_path: Path) -> None:
+    namespace = _synthetic_namespace(tmp_path, _faithful_source())
+    families = rs.H1_REGISTER_FAMILIES
+    reordered = (families[1], families[0]) + families[2:]
+    namespace["REGISTER_FAMILIES"] = reordered
+    namespace["KNOWN_REGISTERS"] = reordered
+    # A reordered tuple still encodes to 1,147 bytes, so the mapping seam
+    # cannot catch it; the binding's own equality pin is what does.
+    payload, digest = rs.mapping_binding(namespace)
+    assert len(payload) == 1_147
+    assert digest != rs.H1_MAPPING_SHA256
+    with pytest.raises(rs.PolicyRefused):
+        rs.H1Binding(
+            namespace=namespace,
+            receipt={},
+            receipt_sha256=rs.H1_RECEIPT_SHA256,
+            classifier_sha256=rs.H1_FINAL_CLASSIFIER_SHA256,
+            mapping_sha256=digest,
+            refusal_contract_sha256=rs.H1_REFUSAL_CONTRACT_SHA256,
+        )
+    namespace["REGISTER_REFUSAL_REASONS"] = ("short_text",)
+    with pytest.raises(rs.PolicyRefused):
+        rs.H1Binding(
+            namespace=namespace,
+            receipt={},
+            receipt_sha256=rs.H1_RECEIPT_SHA256,
+            classifier_sha256=rs.H1_FINAL_CLASSIFIER_SHA256,
+            mapping_sha256=digest,
+            refusal_contract_sha256=rs.H1_REFUSAL_CONTRACT_SHA256,
         )
 
 
 def test_classifier_source_that_fails_to_execute_refuses(
     tmp_path: Path,
 ) -> None:
-    receipt_path, classifier, digest = _synthetic_pair(
-        tmp_path, _faithful_source()
+    # Refusal site: ``_execute_classifier``. A forged receipt can no longer
+    # carry non-H1 source as far as the loader, so the exec seam is exercised
+    # directly; the end-to-end path for this class is the digest-mismatch test
+    # below.
+    source = b"raise RuntimeError('boom')\n"
+    classifier = tmp_path / "register_classifier.py"
+    classifier.write_bytes(source)
+    with pytest.raises(rs.PolicyRefused):
+        rs._execute_classifier(source, classifier)
+
+
+@pytest.mark.parametrize(
+    "label,source",
+    [
+        ("missing callable", b"del resolve_family\n"),
+        ("drifted refusal contract", b"REGISTER_REFUSAL_REASONS = ('short_text',)\n"),
+        ("raises on import", None),
+    ],
+)
+def test_hostile_classifier_on_disk_refuses_end_to_end(
+    tmp_path: Path, label: str, source: bytes | None
+) -> None:
+    # Refusal site: the raw ``classifier_sha256`` gate in ``load_h1_binding``,
+    # reached with the REAL committed receipt. One end-to-end case per hostile
+    # class, so the inner-seam table above is not the only coverage.
+    receipt_path, _ = rs.default_h1_paths()
+    body = (
+        b"raise RuntimeError('boom')\n"
+        if source is None
+        else _faithful_source() + source
     )
-    classifier.write_bytes(b"raise RuntimeError('boom')\n")
-    receipt = dict(_real_receipt())
-    receipt["classifier_sha256"] = rs.raw_sha256(classifier.read_bytes())
-    digest = _write_receipt(receipt_path, receipt)
+    classifier = tmp_path / "register_classifier.py"
+    classifier.write_bytes(body)
     with pytest.raises(rs.PolicyRefused):
         rs.load_h1_binding(
-            receipt_path=receipt_path,
-            classifier_path=classifier,
-            expected_receipt_sha256=digest,
+            receipt_path=receipt_path, classifier_path=classifier
         )
+
+
+def test_a_digest_mismatched_classifier_is_never_executed(
+    tmp_path: Path,
+) -> None:
+    # The raw-digest gate runs before compile/exec, so module-level code in a
+    # drifted classifier must never run.
+    receipt_path, _ = rs.default_h1_paths()
+    marker = tmp_path / "executed.marker"
+    classifier = tmp_path / "register_classifier.py"
+    classifier.write_text(
+        "from pathlib import Path\n"
+        f"Path({str(marker)!r}).write_text('executed', encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(rs.PolicyRefused):
+        rs.load_h1_binding(
+            receipt_path=receipt_path, classifier_path=classifier
+        )
+    assert not marker.exists()
 
 
 # --------------------------------------------------------------------------
@@ -1164,6 +1742,33 @@ def test_secondary_may_hold_up_to_eight_distinct_families(
     with pytest.raises(rs.PolicyRefused):
         binding.validate_classification(
             {**good, "secondary": list(binding.classified_domain) + ["academic"]},
+            min_words=100,
+        )
+
+
+def test_a_full_eight_member_secondary_validates_under_an_unknown_primary(
+    binding: rs.H1Binding,
+) -> None:
+    # The cap is MAX_SECONDARY == 8 and |F| == 8, so with the distinctness and
+    # in-domain rules already enforced the length cap is structurally
+    # redundant: a list of eight distinct members of F is the largest one that
+    # can exist. It is still reachable in real H1 through an exact_top_tie,
+    # where the primary is "unknown" and therefore excluded from no member of
+    # F, so the positive case is exercised rather than left hypothetical.
+    assert rs.MAX_SECONDARY == 8
+    assert len(binding.classified_domain) == 8
+    result = {
+        **_refusal_result(binding),
+        "refusal_reason": "exact_top_tie",
+        "secondary": list(binding.classified_domain),
+        "scores": {name: 0.5 for name in binding.classified_domain},
+        "evidence": _good_result(binding)["evidence"],
+    }
+    validated = binding.validate_classification(result, min_words=100)
+    assert len(validated["secondary"]) == rs.MAX_SECONDARY
+    with pytest.raises(rs.PolicyRefused):
+        binding.validate_classification(
+            {**result, "secondary": list(binding.classified_domain) + ["academic"]},
             min_words=100,
         )
 

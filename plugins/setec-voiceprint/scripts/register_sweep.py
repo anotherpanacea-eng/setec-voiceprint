@@ -67,6 +67,21 @@ H1_REFUSAL_SPEC_SHA256 = (
 H1_BASE_CLASSIFIER_SHA256 = (
     "740556a87ab9fc08b0de743198ea67bd40038aa20223553500133c90320b163d"
 )
+#: The final landed H1 classifier raw digest and the two public identities it
+#: must reproduce. These are the same constants the CI-side gate pins in
+#: ``tools/check_register_sweep_h1_gate.py``; the committed receipt is the
+#: single H1 identity for both sides, so H2 refuses any receipt whose fields
+#: disagree with them rather than trusting a receipt that agrees only with
+#: itself.
+H1_FINAL_CLASSIFIER_SHA256 = (
+    "808da9eb369fd3aad725d9e6a799a6151b2f751b0f8f2ca8332dc037fbaaf2d8"
+)
+H1_MAPPING_SHA256 = (
+    "8866d6033ccb0254d7ff474a6daa7bc26fc0e887e294b283e58528dc5e9814ef"
+)
+H1_REFUSAL_CONTRACT_SHA256 = (
+    "f2255796634c1e1f2269029cc25afede25f4c033576b5dfba31f160c975a40c5"
+)
 H1_WORKFLOW_PATH = ".github/workflows/tests.yml"
 H1_WORKFLOW_SHA256_ALLOWLIST = (
     "1003c42d078616a3188dc876588289a4f54e2e0ed67049c32eb9df367cb6ecfd",
@@ -218,6 +233,47 @@ H1_PUBLIC_SYMBOLS = (
 
 H1_REFUSAL_REASONS = ("short_text", "all_weak", "exact_top_tie")
 
+#: The frozen ``REGISTER_FAMILIES`` tuple of the receipt-pinned H1 classifier.
+#: The committed receipt byte-pins ``register_classifier.py``, so this module
+#: may state the identity as a constant instead of deriving the value domains
+#: from whatever namespace happens to be bound. ``H1Binding`` refuses any
+#: namespace whose tuple differs, which is what keeps the constant honest.
+H1_REGISTER_FAMILIES = (
+    "formal_legal_policy",
+    "formal_first_person",
+    "academic",
+    "journalism",
+    "narrative_fiction",
+    "first_person_essay",
+    "promotional",
+    "short_social",
+    "unknown",
+)
+#: ``F`` in the spec's freeze: the scored families. ``unknown`` is a refusal
+#: sentinel and is never a classified family.
+H1_CLASSIFIED_FAMILIES = tuple(
+    name for name in H1_REGISTER_FAMILIES if name != "unknown"
+)
+#: ``D`` in the spec's freeze: ``F + ("unknown",) == REGISTER_FAMILIES``.
+H1_DECLARED_FAMILIES = H1_CLASSIFIED_FAMILIES + ("unknown",)
+
+#: The exact per-shard ``counts`` key set.
+SHARD_COUNT_KEYS = frozenset(
+    {
+        "scoped_documents",
+        "scoped_bytes",
+        "scoped_words",
+        "resolved_declared_documents",
+        "resolved_declared_words",
+        "unresolved_declared_documents",
+        "unresolved_declared_words",
+        "classified_documents",
+        "classified_words",
+        "refused_documents",
+        "refused_words",
+    }
+)
+
 
 # --------------------------------------------------------------------------
 # Controlled refusals
@@ -261,14 +317,63 @@ class InternalError(SweepRefusal):
 # --------------------------------------------------------------------------
 
 
+INT64_MIN = -(2**63)
+
+#: Nesting ceiling for the closed-domain walk. Every canonical payload in the
+#: spec is at most five levels deep; the bound also terminates a cyclic value
+#: before it can be walked forever.
+MAX_CANONICAL_DEPTH = 64
+
+
+def _require_nfc(text: str) -> None:
+    if unicodedata.normalize("NFC", text) != text:
+        raise InternalError()
+
+
+def _require_canonical_value(value: Any, depth: int) -> None:
+    """Refuse anything outside the closed canonical JSON domain.
+
+    Admissible: JSON null, Boolean, signed-64-bit non-Boolean integer, NFC
+    string, array, and object with string NFC keys. Floats are forbidden
+    everywhere, including inside arrays and nested objects.
+    """
+    if depth > MAX_CANONICAL_DEPTH:
+        raise InternalError()
+    if value is None or type(value) is bool:
+        return
+    if type(value) is int:
+        if not (INT64_MIN <= value <= INT64_MAX):
+            raise InternalError()
+        return
+    if type(value) is str:
+        _require_nfc(value)
+        return
+    if type(value) is list:
+        for item in value:
+            _require_canonical_value(item, depth + 1)
+        return
+    if type(value) is dict:
+        for key, item in value.items():
+            if type(key) is not str:
+                raise InternalError()
+            _require_nfc(key)
+            _require_canonical_value(item, depth + 1)
+        return
+    raise InternalError()
+
+
 def canonical_json(value: Any) -> bytes:
     """Return the exact canonical JSON encoding of a closed-domain value.
 
     Inputs are composed only of string keys, NFC valid Unicode strings, JSON
     null/Boolean, signed-64-bit non-Boolean integers, and arrays/objects whose
-    order and key set the spec fixes. Floats are forbidden in every canonical
-    payload; ``allow_nan=False`` additionally refuses non-finite values.
+    order and key set the spec fixes. The whole value is walked against that
+    closed domain before it is dumped: floats are forbidden in every canonical
+    payload, every key and string must already be NFC, and every integer must
+    fit in signed 64 bits. ``allow_nan=False`` additionally refuses non-finite
+    values that reach ``json.dumps``.
     """
+    _require_canonical_value(value, 0)
     try:
         return json.dumps(
             value,
@@ -292,11 +397,15 @@ def framed_sha256(domain: bytes, payload: bytes) -> str:
     """Return ``SHA256(domain || uint64_be(len(payload)) || payload)`` as hex.
 
     No NUL separator, extra newline, hex decoding, or Unicode normalization
-    occurs inside this function.
+    occurs inside this function. ``domain`` must be one of the twelve frozen
+    domains: domain reuse with a different payload schema is forbidden, and an
+    unfrozen domain has no schema at all.
     """
     if type(domain) is not bytes or type(payload) is not bytes:
         raise InternalError()
     if not domain.endswith(b"\n") or not domain.isascii():
+        raise InternalError()
+    if domain not in FROZEN_DOMAINS:
         raise InternalError()
     return hashlib.sha256(
         domain + struct.pack(">Q", len(payload)) + payload
@@ -330,6 +439,27 @@ def _require_int(value: Any, low: int, high: int) -> int:
     if type(value) is not int or not (low <= value <= high):
         raise InternalError()
     return value
+
+
+def _require_count(value: Any) -> int:
+    """Require a non-Boolean unsigned 64-bit inventory/count scalar."""
+    return _require_int(value, 0, INT64_MAX)
+
+
+def _require_cell(cell: Any) -> None:
+    """Require the fixed ``{"documents", "words"}`` inventory cell shape."""
+    if type(cell) is not dict or set(cell) != {"documents", "words"}:
+        raise InternalError()
+    _require_count(cell["documents"])
+    _require_count(cell["words"])
+
+
+def _require_inventory(inventory: Any, domain: tuple[str, ...]) -> None:
+    """Require an inventory object keyed by exactly ``domain``."""
+    if type(inventory) is not dict or set(inventory) != set(domain):
+        raise InternalError()
+    for cell in inventory.values():
+        _require_cell(cell)
 
 
 # --------------------------------------------------------------------------
@@ -393,9 +523,11 @@ def scoped_rows_binding(
     """Frame the scoped-row slice in manifest order.
 
     ``scoped_ordinal`` is zero-based and contiguous; an empty scope frames
-    ``{"rows":[]}``.
+    ``{"rows":[]}``. Entries are in manifest order, so ``manifest_ordinal`` is
+    strictly ascending across the slice.
     """
     rows = []
+    previous_manifest = -1
     for expected, entry in enumerate(entries):
         if set(entry) != {
             "manifest_ordinal",
@@ -406,7 +538,10 @@ def scoped_rows_binding(
         if entry["scoped_ordinal"] != expected:
             raise InternalError()
         _require_int(entry["scoped_ordinal"], 0, MAX_SCOPED_DOCUMENTS - 1)
-        _require_int(entry["manifest_ordinal"], 0, INT64_MAX)
+        manifest_ordinal = _require_int(entry["manifest_ordinal"], 0, INT64_MAX)
+        if manifest_ordinal <= previous_manifest:
+            raise InternalError()
+        previous_manifest = manifest_ordinal
         _require_prefixed(entry["projected_row_sha256"])
         rows.append(
             {
@@ -537,6 +672,11 @@ def checkpoint_row_binding(row: dict[str, Any]) -> tuple[bytes, bytes]:
     ``row_sha256`` is exactly the 32 raw digest bytes; text or hex storage is
     invalid. No raw register, row id, path, fingerprint, prose, persona,
     evidence vector, warning, or free-text metadata is stored.
+
+    ``declared_family`` is in ``D``, ``classified_family`` is in ``F`` or null,
+    and ``refusal_reason`` is in ``R`` or null, with exactly one of the latter
+    two non-null. ``unknown`` is a declared value only: it is never a
+    classified family.
     """
     if set(row) != {
         "manifest_ordinal",
@@ -554,8 +694,14 @@ def checkpoint_row_binding(row: dict[str, Any]) -> tuple[bytes, bytes]:
     _require_prefixed(row["content_sha256"])
     _require_int(row["document_bytes"], 0, MAX_DOCUMENT_BYTES)
     _require_int(row["words"], 0, INT64_MAX)
+    if row["declared_family"] not in H1_DECLARED_FAMILIES:
+        raise InternalError()
     classified = row["classified_family"]
     refusal = row["refusal_reason"]
+    if classified is not None and classified not in H1_CLASSIFIED_FAMILIES:
+        raise InternalError()
+    if refusal is not None and refusal not in H1_REFUSAL_REASONS:
+        raise InternalError()
     if (classified is None) == (refusal is None):
         raise InternalError()
     row_json = canonical_json(row)
@@ -563,7 +709,14 @@ def checkpoint_row_binding(row: dict[str, Any]) -> tuple[bytes, bytes]:
 
 
 def aggregate_delta_binding(delta: dict[str, Any]) -> tuple[bytes, str]:
-    """Frame the reassembled six-key aggregate delta object."""
+    """Frame the reassembled six-key aggregate delta object.
+
+    This is a structural and value-domain check only: the exact key sets of
+    ``counts`` and of the five fixed inventories, and the closed cell shape and
+    unsigned-64-bit integer domain of every leaf. The cross-cell equations
+    (row sums, per-shard document ceilings, match-bucket derivation) belong to
+    the runner increment that produces the deltas, not to this encoder.
+    """
     if set(delta) != {
         "counts",
         "declared_family_inventory",
@@ -573,6 +726,22 @@ def aggregate_delta_binding(delta: dict[str, Any]) -> tuple[bytes, str]:
         "match_inventory",
     }:
         raise InternalError()
+    counts = delta["counts"]
+    if type(counts) is not dict or set(counts) != SHARD_COUNT_KEYS:
+        raise InternalError()
+    for value in counts.values():
+        _require_count(value)
+    _require_inventory(delta["declared_family_inventory"], H1_DECLARED_FAMILIES)
+    _require_inventory(
+        delta["classified_family_inventory"], H1_CLASSIFIED_FAMILIES
+    )
+    crosstab = delta["declared_by_classified_family"]
+    if type(crosstab) is not dict or set(crosstab) != set(H1_DECLARED_FAMILIES):
+        raise InternalError()
+    for inner in crosstab.values():
+        _require_inventory(inner, H1_CLASSIFIED_FAMILIES)
+    _require_inventory(delta["refusal_inventory"], H1_REFUSAL_REASONS)
+    _require_inventory(delta["match_inventory"], MATCH_DOMAIN)
     payload = canonical_json(delta)
     return payload, framed_sha256(DOMAIN_AGGREGATE_DELTA, payload)
 
@@ -587,6 +756,17 @@ def shard_binding(
 
     The hash binds logical content and makes no claim about cross-runtime
     SQLite byte determinism.
+
+    Every metadata value is domain-checked, not merely present: the binding
+    digest is prefixed, ``prior_shard_sha256`` is null or prefixed,
+    ``shard_number`` is in ``[0, 399]``, ``first_scoped_ordinal`` is in
+    ``[0, 99_999]``, ``next_scoped_ordinal`` is in ``[1, 100_000]`` and exceeds
+    the first ordinal by ``[1, 250]``, and ``kind``/``schema_version`` are the
+    frozen literals. The row list carries ``[1, 250]`` rows whose scoped
+    ordinals are contiguous from ``first_scoped_ordinal``, and
+    ``next_scoped_ordinal`` is exactly one past the last of them; a shard with
+    no rows, a gap, or a next ordinal that disagrees with the row count cannot
+    be framed. An empty scope creates no shard at all.
     """
     if set(metadata) != {
         "checkpoint_binding_sha256",
@@ -598,15 +778,39 @@ def shard_binding(
         "shard_number",
     }:
         raise InternalError()
+    binding_digest = _require_prefixed(metadata["checkpoint_binding_sha256"])
+    prior = metadata["prior_shard_sha256"]
+    if prior is not None:
+        _require_prefixed(prior)
+    shard_number = _require_int(
+        metadata["shard_number"], 0, MAX_FINAL_SHARDS - 1
+    )
+    first = _require_int(
+        metadata["first_scoped_ordinal"], 0, MAX_SCOPED_DOCUMENTS - 1
+    )
+    following = _require_int(
+        metadata["next_scoped_ordinal"], 1, MAX_SCOPED_DOCUMENTS
+    )
+    # This bound, the row-count bound, and the ``following == first + len``
+    # equality below are each a separate spec clause (metadata domain, shard
+    # size, and shard/row agreement), and any two of them imply the third.
+    # They are kept separate so each clause has its own refusal site.
+    if not (1 <= following - first <= SHARD_ROWS):
+        raise InternalError()
+    if metadata["kind"] != CHECKPOINT_KIND:
+        raise InternalError()
+    if metadata["schema_version"] != CHECKPOINT_SCHEMA_VERSION:
+        raise InternalError()
+
     ordered_rows = []
     previous = -1
-    for entry in rows:
+    for offset, entry in enumerate(rows):
         if set(entry) != {"row_json_sha256", "scoped_ordinal"}:
             raise InternalError()
         ordinal = _require_int(
             entry["scoped_ordinal"], 0, MAX_SCOPED_DOCUMENTS - 1
         )
-        if ordinal <= previous:
+        if ordinal != first + offset or ordinal <= previous:
             raise InternalError()
         previous = ordinal
         ordered_rows.append(
@@ -615,10 +819,23 @@ def shard_binding(
                 "scoped_ordinal": ordinal,
             }
         )
+    if not (1 <= len(ordered_rows) <= SHARD_ROWS):
+        raise InternalError()
+    if following != first + len(ordered_rows):
+        raise InternalError()
+
     payload = canonical_json(
         {
             "aggregate_delta_sha256": _require_prefixed(aggregate_delta_sha256),
-            "metadata": metadata,
+            "metadata": {
+                "checkpoint_binding_sha256": binding_digest,
+                "first_scoped_ordinal": first,
+                "kind": CHECKPOINT_KIND,
+                "next_scoped_ordinal": following,
+                "prior_shard_sha256": prior,
+                "schema_version": CHECKPOINT_SCHEMA_VERSION,
+                "shard_number": shard_number,
+            },
             "rows": ordered_rows,
         }
     )
@@ -767,7 +984,16 @@ def read_h1_receipt(path: os.PathLike[str] | str) -> tuple[dict[str, Any], bytes
             os.close(descriptor)
     value = _decode_strict_json(data)
     _guard_receipt_tree(value)
-    if type(value) is not dict or data != canonical_json(value) + b"\n":
+    if type(value) is not dict:
+        raise PolicyRefused()
+    # A receipt that cannot even be canonically encoded (a float, an
+    # out-of-range integer, a non-NFC string) is an H1-identity failure, not an
+    # H2 internal failure: re-raise it into the identity taxonomy.
+    try:
+        canonical = canonical_json(value)
+    except InternalError as exc:
+        raise PolicyRefused() from exc
+    if data != canonical + b"\n":
         raise PolicyRefused()
     return value, data
 
@@ -848,6 +1074,15 @@ def validate_h1_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
     if receipt["refusal_spec_sha256"] != H1_REFUSAL_SPEC_SHA256:
         raise PolicyRefused()
     if receipt["base_classifier_sha256"] != H1_BASE_CLASSIFIER_SHA256:
+        raise PolicyRefused()
+    # Parity with the CI-side gate: the receipt's three H1 identity digests are
+    # pinned to the same constants that checker holds, so a receipt that agrees
+    # only with itself (regenerated around a drifted classifier) refuses here.
+    if receipt["classifier_sha256"] != H1_FINAL_CLASSIFIER_SHA256:
+        raise PolicyRefused()
+    if receipt["mapping_sha256"] != H1_MAPPING_SHA256:
+        raise PolicyRefused()
+    if receipt["refusal_contract_sha256"] != H1_REFUSAL_CONTRACT_SHA256:
         raise PolicyRefused()
     if receipt["taxonomy"] != TAXONOMY:
         raise PolicyRefused()
@@ -932,13 +1167,21 @@ class H1Binding:
         self.classifier_sha256 = classifier_sha256
         self.mapping_sha256 = mapping_sha256
         self.refusal_contract_sha256 = refusal_contract_sha256
-        families = namespace["REGISTER_FAMILIES"]
-        self.families = tuple(families)
-        self.classified_domain = tuple(
-            name for name in families if name != "unknown"
-        )
-        self.declared_domain = self.classified_domain + ("unknown",)
-        self.refusal_domain = tuple(namespace["REGISTER_REFUSAL_REASONS"])
+        # The value domains are the receipt-pinned H1 identity, not whatever
+        # the bound namespace happens to export. Deriving ``D`` from the
+        # namespace and then validating against that same namespace would be
+        # circular, so the tuples are equality-pinned to the module constants
+        # first; this is also the spec's ``D == REGISTER_FAMILIES`` freeze.
+        families = namespace.get("REGISTER_FAMILIES")
+        if type(families) is not tuple or families != H1_REGISTER_FAMILIES:
+            raise PolicyRefused()
+        refusals = namespace.get("REGISTER_REFUSAL_REASONS")
+        if type(refusals) is not tuple or refusals != H1_REFUSAL_REASONS:
+            raise PolicyRefused()
+        self.families = H1_REGISTER_FAMILIES
+        self.classified_domain = H1_CLASSIFIED_FAMILIES
+        self.declared_domain = H1_DECLARED_FAMILIES
+        self.refusal_domain = H1_REFUSAL_REASONS
 
     def resolve_family(self, value: str | None) -> str:
         """Resolve declared manifest metadata through H1's public mapping."""
@@ -1108,7 +1351,9 @@ def mapping_binding(namespace: dict[str, Any]) -> tuple[bytes, str]:
 
     The payload has exactly ``canonical_register_to_family``,
     ``legacy_register_to_family``, ``register_families`` in public tuple order,
-    and ``taxonomy``.
+    and ``taxonomy``. At the landed H1 identity its canonical length is exactly
+    1,147 bytes; the CI-side gate pins the same length, so any mapping that
+    encodes to a different size refuses before it is framed.
     """
     families = namespace.get("REGISTER_FAMILIES")
     canonical = namespace.get("CANONICAL_REGISTER_TO_FAMILY")
@@ -1144,6 +1389,8 @@ def mapping_binding(namespace: dict[str, Any]) -> tuple[bytes, str]:
             "taxonomy": TAXONOMY,
         }
     )
+    if len(payload) != 1_147:
+        raise PolicyRefused()
     return payload, framed_sha256(DOMAIN_MAPPING, payload)
 
 
@@ -1231,11 +1478,24 @@ def load_h1_binding(
 ) -> H1Binding:
     """Bind the H1 classifier to the committed closeout receipt.
 
-    Order is fixed: strict-read the receipt and check its pinned raw digest and
-    exact schema; read the expected sibling classifier source once under the
-    1 MiB ceiling and check the receipt's post-follow-on ``classifier_sha256``;
-    compute and check the public mapping and refusal-contract digests; then
-    compile and execute those exact source bytes in a private namespace.
+    Order is fixed:
+
+    1. strict-read the receipt and check its pinned raw digest and its exact
+       schema, which equality-pins ``classifier_sha256``, ``mapping_sha256``,
+       and ``refusal_contract_sha256`` to the frozen module constants;
+    2. read the expected sibling classifier source once under the 1 MiB ceiling
+       and check its raw digest against the receipt's post-follow-on
+       ``classifier_sha256``. That raw-digest check is the only gate on
+       execution: nothing is compiled or executed until it passes;
+    3. compile and execute those exact source bytes in a private namespace and
+       validate the receipt-bound callables; and
+    4. immediately after execution and before any classifier call, derive the
+       public mapping and refusal-contract digests *from* the executed
+       namespace and check them against the receipt.
+
+    The mapping and refusal-contract digests cannot gate the execution, because
+    they are computed from the executed namespace. What they gate is every
+    later use of the binding.
     """
     receipt, receipt_bytes = read_h1_receipt(receipt_path)
     receipt_digest = raw_sha256(receipt_bytes)
@@ -1309,7 +1569,12 @@ def _execute_classifier(
 
 
 def default_h1_paths() -> tuple[Path, Path]:
-    """Return the sibling classifier and plugin receipt paths for this script."""
+    """Return ``(receipt_path, classifier_path)`` for this script's plugin.
+
+    The receipt is the plugin's ``references/`` copy; the classifier is the
+    sibling module in ``scripts/``. The return order matches the keyword order
+    of :func:`load_h1_binding`.
+    """
     scripts = Path(__file__).resolve().parent
     classifier = scripts / CLASSIFIER_FILENAME
     receipt = scripts.parent / "references" / RECEIPT_FILENAME
