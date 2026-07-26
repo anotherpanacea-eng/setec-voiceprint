@@ -60,6 +60,11 @@ reference:
 Each path must call the shared assertion before feature extraction or
 period/profile centroid construction.
 
+The register classifier maps `message.imessage` to its existing
+`short_social` descriptive family so the manifest vocabulary remains total.
+That classifier-family mapping is not a baseline-composition permission: the
+exact `message.imessage` guard still requires register-scoped references.
+
 The companion Voicewright consumer must separately refuse `message.imessage`
 records at every training/revision materialization seam. That consumer guard
 lands in its own repository and PR because the private author-corpus loader's

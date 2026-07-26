@@ -98,6 +98,7 @@ CANONICAL_REGISTER_TO_FAMILY: dict[str, str] = {
     "policy_advocacy": "formal_legal_policy",
     "professional_letter": "formal_first_person",
     "teaching": "academic",
+    "message.imessage": "short_social",
 }
 
 LEGACY_REGISTER_TO_FAMILY: dict[str, str] = {
