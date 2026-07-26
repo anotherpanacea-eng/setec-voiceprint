@@ -2905,9 +2905,7 @@ DIGEST_FIXTURES = {
 SCOPE_DIGEST_FIXTURE = "sha256:" + "9" * 64
 
 
-@pytest.fixture(scope="module")
-def domains(binding: rs.H1Binding) -> rs.RegisterDomains:
-    return rs.RegisterDomains.from_binding(binding)
+# The module-scoped ``domains`` fixture is defined once in the D1 section above.
 
 
 def _scope(**overrides: object) -> dict:
@@ -4193,3 +4191,1474 @@ def test_the_committed_success_sink_delivers_the_frozen_bytes(
     assert rs.emit_committed_success(envelope_bytes, stream=sink) is True
     assert bytes(sink.buffer) == envelope_bytes
     assert capsysbinary.readouterr().err == b""
+
+
+# ---- Increment C: immutable shards, owner-private policy, topology ----
+#
+# Acceptance tests 7, 11, 12, 13, and 14 for the checkpoint/privacy/topology
+# layer.  All fixtures are generated synthetic data; no private corpus,
+# aggregate, identifier, path, or prose enters the repository.
+
+import sqlite3
+import stat
+import types
+
+import shingle_dedup_checkpoint as checkpoint  # type: ignore
+import shingle_dedup_io as secure_io  # type: ignore
+
+POSIX_ONLY = pytest.mark.skipif(os.name != "posix", reason="POSIX predicates")
+
+
+@pytest.fixture(scope="module")
+def domains(binding: rs.H1Binding) -> rs.RegisterDomains:
+    return rs.RegisterDomains.from_binding(binding).validate()
+
+
+BINDING_DIGEST = rs.prefixed("a" * 64)
+
+
+def _row(
+    ordinal: int,
+    *,
+    declared: str,
+    classified: str | None = None,
+    refusal: str | None = None,
+    words: int = 5,
+    document_bytes: int = 20,
+) -> dict[str, object]:
+    return {
+        "manifest_ordinal": ordinal,
+        "projected_row_sha256": rs.prefixed(f"{ordinal:064x}"),
+        "content_sha256": rs.prefixed(f"{ordinal + 1:064x}"),
+        "document_bytes": document_bytes,
+        "words": words,
+        "declared_family": declared,
+        "classified_family": classified,
+        "refusal_reason": refusal,
+    }
+
+
+def _synthetic_rows(
+    count: int, domains: rs.RegisterDomains, *, offset: int = 0
+) -> list[dict[str, object]]:
+    """Deterministic valid-domain rows covering same/different/unresolved."""
+    families = domains.classified
+    rows: list[dict[str, object]] = []
+    for index in range(offset, offset + count):
+        declared = domains.declared[index % len(domains.declared)]
+        if index % 4 == 0:
+            rows.append(
+                _row(index, declared=declared, refusal=domains.refusals[index % len(domains.refusals)])
+            )
+        elif index % 4 == 1:
+            rows.append(_row(index, declared=declared, classified=families[index % len(families)]))
+        elif index % 4 == 2:
+            rows.append(_row(index, declared=families[index % len(families)],
+                             classified=families[index % len(families)]))
+        else:
+            rows.append(_row(index, declared="unknown",
+                             classified=families[(index + 1) % len(families)]))
+    return rows
+
+
+def _fresh_checkpoint(
+    path: Path, domains: rs.RegisterDomains
+) -> rs.RegisterCheckpoint:
+    return rs.RegisterCheckpoint.create(
+        path, domains=domains, checkpoint_binding_sha256=BINDING_DIGEST
+    )
+
+
+def _resume_checkpoint(
+    path: Path, domains: rs.RegisterDomains
+) -> rs.RegisterCheckpoint:
+    return rs.RegisterCheckpoint.resume(
+        path, domains=domains, checkpoint_binding_sha256=BINDING_DIGEST
+    )
+
+
+def _publish_plan(
+    path: Path, domains: rs.RegisterDomains, total: int
+) -> rs.RegisterCheckpoint:
+    """Publish a whole plan under the frozen shard partition."""
+    sizes = rs.shard_partition(total)
+    handle = _fresh_checkpoint(path, domains)
+    published = 0
+    for index, size in enumerate(sizes):
+        handle.publish_shard(
+            _synthetic_rows(size, domains, offset=published),
+            final=index + 1 == len(sizes),
+        )
+        published += size
+    return handle
+
+
+def _rewrite_shard(raw: bytes, statements: list[tuple[str, tuple[object, ...]]]) -> bytes:
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.deserialize(raw)
+        for sql, parameters in statements:
+            connection.execute(sql, parameters)
+        connection.commit()
+        return connection.serialize()
+    finally:
+        connection.close()
+
+
+def _replace_shard(path: Path, name: str, raw: bytes) -> None:
+    target = path / name
+    target.unlink()
+    target.write_bytes(raw)
+    os.chmod(target, 0o600)
+
+
+def _reserved_temp(index: int) -> str:
+    return ".tmp-" + f"{index:032x}"
+
+
+def _write_temp(directory: Path, name: str, payload: bytes = b"debris") -> Path:
+    target = directory / name
+    target.write_bytes(payload)
+    os.chmod(target, 0o600)
+    return target
+
+
+# --------------------------------------------------------------------------
+# Fixed domains and the frozen shard partition (acceptance test 11)
+# --------------------------------------------------------------------------
+
+
+def test_register_domains_pin_the_fixed_D_F_R_split(
+    binding: rs.H1Binding, domains: rs.RegisterDomains
+) -> None:
+    assert domains.classified == tuple(
+        name for name in binding.namespace["REGISTER_FAMILIES"] if name != "unknown"
+    )
+    assert domains.declared == domains.classified + ("unknown",)
+    assert domains.refusals == rs.H1_REFUSAL_REASONS
+    assert "unknown" not in domains.classified
+    assert rs.MATCH_DOMAIN == ("same", "different", "unresolved")
+
+
+@pytest.mark.parametrize(
+    "total,expected",
+    [
+        (0, ()),
+        (1, (1,)),
+        (249, (249,)),
+        (250, (250,)),
+        (251, (250, 1)),
+        (500, (250, 250)),
+        (501, (250, 250, 1)),
+    ],
+)
+def test_shard_partition_is_the_one_immutable_partition(
+    total: int, expected: tuple[int, ...]
+) -> None:
+    assert rs.shard_partition(total) == expected
+    assert sum(rs.shard_partition(total)) == total
+
+
+@pytest.mark.parametrize("total,expected", [
+    (1, (1,)), (249, (249,)), (250, (250,)), (251, (250, 1)),
+    (500, (250, 250)), (501, (250, 250, 1)),
+])
+@POSIX_ONLY
+def test_published_shard_sizes_equality_pin_the_partition(
+    tmp_path: Path, domains: rs.RegisterDomains, total: int, expected: tuple[int, ...]
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, total) as handle:
+        assert tuple(len(shard.rows) for shard in handle.shards) == expected
+        assert handle.next_scoped_ordinal == total
+        assert handle.next_shard_number == len(expected)
+    names = sorted(item.name for item in state.iterdir())
+    assert names == [rs.shard_name(index) for index in range(len(expected))]
+
+
+@POSIX_ONLY
+def test_short_non_final_shard_is_never_publishable(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    with _fresh_checkpoint(tmp_path / "cp", domains) as handle:
+        with pytest.raises(rs.InternalError):
+            handle.publish_shard(_synthetic_rows(249, domains), final=False)
+        with pytest.raises(rs.InternalError):
+            handle.publish_shard(_synthetic_rows(251, domains), final=True)
+        with pytest.raises(rs.InternalError):
+            handle.publish_shard((), final=True)
+    assert not list((tmp_path / "cp").iterdir())
+
+
+@POSIX_ONLY
+def test_publication_after_a_short_final_shard_refuses(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    with _fresh_checkpoint(tmp_path / "cp", domains) as handle:
+        handle.publish_shard(_synthetic_rows(3, domains), final=True)
+        with pytest.raises(rs.PolicyRefused):
+            handle.publish_shard(_synthetic_rows(1, domains, offset=3), final=True)
+
+
+# --------------------------------------------------------------------------
+# Immutable resume (acceptance test 11)
+# --------------------------------------------------------------------------
+
+
+@POSIX_ONLY
+def test_interruption_before_publication_loses_only_the_unpublished_shard(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    handle = _fresh_checkpoint(state, domains)
+    handle.publish_shard(_synthetic_rows(250, domains), final=False)
+    # The next 250 rows are processed but the process dies before publication.
+    handle.close()
+
+    resumed = _resume_checkpoint(state, domains)
+    assert resumed.next_scoped_ordinal == 250
+    assert resumed.next_shard_number == 1
+    resumed.publish_shard(_synthetic_rows(250, domains, offset=250), final=False)
+    resumed.publish_shard(_synthetic_rows(1, domains, offset=500), final=True)
+    resumed.close()
+
+    fresh = _publish_plan(tmp_path / "fresh", domains, 501)
+    replayed = _resume_checkpoint(state, domains)
+    try:
+        assert rs.canonical_json(replayed.sealed_delta) == rs.canonical_json(
+            fresh.sealed_delta
+        )
+        assert replayed.next_scoped_ordinal == fresh.next_scoped_ordinal
+        assert [shard.shard_sha256 for shard in replayed.shards] == [
+            shard.shard_sha256 for shard in fresh.shards
+        ]
+        assert [shard.row_digests for shard in replayed.shards] == [
+            shard.row_digests for shard in fresh.shards
+        ]
+    finally:
+        replayed.close()
+        fresh.close()
+    assert (state / rs.shard_name(0)).read_bytes() == (
+        tmp_path / "fresh" / rs.shard_name(0)
+    ).read_bytes()
+
+
+@POSIX_ONLY
+def test_interruption_after_publication_resumes_at_the_next_ordinal(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    handle = _fresh_checkpoint(state, domains)
+    first = handle.publish_shard(_synthetic_rows(250, domains), final=False)
+    handle.close()
+    with _resume_checkpoint(state, domains) as resumed:
+        assert resumed.next_scoped_ordinal == first.next_scoped_ordinal == 250
+        assert resumed.prior_shard_sha256 == first.shard_sha256
+
+
+@POSIX_ONLY
+def test_empty_and_reserved_temp_only_directories_resume_at_zero_progress(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    for temps in (0, 1, 15, 16):
+        state = tmp_path / f"cp{temps}"
+        _fresh_checkpoint(state, domains).close()
+        for index in range(temps):
+            _write_temp(state, _reserved_temp(index))
+        with _resume_checkpoint(state, domains) as handle:
+            assert handle.next_scoped_ordinal == 0
+            assert handle.next_shard_number == 0
+            assert handle.prior_shard_sha256 is None
+            assert handle.shards == ()
+            assert rs.canonical_json(handle.sealed_delta) == rs.canonical_json(
+                rs.zero_aggregate_delta(domains)
+            )
+            if temps == rs.MAX_RESERVED_TEMPORARY_NAMES:
+                # A directory already holding the whole reserved allowance
+                # refuses publication rather than reusing one of those names.
+                with pytest.raises(rs.PolicyRefused):
+                    handle.publish_shard(_synthetic_rows(1, domains), final=True)
+                assert not any(
+                    rs.SHARD_NAME_RE.fullmatch(item.name) for item in state.iterdir()
+                )
+                continue
+            # The first published final must be shard 0 bound to the current
+            # binding, regardless of how much crash debris is present.
+            published = handle.publish_shard(_synthetic_rows(1, domains), final=True)
+        assert published.name == "register-00000000.sqlite"
+        assert published.prior_shard_sha256 is None
+        assert published.checkpoint_binding_sha256 == BINDING_DIGEST
+        assert published.first_scoped_ordinal == 0
+
+
+@POSIX_ONLY
+def test_seventeen_reserved_temps_refuse_rather_than_reusing_one(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    _fresh_checkpoint(state, domains).close()
+    for index in range(17):
+        _write_temp(state, _reserved_temp(index))
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    (state / _reserved_temp(16)).unlink()
+    with _resume_checkpoint(state, domains) as handle:
+        assert handle.next_scoped_ordinal == 0
+    # A published final plus the full reserved allowance still resumes, and the
+    # seventeenth reserved name refuses again.
+    (state / _reserved_temp(15)).unlink()
+    with _resume_checkpoint(state, domains) as handle:
+        handle.publish_shard(_synthetic_rows(1, domains), final=True)
+    with _resume_checkpoint(state, domains) as handle:
+        assert handle.next_scoped_ordinal == 1
+    _write_temp(state, _reserved_temp(15))
+    _write_temp(state, _reserved_temp(16))
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@POSIX_ONLY
+def test_publication_refuses_when_the_reserved_temp_allowance_is_full(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    handle = _fresh_checkpoint(state, domains)
+    for index in range(16):
+        _write_temp(state, _reserved_temp(index))
+    handle._directory.freeze_listing()
+    with pytest.raises(rs.PolicyRefused):
+        handle.publish_shard(_synthetic_rows(1, domains), final=True)
+    handle.close()
+    assert not any(rs.SHARD_NAME_RE.fullmatch(item.name) for item in state.iterdir())
+
+
+@POSIX_ONLY
+def test_valid_looking_sqlite_inside_a_reserved_temp_is_inert(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    donor = tmp_path / "donor"
+    with _publish_plan(donor, domains, 3) as source:
+        payload = (donor / source.shards[0].name).read_bytes()
+    state = tmp_path / "cp"
+    _fresh_checkpoint(state, domains).close()
+    _write_temp(state, _reserved_temp(0), payload)
+    with _resume_checkpoint(state, domains) as handle:
+        assert handle.next_scoped_ordinal == 0
+        assert handle.shards == ()
+        assert rs.canonical_json(handle.sealed_delta) == rs.canonical_json(
+            rs.zero_aggregate_delta(domains)
+        )
+
+
+@pytest.mark.parametrize("name", [
+    "register-0000000.sqlite",
+    "register-000000000.sqlite",
+    "register-00000000.sqlite-journal",
+    "register-00000000.sqlite-wal",
+    "register-00000000.sqlite-shm",
+    "register-0000000A.sqlite",
+    ".tmp-" + "1" * 31,
+    ".tmp-" + "1" * 33,
+    ".tmp-" + "G" * 32,
+    ".tmp-" + "1" * 32 + "-log",
+    "notes.txt",
+    ".tmp-",
+])
+@POSIX_ONLY
+def test_non_reserved_names_refuse_resume(
+    tmp_path: Path, domains: rs.RegisterDomains, name: str
+) -> None:
+    state = tmp_path / "cp"
+    _fresh_checkpoint(state, domains).close()
+    _write_temp(state, name)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@POSIX_ONLY
+def test_oversized_and_indirect_reserved_temps_refuse(
+    tmp_path: Path, domains: rs.RegisterDomains, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "cp"
+    _fresh_checkpoint(state, domains).close()
+    oversized = _write_temp(state, _reserved_temp(0), b"x" * 64)
+    monkeypatch.setattr(rs, "MAX_SHARD_BYTES", 32)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    monkeypatch.undo()
+    oversized.unlink()
+
+    (state / _reserved_temp(1)).symlink_to(tmp_path / "absent")
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    (state / _reserved_temp(1)).unlink()
+
+    (state / _reserved_temp(2)).mkdir()
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    (state / _reserved_temp(2)).rmdir()
+
+    original = _write_temp(state, _reserved_temp(3))
+    os.link(original, state / _reserved_temp(4))
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@POSIX_ONLY
+def test_hole_extra_and_ordinal_drift_in_the_shard_chain_refuse(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, 501) as handle:
+        names = [shard.name for shard in handle.shards]
+    assert names == [rs.shard_name(index) for index in range(3)]
+
+    hole = (state / names[1]).read_bytes()
+    (state / names[1]).unlink()
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    (state / names[1]).write_bytes(hole)
+    os.chmod(state / names[1], 0o600)
+    _resume_checkpoint(state, domains).close()
+
+    # An extra final beyond the contiguous chain refuses.
+    (state / rs.shard_name(4)).write_bytes(hole)
+    os.chmod(state / rs.shard_name(4), 0o600)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@POSIX_ONLY
+def test_chain_and_binding_drift_refuse(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, 251) as handle:
+        pass
+    with pytest.raises(rs.PolicyRefused):
+        rs.RegisterCheckpoint.resume(
+            state, domains=domains, checkpoint_binding_sha256=rs.prefixed("b" * 64)
+        )
+    # Swapping the two shards' bytes breaks both the ordinal and the chain.
+    first = (state / rs.shard_name(0)).read_bytes()
+    second = (state / rs.shard_name(1)).read_bytes()
+    _replace_shard(state, rs.shard_name(0), second)
+    _replace_shard(state, rs.shard_name(1), first)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@POSIX_ONLY
+def test_non_final_shard_shorter_than_250_rows_refuses_resume(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _fresh_checkpoint(state, domains) as handle:
+        short = handle.publish_shard(_synthetic_rows(3, domains), final=True)
+    # Forge a second shard behind the short one: the chain now claims a
+    # non-final shard with fewer than 250 rows.
+    raw, _forged = rs.encode_register_shard(
+        shard_number=1,
+        first_scoped_ordinal=short.next_scoped_ordinal,
+        checkpoint_binding_sha256=BINDING_DIGEST,
+        prior_shard_sha256=short.shard_sha256,
+        rows=_synthetic_rows(2, domains, offset=short.next_scoped_ordinal),
+        domains=domains,
+    )
+    (state / rs.shard_name(1)).write_bytes(raw)
+    os.chmod(state / rs.shard_name(1), 0o600)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@pytest.mark.parametrize("ceiling,boundary,refused", [
+    ("MAX_FINAL_SHARDS", 3, 2),
+    ("MAX_CHECKPOINT_CUMULATIVE_BYTES", None, None),
+    ("MAX_RESERVED_TEMPORARY_NAMES", 1, 0),
+])
+@POSIX_ONLY
+def test_checkpoint_ceilings_accept_the_control_and_refuse_a_lowered_bound(
+    tmp_path: Path, domains: rs.RegisterDomains, monkeypatch: pytest.MonkeyPatch,
+    ceiling: str, boundary: int | None, refused: int | None,
+) -> None:
+    state = tmp_path / ceiling
+    with _publish_plan(state, domains, 501) as handle:
+        published = sum((state / shard.name).stat().st_size for shard in handle.shards)
+    if ceiling == "MAX_CHECKPOINT_CUMULATIVE_BYTES":
+        boundary, refused = published, published - 1
+    if ceiling == "MAX_RESERVED_TEMPORARY_NAMES":
+        _write_temp(state, _reserved_temp(0))
+    monkeypatch.setattr(rs, ceiling, boundary)
+    _resume_checkpoint(state, domains).close()
+    monkeypatch.setattr(rs, ceiling, refused)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+@POSIX_ONLY
+def test_final_shard_ceiling_refuses_publication_rather_than_overflowing(
+    tmp_path: Path, domains: rs.RegisterDomains, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "cp"
+    handle = _fresh_checkpoint(state, domains)
+    handle.publish_shard(_synthetic_rows(250, domains), final=False)
+    monkeypatch.setattr(rs, "MAX_FINAL_SHARDS", 1)
+    with pytest.raises(rs.PolicyRefused):
+        handle.publish_shard(_synthetic_rows(250, domains, offset=250), final=False)
+    handle.close()
+    assert sorted(item.name for item in state.iterdir()) == [rs.shard_name(0)]
+
+
+# --------------------------------------------------------------------------
+# Codec exactness: every metadata/schema/PRAGMA/digest/delta mutation refuses
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def sealed_shard(domains: rs.RegisterDomains) -> tuple[bytes, rs.RegisterShard]:
+    return rs.encode_register_shard(
+        shard_number=0,
+        first_scoped_ordinal=0,
+        checkpoint_binding_sha256=BINDING_DIGEST,
+        prior_shard_sha256=None,
+        rows=_synthetic_rows(4, domains),
+        domains=domains,
+    )
+
+
+def test_sealed_shard_pins_the_frozen_codec_shape(
+    sealed_shard: tuple[bytes, rs.RegisterShard], domains: rs.RegisterDomains
+) -> None:
+    raw, shard = sealed_shard
+    assert raw.startswith(b"SQLite format 3\x00")
+    assert len(raw) % rs.SHARD_PAGE_SIZE == 0
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.deserialize(raw)
+        assert connection.execute("PRAGMA application_id").fetchone() == (0x52535731,)
+        assert connection.execute("PRAGMA user_version").fetchone() == (1,)
+        assert connection.execute("PRAGMA encoding").fetchone() == ("UTF-8",)
+        assert connection.execute("PRAGMA page_size").fetchone() == (4096,)
+        assert connection.execute("PRAGMA journal_mode").fetchone() == ("memory",)
+        objects = {
+            (row[0], row[1]): row[2]
+            for row in connection.execute("SELECT type,name,sql FROM sqlite_master")
+        }
+        assert objects == {
+            ("table", "checkpoint_meta"): (
+                "CREATE TABLE checkpoint_meta(key TEXT PRIMARY KEY,"
+                "value TEXT NOT NULL) WITHOUT ROWID"
+            ),
+            ("table", "rows"): (
+                "CREATE TABLE rows(scoped_ordinal INTEGER PRIMARY KEY,"
+                "row_json BLOB NOT NULL,row_sha256 BLOB NOT NULL)"
+            ),
+            ("table", "aggregate_delta"): (
+                "CREATE TABLE aggregate_delta(key TEXT PRIMARY KEY,"
+                "value_json BLOB NOT NULL) WITHOUT ROWID"
+            ),
+        }
+        meta = dict(connection.execute("SELECT key,value FROM checkpoint_meta"))
+        assert tuple(sorted(meta)) == rs.SHARD_META_KEYS
+        assert meta["schema_version"] == '"setec-register-sweep-checkpoint/2"'
+        assert meta["kind"] == '"register"'
+        assert meta["shard_number"] == "0"
+        assert meta["first_scoped_ordinal"] == "0"
+        assert meta["next_scoped_ordinal"] == "4"
+        assert meta["prior_shard_sha256"] == "null"
+        assert not any(value.endswith("\n") for value in meta.values())
+        for key, value in meta.items():
+            assert json.dumps(
+                json.loads(value), sort_keys=True, separators=(",", ":"),
+                ensure_ascii=False, allow_nan=False,
+            ) == value, key
+        rows = list(
+            connection.execute(
+                "SELECT scoped_ordinal,row_json,row_sha256 FROM rows ORDER BY scoped_ordinal"
+            )
+        )
+        assert [row[0] for row in rows] == [0, 1, 2, 3]
+        for _ordinal, row_json, row_digest in rows:
+            assert type(row_json) is bytes and type(row_digest) is bytes
+            assert len(row_digest) == 32
+            assert hashlib.sha256(row_json).digest() == row_digest
+            assert not row_json.endswith(b"\n")
+        delta = dict(
+            connection.execute("SELECT key,value_json FROM aggregate_delta")
+        )
+        assert tuple(sorted(delta)) == tuple(sorted(rs.DELTA_KEYS))
+        assert all(type(value) is bytes for value in delta.values())
+    finally:
+        connection.close()
+    assert shard.delta["counts"]["scoped_documents"] == 4
+    assert shard.next_scoped_ordinal == 4
+    assert shard.prior_shard_sha256 is None
+
+
+def _meta_update(key: str, value: str) -> list[tuple[str, tuple[object, ...]]]:
+    return [("UPDATE checkpoint_meta SET value=? WHERE key=?", (value, key))]
+
+
+CODEC_MUTATIONS: dict[str, list[tuple[str, tuple[object, ...]]]] = {
+    "application_id": [("PRAGMA application_id=1", ())],
+    "user_version": [("PRAGMA user_version=2", ())],
+    "extra_table": [("CREATE TABLE extra(a INTEGER)", ())],
+    "schema_version": _meta_update("schema_version", '"setec-register-sweep-checkpoint/1"'),
+    "kind": _meta_update("kind", '"shingle"'),
+    "shard_number": _meta_update("shard_number", "1"),
+    "first_ordinal": _meta_update("first_scoped_ordinal", "1"),
+    "next_ordinal": _meta_update("next_scoped_ordinal", "5"),
+    "prior_hash_on_shard_zero": _meta_update(
+        "prior_shard_sha256", '"sha256:' + "b" * 64 + '"'
+    ),
+    "uppercase_shard_hash": _meta_update("shard_sha256", '"sha256:' + "B" * 64 + '"'),
+    "unprefixed_binding": _meta_update("checkpoint_binding_sha256", '"' + "a" * 64 + '"'),
+    "noncanonical_meta_text": _meta_update("shard_number", " 0"),
+    "meta_terminal_lf": _meta_update("shard_number", "0\n"),
+    "extra_meta_key": [
+        ("INSERT INTO checkpoint_meta VALUES('extra','0')", ())
+    ],
+    "missing_meta_key": [("DELETE FROM checkpoint_meta WHERE key='kind'", ())],
+    "row_hole": [("DELETE FROM rows WHERE scoped_ordinal=2", ())],
+    "row_ordinal_shift": [
+        ("UPDATE rows SET scoped_ordinal=9 WHERE scoped_ordinal=3", ())
+    ],
+    "hex_row_digest": [
+        (
+            "UPDATE rows SET row_sha256=(SELECT hex(row_sha256) FROM rows"
+            " WHERE scoped_ordinal=0) WHERE scoped_ordinal=0",
+            (),
+        )
+    ],
+    "delta_counts": [
+        (
+            "UPDATE aggregate_delta SET value_json=? WHERE key='counts'",
+            (b'{"scoped_documents":99}',),
+        )
+    ],
+    "delta_key": [
+        ("UPDATE aggregate_delta SET key='counts_extra' WHERE key='counts'", ())
+    ],
+    "shard_hash": _meta_update("shard_sha256", '"sha256:' + "c" * 64 + '"'),
+}
+
+
+@pytest.mark.parametrize("mutation", sorted(CODEC_MUTATIONS))
+def test_every_codec_mutation_refuses(
+    sealed_shard: tuple[bytes, rs.RegisterShard],
+    domains: rs.RegisterDomains,
+    mutation: str,
+) -> None:
+    raw, _shard = sealed_shard
+    corrupt = _rewrite_shard(raw, CODEC_MUTATIONS[mutation])
+    with pytest.raises(rs.PolicyRefused):
+        rs.decode_register_shard(
+            corrupt,
+            name="register-00000000.sqlite",
+            domains=domains,
+            checkpoint_binding_sha256=BINDING_DIGEST,
+        )
+
+
+def test_row_rehashed_after_content_change_still_refuses_via_the_delta(
+    sealed_shard: tuple[bytes, rs.RegisterShard], domains: rs.RegisterDomains
+) -> None:
+    raw, _shard = sealed_shard
+    replacement = _row(0, declared=domains.classified[0], classified=domains.classified[0], words=999)
+    row_json, row_digest = rs.checkpoint_row_binding(replacement)
+    corrupt = _rewrite_shard(
+        raw,
+        [(
+            "UPDATE rows SET row_json=?,row_sha256=? WHERE scoped_ordinal=0",
+            (row_json, row_digest),
+        )],
+    )
+    with pytest.raises(rs.PolicyRefused):
+        rs.decode_register_shard(
+            corrupt,
+            name="register-00000000.sqlite",
+            domains=domains,
+            checkpoint_binding_sha256=BINDING_DIGEST,
+        )
+
+
+def test_shard_name_must_match_the_recorded_ordinal(
+    sealed_shard: tuple[bytes, rs.RegisterShard], domains: rs.RegisterDomains
+) -> None:
+    raw, _shard = sealed_shard
+    for name in ("register-00000001.sqlite", "register-0000000.sqlite", "other.sqlite"):
+        with pytest.raises(rs.PolicyRefused):
+            rs.decode_register_shard(
+                raw, name=name, domains=domains,
+                checkpoint_binding_sha256=BINDING_DIGEST,
+            )
+
+
+@POSIX_ONLY
+def test_a_mutated_published_shard_refuses_resume(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, 2) as handle:
+        name = handle.shards[0].name
+    raw = (state / name).read_bytes()
+    _replace_shard(state, name, _rewrite_shard(raw, CODEC_MUTATIONS["shard_hash"]))
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+def test_aggregate_delta_equations_and_marginals_agree(
+    domains: rs.RegisterDomains
+) -> None:
+    rows = _synthetic_rows(64, domains)
+    delta = rs.compute_aggregate_delta(rows, domains)
+    counts = delta["counts"]
+    assert tuple(sorted(delta)) == tuple(sorted(rs.DELTA_KEYS))
+    assert set(delta["declared_family_inventory"]) == set(domains.declared)
+    assert set(delta["classified_family_inventory"]) == set(domains.classified)
+    assert set(delta["refusal_inventory"]) == set(domains.refusals)
+    assert set(delta["match_inventory"]) == set(rs.MATCH_DOMAIN)
+    for measure in ("documents", "words"):
+        total = sum(
+            cell[measure] for cell in delta["declared_family_inventory"].values()
+        )
+        crosstab = sum(
+            inner[measure]
+            for outer in delta["declared_by_classified_family"].values()
+            for inner in outer.values()
+        )
+        classified = sum(
+            cell[measure] for cell in delta["classified_family_inventory"].values()
+        )
+        refused = sum(cell[measure] for cell in delta["refusal_inventory"].values())
+        matched = sum(cell[measure] for cell in delta["match_inventory"].values())
+        assert classified == crosstab == counts[f"classified_{measure}"]
+        assert refused == counts[f"refused_{measure}"]
+        assert total == counts[f"scoped_{measure}"] == classified + refused == matched
+        assert delta["match_inventory"]["same"][measure] == sum(
+            delta["declared_by_classified_family"][family][family][measure]
+            for family in domains.classified
+        )
+        assert delta["match_inventory"]["different"][measure] == sum(
+            delta["declared_by_classified_family"][declared][classified][measure]
+            for declared in domains.classified
+            for classified in domains.classified
+            if declared != classified
+        )
+        assert delta["match_inventory"]["unresolved"][measure] == (
+            sum(
+                delta["declared_by_classified_family"]["unknown"][family][measure]
+                for family in domains.classified
+            )
+            + refused
+        )
+        assert counts[f"resolved_declared_{measure}"] == (
+            counts[f"scoped_{measure}"]
+            - delta["declared_family_inventory"]["unknown"][measure]
+        )
+        assert counts[f"unresolved_declared_{measure}"] == (
+            delta["declared_family_inventory"]["unknown"][measure]
+        )
+
+
+def test_empty_scope_delta_is_the_fully_zero_filled_fixed_domain(
+    domains: rs.RegisterDomains
+) -> None:
+    zero = rs.zero_aggregate_delta(domains)
+    assert zero["counts"] == {key: 0 for key in rs.DELTA_COUNT_KEYS}
+    assert all(
+        cell == {"documents": 0, "words": 0}
+        for cell in zero["declared_family_inventory"].values()
+    )
+    assert rs.canonical_json(
+        rs.add_aggregate_deltas(zero, zero)
+    ) == rs.canonical_json(zero)
+
+
+def test_delta_rejects_out_of_domain_rows(domains: rs.RegisterDomains) -> None:
+    for bad in (
+        _row(0, declared="not_a_family", classified=domains.classified[0]),
+        _row(0, declared=domains.classified[0], classified="unknown"),
+        _row(0, declared=domains.classified[0], classified=domains.classified[0],
+             refusal=domains.refusals[0]),
+        _row(0, declared=domains.classified[0]),
+    ):
+        with pytest.raises(rs.InternalError):
+            rs.compute_aggregate_delta([bad], domains)
+    with pytest.raises(rs.InternalError):
+        rs.compute_aggregate_delta(_synthetic_rows(251, domains), domains)
+
+
+# --------------------------------------------------------------------------
+# Owner-private platform contract (acceptance test 12)
+# --------------------------------------------------------------------------
+
+
+def _offset_read(source: bytes):
+    """A fake backend read that advances per handle, like the real one."""
+    offsets: dict[int, int] = {}
+
+    def read(handle: int, maximum: int) -> bytes:
+        start = offsets.get(handle, 0)
+        chunk = source[start:start + maximum]
+        offsets[handle] = start + len(chunk)
+        return chunk
+
+    return read
+
+
+def test_policies_are_the_two_named_contracts() -> None:
+    assert checkpoint.LEGACY_SHINGLE_POLICY == "legacy_shingle_v1"
+    assert checkpoint.OWNER_PRIVATE_POLICY == "owner_private_v1"
+    assert checkpoint.ImmutableShardDirectory.policy == "legacy_shingle_v1"
+    assert checkpoint.CheckpointDirectory.policy == "legacy_shingle_v1"
+    assert issubclass(
+        checkpoint.CheckpointDirectory, checkpoint.ImmutableShardDirectory
+    )
+    assert rs.RegisterShardDirectory.policy == "owner_private_v1"
+    assert rs.PRIVACY_POLICY == "owner_private_v1"
+    assert secure_io.PRIVACY_POLICIES == ("legacy_shingle_v1", "owner_private_v1")
+    assert rs.RegisterShardDirectory._limits() == (416, 400, 16, 4194304, 1677721600)
+
+
+@POSIX_ONLY
+def test_owner_private_create_publish_and_resume_predicates(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, 2) as handle:
+        name = handle.shards[0].name
+    directory_info = os.stat(state)
+    assert stat.S_ISDIR(directory_info.st_mode)
+    assert stat.S_IMODE(directory_info.st_mode) == 0o700
+    assert directory_info.st_uid == os.geteuid()
+    shard_info = os.stat(state / name)
+    assert stat.S_ISREG(shard_info.st_mode)
+    assert stat.S_IMODE(shard_info.st_mode) == 0o600
+    assert shard_info.st_uid == os.geteuid()
+    assert shard_info.st_nlink == 1
+    _resume_checkpoint(state, domains).close()
+
+
+@POSIX_ONLY
+def test_hostile_umask_cannot_widen_the_directory_or_the_shard(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    previous = os.umask(0o777)
+    try:
+        with _fresh_checkpoint(state, domains) as handle:
+            shard = handle.publish_shard(_synthetic_rows(1, domains), final=True)
+        report = tmp_path / "report.json"
+        secure_io.publish_create_new(
+            report, b"{}\n", privacy_policy="owner_private_v1"
+        )
+    finally:
+        os.umask(previous)
+    assert stat.S_IMODE(os.stat(state).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(state / shard.name).st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(report).st_mode) == 0o600
+    assert os.stat(report).st_nlink == 1
+
+
+@POSIX_ONLY
+def test_resume_never_chmods_or_repairs_a_widened_directory(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    _publish_plan(state, domains, 1).close()
+    os.chmod(state, 0o750)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    assert stat.S_IMODE(os.stat(state).st_mode) == 0o750
+    os.chmod(state, 0o700)
+    _resume_checkpoint(state, domains).close()
+
+
+@POSIX_ONLY
+def test_resume_never_chmods_or_repairs_a_widened_shard(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, 1) as handle:
+        name = handle.shards[0].name
+    os.chmod(state / name, 0o644)
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    assert stat.S_IMODE(os.stat(state / name).st_mode) == 0o644
+    os.chmod(state / name, 0o600)
+    _resume_checkpoint(state, domains).close()
+
+
+@POSIX_ONLY
+def test_multiply_linked_or_indirect_shard_refuses(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "cp"
+    with _publish_plan(state, domains, 1) as handle:
+        name = handle.shards[0].name
+    os.link(state / name, tmp_path / "alias.sqlite")
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+    (tmp_path / "alias.sqlite").unlink()
+    _resume_checkpoint(state, domains).close()
+
+
+@POSIX_ONLY
+def test_parent_permissions_are_never_proof_and_never_changed(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    parent = tmp_path / "open-parent"
+    parent.mkdir(mode=0o755)
+    state = parent / "cp"
+    _publish_plan(state, domains, 1).close()
+    assert stat.S_IMODE(os.stat(parent).st_mode) == 0o755
+    assert stat.S_IMODE(os.stat(state).st_mode) == 0o700
+    _resume_checkpoint(state, domains).close()
+    assert stat.S_IMODE(os.stat(parent).st_mode) == 0o755
+
+
+@POSIX_ONLY
+def test_legacy_policy_never_chmods_and_keeps_byte_identical_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Byte-identical ``legacy_shingle_v1`` regression against pinned goldens."""
+    inventory_row = ("doc", "draft", "stage", 1, hashlib.sha256(b"doc").digest())
+    meta = {
+        "schema_version": "setec-shingle-checkpoint/1", "tool": "shingle_dedup",
+        "method_version": "1", "checkpoint_kind": "build_inventory",
+        "chunk_number": "0", "source_manifest_sha256": "a" * 64,
+        "canonical_descriptors_sha256": "-", "index_sha256": "-",
+        "logical_index_sha256": "-", "config_sha256": "c" * 64,
+        "first_item": '{"doc_id":"doc"}', "next_item": "null", "item_count": "1",
+        "potential_pairs": "0", "unassessed_pairs": "0", "assessed_pairs": "0",
+        "no_overlap_pairs": "0", "below_0_35_pairs": "0",
+        "containment_0_35_to_0_60_pairs": "0",
+        "containment_at_least_0_60_pairs": "0", "reported_pairs": "0",
+    }
+    expected_raw, sealed = checkpoint._encode_checkpoint(
+        "inventory", meta, inventory_rows=[inventory_row], document_rows=(),
+        posting_rows=(), pairs=(),
+    )
+    # The pre-factoring logical seal, pinned by the existing shingle suite.
+    assert sealed["checkpoint_sha256"] == (
+        "bd0c1cffa3177fa5db0051791a14c0538fdd3d5e261e472ba30f9da8e5e8b4cd"
+    )
+
+    def forbidden_fchmod(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("legacy_shingle_v1 must never chmod")
+
+    monkeypatch.setattr(checkpoint.os, "fchmod", forbidden_fchmod)
+    monkeypatch.setattr(secure_io.os, "fchmod", forbidden_fchmod)
+    state = tmp_path / "legacy"
+    with checkpoint.CheckpointDirectory.open_new(state) as directory:
+        snapshot = directory.publish(
+            kind="inventory", meta=meta, inventory_rows=[inventory_row]
+        )
+    assert snapshot.raw == expected_raw
+    assert (state / "inventory-00000000.sqlite").read_bytes() == expected_raw
+    with checkpoint.CheckpointDirectory.open_resume(state) as directory:
+        state_value = directory.load(mode="build", config_sha256="c" * 64,
+                                     source_manifest_sha256="a" * 64)
+    assert state_value.inventory[0].inventory_rows == (inventory_row,)
+    secure_io.publish_create_new(tmp_path / "legacy.bin", b"payload")
+    assert (tmp_path / "legacy.bin").read_bytes() == b"payload"
+
+
+@POSIX_ONLY
+def test_legacy_directory_tolerates_a_widened_mode_that_h2_refuses(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    state = tmp_path / "legacy"
+    checkpoint.CheckpointDirectory.open_new(state).close()
+    os.chmod(state, 0o755)
+    # Legacy has no owner-private predicate and still opens.
+    checkpoint.CheckpointDirectory.open_resume(state).close()
+    with pytest.raises(rs.PolicyRefused):
+        _resume_checkpoint(state, domains)
+
+
+def test_windows_owner_private_publish_uses_the_scoped_native_helpers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fake-backend proof that ``owner_private_v1`` reaches the native seams."""
+    events: list[tuple[object, ...]] = []
+
+    class Direct:
+        def __init__(self, identity: tuple[int, ...], size: int = 7) -> None:
+            self.identity = identity
+            self.size = size
+
+    def create_owner_private_file(parent: int, name: str) -> int:
+        events.append(("create_owner_private", parent, name))
+        return 10
+
+    def create_file(parent: int, name: str) -> int:  # pragma: no cover - guard
+        raise AssertionError("owner_private_v1 must not use the legacy creator")
+
+    def require_owner_private(handle: int, kind: str) -> Direct:
+        events.append(("require_owner_private", handle, kind))
+        return Direct((1, 2, 7, 100))
+
+    strict_opens = 0
+
+    def open_file(parent: int, name: str, **kwargs: object) -> int:
+        nonlocal strict_opens
+        if not name.startswith(".tmp-"):
+            handle = 30
+        elif kwargs.get("share_write") is True:
+            handle = 15
+        else:
+            strict_opens += 1
+            handle = 18 if strict_opens == 1 else 20
+        events.append(("open", name, handle))
+        return handle
+
+    fake = types.SimpleNamespace(
+        create_file=create_file,
+        create_owner_private_file=create_owner_private_file,
+        require_owner_private=require_owner_private,
+        write=lambda handle, view: len(view),
+        flush=lambda handle: None,
+        close=lambda handle: events.append(("close", handle)),
+        open_file=open_file,
+        require_direct=lambda handle, kind: Direct((1, 2, 7, 100)),
+        read=_offset_read(b"payload"),
+        rename=lambda handle, parent, name, *, replace: events.append(("rename", name)),
+        delete=lambda handle: events.append(("delete", handle)),
+    )
+    monkeypatch.setitem(sys.modules, "windows_descriptor_io", fake)
+    directory = rs.RegisterShardDirectory(tmp_path, windows_handles=(99,))
+    monkeypatch.setattr(directory, "_revalidate", lambda: None)
+    directory._windows_publish("register-00000000.sqlite", b"payload")
+    assert ("create_owner_private", 99, next(
+        event[2] for event in events if event[0] == "create_owner_private"
+    )) in events
+    assert ("require_owner_private", 30, "file") in events
+    assert ("rename", "register-00000000.sqlite") in events
+
+
+def test_missing_native_owner_private_support_is_a_controlled_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = types.SimpleNamespace(
+        create_file=lambda parent, name: 10,
+        require_direct=lambda handle, kind: types.SimpleNamespace(
+            identity=(1, 2, 7, 100), size=7
+        ),
+        close=lambda handle: None,
+        write=lambda handle, view: len(view),
+        flush=lambda handle: None,
+        open_file=lambda parent, name, **kwargs: 11,
+        read=lambda handle, maximum: b"",
+        rename=lambda *args, **kwargs: None,
+        delete=lambda handle: None,
+    )
+    monkeypatch.setitem(sys.modules, "windows_descriptor_io", fake)
+    directory = rs.RegisterShardDirectory(tmp_path, windows_handles=(99,))
+    monkeypatch.setattr(directory, "_revalidate", lambda: None)
+    with pytest.raises(checkpoint.CheckpointRefusal):
+        directory._windows_publish("register-00000000.sqlite", b"payload")
+
+
+def test_legacy_windows_publish_never_reaches_the_owner_private_creator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Direct:
+        def __init__(self) -> None:
+            self.identity = (1, 2, 7, 100)
+            self.size = 7
+
+    def forbidden(*_args: object, **_kwargs: object) -> int:  # pragma: no cover
+        raise AssertionError("legacy_shingle_v1 must not use owner-private creation")
+
+    fake = types.SimpleNamespace(
+        create_file=lambda parent, name: 10,
+        create_owner_private_file=forbidden,
+        require_owner_private=forbidden,
+        require_direct=lambda handle, kind: Direct(),
+        close=lambda handle: None,
+        write=lambda handle, view: len(view),
+        flush=lambda handle: None,
+        open_file=lambda parent, name, **kwargs: 20,
+        read=_offset_read(b"payload"),
+        rename=lambda *args, **kwargs: None,
+        delete=lambda handle: None,
+    )
+    monkeypatch.setitem(sys.modules, "windows_descriptor_io", fake)
+    directory = checkpoint.CheckpointDirectory(tmp_path, windows_handles=(99,))
+    monkeypatch.setattr(directory, "_revalidate", lambda: None)
+    directory._windows_publish("inventory-00000000.sqlite", b"payload")
+
+
+# --------------------------------------------------------------------------
+# Topology before creation (acceptance test 13)
+# --------------------------------------------------------------------------
+
+
+def _preflight(report: Path, state: Path, *, resume: bool = False) -> rs.TopologyPreflight:
+    return rs.TopologyPreflight.check(
+        report_path=report, checkpoint_path=state, resume=resume
+    )
+
+
+def test_portable_component_key_is_the_frozen_normalisation() -> None:
+    assert rs.portable_component_key("Report.JSON") == "report.json"
+    assert rs.portable_component_key("report.json. ") == "report.json"
+    assert rs.portable_component_key("report.json ..") == "report.json"
+    assert rs.portable_component_key("café") == rs.portable_component_key("café")
+    assert rs.portable_component_key("STRASSE") == rs.portable_component_key("strasse")
+    assert rs.portable_component_key("scoped") != rs.portable_component_key("score")
+
+
+@POSIX_ONLY
+def test_disjoint_fresh_topology_passes_and_creates_nothing(tmp_path: Path) -> None:
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    with _preflight(report, state) as preflight:
+        assert preflight.report_path == report
+        assert preflight.checkpoint_path == state
+        assert not preflight.committed
+    assert sorted(item.name for item in tmp_path.iterdir()) == []
+
+
+@POSIX_ONLY
+def test_lexical_equality_and_both_ancestor_directions_refuse(tmp_path: Path) -> None:
+    same = tmp_path / "same"
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(same, same)
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(tmp_path / "cp" / "report.json", tmp_path / "cp")
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(tmp_path / "cp", tmp_path / "cp" / "inner")
+    assert sorted(item.name for item in tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("report_name,state_name", [
+    ("report.json", "REPORT.JSON"),
+    ("report.json", "report.json. "),
+    ("report.json", "report.json."),
+    ("café", "café"),
+    ("Report.Json", "report.json"),
+])
+@POSIX_ONLY
+def test_same_parent_portable_key_collisions_refuse(
+    tmp_path: Path, report_name: str, state_name: str
+) -> None:
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(tmp_path / report_name, tmp_path / state_name)
+
+
+@POSIX_ONLY
+def test_portable_colliding_ancestor_spellings_refuse(tmp_path: Path) -> None:
+    (tmp_path / "Runs").mkdir()
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(tmp_path / "Runs" / "report.json", tmp_path / "runs" / "cp")
+    (tmp_path / "deep").mkdir()
+    (tmp_path / "deep" / "Alpha").mkdir()
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(
+            tmp_path / "deep" / "Alpha" / "report.json",
+            tmp_path / "deep" / "alpha " / "cp",
+        )
+
+
+@POSIX_ONLY
+def test_symlinked_components_refuse_in_either_position(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    (tmp_path / "link").symlink_to(real, target_is_directory=True)
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(tmp_path / "link" / "report.json", tmp_path / "cp")
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(tmp_path / "report.json", tmp_path / "link" / "cp")
+
+
+@POSIX_ONLY
+def test_existing_report_name_including_a_hardlink_alias_refuses(
+    tmp_path: Path
+) -> None:
+    report = tmp_path / "report.json"
+    report.write_bytes(b"{}\n")
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, tmp_path / "cp")
+    report.unlink()
+    (tmp_path / "other.json").write_bytes(b"{}\n")
+    os.link(tmp_path / "other.json", report)
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, tmp_path / "cp")
+    report.unlink()
+    report.symlink_to(tmp_path / "other.json")
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, tmp_path / "cp")
+
+
+@POSIX_ONLY
+def test_fresh_requires_both_absent_and_resume_requires_the_directory(
+    tmp_path: Path
+) -> None:
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, state, resume=True)
+    state.mkdir(mode=0o700)
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, state, resume=False)
+    _preflight(report, state, resume=True).close()
+    # A non-directory at the checkpoint name refuses resume.
+    state.rmdir()
+    state.write_bytes(b"")
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, state, resume=True)
+
+
+@POSIX_ONLY
+def test_revalidation_catches_a_race_after_checkpoint_creation(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    preflight = _preflight(report, state)
+    handle = _fresh_checkpoint(state, domains)
+    preflight.revalidate()
+    handle.publish_shard(_synthetic_rows(1, domains), final=True)
+    preflight.revalidate()
+    # A racing winner at the report name is never deleted, chmodded, or
+    # overwritten; publication simply refuses.
+    report.write_bytes(b"winner\n")
+    with pytest.raises(rs.PolicyRefused):
+        preflight.revalidate()
+    with pytest.raises(rs.PolicyRefused):
+        preflight.publish_report(b"{}\n")
+    assert report.read_bytes() == b"winner\n"
+    handle.close()
+    preflight.close()
+
+
+@POSIX_ONLY
+def test_parent_swap_between_preflight_and_revalidation_refuses(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    parent = tmp_path / "runs"
+    parent.mkdir()
+    report = parent / "report.json"
+    state = tmp_path / "cp"
+    preflight = _preflight(report, state)
+    _fresh_checkpoint(state, domains).close()
+    preflight.revalidate()
+    replacement = tmp_path / "runs-2"
+    replacement.mkdir()
+    parent.rmdir()
+    replacement.rename(parent)
+    with pytest.raises(rs.PolicyRefused):
+        preflight.revalidate()
+    preflight.close()
+
+
+@POSIX_ONLY
+def test_identity_alias_makes_the_checkpoint_an_ancestor_of_the_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An identity alias is refused even when no lexical prefix exists."""
+    parent = tmp_path / "runs"
+    parent.mkdir(mode=0o700)
+    report = parent / "report.json"
+    state = tmp_path / "cp"
+    state.mkdir(mode=0o700)
+    real_leaf_stat = rs._leaf_stat
+
+    def aliased(handle: int, name: str) -> object:
+        if name == state.name:
+            # The checkpoint name resolves to the report's own parent inode.
+            return os.stat(parent)
+        return real_leaf_stat(handle, name)
+
+    monkeypatch.setattr(rs, "_leaf_stat", aliased)
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, state, resume=True)
+
+
+@POSIX_ONLY
+def test_publication_is_the_terminal_commit_point(
+    tmp_path: Path, domains: rs.RegisterDomains
+) -> None:
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    preflight = _preflight(report, state)
+    handle = _fresh_checkpoint(state, domains)
+    handle.publish_shard(_synthetic_rows(1, domains), final=True)
+    handle.close()
+    preflight.revalidate()
+    preflight.publish_report(b'{"schema_version":"x"}\n')
+    assert report.read_bytes() == b'{"schema_version":"x"}\n'
+    assert stat.S_IMODE(os.stat(report).st_mode) == 0o600
+    assert preflight.committed
+    # No post-publication revalidation, republication, or topology check exists.
+    for attempt in (
+        lambda: preflight.revalidate(),
+        lambda: preflight.publish_report(b"{}\n"),
+    ):
+        with pytest.raises(rs.InternalError):
+            attempt()
+    assert report.read_bytes() == b'{"schema_version":"x"}\n'
+
+
+@POSIX_ONLY
+def test_no_failure_path_creates_the_second_target(tmp_path: Path) -> None:
+    report = tmp_path / "report.json"
+    with pytest.raises(rs.PolicyRefused):
+        _preflight(report, tmp_path / "REPORT.JSON")
+    assert sorted(item.name for item in tmp_path.iterdir()) == []
+
+
+# --------------------------------------------------------------------------
+# Expected-fingerprint document read (acceptance test 7)
+# --------------------------------------------------------------------------
+
+
+@POSIX_ONLY
+def test_expected_fingerprint_read_agrees_with_the_frozen_plan(
+    tmp_path: Path
+) -> None:
+    document = tmp_path / "doc.txt"
+    document.write_bytes(b"hello world")
+    fingerprint = rs.plan_document_fingerprint(document)
+    assert len(fingerprint) == 5
+    info = os.stat(document)
+    assert fingerprint == (
+        info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns
+    )
+    assert rs.read_planned_document(document, fingerprint) == b"hello world"
+    # The bounded helper still works without a plan, exactly as before.
+    assert secure_io.read_bounded_regular(document, 1024) == b"hello world"
+
+
+@POSIX_ONLY
+def test_replaced_mutated_and_relinked_documents_refuse(tmp_path: Path) -> None:
+    document = tmp_path / "doc.txt"
+    document.write_bytes(b"hello world")
+    fingerprint = rs.plan_document_fingerprint(document)
+
+    # Same-size in-place mutation.
+    with open(document, "r+b") as handle:
+        handle.write(b"HELLO")
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(document, fingerprint)
+
+    # Same-size mutation with a restored mtime still refuses on ctime_ns.
+    os.utime(document, ns=(fingerprint[3], fingerprint[3]))
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(document, fingerprint)
+
+    # Replacement by a fresh inode at the same name.
+    document.unlink()
+    document.write_bytes(b"hello world")
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(document, fingerprint)
+
+    # Rebound name: the plan's inode still exists but the name now resolves
+    # elsewhere.
+    other = tmp_path / "other.txt"
+    other.write_bytes(b"hello world")
+    replanned = rs.plan_document_fingerprint(other)
+    document.unlink()
+    os.link(other, document)
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(document, fingerprint)
+    # ...and the relinked node fails its own single-plan fingerprint too,
+    # because the extra link advanced ctime_ns.
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(other, replanned)
+
+
+@POSIX_ONLY
+def test_expected_fingerprint_rejects_a_symlink_directory_or_oversized_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    document = tmp_path / "doc.txt"
+    document.write_bytes(b"x" * 32)
+    fingerprint = rs.plan_document_fingerprint(document)
+    monkeypatch.setattr(rs, "MAX_DOCUMENT_BYTES", 8)
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(document, fingerprint)
+    monkeypatch.undo()
+
+    link = tmp_path / "link.txt"
+    link.symlink_to(document)
+    with pytest.raises(rs.BadInput):
+        rs.plan_document_fingerprint(link)
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(link, fingerprint)
+    with pytest.raises(rs.BadInput):
+        rs.plan_document_fingerprint(tmp_path)
+    with pytest.raises(rs.BadInput):
+        rs.read_planned_document(tmp_path / "absent.txt", fingerprint)
+
+
+@POSIX_ONLY
+def test_expected_fingerprint_argument_domain_is_closed(tmp_path: Path) -> None:
+    document = tmp_path / "doc.txt"
+    document.write_bytes(b"x")
+    fingerprint = rs.plan_document_fingerprint(document)
+    for bad in ((), [1, 2, 3, 4, 5], (True, 2, 3, 4, 5), ("a", 2, 3, 4, 5)):
+        with pytest.raises(secure_io.SecureIOError):
+            secure_io.read_bounded_regular(document, 1024, expected_fingerprint=bad)
+    for bad in ((), "abc", None):
+        with pytest.raises(rs.InternalError):
+            rs.read_planned_document(document, bad)
+    with pytest.raises(secure_io.SecureIOError):
+        secure_io.read_bounded_regular(
+            document, 1024, expected_fingerprint=fingerprint[:-1] + (0,)
+        )
+
+
+def test_windows_scoped_fingerprint_adds_change_time(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scoped seam binds ``change_time``; ``NodeInfo.identity`` does not."""
+    calls: list[int] = []
+
+    def scoped_fingerprint(handle: int) -> tuple[int, ...]:
+        calls.append(handle)
+        return (1, 2, 3, 4, 5, 6, 0o100600, 1, 0x80)
+
+    fake = types.SimpleNamespace(scoped_fingerprint=scoped_fingerprint)
+    assert secure_io._windows_scoped_fingerprint(fake, 7) == (
+        1, 2, 3, 4, 5, 6, 0o100600, 1, 0x80
+    )
+    assert calls == [7]
+    # A backend without the scoped helper is a controlled refusal.
+    with pytest.raises(secure_io.SecureIOError):
+        secure_io._windows_scoped_fingerprint(types.SimpleNamespace(), 7)
+
+
+def test_out_of_domain_row_values_inside_a_shard_are_a_policy_refusal(
+    sealed_shard: tuple[bytes, rs.RegisterShard], domains: rs.RegisterDomains
+) -> None:
+    """A corrupt artifact refuses by policy; it never surfaces as internal."""
+    raw, _shard = sealed_shard
+    for replacement in (
+        {"declared_family": "not_a_family"},
+        {"classified_family": "unknown", "refusal_reason": None},
+        {"refusal_reason": "not_a_reason", "classified_family": None},
+        {"classified_family": domains.classified[0], "refusal_reason": domains.refusals[0]},
+        {"classified_family": None, "refusal_reason": None},
+    ):
+        row = _row(0, declared=domains.classified[0], classified=domains.classified[0])
+        row.update(replacement)
+        row_json = json.dumps(
+            row, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        corrupt = _rewrite_shard(
+            raw,
+            [(
+                "UPDATE rows SET row_json=?,row_sha256=? WHERE scoped_ordinal=0",
+                (row_json, hashlib.sha256(row_json).digest()),
+            )],
+        )
+        with pytest.raises(rs.PolicyRefused):
+            rs.decode_register_shard(
+                corrupt, name="register-00000000.sqlite", domains=domains,
+                checkpoint_binding_sha256=BINDING_DIGEST,
+            )
