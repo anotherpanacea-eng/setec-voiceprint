@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import inspect
 import json
 import os
 import struct
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -46,7 +48,9 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import manifest_validator as mv  # type: ignore
 import register_sweep as rs  # type: ignore
+import shingle_dedup_io  # type: ignore
 
 
 # --------------------------------------------------------------------------
@@ -2034,3 +2038,763 @@ def test_module_imports_no_network_or_subprocess_surface() -> None:
         "import requests",
     ):
         assert forbidden not in source
+
+
+# ---- Increment B: manifest projection seam ----
+#
+# Covers the H2 manifest-projection seam:
+# ``manifest_validator.project_register_sweep_manifest_bytes``, its shared
+# strict byte/row parser, the closed source-blind per-row projector
+# (``_project_h2_row``), the frozen document plan (``shingle_dedup_io.
+# bind_regular``), and the cross-row collision helper
+# (``check_document_plan_collisions``). Acceptance tests 4 and 5. All
+# fixtures are synthetic bytes written to ``tmp_path``; no private corpus,
+# aggregate, identifier, path, or prose enters the repository.
+
+
+def _h2_row_dict(**overrides: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "path": "doc.txt",
+        "ai_status": "pre_ai_human",
+        "use": ["baseline"],
+        "register": "personal",
+        "split": "baseline",
+        "persona": "josh",
+    }
+    row.update(overrides)
+    return row
+
+
+def _row_canonical(row: "mv.H2ProjectedRow") -> dict[str, Any]:
+    return {
+        "ai_status": row.ai_status,
+        "manifest_ordinal": row.manifest_ordinal,
+        "path": row.path,
+        "persona": row.persona,
+        "register": row.register,
+        "split": row.split,
+        "use": list(row.use),
+    }
+
+
+def _projected_row_digests(projection: "mv.RegisterSweepManifestProjection") -> list[str]:
+    return [rs.projected_row_binding(_row_canonical(row))[1] for row in projection.rows]
+
+
+def _projected_manifest_digest(projection: "mv.RegisterSweepManifestProjection") -> str:
+    digests = _projected_row_digests(projection)
+    return rs.projected_manifest_binding([rs.prefixed(d) for d in digests])[1]
+
+
+def _scoped_rows_digest(projection: "mv.RegisterSweepManifestProjection") -> str:
+    # Increment B performs no CLI scope filtering; treating "every row" as
+    # the scope here (identity selection) still exercises the shared builder
+    # and proves it is a pure function of the projected rows.
+    digests = _projected_row_digests(projection)
+    entries = [
+        {
+            "manifest_ordinal": row.manifest_ordinal,
+            "projected_row_sha256": rs.prefixed(digest),
+            "scoped_ordinal": i,
+        }
+        for i, (row, digest) in enumerate(zip(projection.rows, digests))
+    ]
+    return rs.scoped_rows_binding(entries)[1]
+
+
+def _document_plan_digest(projection: "mv.RegisterSweepManifestProjection") -> str:
+    digests = _projected_row_digests(projection)
+    entries = []
+    for i, doc in enumerate(projection.document_plan):
+        _, target_digest = rs.target_path_binding(doc.absolute_path)
+        _, fingerprint_digest = rs.posix_fingerprint_binding(doc.fingerprint)
+        entries.append({
+            "candidate_index": doc.candidate_index,
+            "file_fingerprint_sha256": rs.prefixed(fingerprint_digest),
+            "projected_row_sha256": rs.prefixed(digests[i]),
+            "scoped_ordinal": i,
+            "target_path_sha256": rs.prefixed(target_digest),
+        })
+    return rs.document_plan_binding(entries)[1]
+
+
+# -------------------- Canonical shape (acceptance test 10 tie-in) --------
+
+
+def test_canonical_projected_row_payload_matches_spec_literal() -> None:
+    row = mv.H2ProjectedRow(
+        manifest_ordinal=0, path="docs/a.txt", register="personal",
+        use=("baseline",), split="baseline", persona=None, ai_status="pre_ai_human",
+    )
+    payload, _digest = rs.projected_row_binding(_row_canonical(row))
+    assert payload == (
+        b'{"ai_status":"pre_ai_human","manifest_ordinal":0,"path":"docs/a.txt",'
+        b'"persona":null,"register":"personal","split":"baseline","use":["baseline"]}'
+    )
+
+
+# -------------------- Source metamorphic invariant (acceptance test 4) ---
+
+
+class _HostileRow:
+    """A row mapping that raises on every access path to the three unowned
+    source fields, and on every non-``__getitem__`` access path entirely.
+
+    Deliberately does not derive from ``dict`` or ``collections.abc.Mapping``:
+    only ``__getitem__`` is implemented functionally, so a real projector
+    that ever fell back to ``.get()``, iteration, or containment testing
+    would raise ``AttributeError``/``AssertionError`` instead of silently
+    working.
+    """
+
+    _FORBIDDEN = ("source", "source_id", "source_family")
+    _DATA = {
+        "path": "doc.txt",
+        "ai_status": "pre_ai_human",
+        "use": ["baseline", "voice_profile"],
+        "register": "personal",
+        "split": "baseline",
+        "persona": "josh",
+    }
+
+    def __getitem__(self, key: str) -> Any:
+        if key in self._FORBIDDEN:
+            raise AssertionError(f"forbidden __getitem__({key!r})")
+        return self._DATA[key]
+
+    def __iter__(self) -> Any:
+        raise AssertionError("forbidden __iter__")
+
+    def keys(self) -> Any:
+        raise AssertionError("forbidden keys()")
+
+    def items(self) -> Any:
+        raise AssertionError("forbidden items()")
+
+    def values(self) -> Any:
+        raise AssertionError("forbidden values()")
+
+    def __contains__(self, key: str) -> Any:
+        raise AssertionError("forbidden __contains__")
+
+
+def test_instrumented_mapping_projects_via_direct_lookup_only() -> None:
+    row = mv._project_h2_row(_HostileRow(), manifest_ordinal=7)
+    assert row == mv.H2ProjectedRow(
+        manifest_ordinal=7,
+        path="doc.txt",
+        register="personal",
+        use=("baseline", "voice_profile"),
+        split="baseline",
+        persona="josh",
+        ai_status="pre_ai_human",
+    )
+
+
+def test_row_projection_source_never_names_unowned_fields() -> None:
+    source = inspect.getsource(mv._project_h2_row) + inspect.getsource(mv._row_item)
+    for forbidden in ("source_family", "source_id", '"source"', "'source'"):
+        assert forbidden not in source
+
+
+_SOURCE_FIELD_VARIANTS: list[dict[str, Any]] = [
+    {},
+    {"source": ""},
+    {"source_id": "abc-123"},
+    {"source_family": "unclassified"},
+    {"source": "caf" + "é"},                    # NFC composed
+    {"source": "café"},                         # NFD decomposed, same grapheme
+    {"source": "‮reversed‬"},                # bidi-looking valid Unicode
+    {"source": "a" * 20000},                           # far past any owned-field bound
+    {"source": 12345},
+    {"source_id": None},
+    {"source_family": ["a", "b"]},
+    {"source": {"nested": True}},
+    {"source_id": True},
+    {"source": "x", "source_id": "y", "source_family": "unclassified"},
+]
+
+
+def test_source_metamorphic_invariant_across_manifest_variants(tmp_path: Path) -> None:
+    doc = tmp_path / "doc.txt"
+    doc.write_text("hello world", encoding="utf-8")
+    manifest_path = tmp_path / "corpus_manifest.jsonl"
+
+    def _project(source_fields: dict[str, Any]) -> "mv.RegisterSweepManifestProjection":
+        row = _h2_row_dict(path="doc.txt", **source_fields)
+        manifest_path.write_text(json.dumps(row) + "\n", encoding="utf-8")
+        return mv.project_register_sweep_manifest_bytes(
+            manifest_path.read_bytes(), manifest_path=manifest_path,
+        )
+
+    baseline = _project({})
+    baseline_digests = (
+        _projected_manifest_digest(baseline),
+        _scoped_rows_digest(baseline),
+        _document_plan_digest(baseline),
+    )
+
+    for variant in _SOURCE_FIELD_VARIANTS:
+        result = _project(variant)
+        assert result.rows == baseline.rows
+        assert result.input_rows == baseline.input_rows
+        assert result.document_plan == baseline.document_plan
+        assert (
+            _projected_manifest_digest(result),
+            _scoped_rows_digest(result),
+            _document_plan_digest(result),
+        ) == baseline_digests
+
+
+# -------------------- Shared strict byte/row parser (acceptance test 5) --
+
+
+def test_bom_refuses_before_any_row_projects(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    data = b"\xef\xbb\xbf" + json.dumps(_h2_row_dict()).encode("utf-8") + b"\n"
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_non_utf8_bytes_refuse(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    data = json.dumps(_h2_row_dict()).encode("utf-8") + b"\n\xff\xfe"
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_top_level_duplicate_key_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    data = (
+        b'{"path":"doc.txt","path":"other.txt","ai_status":"pre_ai_human",'
+        b'"use":["baseline"]}\n'
+    )
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_nested_duplicate_key_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    data = (
+        b'{"path":"doc.txt","ai_status":"pre_ai_human","use":["baseline"],'
+        b'"notes":{"a":1,"a":2}}\n'
+    )
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_non_finite_constant_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    data = (
+        b'{"path":"doc.txt","ai_status":"pre_ai_human","use":["baseline"],'
+        b'"word_count":NaN}\n'
+    )
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_non_object_data_row_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(b"[1,2,3]\n", manifest_path=manifest_path)
+
+
+def test_malformed_json_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(b"{bad-json\n", manifest_path=manifest_path)
+
+
+def test_wrong_type_data_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes("not bytes", manifest_path=manifest_path)  # type: ignore[arg-type]
+
+
+# -------------------- input_rows counting -------------------------------
+
+
+def test_input_rows_empty_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    result = mv.project_register_sweep_manifest_bytes(b"", manifest_path=manifest_path)
+    assert result.input_rows == 0
+    assert result.rows == ()
+    assert result.document_plan == ()
+
+
+def test_input_rows_excludes_blank_and_comment_lines(tmp_path: Path) -> None:
+    doc = tmp_path / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    manifest_path = tmp_path / "m.jsonl"
+    lines = [
+        "# a comment",
+        "",
+        json.dumps(_h2_row_dict(path="doc.txt")),
+        "   ",
+        "# another comment",
+    ]
+    data = ("\n".join(lines) + "\n").encode("utf-8")
+    result = mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+    assert result.input_rows == 1
+
+
+def test_input_rows_full_manifest_counts_every_row(tmp_path: Path) -> None:
+    doc_a = tmp_path / "a.txt"
+    doc_a.write_text("x", encoding="utf-8")
+    doc_b = tmp_path / "b.txt"
+    doc_b.write_text("y", encoding="utf-8")
+    manifest_path = tmp_path / "m.jsonl"
+    rows = [_h2_row_dict(path="a.txt"), _h2_row_dict(path="b.txt")]
+    data = ("\n".join(json.dumps(r) for r in rows) + "\n").encode("utf-8")
+    result = mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+    assert result.input_rows == 2
+    assert [row.manifest_ordinal for row in result.rows] == [0, 1]
+    assert [doc.manifest_ordinal for doc in result.document_plan] == [0, 1]
+
+
+# -------------------- Row-level owned-field admissibility ----------------
+
+
+@pytest.mark.parametrize("missing_field", ["path", "use", "ai_status"])
+def test_missing_required_owned_field_refuses(missing_field: str) -> None:
+    row = _h2_row_dict()
+    del row[missing_field]
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("path", 123),
+    ("path", None),
+    ("path", ["doc.txt"]),
+    ("use", "baseline"),
+    ("use", {"baseline": True}),
+    ("use", [1, 2]),
+    ("use", [None]),
+    ("ai_status", 5),
+    ("ai_status", None),
+    ("ai_status", ["pre_ai_human"]),
+    ("register", 5),
+    ("register", []),
+    ("split", 5),
+    ("split", True),
+    ("persona", 5),
+    ("persona", []),
+])
+def test_owned_field_wrong_type_refuses(field: str, bad_value: Any) -> None:
+    row = _h2_row_dict()
+    row[field] = bad_value
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+def test_use_duplicate_member_refuses() -> None:
+    # Otherwise-perfectly-valid row: only the duplicate makes this refuse.
+    row = _h2_row_dict(use=["baseline", "baseline"])
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+def test_use_empty_list_refuses() -> None:
+    row = _h2_row_dict(use=[])
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+def test_use_oversized_list_refuses() -> None:
+    row = _h2_row_dict(use=["baseline"] * 33)
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+def test_use_preserves_input_order_not_sorted() -> None:
+    ordered = ["voice_profile", "baseline", "idiolect"]
+    row = _h2_row_dict(use=ordered)
+    projected = mv._project_h2_row(row, manifest_ordinal=0)
+    assert projected.use == tuple(ordered)
+
+
+def test_optional_fields_absent_and_explicit_null_both_project_none() -> None:
+    absent = {"path": "doc.txt", "ai_status": "pre_ai_human", "use": ["baseline"]}
+    explicit_null = dict(absent, register=None, split=None, persona=None)
+    for row in (absent, explicit_null):
+        projected = mv._project_h2_row(row, manifest_ordinal=0)
+        assert projected.register is None
+        assert projected.split is None
+        assert projected.persona is None
+
+
+def test_every_allowed_register_split_ai_status_use_value_passes() -> None:
+    for value in sorted(mv.ALLOWED_REGISTER):
+        row = _h2_row_dict(register=value)
+        assert mv._project_h2_row(row, manifest_ordinal=0).register == value
+    for value in sorted(mv.ALLOWED_SPLIT):
+        row = _h2_row_dict(split=value)
+        assert mv._project_h2_row(row, manifest_ordinal=0).split == value
+    for value in sorted(mv.ALLOWED_AI_STATUS):
+        row = _h2_row_dict(ai_status=value)
+        assert mv._project_h2_row(row, manifest_ordinal=0).ai_status == value
+    for value in sorted(mv.ALLOWED_USE):
+        row = _h2_row_dict(use=[value])
+        assert mv._project_h2_row(row, manifest_ordinal=0).use == (value,)
+
+
+# path/persona share one string domain (Spec 73 lines ~685-686, ~542-543).
+_STRING_DOMAIN_VIOLATIONS = {
+    "leading_whitespace": " doc.txt",
+    "trailing_whitespace": "doc.txt ",
+    "nul": "doc\x00.txt",
+    "c0_control": "doc\x01.txt",
+    "del_control": "doc\x7f.txt",
+    "c1_control": "doc.txt",
+    "bidi_control": "doc‮txt",
+    "unpaired_surrogate": "doc\ud800.txt",
+    "nfd_decomposed": "café.txt",
+    "blank": "   ",
+    "empty": "",
+}
+
+
+@pytest.mark.parametrize(
+    "value", _STRING_DOMAIN_VIOLATIONS.values(), ids=_STRING_DOMAIN_VIOLATIONS.keys(),
+)
+def test_path_domain_violation_refuses(value: str) -> None:
+    row = _h2_row_dict(path=value)
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+@pytest.mark.parametrize(
+    "value", _STRING_DOMAIN_VIOLATIONS.values(), ids=_STRING_DOMAIN_VIOLATIONS.keys(),
+)
+def test_persona_domain_violation_refuses(value: str) -> None:
+    row = _h2_row_dict(persona=value)
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+
+def test_nfc_composed_path_and_persona_pass() -> None:
+    composed = "caf" + "é" + ".txt"
+    row = _h2_row_dict(path=composed, persona="j" + "é" + "sh")
+    projected = mv._project_h2_row(row, manifest_ordinal=0)
+    assert projected.path == composed
+    assert projected.persona == "jésh"
+
+
+def test_path_length_boundary_via_row_projection() -> None:
+    ok_path = "a" * rs.MAX_PATH_BYTES
+    projected = mv._project_h2_row(_h2_row_dict(path=ok_path), manifest_ordinal=0)
+    assert projected.path == ok_path
+
+    too_long = "a" * (rs.MAX_PATH_BYTES + 1)
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(_h2_row_dict(path=too_long), manifest_ordinal=0)
+
+
+def test_persona_length_boundary_via_row_projection() -> None:
+    ok_persona = "p" * rs.MAX_PERSONA_BYTES
+    projected = mv._project_h2_row(_h2_row_dict(persona=ok_persona), manifest_ordinal=0)
+    assert projected.persona == ok_persona
+
+    too_long = "p" * (rs.MAX_PERSONA_BYTES + 1)
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(_h2_row_dict(persona=too_long), manifest_ordinal=0)
+
+
+def test_general_validator_warns_but_h2_refuses_unknown_enum_values(tmp_path: Path) -> None:
+    doc = tmp_path / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    manifest_path = tmp_path / "m.jsonl"
+    base = {"id": "row-1", "path": "doc.txt", "ai_status": "pre_ai_human", "use": ["baseline"]}
+
+    for field, bad_value in (
+        ("register", "not_a_real_register"),
+        ("split", "not_a_real_split"),
+        ("ai_status", "not_a_real_status"),
+    ):
+        entry = dict(base)
+        entry[field] = bad_value
+
+        issues = mv.validate_entry(entry, 1, manifest_path, set(), {})
+        field_issues = [i for i in issues if i.field == field]
+        assert field_issues and all(i.severity == "warning" for i in field_issues)
+
+        manifest_path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+        with pytest.raises(rs.BadInput):
+            mv.project_register_sweep_manifest_bytes(
+                manifest_path.read_bytes(), manifest_path=manifest_path,
+            )
+
+    use_entry = dict(base, use=["not_a_real_use"])
+    use_issues = mv.validate_entry(use_entry, 1, manifest_path, set(), {})
+    assert any(i.field == "use" and i.severity == "warning" for i in use_issues)
+    manifest_path.write_text(json.dumps(use_entry) + "\n", encoding="utf-8")
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(
+            manifest_path.read_bytes(), manifest_path=manifest_path,
+        )
+
+
+# -------------------- Mutation-style "load-bearing" checks ---------------
+
+
+def test_register_enum_membership_check_is_load_bearing(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _h2_row_dict(register="not_a_real_register")
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+    monkeypatch.setattr(mv, "ALLOWED_REGISTER", mv.ALLOWED_REGISTER | {"not_a_real_register"})
+    assert mv._project_h2_row(row, manifest_ordinal=0).register == "not_a_real_register"
+
+
+def test_use_enum_membership_check_is_load_bearing(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _h2_row_dict(use=["not_a_real_use"])
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+    monkeypatch.setattr(mv, "ALLOWED_USE", mv.ALLOWED_USE | {"not_a_real_use"})
+    assert mv._project_h2_row(row, manifest_ordinal=0).use == ("not_a_real_use",)
+
+
+def test_ai_status_enum_membership_check_is_load_bearing(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = _h2_row_dict(ai_status="not_a_real_status")
+    with pytest.raises(rs.BadInput):
+        mv._project_h2_row(row, manifest_ordinal=0)
+
+    monkeypatch.setattr(mv, "ALLOWED_AI_STATUS", mv.ALLOWED_AI_STATUS | {"not_a_real_status"})
+    assert mv._project_h2_row(row, manifest_ordinal=0).ai_status == "not_a_real_status"
+
+
+# -------------------- Frozen document-plan candidate order ---------------
+
+
+def test_absolute_path_row_uses_candidate_index_zero(tmp_path: Path) -> None:
+    doc = tmp_path / "abs.txt"
+    doc.write_text("x", encoding="utf-8")
+    manifest_path = tmp_path / "m.jsonl"
+    manifest_path.write_text(json.dumps(_h2_row_dict(path=str(doc))) + "\n", encoding="utf-8")
+
+    result = mv.project_register_sweep_manifest_bytes(
+        manifest_path.read_bytes(), manifest_path=manifest_path,
+    )
+    assert result.document_plan[0].candidate_index == 0
+    assert result.document_plan[0].absolute_path == Path(os.path.abspath(doc))
+
+
+def test_relative_path_prefers_manifest_parent_first(tmp_path: Path) -> None:
+    corpus_dir = tmp_path / "corpus"
+    corpus_dir.mkdir()
+    manifest_path = corpus_dir / "m.jsonl"
+    doc = corpus_dir / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    manifest_path.write_text(json.dumps(_h2_row_dict(path="doc.txt")) + "\n", encoding="utf-8")
+
+    result = mv.project_register_sweep_manifest_bytes(
+        manifest_path.read_bytes(), manifest_path=manifest_path,
+    )
+    assert result.document_plan[0].candidate_index == 0
+    assert result.document_plan[0].absolute_path == doc
+
+
+def test_relative_path_falls_through_to_manifest_grandparent(tmp_path: Path) -> None:
+    corpus_dir = tmp_path / "outer" / "inner"
+    corpus_dir.mkdir(parents=True)
+    manifest_path = corpus_dir / "m.jsonl"
+    doc = tmp_path / "outer" / "doc.txt"  # manifest.parent.parent / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    manifest_path.write_text(json.dumps(_h2_row_dict(path="doc.txt")) + "\n", encoding="utf-8")
+
+    result = mv.project_register_sweep_manifest_bytes(
+        manifest_path.read_bytes(), manifest_path=manifest_path,
+    )
+    assert result.document_plan[0].candidate_index == 1
+    assert result.document_plan[0].absolute_path == doc
+
+
+def test_relative_path_falls_through_to_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest_dir = tmp_path / "elsewhere"
+    manifest_dir.mkdir()
+    manifest_path = manifest_dir / "m.jsonl"
+    cwd_dir = tmp_path / "cwdroot"
+    cwd_dir.mkdir()
+    doc = cwd_dir / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    monkeypatch.chdir(cwd_dir)
+    manifest_path.write_text(json.dumps(_h2_row_dict(path="doc.txt")) + "\n", encoding="utf-8")
+
+    result = mv.project_register_sweep_manifest_bytes(
+        manifest_path.read_bytes(), manifest_path=manifest_path,
+    )
+    assert result.document_plan[0].candidate_index == 2
+    assert result.document_plan[0].absolute_path == doc
+
+
+def test_unsafe_first_candidate_refuses_without_falling_through(tmp_path: Path) -> None:
+    corpus_dir = tmp_path / "corpus"
+    corpus_dir.mkdir()
+    manifest_path = corpus_dir / "m.jsonl"
+    real_target = tmp_path / "real_target.txt"
+    real_target.write_text("real", encoding="utf-8")
+    (corpus_dir / "doc.txt").symlink_to(real_target)  # candidate index 0: unsafe
+    (tmp_path / "doc.txt").write_text("fallback", encoding="utf-8")  # candidate index 1: safe
+    manifest_path.write_text(json.dumps(_h2_row_dict(path="doc.txt")) + "\n", encoding="utf-8")
+
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(
+            manifest_path.read_bytes(), manifest_path=manifest_path,
+        )
+
+
+def test_no_candidate_present_refuses(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "m.jsonl"
+    manifest_path.write_text(
+        json.dumps(_h2_row_dict(path="does-not-exist.txt")) + "\n", encoding="utf-8",
+    )
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(
+            manifest_path.read_bytes(), manifest_path=manifest_path,
+        )
+
+
+# -------------------- shingle_dedup_io.bind_regular -----------------------
+
+
+def test_bind_regular_rejects_bad_candidate_shapes(tmp_path: Path) -> None:
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular([])
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular("not-a-list-or-tuple")  # type: ignore[arg-type]
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular(
+            [tmp_path / "a", tmp_path / "b", tmp_path / "c", tmp_path / "d"]
+        )
+
+
+def test_bind_regular_skips_absent_candidates_and_uses_first_present(tmp_path: Path) -> None:
+    doc = tmp_path / "second.txt"
+    doc.write_text("hi", encoding="utf-8")
+    missing = tmp_path / "missing.txt"
+
+    absolute, index, fingerprint = shingle_dedup_io.bind_regular([missing, doc])
+
+    assert index == 1
+    assert absolute == doc
+    assert len(fingerprint) == 5
+    info = os.stat(doc)
+    assert fingerprint == (
+        info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+    )
+
+
+def test_bind_regular_refuses_present_symlink_without_falling_through(tmp_path: Path) -> None:
+    target = tmp_path / "target.txt"
+    target.write_text("hi", encoding="utf-8")
+    link = tmp_path / "link.txt"
+    link.symlink_to(target)
+    fallback = tmp_path / "fallback.txt"
+    fallback.write_text("fallback", encoding="utf-8")
+
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular([link, fallback])
+
+
+def test_bind_regular_refuses_present_non_regular_without_falling_through(tmp_path: Path) -> None:
+    directory_candidate = tmp_path / "adir"
+    directory_candidate.mkdir()
+    fallback = tmp_path / "fallback.txt"
+    fallback.write_text("fallback", encoding="utf-8")
+
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular([directory_candidate, fallback])
+
+
+def test_bind_regular_refuses_when_no_candidate_present(tmp_path: Path) -> None:
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular([tmp_path / "a", tmp_path / "b", tmp_path / "c"])
+
+
+# -------------------- Collision helper ------------------------------------
+
+
+def test_collision_key_nfc_normalizes_composed_vs_decomposed() -> None:
+    nfc_name = "caf" + "é" + ".txt"   # single composed code point
+    nfd_name = "café.txt"             # e + combining acute accent
+    assert nfc_name != nfd_name
+    assert mv._collision_key(Path("/x") / nfc_name) == mv._collision_key(Path("/x") / nfd_name)
+
+
+def _fingerprint_of(path: Path) -> tuple[int, int, int, int, int]:
+    info = os.stat(path)
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+
+
+def test_collision_helper_refuses_repeated_absolute_path(tmp_path: Path) -> None:
+    doc = tmp_path / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    fingerprint = _fingerprint_of(doc)
+    entries = [
+        mv.H2PlannedDocument(0, 0, doc, fingerprint),
+        mv.H2PlannedDocument(1, 0, doc, fingerprint),
+    ]
+    with pytest.raises(rs.BadInput):
+        mv.check_document_plan_collisions(entries)
+
+
+def test_collision_helper_refuses_hardlink_alias(tmp_path: Path) -> None:
+    doc_a = tmp_path / "a.txt"
+    doc_a.write_text("shared", encoding="utf-8")
+    doc_b = tmp_path / "b.txt"
+    os.link(doc_a, doc_b)
+    fingerprint_a = _fingerprint_of(doc_a)
+    fingerprint_b = _fingerprint_of(doc_b)
+    assert fingerprint_a == fingerprint_b  # same inode: every fingerprint field matches
+
+    entries = [
+        mv.H2PlannedDocument(0, 0, doc_a, fingerprint_a),
+        mv.H2PlannedDocument(1, 0, doc_b, fingerprint_b),
+    ]
+    with pytest.raises(rs.BadInput):
+        mv.check_document_plan_collisions(entries)
+
+
+def test_collision_helper_passes_for_distinct_files(tmp_path: Path) -> None:
+    doc_a = tmp_path / "a.txt"
+    doc_a.write_text("x", encoding="utf-8")
+    doc_b = tmp_path / "b.txt"
+    doc_b.write_text("y", encoding="utf-8")
+    entries = [
+        mv.H2PlannedDocument(0, 0, doc_a, _fingerprint_of(doc_a)),
+        mv.H2PlannedDocument(1, 0, doc_b, _fingerprint_of(doc_b)),
+    ]
+    mv.check_document_plan_collisions(entries)  # must not raise
+
+
+def test_repeated_row_document_plan_collision_detected_downstream(tmp_path: Path) -> None:
+    # Increment B's seam is scope-agnostic and does not dedupe by design (the
+    # spec scopes collision checking to the runner's *scoped* subset); this
+    # proves the wiring boundary: the seam still plans both rows, and the
+    # separate helper is what a later-increment runner must call before it
+    # reads a first document body.
+    doc = tmp_path / "doc.txt"
+    doc.write_text("x", encoding="utf-8")
+    manifest_path = tmp_path / "m.jsonl"
+    row = _h2_row_dict(path="doc.txt")
+    manifest_path.write_text(
+        "\n".join([json.dumps(row), json.dumps(row)]) + "\n", encoding="utf-8",
+    )
+
+    result = mv.project_register_sweep_manifest_bytes(
+        manifest_path.read_bytes(), manifest_path=manifest_path,
+    )
+    assert result.input_rows == 2
+    assert len(result.document_plan) == 2
+
+    with pytest.raises(rs.BadInput):
+        mv.check_document_plan_collisions(result.document_plan)
+
+
+def test_collision_helper_rejects_malformed_entry_types() -> None:
+    with pytest.raises(rs.InternalError):
+        mv.check_document_plan_collisions("not-a-list-or-tuple")  # type: ignore[arg-type]
+    with pytest.raises(rs.InternalError):
+        mv.check_document_plan_collisions([{"not": "a H2PlannedDocument"}])  # type: ignore[list-item]
