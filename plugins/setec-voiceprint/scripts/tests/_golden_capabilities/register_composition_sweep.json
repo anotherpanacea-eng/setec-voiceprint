@@ -19,7 +19,12 @@
     "You want the tool to select, exclude, disposition, register, activate, retag, publish, or authorize training on a corpus \u2014 every such decision needs its own authority outside this tool"
   ],
   "inputs": {
-    "target": "corpus manifest JSONL"
+    "target": "corpus manifest JSONL",
+    "required": [
+      "explicitly scoped corpus JSONL, no truth labels",
+      "committed H1 closeout receipt (in-repo)",
+      "receipt-bound classifier source (in-repo)"
+    ]
   },
   "outputs": {
     "schema_version": "setec-register-sweep-report/2",

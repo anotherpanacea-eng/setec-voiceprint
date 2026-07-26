@@ -36,6 +36,10 @@ entries:
     outside this tool
   inputs:
     target: corpus manifest JSONL
+    required:
+    - explicitly scoped corpus JSONL, no truth labels
+    - committed H1 closeout receipt (in-repo)
+    - receipt-bound classifier source (in-repo)
   outputs:
     schema_version: setec-register-sweep-report/2
     artifacts:

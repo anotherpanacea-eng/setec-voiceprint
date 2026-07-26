@@ -18,7 +18,13 @@ import manifest_validator as mv  # type: ignore
 
 
 @pytest.mark.parametrize(
-    "register", ["professional_letter", "teaching", "message.imessage"]
+    "register",
+    [
+        "professional_letter",
+        "teaching",
+        "message.imessage",
+        "social_media_facebook",
+    ],
 )
 def test_owner_approved_register_is_known_without_warning(tmp_path: Path, register: str):
     source = tmp_path / "letter.txt"
@@ -82,3 +88,43 @@ def test_message_imessage_voice_profile_only_is_accepted(tmp_path: Path):
 
     assert result["n_errors"] == 0
     assert not any(issue["field"] == "register" for issue in result["issues"])
+
+
+def test_social_media_facebook_is_h2_admissible_and_declares_unknown(
+    tmp_path: Path,
+) -> None:
+    """The Spec 73 projection admits the register, and H1's receipt-bound
+    mapping resolves it to the "unknown" declared family (it is not in
+    CANONICAL_REGISTER_TO_FAMILY), so sweep inventories bucket these rows as
+    declared-unknown rather than refusing the corpus."""
+    import register_classifier as rc
+    import register_sweep as rs
+
+    source = tmp_path / "post.txt"
+    source.write_text("word " * 150, encoding="utf-8")
+    row = {
+        "path": source.name,
+        "ai_status": "pre_ai_human",
+        "use": ["baseline"],
+        "register": "social_media_facebook",
+    }
+    manifest = tmp_path / "corpus_manifest.jsonl"
+    data = (json.dumps(row) + "\n").encode("utf-8")
+    projection = mv.project_register_sweep_manifest_bytes(
+        data, manifest_path=manifest
+    )
+    assert projection.input_rows == 1
+    assert projection.rows[0].register == "social_media_facebook"
+    assert rc.resolve_family("social_media_facebook") == "unknown"
+    # And the projected row frames cleanly through the H2 encoder.
+    rs.projected_row_binding(
+        {
+            "ai_status": "pre_ai_human",
+            "manifest_ordinal": 0,
+            "path": source.name,
+            "persona": None,
+            "register": "social_media_facebook",
+            "split": None,
+            "use": ["baseline"],
+        }
+    )

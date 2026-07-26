@@ -168,7 +168,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `paraphrase_ladder` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required); to restrict reported signals (optional); IN.txt --passes N to regenerate a stdlib-proxy ladder fixture (optional) | stdlib; opt: spacy, sklearn | CPU / stdlib (+ optional spaCy model) | — |
 | `paraphrase_robustness` | Empirical (provisional) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `register_classifier` | Heuristic (uncalibrated) | No | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 100 |
-| `register_composition_sweep` | Heuristic (uncalibrated) | No | labeled human/AI corpus + `corpus_manifest.jsonl` (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
+| `register_composition_sweep` | Heuristic (uncalibrated) | No | explicitly scoped corpus JSONL, no truth labels (required); committed H1 closeout receipt (in-repo) (required); receipt-bound classifier source (in-repo) (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `setec_run_set` | Heuristic (uncalibrated) | No | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `surface_disagreement_resolver` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `triage_agreement` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
