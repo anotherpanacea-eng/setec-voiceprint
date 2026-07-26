@@ -2059,7 +2059,7 @@ def _h2_row_dict(**overrides: Any) -> dict[str, Any]:
         "use": ["baseline"],
         "register": "personal",
         "split": "baseline",
-        "persona": "josh",
+        "persona": "alias-a",
     }
     row.update(overrides)
     return row
@@ -2154,7 +2154,7 @@ class _HostileRow:
         "use": ["baseline", "voice_profile"],
         "register": "personal",
         "split": "baseline",
-        "persona": "josh",
+        "persona": "alias-a",
     }
 
     def __getitem__(self, key: str) -> Any:
@@ -2186,7 +2186,7 @@ def test_instrumented_mapping_projects_via_direct_lookup_only() -> None:
         register="personal",
         use=("baseline", "voice_profile"),
         split="baseline",
-        persona="josh",
+        persona="alias-a",
         ai_status="pre_ai_human",
     )
 
@@ -2247,16 +2247,52 @@ def test_source_metamorphic_invariant_across_manifest_variants(tmp_path: Path) -
 
 
 # -------------------- Shared strict byte/row parser (acceptance test 5) --
+#
+# EVERY hostile case in this block points its row at ``doc.txt``, so the
+# document MUST exist in ``tmp_path`` before the projection runs. Without it the
+# projection refuses on the missing file and the strict-parser hardening under
+# test is never reached -- the whole block stays green with the hardenings
+# disabled. ``test_strict_parser_positive_control`` is the paired proof that the
+# well-formed sibling of these manifests projects.
+
+
+def _strict_parser_document(tmp_path: Path) -> Path:
+    """Create the ``doc.txt`` every row in this block resolves to."""
+    document = tmp_path / "doc.txt"
+    document.write_text("tiny synthetic document\n", encoding="utf-8")
+    return document
+
+
+def test_strict_parser_positive_control(tmp_path: Path) -> None:
+    """The well-formed sibling of this block's hostile manifests PROJECTS.
+
+    This is what makes each refusal below attributable to the hostile bytes
+    rather than to a missing document.
+    """
+    _strict_parser_document(tmp_path)
+    manifest_path = tmp_path / "m.jsonl"
+    data = json.dumps(_h2_row_dict()).encode("utf-8") + b"\n"
+    result = mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+    assert result.input_rows == 1
+    assert len(result.rows) == 1
+    assert len(result.document_plan) == 1
+    assert result.rows[0].path == "doc.txt"
 
 
 def test_bom_refuses_before_any_row_projects(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     data = b"\xef\xbb\xbf" + json.dumps(_h2_row_dict()).encode("utf-8") + b"\n"
     with pytest.raises(rs.BadInput):
         mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+    # Attribution: the BOM refusal is the decode layer's own, not a downstream
+    # JSON syntax error that happens to also reject a BOM-prefixed first row.
+    with pytest.raises(mv.ManifestParseError):
+        mv.decode_manifest_bytes(data)
 
 
 def test_non_utf8_bytes_refuse(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     data = json.dumps(_h2_row_dict()).encode("utf-8") + b"\n\xff\xfe"
     with pytest.raises(rs.BadInput):
@@ -2264,6 +2300,8 @@ def test_non_utf8_bytes_refuse(tmp_path: Path) -> None:
 
 
 def test_top_level_duplicate_key_refuses(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
+    (tmp_path / "other.txt").write_text("other", encoding="utf-8")
     manifest_path = tmp_path / "m.jsonl"
     data = (
         b'{"path":"doc.txt","path":"other.txt","ai_status":"pre_ai_human",'
@@ -2274,6 +2312,7 @@ def test_top_level_duplicate_key_refuses(tmp_path: Path) -> None:
 
 
 def test_nested_duplicate_key_refuses(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     data = (
         b'{"path":"doc.txt","ai_status":"pre_ai_human","use":["baseline"],'
@@ -2284,6 +2323,7 @@ def test_nested_duplicate_key_refuses(tmp_path: Path) -> None:
 
 
 def test_non_finite_constant_refuses(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     data = (
         b'{"path":"doc.txt","ai_status":"pre_ai_human","use":["baseline"],'
@@ -2294,21 +2334,84 @@ def test_non_finite_constant_refuses(tmp_path: Path) -> None:
 
 
 def test_non_object_data_row_refuses(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     with pytest.raises(rs.BadInput):
         mv.project_register_sweep_manifest_bytes(b"[1,2,3]\n", manifest_path=manifest_path)
 
 
 def test_malformed_json_refuses(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     with pytest.raises(rs.BadInput):
         mv.project_register_sweep_manifest_bytes(b"{bad-json\n", manifest_path=manifest_path)
 
 
 def test_wrong_type_data_refuses(tmp_path: Path) -> None:
+    _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     with pytest.raises(rs.BadInput):
         mv.project_register_sweep_manifest_bytes("not bytes", manifest_path=manifest_path)  # type: ignore[arg-type]
+
+
+# ---- Row-boundary hardening: str.splitlines() row splitting --------------
+
+
+@pytest.mark.parametrize(
+    "breaker",
+    ["\r", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"],
+)
+def test_splitlines_only_row_separators_refuse(
+    tmp_path: Path, breaker: str
+) -> None:
+    """Two objects on ONE physical LF-delimited line refuse at the line level.
+
+    ``str.splitlines()`` breaks on each of these characters, so the single
+    physical row below would have been counted as TWO documents -- and the row
+    count plus every row's ordinal are baked into this build's frozen digests.
+    The refusal fires before any JSON parsing, so an unowned field can't smuggle
+    a row split past the owned fields' string domain either.
+    """
+    _strict_parser_document(tmp_path)
+    manifest_path = tmp_path / "m.jsonl"
+    encoded = json.dumps(_h2_row_dict()).encode("utf-8")
+    data = encoded + breaker.encode("utf-8") + encoded + b"\n"
+    # Exactly one physical row, but two under the old splitlines() rule.
+    assert data.count(b"\n") == 1
+    text = data.decode("utf-8")
+    assert len(text.splitlines()) == 2
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_a_crlf_manifest_refuses_rather_than_silently_reflowing(
+    tmp_path: Path,
+) -> None:
+    _strict_parser_document(tmp_path)
+    manifest_path = tmp_path / "m.jsonl"
+    data = json.dumps(_h2_row_dict()).encode("utf-8") + b"\r\n"
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+
+
+def test_the_legacy_validator_shares_the_row_boundary_refusal(
+    tmp_path: Path,
+) -> None:
+    """The hardening lives in the SHARED parser, so the legacy full-row
+    validator bails out on the same bytes instead of reflowing them."""
+    _strict_parser_document(tmp_path)
+    manifest_path = tmp_path / "m.jsonl"
+    encoded = json.dumps(_h2_row_dict())
+    manifest_path.write_text(
+        encoded + "\u2028" + encoded + "\n", encoding="utf-8"
+    )
+    report = mv.validate_manifest(manifest_path)
+    assert report["n_entries"] == 0
+    assert report["n_errors"] == 1
+    assert any(
+        "forbidden line-break character" in issue["message"]
+        for issue in report["issues"]
+    )
 
 
 # -------------------- input_rows counting -------------------------------
@@ -3716,8 +3819,86 @@ def test_report_bytes_are_canonical_with_one_terminal_newline(
 # --------------------------------------------------------------------------
 
 
+#: The guard's 20 forbidden key atoms, written out LITERALLY rather than splatted
+#: from ``rs.FORBIDDEN_KEY_ATOMS``. Splatting the module's own table made the
+#: parametrization self-referential: deleting an atom from the guard also deleted
+#: its case, so the suite stayed green. ``test_the_literal_atom_table_mirrors_the
+#: _guard`` is the paired equality check, so adding or removing an atom is a
+#: deliberate two-sided edit.
+LITERAL_FORBIDDEN_KEY_ATOMS = [
+    "accuracy",
+    "authorship",
+    "band",
+    "correctness",
+    "dominant",
+    "homogeneity",
+    "label",
+    "percent",
+    "percentage",
+    "probability",
+    "proportion",
+    "quality",
+    "rank",
+    "rate",
+    "ratio",
+    "score",
+    "share",
+    "threshold",
+    "unimodality",
+    "verdict",
+]
+
+
+def test_the_literal_atom_table_mirrors_the_guard() -> None:
+    """The literal table above and the guard's own table must agree exactly."""
+    assert len(LITERAL_FORBIDDEN_KEY_ATOMS) == 20
+    assert len(set(LITERAL_FORBIDDEN_KEY_ATOMS)) == 20
+    assert set(LITERAL_FORBIDDEN_KEY_ATOMS) == set(rs.FORBIDDEN_KEY_ATOMS)
+
+
+def test_claim_posture_refuses_every_node_type_it_cannot_scan() -> None:
+    """The walker dispatches on EXACT type (``type(x) is``), so a ``str``,
+    ``dict``, or ``list`` subclass -- or any other object -- would otherwise
+    fall through unscanned and smuggle refused claim text past the guard. The
+    terminal branch refuses instead of silently skipping."""
+
+    class SmuggledStr(str):
+        pass
+
+    class SmuggledDict(dict):
+        pass
+
+    class SmuggledList(list):
+        pass
+
+    class Opaque:
+        def __str__(self) -> str:  # pragma: no cover - never reached
+            return "verdict"
+
+    for node in (
+        SmuggledStr("register verdict: mixed"),
+        SmuggledDict({"verdict": 1}),
+        SmuggledList(["verdict"]),
+        Opaque(),
+        {1, 2},
+        b"verdict",
+    ):
+        for artifact in (
+            {"warnings": node},
+            {"outer": {"inner": node}},
+            {"outer": [{"inner": [node]}]},
+        ):
+            with pytest.raises(rs.InternalError):
+                rs.assert_claim_posture(artifact)
+
+    # The exact scannable types still pass.
+    rs.assert_claim_posture(
+        {"outer": ["ok", 1, 1.5, True, None, {"inner": ["ok"]}]}
+    )
+
+
 FORBIDDEN_KEY_CASES = [
-    *sorted(rs.FORBIDDEN_KEY_ATOMS),
+    *LITERAL_FORBIDDEN_KEY_ATOMS,
     "final_verdict",
     "Verdict",
     "VERDICT",
@@ -4985,8 +5166,30 @@ def test_delta_rejects_out_of_domain_rows(domains: rs.RegisterDomains) -> None:
     ):
         with pytest.raises(rs.InternalError):
             rs.compute_aggregate_delta([bad], domains)
+
+
+def test_compute_aggregate_delta_enforces_its_own_shard_row_ceiling(
+    domains: rs.RegisterDomains,
+) -> None:
+    """``compute_aggregate_delta``'s own ``> SHARD_ROWS`` guard, pinned at the
+    boundary and attributed to the ceiling rather than to row contents.
+
+    Exactly ``SHARD_ROWS`` valid rows must build a delta; one more must refuse.
+    The function is exercised DIRECTLY here -- not through ``publish_shard`` --
+    because it is a public seam an independent accumulator also calls.
+    """
+    at_ceiling = _synthetic_rows(rs.SHARD_ROWS, domains)
+    assert len(at_ceiling) == 250
+    delta = rs.compute_aggregate_delta(at_ceiling, domains)
+    assert delta["counts"]["scoped_documents"] == 250
+
+    over_ceiling = _synthetic_rows(rs.SHARD_ROWS + 1, domains)
+    assert len(over_ceiling) == 251
+    # Every row is individually valid, so the ceiling is the only refusal site.
+    for row in over_ceiling:
+        rs.compute_aggregate_delta([row], domains)
     with pytest.raises(rs.InternalError):
-        rs.compute_aggregate_delta(_synthetic_rows(251, domains), domains)
+        rs.compute_aggregate_delta(over_ceiling, domains)
 
 
 # --------------------------------------------------------------------------
@@ -5531,6 +5734,12 @@ def test_expected_fingerprint_read_agrees_with_the_frozen_plan(
     assert rs.read_planned_document(document, fingerprint) == b"hello world"
     # The bounded helper still works without a plan, exactly as before.
     assert secure_io.read_bounded_regular(document, 1024) == b"hello world"
+    # ONE fingerprint producer: the replan seam derives through the same
+    # ``bind_regular`` the frozen document plan uses, and the retired second
+    # producer is gone from the io module's surface.
+    assert secure_io.bind_regular([document])[2] == fingerprint
+    assert not hasattr(secure_io, "planned_fingerprint")
+    assert "planned_fingerprint" not in secure_io.__all__
 
 
 @POSIX_ONLY
@@ -6043,7 +6252,7 @@ def test_omitted_filters_include_every_admissible_row(tmp_path: Path) -> None:
     no implicit corpus-role defaults."""
     manifest = _d2_corpus(
         tmp_path, 3, use=["baseline", "idiolect"], split="holdout",
-        register="personal", persona="josh", ai_status="ai_edited",
+        register="personal", persona="alias-a", ai_status="ai_edited",
     )
     code, _out, _err = _d2_run(_d2_args(tmp_path, manifest))
     assert code == 0
@@ -6302,6 +6511,174 @@ def test_fresh_and_resumed_reports_are_byte_identical(
     )
 
 
+# ---- Sealed rows are re-associated with the current plan ----------------
+#
+# ``decode_register_shard`` checks a sealed shard against ITSELF: schema,
+# metadata domains, row digests, the delta equation, and the hash chain. None of
+# that says the sealed rows still describe the documents the CURRENT frozen plan
+# assigns to those scoped ordinals. A same-UID writer can rewrite a shard and
+# recompute every hash it commits -- the fixtures below do exactly that, by
+# calling the module's OWN encoder -- so the runner rebinds each sealed ordinal
+# to the manifest before trusting it. The checkpoint's integrity model is
+# owner-trusted (0700/0600), not adversary-proof; see the module docstring.
+
+
+def _interrupt_after_first_shard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, manifest: Path, root: Path
+) -> Path:
+    """Run until exactly one shard is sealed, then interrupt. Returns the
+    checkpoint directory."""
+    real_read = rs.read_planned_document
+    calls = {"n": 0}
+
+    def interrupting_read(path: Any, expected_fingerprint: Any) -> bytes:
+        calls["n"] += 1
+        if calls["n"] > rs.SHARD_ROWS:
+            raise KeyboardInterrupt("synthetic interruption")
+        return real_read(path, expected_fingerprint)
+
+    monkeypatch.setattr(rs, "read_planned_document", interrupting_read)
+    with pytest.raises(KeyboardInterrupt):
+        _d2_run(_d2_out_args(manifest, root))
+    monkeypatch.setattr(rs, "read_planned_document", real_read)
+    state = root / "state"
+    assert sorted(p.name for p in state.iterdir()) == ["register-00000000.sqlite"]
+    return state
+
+
+def _forge_first_shard(
+    state: Path, domains: rs.RegisterDomains, rewrite: Any
+) -> list[dict[str, Any]]:
+    """Rewrite the sealed shard's rows through ``rewrite`` and re-seal it with
+    the module's own encoder, so every inner hash is honest again."""
+    name = "register-00000000.sqlite"
+    raw_sealed = (state / name).read_bytes()
+    connection = sqlite3.connect(":memory:")
+    try:
+        connection.deserialize(raw_sealed)
+        meta = dict(
+            connection.execute("SELECT key, value FROM checkpoint_meta").fetchall()
+        )
+    finally:
+        connection.close()
+    binding_sha256 = json.loads(meta["checkpoint_binding_sha256"])
+    sealed = rs.decode_register_shard(
+        raw_sealed,
+        name=name,
+        domains=domains,
+        checkpoint_binding_sha256=binding_sha256,
+    )
+    forged_rows = [rewrite(index, dict(row)) for index, row in enumerate(sealed.rows)]
+    raw, _shard = rs.encode_register_shard(
+        shard_number=sealed.shard_number,
+        first_scoped_ordinal=sealed.first_scoped_ordinal,
+        checkpoint_binding_sha256=sealed.checkpoint_binding_sha256,
+        prior_shard_sha256=sealed.prior_shard_sha256,
+        rows=forged_rows,
+        domains=domains,
+    )
+    _replace_shard(state, name, raw)
+    return forged_rows
+
+
+def test_a_sloppily_forged_sealed_prefix_refuses_on_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, domains: rs.RegisterDomains
+) -> None:
+    """Fixture (a): sealed rows rewritten to alien ordinals, alien projected-row
+    digests, and ``document_bytes=1``, with every inner hash recomputed. The
+    shard is internally perfect and still must refuse: it does not describe this
+    run's plan."""
+    total = rs.SHARD_ROWS + 1
+    manifest = _d2_corpus(tmp_path, total)
+    root = tmp_path / "forged"
+    state = _interrupt_after_first_shard(tmp_path, monkeypatch, manifest, root)
+
+    def sloppy(index: int, row: dict[str, Any]) -> dict[str, Any]:
+        row["manifest_ordinal"] = 9_000_000 + index
+        row["projected_row_sha256"] = rs.prefixed(f"{index + 1:064x}")
+        row["document_bytes"] = 1
+        return row
+
+    _forge_first_shard(state, domains, sloppy)
+    code, out, err = _d2_run(_d2_out_args(manifest, root, "--resume"))
+    assert (code, out, err) == (3, GOLDEN_POLICY_REFUSED, b"")
+    assert not (root / "report.json").exists()
+
+
+@pytest.mark.parametrize("field", ["manifest_ordinal", "projected_row_sha256",
+                                   "document_bytes", "declared_family"])
+def test_each_re_association_field_is_checked_independently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, domains: rs.RegisterDomains,
+    field: str,
+) -> None:
+    """One forged field at a time: each of the four bound fields refuses on its
+    own, so no single check is carrying the whole refusal."""
+    total = rs.SHARD_ROWS + 1
+    manifest = _d2_corpus(tmp_path, total, register="personal")
+    root = tmp_path / f"one-{field}"
+    state = _interrupt_after_first_shard(tmp_path, monkeypatch, manifest, root)
+
+    def one_field(index: int, row: dict[str, Any]) -> dict[str, Any]:
+        if index == 0:
+            if field == "manifest_ordinal":
+                row["manifest_ordinal"] = 9_000_000
+            elif field == "projected_row_sha256":
+                row["projected_row_sha256"] = rs.prefixed("b" * 64)
+            elif field == "document_bytes":
+                row["document_bytes"] = row["document_bytes"] + 1
+            else:
+                other = [
+                    value for value in domains.declared
+                    if value != row["declared_family"]
+                ][0]
+                row["declared_family"] = other
+        return row
+
+    _forge_first_shard(state, domains, one_field)
+    code, out, err = _d2_run(_d2_out_args(manifest, root, "--resume"))
+    assert (code, out, err) == (3, GOLDEN_POLICY_REFUSED, b"")
+    assert not (root / "report.json").exists()
+
+
+def test_a_sophisticated_classified_words_forgery_is_outside_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, domains: rs.RegisterDomains
+) -> None:
+    """Fixture (b), the honest boundary: flipping only ``classified_family`` and
+    ``words`` -- fields the manifest does not determine -- cannot be caught by
+    the ordinal/digest/bytes/declared-family re-association, BY CONSTRUCTION.
+
+    What IS asserted is the scope of the model: the four bound fields still
+    match, the forged run still commits, and its report differs from a fresh
+    one. This is the owner-trusted boundary stated in the module docstring, not
+    a defect the added checks were expected to close."""
+    total = rs.SHARD_ROWS + 1
+    manifest = _d2_corpus(tmp_path, total)
+    control_root = tmp_path / "control"
+    assert _d2_run(_d2_out_args(manifest, control_root))[0] == 0
+    control_report = (control_root / "report.json").read_bytes()
+
+    root = tmp_path / "sophisticated"
+    state = _interrupt_after_first_shard(tmp_path, monkeypatch, manifest, root)
+
+    def sophisticated(index: int, row: dict[str, Any]) -> dict[str, Any]:
+        if row["classified_family"] is not None:
+            other = [
+                value for value in domains.classified
+                if value != row["classified_family"]
+            ][0]
+            row["classified_family"] = other
+        row["words"] = row["words"] + 1
+        return row
+
+    forged_rows = _forge_first_shard(state, domains, sophisticated)
+    # The four re-associated fields are untouched, which is exactly why the
+    # forgery survives.
+    assert all(row["document_bytes"] > 1 for row in forged_rows)
+    code, _out, _err = _d2_run(_d2_out_args(manifest, root, "--resume"))
+    assert code == 0
+    assert (root / "report.json").read_bytes() != control_report
+
+
 def test_resume_of_a_complete_sealed_chain_reprocesses_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -6458,6 +6835,36 @@ def test_no_stderr_or_error_envelope_follows_the_commit(tmp_path: Path) -> None:
     assert json.loads(out.decode("utf-8"))["available"] is True
 
 
+def test_the_scoped_bytes_ceiling_is_bad_input_not_internal_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The scoped-byte ceiling is an INPUT bound, so breaching it is the spec's
+    ``bad_input`` row (exit 2), not ``internal_error`` (exit 4).
+
+    The running total is what breaches: the first document fits under the
+    patched ceiling and the second crosses it, so this pins the pre-add check in
+    the document loop rather than a single oversized document.
+    """
+    manifest = _d2_corpus(tmp_path, 3)
+    one_document = len("tiny synthetic document 0\n")
+    monkeypatch.setattr(rs, "MAX_SCOPED_BYTES", one_document + 1)
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out) == (2, GOLDEN_BAD_INPUT)
+    assert json.loads(out.decode("utf-8"))["reason_category"] == "bad_input"
+    assert err == b""
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_a_scoped_bytes_ceiling_above_the_plan_still_commits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Positive control for the pre-add check: a ceiling exactly at the plan's
+    total scoped bytes must NOT refuse."""
+    manifest = _d2_corpus(tmp_path, 3)
+    monkeypatch.setattr(rs, "MAX_SCOPED_BYTES", 3 * len("tiny synthetic document 0\n"))
+    assert _d2_run(_d2_args(tmp_path, manifest))[0] == 0
+
+
 def test_missing_document_refuses_with_the_bad_input_golden(tmp_path: Path) -> None:
     manifest = _d2_corpus(tmp_path, 2)
     (tmp_path / "corpus" / "doc00001.txt").unlink()
@@ -6610,6 +7017,191 @@ def test_runtime_makes_no_network_call_with_sockets_blocked(
         monkeypatch.setattr(socket_module, name, refuse, raising=False)
     manifest = _d2_corpus(tmp_path, 3)
     assert _d2_run(_d2_args(tmp_path, manifest))[0] == 0
+
+
+# --------------------------------------------------------------------------
+# The REAL entry point: ``python3 register_sweep.py ...``
+#
+# ``rs.main(argv)`` called in-process is not where users meet this tool. Run as
+# a script the module loads under the name ``__main__``; ``manifest_validator``
+# then executes ``from register_sweep import BadInput, ...`` at import time,
+# which -- without the alias installed in the ``__main__`` guard -- loads a
+# SECOND, independent copy of this file under the name ``register_sweep``, with
+# its own distinct ``BadInput``/``PolicyRefused``/``InternalError`` classes.
+# A refusal raised from the manifest_validator seam is then an instance of the
+# second copy's class, misses every ``isinstance`` check in
+# ``controlled_failure_class``, and ships as exit 4 / ``internal_error``
+# instead of exit 2 / ``bad_input`` -- nine rows of the spec's failure map.
+#
+# Every case below is therefore driven through ``subprocess`` at the real entry
+# point, and each pins the exit code AND the ``reason_category`` parsed out of
+# the golden stdout envelope.
+# --------------------------------------------------------------------------
+
+
+REGISTER_SWEEP_SCRIPT = SCRIPTS / "register_sweep.py"
+
+
+def _cli_subprocess(script: Path, argv: list[str]) -> tuple[int, bytes, bytes]:
+    completed = subprocess.run(
+        [sys.executable, str(script), *argv], capture_output=True
+    )
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+#: One row per category of the spec's failure map that is raised from the
+#: manifest_validator seam -- the exact set the double-import hazard misroutes.
+CLI_BAD_INPUT_CASES = (
+    "bad_enum_value",
+    "missing_document",
+    "duplicate_row_collision",
+    "malformed_json",
+    "bom",
+    "duplicate_key",
+    "non_object_row",
+)
+
+
+def _cli_bad_input_corpus(root: Path, case: str) -> Path:
+    """Write one hostile manifest (and its corpus) for a failure-map row."""
+    corpus = root / "corpus"
+    corpus.mkdir(parents=True, exist_ok=True)
+    document = corpus / "doc00000.txt"
+    document.write_text("tiny synthetic document 0\n", encoding="utf-8")
+    good = {
+        "path": "corpus/doc00000.txt",
+        "use": ["baseline"],
+        "ai_status": "pre_ai_human",
+    }
+    encoded = json.dumps(good).encode("utf-8")
+    manifest = root / "manifest.jsonl"
+    if case == "bad_enum_value":
+        manifest.write_bytes(
+            json.dumps(dict(good, ai_status="not_a_real_ai_status")).encode("utf-8")
+            + b"\n"
+        )
+    elif case == "missing_document":
+        manifest.write_bytes(encoded + b"\n")
+        document.unlink()
+    elif case == "duplicate_row_collision":
+        manifest.write_bytes(encoded + b"\n" + encoded + b"\n")
+    elif case == "malformed_json":
+        manifest.write_bytes(b"{bad-json\n")
+    elif case == "bom":
+        manifest.write_bytes(b"\xef\xbb\xbf" + encoded + b"\n")
+    elif case == "duplicate_key":
+        manifest.write_bytes(
+            b'{"path":"corpus/doc00000.txt","path":"corpus/doc00000.txt",'
+            b'"use":["baseline"],"ai_status":"pre_ai_human"}\n'
+        )
+    elif case == "non_object_row":
+        manifest.write_bytes(b"[1,2,3]\n")
+    else:  # pragma: no cover - the parametrization is closed
+        raise AssertionError(case)
+    return manifest
+
+
+@pytest.mark.parametrize("case", CLI_BAD_INPUT_CASES)
+def test_cli_entry_point_ships_seam_refusals_as_bad_input(
+    tmp_path: Path, case: str
+) -> None:
+    """Every seam-raised failure-map row is exit 2 / ``bad_input`` AT THE REAL
+    ENTRY POINT, not exit 4 / ``internal_error``."""
+    root = tmp_path / case
+    root.mkdir()
+    manifest = _cli_bad_input_corpus(root, case)
+    code, out, err = _cli_subprocess(
+        REGISTER_SWEEP_SCRIPT,
+        [
+            "--manifest", str(manifest),
+            "--report-out", str(root / "report.json"),
+            "--checkpoint-dir", str(root / "state"),
+        ],
+    )
+    assert code == 2, (case, out, err)
+    assert out == GOLDEN_BAD_INPUT, case
+    assert json.loads(out.decode("utf-8"))["reason_category"] == "bad_input"
+    assert err == b""
+    assert not (root / "report.json").exists()
+    assert not (root / "state").exists()
+
+
+def _cli_tampered_receipt_script(tmp_path: Path) -> Path:
+    """A second ``register_sweep.py`` whose plugin tree holds a tampered H1
+    receipt.
+
+    Only ``register_sweep.py`` is a real copy -- ``default_h1_paths`` derives
+    the reference tree from ``Path(__file__).resolve().parent``, so a symlink
+    would resolve straight back to the real plugin. Every sibling module is
+    symlinked, so this costs one file rather than a tree copy.
+    """
+    plugin = tmp_path / "plugin"
+    fake_scripts = plugin / "scripts"
+    references = plugin / "references"
+    fake_scripts.mkdir(parents=True)
+    references.mkdir(parents=True)
+    for item in SCRIPTS.iterdir():
+        if item.name in ("__pycache__", "tests"):
+            continue
+        if item.name == "register_sweep.py":
+            shutil.copyfile(item, fake_scripts / item.name)
+        else:
+            (fake_scripts / item.name).symlink_to(item)
+    receipt_path, _classifier_path = rs.default_h1_paths()
+    (references / receipt_path.name).write_bytes(
+        receipt_path.read_bytes().replace(b"{", b"{ ", 1)
+    )
+    return fake_scripts / "register_sweep.py"
+
+
+def test_cli_entry_point_ships_a_tampered_receipt_as_policy_refused(
+    tmp_path: Path,
+) -> None:
+    """The other side of the taxonomy at the real entry point: a policy row is
+    exit 3 / ``policy_refused``, and it still is with the alias installed."""
+    script = _cli_tampered_receipt_script(tmp_path)
+    root = tmp_path / "run"
+    root.mkdir()
+    manifest = _d2_corpus(root, 2)
+    code, out, err = _cli_subprocess(
+        script,
+        [
+            "--manifest", str(manifest),
+            "--report-out", str(root / "report.json"),
+            "--checkpoint-dir", str(root / "state"),
+        ],
+    )
+    assert (code, out, err) == (3, GOLDEN_POLICY_REFUSED, b"")
+    assert json.loads(out.decode("utf-8"))["reason_category"] == "policy_refused"
+    assert not (root / "report.json").exists()
+    assert not (root / "state").exists()
+
+
+def test_cli_entry_point_commits_the_success_envelope(tmp_path: Path) -> None:
+    """The success case reconfirmed at the real entry point: exit 0, the one
+    committed success envelope on stdout, the cadence line on stderr, and the
+    report published."""
+    root = tmp_path / "run"
+    root.mkdir()
+    manifest = _d2_corpus(root, 3)
+    code, out, err = _cli_subprocess(
+        REGISTER_SWEEP_SCRIPT,
+        [
+            "--manifest", str(manifest),
+            "--report-out", str(root / "report.json"),
+            "--checkpoint-dir", str(root / "state"),
+        ],
+    )
+    assert code == 0
+    envelope = json.loads(out.decode("utf-8"))
+    assert envelope["available"] is True
+    assert "reason_category" not in envelope
+    assert err == (
+        b"register sweep processing-complete: completed=3 total=3 "
+        b"report_commit=pending\n"
+    )
+    report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+    assert report["counts"]["scoped_documents"] == 3
 
 
 def test_runtime_import_graph_reaches_no_network_module(tmp_path: Path) -> None:

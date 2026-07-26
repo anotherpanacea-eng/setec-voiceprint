@@ -195,7 +195,6 @@ ntdll.NtQuerySecurityObject.argtypes = [
     ctypes.POINTER(wintypes.ULONG),
 ]
 ntdll.NtQuerySecurityObject.restype = ctypes.c_long
-kernel32.OpenProcessToken = advapi32.OpenProcessToken
 advapi32.OpenProcessToken.argtypes = [
     wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)
 ]
@@ -495,7 +494,10 @@ def require_owner_private(handle: int, kind: str) -> NodeInfo:
     ace = ctypes.cast(entry, ctypes.POINTER(ACCESS_ALLOWED_ACE)).contents
     if int(ace.Header.AceType) != ACCESS_ALLOWED_ACE_TYPE:
         raise OSError("private-tree node ACE is not an allow ACE")
-    if int(ace.Header.AceFlags) & INHERITED_ACE or int(ace.Header.AceFlags):
+    # Any flag at all refuses: this subsumes INHERITED_ACE (0x10) along with
+    # every container/object/no-propagate inherit flag, so the node must carry
+    # one explicit, non-inherited, non-inheritable ACE.
+    if int(ace.Header.AceFlags):
         raise OSError("private-tree node ACE is inherited or inheritable")
     if int(ace.Mask) != FILE_ALL_ACCESS:
         raise OSError("private-tree node ACE does not grant exactly full access")

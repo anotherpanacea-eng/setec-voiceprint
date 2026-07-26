@@ -301,55 +301,6 @@ def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] 
                     pass
 
 
-def planned_fingerprint(path: os.PathLike[str] | str) -> tuple[int, ...]:
-    """Return the platform identity/mutation fingerprint of a direct regular file.
-
-    POSIX returns ``(dev, ino, size, mtime_ns, ctime_ns)``.  Native Windows
-    returns the nine-field scoped handle fingerprint, which includes
-    ``change_time``.  The value is the ``expected_fingerprint`` a frozen
-    document plan later hands back to :func:`read_bounded_regular`.
-    """
-    absolute = _absolute(path)
-    if os.name == "nt":  # pragma: no cover - native Windows
-        winio = _windows_module()
-        parent_anchor = parent = handle = 0
-        try:
-            parent_anchor, parent, _name = winio.pin_directory(absolute.parent, writable_final=False)
-            handle = winio.open_file(parent, absolute.name, allow_multiple_links=True)
-            winio.require_direct(handle, "file", allow_multiple_links=True)
-            return _windows_scoped_fingerprint(winio, handle)
-        except (OSError, TypeError, ValueError):
-            raise _fail() from None
-        finally:
-            for item in (handle, parent, parent_anchor):
-                if item:
-                    try:
-                        winio.close(item)
-                    except (OSError, MemoryError):
-                        pass
-    parent_fd, directories = _posix_open_directory(absolute.parent)
-    descriptor = -1
-    try:
-        named = os.stat(absolute.name, dir_fd=parent_fd, follow_symlinks=False)
-        if not stat.S_ISREG(named.st_mode):
-            raise _fail()
-        flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
-        descriptor = os.open(absolute.name, flags, dir_fd=parent_fd)
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode) or _file_fingerprint(named) != _file_fingerprint(opened):
-            raise _fail()
-        return _file_fingerprint(opened)
-    except (OSError, TypeError, ValueError):
-        raise _fail() from None
-    finally:
-        if descriptor >= 0:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
-        _close_all(directories)
-
-
 def _posix_bind(path: Path) -> tuple[int, int, int, int, int]:
     """Verify one candidate is a safe, non-symlink regular file.
 
@@ -839,7 +790,6 @@ def publish_create_new(
 __all__ = [
     "SecureIOError",
     "bind_regular",
-    "planned_fingerprint",
     "publish_create_new",
     "read_bounded_regular",
     "read_bounded_regular_excluding_siblings",

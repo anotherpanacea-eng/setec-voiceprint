@@ -23,6 +23,13 @@ the receipt-bound classifier load plus its closed public-result validation. The
 manifest projection, aggregation and report, checkpoint codec, topology
 preflight, and the CLI/runner each live in one delimited section below, built
 against those exact encoders.
+
+The checkpoint's integrity model is OWNER-TRUSTED: its 0700 directory and 0600
+immutable shards, the per-shard hash chain, the run-binding equality check, and
+the runner's re-association of every sealed row with the current frozen plan
+detect an unrelated, stale, truncated, reordered, or carelessly edited
+checkpoint, but they are not proof against an adversary running as the same UID,
+who can rewrite a shard and recompute every hash it commits.
 """
 
 from __future__ import annotations
@@ -50,16 +57,16 @@ from shingle_dedup_checkpoint import (  # type: ignore
 )
 from shingle_dedup_io import (  # type: ignore
     SecureIOError,
-    planned_fingerprint,
+    bind_regular,
     publish_create_new,
     read_bounded_regular,
 )
 
 # ``manifest_validator`` imports this module at load time (exception classes
 # and shared string-domain constants), so the one back-reference H2 needs —
-# the three CLI filter enums — is imported lazily inside
-# ``build_report_scope`` to keep manifest_validator -> register_sweep the only
-# import-time direction.
+# the three CLI filter enums — is imported lazily inside each of the two
+# functions that read them, ``build_report_scope`` and ``parse_arguments``, to
+# keep manifest_validator -> register_sweep the only import-time direction.
 
 # --------------------------------------------------------------------------
 # Fixed identities
@@ -466,17 +473,10 @@ def _require_int(value: Any, low: int, high: int) -> int:
     return value
 
 
-def _require_count(value: Any) -> int:
-    """Require a non-Boolean unsigned 64-bit inventory/count scalar."""
-    return _require_int(value, 0, INT64_MAX)
-
-
-def _require_cell(cell: Any) -> None:
-    """Require the fixed ``{"documents", "words"}`` inventory cell shape."""
-    if type(cell) is not dict or set(cell) != {"documents", "words"}:
-        raise InternalError()
-    _require_count(cell["documents"])
-    _require_count(cell["words"])
+# ``_require_count`` and ``_require_cell`` are defined once, in the Increment D1
+# section below. Module-level rebinding meant an earlier duplicate pair here was
+# already shadowed for every call site, so this section simply uses the single
+# later definition.
 
 
 def _require_inventory(inventory: Any, domain: tuple[str, ...]) -> None:
@@ -2313,7 +2313,7 @@ def build_report(
     input_rows: int,
     aggregate: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build the complete 22-key create-new private report.
+    """Build the complete 23-key create-new private report.
 
     The report is a count inventory and nothing else: no percentage, rate,
     share, entropy, effective-mode count, threshold, band, rank, dominant
@@ -2556,6 +2556,13 @@ def _walk_claim_posture(
             return
         if claim_text_is_refused(node):
             raise InternalError()
+        return
+    # Terminal: the dispatch above is exact-type (``type(x) is``), so a str,
+    # dict, or list SUBCLASS -- or any other node type -- would otherwise fall
+    # through the walk unscanned and smuggle refused claim text past the guard.
+    if node is None or type(node) in (int, float, bool):
+        return
+    raise InternalError()
 
 
 # --------------------------------------------------------------------------
@@ -3784,11 +3791,16 @@ def plan_document_fingerprint(path: os.PathLike[str] | str) -> tuple[int, ...]:
     POSIX binds device, inode, size, ``mtime_ns``, and ``ctime_ns``. Native
     Windows binds the scoped handle fingerprint, which adds ``change_time`` so a
     same-size content mutation with a restored LastWriteTime still refuses.
+
+    Derived through ``bind_regular`` -- the same producer the frozen document
+    plan uses -- so there is exactly ONE fingerprint producer in the build and
+    a plan entry and a replan of the same path cannot diverge.
     """
     try:
-        return planned_fingerprint(path)
-    except (SecureIOError, OSError) as exc:
+        _absolute, _candidate_index, fingerprint = bind_regular([os.fspath(path)])
+    except (SecureIOError, OSError, TypeError, ValueError) as exc:
         raise BadInput() from exc
+    return fingerprint
 
 
 def read_planned_document(
@@ -4604,6 +4616,50 @@ def _process_documents(
     if published > len(sizes) or start != sum(sizes[:published]):
         raise PolicyRefused()
 
+    # Sealed rows are re-associated with THIS run's frozen plan before any of
+    # them is trusted. The shard codec validates each sealed row against itself
+    # and its own recomputed inner hashes, which says nothing about whether the
+    # row still describes the document the current plan assigns to that scoped
+    # ordinal: a checkpoint rewritten by a same-UID writer (inner hashes
+    # recomputed) would otherwise resume and publish a report that differs from
+    # a fresh run over the same manifest. Each sealed ordinal is therefore bound
+    # back to the scoped row, the projected-row digest, the planned file size,
+    # and the declared family this run derived from the manifest itself.
+    sealed_rows: list[dict[str, Any]] = []
+    for sealed in checkpoint.shards:
+        sealed_rows.extend(sealed.rows)
+    if len(sealed_rows) != start:
+        raise PolicyRefused()
+    for ordinal, sealed_row in enumerate(sealed_rows):
+        row = scoped_rows[ordinal]
+        entry = scoped_plan[ordinal]
+        if sealed_row["manifest_ordinal"] != row.manifest_ordinal:
+            raise PolicyRefused()
+        if sealed_row["projected_row_sha256"] != row_digests[row.manifest_ordinal]:
+            raise PolicyRefused()
+        # Index 2 is the size field of both the POSIX 5-tuple and the native
+        # Windows 9-tuple planned fingerprint.
+        if sealed_row["document_bytes"] != entry.fingerprint[2]:
+            raise PolicyRefused()
+        if sealed_row["declared_family"] != binding.resolve_family(row.register):
+            raise PolicyRefused()
+
+    # Running scoped-byte total across the whole plan, sealed prefix included.
+    # The total body size of the scoped documents is INPUT, so a breach of
+    # ``MAX_SCOPED_BYTES`` is a ``bad_input`` (exit 2) row of the spec's failure
+    # map, not an internal error. This pre-add check is the routing site: it
+    # fires on the first document that would cross the ceiling, before the
+    # aggregate builder's own post-add ``InternalError`` guard (which stays as
+    # defense in depth over H2's already-validated in-memory construction) can
+    # be reached from real input.
+    scoped_bytes = 0
+    for sealed in checkpoint.shards:
+        scoped_bytes = _require_count(
+            scoped_bytes + sealed.delta["counts"]["scoped_bytes"]
+        )
+    if scoped_bytes > MAX_SCOPED_BYTES:
+        raise BadInput()
+
     pending = RegisterAggregate(domains)
     buffered: list[dict[str, Any]] = []
     shard_index = published
@@ -4611,6 +4667,9 @@ def _process_documents(
         row = scoped_rows[scoped_ordinal]
         entry = scoped_plan[scoped_ordinal]
         data = read_planned_document(entry.absolute_path, entry.fingerprint)
+        scoped_bytes = _require_count(scoped_bytes + len(data))
+        if scoped_bytes > MAX_SCOPED_BYTES:
+            raise BadInput()
         try:
             text = data.decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
@@ -4689,4 +4748,17 @@ def main(
 
 
 if __name__ == "__main__":
+    # Second-copy class-identity hazard. Run as a script this module is loaded
+    # under the name ``__main__``; ``manifest_validator``'s import-time
+    # ``from register_sweep import BadInput, ...`` would then load a SECOND,
+    # independent copy of this file under the name ``register_sweep``, with its
+    # own distinct ``BadInput``/``PolicyRefused``/``InternalError`` classes.
+    # A refusal raised from the manifest_validator seam would be an instance of
+    # the second copy's classes, so ``controlled_failure_class``'s ``isinstance``
+    # checks against *this* copy's classes would all miss and every seam-raised
+    # ``BadInput`` would ship as exit 4 / ``internal_error`` instead of
+    # exit 2 / ``bad_input``. Aliasing the running module under its import name
+    # before ``main()`` makes the seam import resolve to this very module, so
+    # there is exactly one set of refusal classes at the real entry point.
+    sys.modules.setdefault("register_sweep", sys.modules[__name__])
     sys.exit(main())

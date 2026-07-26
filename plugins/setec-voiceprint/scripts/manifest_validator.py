@@ -337,13 +337,32 @@ def decode_manifest_bytes(data: bytes) -> str:
         raise ManifestParseError("manifest bytes are not valid UTF-8") from exc
 
 
+#: Every character ``str.splitlines()`` treats as a row terminator that a strict
+#: JSONL row boundary must not: CR, VT, FF, FS, GS, RS, the C1 NEL, and the two
+#: Unicode line/paragraph separators.
+FORBIDDEN_ROW_BREAKS = "\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
+
+
 def _manifest_data_lines(text: str) -> Iterator[tuple[int, str]]:
     """Yield ``(lineno, line)`` for nonblank, noncomment JSONL data rows.
 
-    Shared line-splitting rule: 1-based line numbers over ``str.splitlines()``,
-    skipping blank lines and lines whose stripped form starts with ``#``.
+    Shared line-splitting rule: 1-based line numbers over a split on ``"\n"``
+    ALONE, skipping blank lines and lines whose stripped form starts with ``#``.
+
+    ``str.splitlines()`` also breaks on the characters in
+    :data:`FORBIDDEN_ROW_BREAKS`, so one physical JSONL row carrying any of them
+    would silently become two logical rows -- and under Spec 73 / H2 the row
+    count and every row's ordinal are baked into frozen digests. Those
+    characters are refused here, at the LINE level and before any JSON parsing,
+    so an unowned field cannot smuggle a row split past the owned fields'
+    string domain. (Separately named strict-parser hardening.)
     """
-    for lineno, raw in enumerate(text.splitlines(), start=1):
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        for char in FORBIDDEN_ROW_BREAKS:
+            if char in raw:
+                raise ManifestParseError(
+                    "manifest row carries a forbidden line-break character"
+                )
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -579,10 +598,15 @@ def project_register_sweep_manifest_bytes(
     except ManifestParseError as exc:
         raise BadInput() from exc
 
+    try:
+        data_lines = list(_manifest_data_lines(text))
+    except ManifestParseError as exc:
+        raise BadInput() from exc
+
     rows: list[H2ProjectedRow] = []
     document_plan: list[H2PlannedDocument] = []
     processed = 0
-    for _lineno, line in _manifest_data_lines(text):
+    for _lineno, line in data_lines:
         try:
             parsed = parse_manifest_row(line)
         except ManifestParseError as exc:
@@ -1224,7 +1248,15 @@ def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
     except ManifestParseError:
         return _early_bail_out("Could not read manifest: not valid UTF-8 JSONL text.")
 
-    for lineno, line in _manifest_data_lines(text):
+    try:
+        data_lines = list(_manifest_data_lines(text))
+    except ManifestParseError:
+        return _early_bail_out(
+            "Could not read manifest: a row carries a forbidden line-break "
+            "character."
+        )
+
+    for lineno, line in data_lines:
         # A progress row is one nonblank, noncomment JSONL candidate, whether it proves to be a
         # valid object, malformed JSON, or another JSON type. This keeps cadence tied to actual
         # scan work without letting bad input make the heartbeat disappear.
