@@ -19,6 +19,7 @@ from typing import Any
 from preprocessing import available_rule_names, strip_non_prose
 from stylometry_core import (
     FUNCTION_WORDS,
+    assert_personal_register_isolated,
     compare_to_baseline,
     function_word_features,
     load_entries,
@@ -239,6 +240,7 @@ def bootstrap_compare(
     Returns ``{"available": False, "reason": ...}`` if scipy is not
     installed, the baseline is empty, or no windows were produced.
     """
+    assert_personal_register_isolated(baseline_entries)
     try:
         from length_bootstrap import (  # type: ignore
             length_matched_bootstrap, HAS_SCIPY,

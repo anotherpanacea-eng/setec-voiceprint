@@ -88,12 +88,17 @@ ALLOWED_REGISTER = {
     "literary_horror", "policy_brief", "scholarly_article",
     "legal_brief", "grant_proposal", "expert_affidavit",
     "regulatory_comment", "professional_letter", "teaching",
+    "message.imessage",
     # Owner-approved 2026-07-26: the personal corpus carries Facebook
     # conversational posts as their own register. H1's family mapping does
     # not know it, so a declared social_media_facebook row resolves to the
     # "unknown" declared family in the Spec 73 sweep -- by design.
     "social_media_facebook",
 }
+# Owner-approved registers that are valid manifest values but deliberately
+# excluded from the frozen register-classifier taxonomy. These registers are
+# usable only through their own exact-register paths.
+PROFILE_ONLY_REGISTERS = {"message.imessage"}
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
 ALLOWED_USE = {
@@ -886,6 +891,12 @@ def validate_entry(
                 f"Entry tagged 'use: baseline' but 'split: {split}'. "
                 "Baseline use typically sits in 'split: baseline'.",
             ))
+    if register == "message.imessage" and isinstance(use, list) and "baseline" in use:
+        issues.append(Issue(
+            "error", lineno, entry_id, "use",
+            "message.imessage is a profile-only conversational register and "
+            "must not carry baseline use or enter the pooled author reference.",
+        ))
 
     # Privacy ratchet for voiceprint sources. A voice profile or
     # idiolect corpus is a voice-cloning input; sources should be marked

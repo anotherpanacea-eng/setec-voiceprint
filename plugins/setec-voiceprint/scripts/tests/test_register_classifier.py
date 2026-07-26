@@ -393,7 +393,7 @@ class TestTaxonomy:
         # unmapped set rather than equality: any new unmapped register must be
         # added here deliberately, with the declared-unknown consequence named
         # in its PR.
-        unmapped_to_unknown = {"social_media_facebook"}
+        unmapped_to_unknown = {"message.imessage", "social_media_facebook"}
         assert (
             manifest_validator.ALLOWED_REGISTER - set(CANONICAL_REGISTER_TO_FAMILY)
             == unmapped_to_unknown
@@ -401,6 +401,8 @@ class TestTaxonomy:
         assert set(CANONICAL_REGISTER_TO_FAMILY) <= manifest_validator.ALLOWED_REGISTER
         for register in unmapped_to_unknown:
             assert resolve_family(register) == "unknown"
+        assert manifest_validator.PROFILE_ONLY_REGISTERS == {"message.imessage"}
+        assert manifest_validator.PROFILE_ONLY_REGISTERS <= unmapped_to_unknown
 
     def test_legacy_mapping_is_exact(self):
         assert LEGACY_REGISTER_TO_FAMILY == {
@@ -433,6 +435,7 @@ class TestTaxonomy:
         assert resolve_family("first_person_essay") == "first_person_essay"
         assert resolve_family("personal") == "first_person_essay"
         assert resolve_family("personal_essay") == "first_person_essay"
+        assert resolve_family("message.imessage") == "unknown"
         assert resolve_family("not-a-register") == "unknown"
 
     def test_public_results_always_carry_taxonomy(self):
