@@ -63,7 +63,25 @@ FILE_RENAME_FLAG_POSIX_SEMANTICS = 0x2
 FILE_DISPOSITION_INFO_CLASS = 4
 FILE_NAMES_INFORMATION_CLASS = 12
 FILE_DIRECTORY_INFORMATION_CLASS = 1
+FILE_BASIC_INFORMATION_CLASS = 4
 STATUS_NO_MORE_FILES = ctypes.c_long(0x80000006).value
+
+WRITE_DAC = 0x00040000
+WRITE_OWNER = 0x00080000
+ACCESS_SYSTEM_SECURITY = 0x01000000
+FILE_ALL_ACCESS = 0x001F01FF
+OWNER_SECURITY_INFORMATION = 0x00000001
+DACL_SECURITY_INFORMATION = 0x00000004
+SECURITY_DESCRIPTOR_REVISION = 1
+ACL_REVISION = 2
+ACCESS_ALLOWED_ACE_TYPE = 0x0
+SE_DACL_PRESENT = 0x0004
+SE_DACL_DEFAULTED = 0x0008
+SE_DACL_PROTECTED = 0x1000
+SE_DACL_AUTO_INHERITED = 0x0400
+INHERITED_ACE = 0x10
+TOKEN_QUERY = 0x0008
+TOKEN_USER_CLASS = 1
 
 
 class UNICODE_STRING(ctypes.Structure):
@@ -166,6 +184,108 @@ kernel32.DuplicateHandle.argtypes = [
 ]
 kernel32.DuplicateHandle.restype = wintypes.BOOL
 
+advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+ntdll.NtQueryInformationFile.argtypes = [
+    wintypes.HANDLE, ctypes.POINTER(IO_STATUS_BLOCK), ctypes.c_void_p,
+    wintypes.ULONG, wintypes.ULONG,
+]
+ntdll.NtQueryInformationFile.restype = ctypes.c_long
+ntdll.NtQuerySecurityObject.argtypes = [
+    wintypes.HANDLE, wintypes.ULONG, ctypes.c_void_p, wintypes.ULONG,
+    ctypes.POINTER(wintypes.ULONG),
+]
+ntdll.NtQuerySecurityObject.restype = ctypes.c_long
+advapi32.OpenProcessToken.argtypes = [
+    wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)
+]
+advapi32.OpenProcessToken.restype = wintypes.BOOL
+advapi32.GetTokenInformation.argtypes = [
+    wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+]
+advapi32.GetTokenInformation.restype = wintypes.BOOL
+advapi32.GetLengthSid.argtypes = [ctypes.c_void_p]
+advapi32.GetLengthSid.restype = wintypes.DWORD
+advapi32.IsValidSid.argtypes = [ctypes.c_void_p]
+advapi32.IsValidSid.restype = wintypes.BOOL
+advapi32.EqualSid.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+advapi32.EqualSid.restype = wintypes.BOOL
+advapi32.InitializeSecurityDescriptor.argtypes = [ctypes.c_void_p, wintypes.DWORD]
+advapi32.InitializeSecurityDescriptor.restype = wintypes.BOOL
+advapi32.SetSecurityDescriptorOwner.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p, wintypes.BOOL
+]
+advapi32.SetSecurityDescriptorOwner.restype = wintypes.BOOL
+advapi32.SetSecurityDescriptorDacl.argtypes = [
+    ctypes.c_void_p, wintypes.BOOL, ctypes.c_void_p, wintypes.BOOL
+]
+advapi32.SetSecurityDescriptorDacl.restype = wintypes.BOOL
+advapi32.SetSecurityDescriptorControl.argtypes = [
+    ctypes.c_void_p, wintypes.WORD, wintypes.WORD
+]
+advapi32.SetSecurityDescriptorControl.restype = wintypes.BOOL
+advapi32.GetSecurityDescriptorControl.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(wintypes.WORD), ctypes.POINTER(wintypes.DWORD)
+]
+advapi32.GetSecurityDescriptorControl.restype = wintypes.BOOL
+advapi32.GetSecurityDescriptorOwner.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(wintypes.BOOL)
+]
+advapi32.GetSecurityDescriptorOwner.restype = wintypes.BOOL
+advapi32.GetSecurityDescriptorDacl.argtypes = [
+    ctypes.c_void_p, ctypes.POINTER(wintypes.BOOL), ctypes.POINTER(ctypes.c_void_p),
+    ctypes.POINTER(wintypes.BOOL),
+]
+advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+advapi32.InitializeAcl.argtypes = [ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD]
+advapi32.InitializeAcl.restype = wintypes.BOOL
+advapi32.AddAccessAllowedAce.argtypes = [
+    ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p
+]
+advapi32.AddAccessAllowedAce.restype = wintypes.BOOL
+advapi32.GetAclInformation.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.c_int
+]
+advapi32.GetAclInformation.restype = wintypes.BOOL
+advapi32.GetAce.argtypes = [
+    ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(ctypes.c_void_p)
+]
+advapi32.GetAce.restype = wintypes.BOOL
+
+
+class FILE_BASIC_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("CreationTime", ctypes.c_longlong),
+        ("LastAccessTime", ctypes.c_longlong),
+        ("LastWriteTime", ctypes.c_longlong),
+        ("ChangeTime", ctypes.c_longlong),
+        ("FileAttributes", wintypes.ULONG),
+    ]
+
+
+class ACL_SIZE_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("AceCount", wintypes.DWORD),
+        ("AclBytesInUse", wintypes.DWORD),
+        ("AclBytesFree", wintypes.DWORD),
+    ]
+
+
+class ACE_HEADER(ctypes.Structure):
+    _fields_ = [
+        ("AceType", ctypes.c_ubyte),
+        ("AceFlags", ctypes.c_ubyte),
+        ("AceSize", wintypes.WORD),
+    ]
+
+
+class ACCESS_ALLOWED_ACE(ctypes.Structure):
+    _fields_ = [("Header", ACE_HEADER), ("Mask", wintypes.DWORD), ("SidStart", wintypes.DWORD)]
+
+
+class TOKEN_USER(ctypes.Structure):
+    _fields_ = [("Sid", ctypes.c_void_p), ("Attributes", wintypes.DWORD)]
+
 
 def _win_error(code: int | None = None) -> OSError:
     return ctypes.WinError(ctypes.get_last_error() if code is None else code)
@@ -256,6 +376,165 @@ def require_direct(
     return value
 
 
+def current_user_sid() -> bytes:
+    """Return the raw binary SID of this process token's user."""
+    token = wintypes.HANDLE()
+    if not advapi32.OpenProcessToken(
+        kernel32.GetCurrentProcess(), TOKEN_QUERY, ctypes.byref(token)
+    ):
+        raise _win_error()
+    try:
+        size = wintypes.DWORD(0)
+        advapi32.GetTokenInformation(token, TOKEN_USER_CLASS, None, 0, ctypes.byref(size))
+        if not 0 < size.value <= 4096:
+            raise _win_error()
+        buffer = ctypes.create_string_buffer(size.value)
+        if not advapi32.GetTokenInformation(
+            token, TOKEN_USER_CLASS, buffer, size.value, ctypes.byref(size)
+        ):
+            raise _win_error()
+        user = ctypes.cast(buffer, ctypes.POINTER(TOKEN_USER)).contents
+        if not user.Sid or not advapi32.IsValidSid(user.Sid):
+            raise OSError("process token user SID is not valid")
+        length = int(advapi32.GetLengthSid(user.Sid))
+        if not 0 < length <= 256:
+            raise OSError("process token user SID has an implausible length")
+        return ctypes.string_at(user.Sid, length)
+    finally:
+        close(int(token.value))
+
+
+def _owner_private_descriptor() -> tuple[ctypes.Array, ctypes.Array, ctypes.Array]:
+    """Build an absolute SD: owner = token user, protected single-ACE DACL.
+
+    The caller must keep all three returned buffers alive for as long as the
+    descriptor is referenced, because an absolute security descriptor stores
+    pointers into the owner SID and ACL buffers rather than copies.
+    """
+    sid = current_user_sid()
+    sid_buffer = ctypes.create_string_buffer(sid, len(sid))
+    acl_size = (
+        ctypes.sizeof(ACCESS_ALLOWED_ACE) - ctypes.sizeof(wintypes.DWORD) + len(sid) + 8
+    )
+    acl_buffer = ctypes.create_string_buffer(acl_size)
+    if not advapi32.InitializeAcl(acl_buffer, acl_size, ACL_REVISION):
+        raise _win_error()
+    if not advapi32.AddAccessAllowedAce(acl_buffer, ACL_REVISION, FILE_ALL_ACCESS, sid_buffer):
+        raise _win_error()
+    descriptor = ctypes.create_string_buffer(64)
+    if not advapi32.InitializeSecurityDescriptor(descriptor, SECURITY_DESCRIPTOR_REVISION):
+        raise _win_error()
+    if not advapi32.SetSecurityDescriptorOwner(descriptor, sid_buffer, False):
+        raise _win_error()
+    if not advapi32.SetSecurityDescriptorDacl(descriptor, True, acl_buffer, False):
+        raise _win_error()
+    if not advapi32.SetSecurityDescriptorControl(
+        descriptor, SE_DACL_PROTECTED, SE_DACL_PROTECTED
+    ):
+        raise _win_error()
+    return descriptor, acl_buffer, sid_buffer
+
+
+def require_owner_private(handle: int, kind: str) -> NodeInfo:
+    """Require the retained handle's owner and DACL to be owner-private.
+
+    Exactly one non-inherited allow ACE granting the current token user full
+    access, a protected (non-inheriting) DACL, the current token user as owner,
+    the expected direct node kind, no reparse point, and a single link.
+    """
+    value = require_direct(handle, kind)
+    expected = current_user_sid()
+    expected_buffer = ctypes.create_string_buffer(expected, len(expected))
+    information = OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION
+    needed = wintypes.ULONG(0)
+    ntdll.NtQuerySecurityObject(handle, information, None, 0, ctypes.byref(needed))
+    if not 0 < needed.value <= 65536:
+        raise OSError("private-tree node security descriptor is implausible")
+    buffer = ctypes.create_string_buffer(needed.value)
+    status = int(ntdll.NtQuerySecurityObject(
+        handle, information, buffer, needed.value, ctypes.byref(needed)
+    ))
+    if status < 0:
+        raise _nt_error(status)
+    control = wintypes.WORD(0)
+    revision = wintypes.DWORD(0)
+    if not advapi32.GetSecurityDescriptorControl(
+        buffer, ctypes.byref(control), ctypes.byref(revision)
+    ):
+        raise _win_error()
+    if not control.value & SE_DACL_PRESENT or not control.value & SE_DACL_PROTECTED:
+        raise OSError("private-tree node DACL is absent or not protected")
+    if control.value & (SE_DACL_DEFAULTED | SE_DACL_AUTO_INHERITED):
+        raise OSError("private-tree node DACL is defaulted or auto-inherited")
+    owner = ctypes.c_void_p()
+    defaulted = wintypes.BOOL(0)
+    if not advapi32.GetSecurityDescriptorOwner(
+        buffer, ctypes.byref(owner), ctypes.byref(defaulted)
+    ):
+        raise _win_error()
+    if not owner.value or defaulted.value or not advapi32.EqualSid(owner, expected_buffer):
+        raise OSError("private-tree node is not owned by the current user")
+    present = wintypes.BOOL(0)
+    acl = ctypes.c_void_p()
+    acl_defaulted = wintypes.BOOL(0)
+    if not advapi32.GetSecurityDescriptorDacl(
+        buffer, ctypes.byref(present), ctypes.byref(acl), ctypes.byref(acl_defaulted)
+    ):
+        raise _win_error()
+    if not present.value or acl_defaulted.value or not acl.value:
+        raise OSError("private-tree node has no explicit DACL")
+    sizes = ACL_SIZE_INFORMATION()
+    if not advapi32.GetAclInformation(acl, ctypes.byref(sizes), ctypes.sizeof(sizes), 2):
+        raise _win_error()
+    if int(sizes.AceCount) != 1:
+        raise OSError("private-tree node DACL does not have exactly one ACE")
+    entry = ctypes.c_void_p()
+    if not advapi32.GetAce(acl, 0, ctypes.byref(entry)):
+        raise _win_error()
+    ace = ctypes.cast(entry, ctypes.POINTER(ACCESS_ALLOWED_ACE)).contents
+    if int(ace.Header.AceType) != ACCESS_ALLOWED_ACE_TYPE:
+        raise OSError("private-tree node ACE is not an allow ACE")
+    # Any flag at all refuses: this subsumes INHERITED_ACE (0x10) along with
+    # every container/object/no-propagate inherit flag, so the node must carry
+    # one explicit, non-inherited, non-inheritable ACE.
+    if int(ace.Header.AceFlags):
+        raise OSError("private-tree node ACE is inherited or inheritable")
+    if int(ace.Mask) != FILE_ALL_ACCESS:
+        raise OSError("private-tree node ACE does not grant exactly full access")
+    ace_sid = ctypes.c_void_p(
+        int(entry.value) + ACCESS_ALLOWED_ACE.SidStart.offset
+    )
+    if not advapi32.IsValidSid(ace_sid) or not advapi32.EqualSid(ace_sid, expected_buffer):
+        raise OSError("private-tree node ACE does not name the current user")
+    return value
+
+
+def scoped_fingerprint(handle: int) -> tuple[int, int, int, int, int, int, int, int, int]:
+    """Return the Spec 73 native-Windows document fingerprint.
+
+    Field order is exactly ``[volume_serial, file_id, size, write_time,
+    change_time, creation_time, mode, links, attributes]``.  ``change_time`` is
+    what makes a same-size content mutation with a restored ``LastWriteTime``
+    still refuse.  :attr:`NodeInfo.identity` is deliberately left unchanged so
+    the legacy checkpoint behaviour is untouched.
+    """
+    value = info(handle)
+    basic = FILE_BASIC_INFORMATION()
+    iosb = IO_STATUS_BLOCK()
+    status = int(ntdll.NtQueryInformationFile(
+        handle, ctypes.byref(iosb), ctypes.byref(basic), ctypes.sizeof(basic),
+        FILE_BASIC_INFORMATION_CLASS,
+    ))
+    if status < 0:
+        raise _nt_error(status)
+    mode = 0o40700 if value.kind == "directory" else 0o100600
+    return (
+        value.volume_serial, value.file_id, value.size, value.write_time,
+        int(basic.ChangeTime), value.creation_time, mode, value.links,
+        value.attributes,
+    )
+
+
 def _nt_open(
     parent: int,
     name: str,
@@ -267,14 +546,25 @@ def _nt_open(
     share_delete: bool = True,
     share_write: bool = True,
     allow_multiple_links: bool = False,
+    owner_private: bool = False,
+    allow_indirect: bool = False,
 ) -> int:
+    if allow_indirect and (kind is not None or create):
+        raise ValueError("an indirection-tolerant open is a kindless probe only")
     component = _valid_component(name)
     buffer = ctypes.create_unicode_buffer(component)
     encoded_length = len(component.encode("utf-16-le"))
     unicode_name = UNICODE_STRING(encoded_length, encoded_length, ctypes.cast(buffer, wintypes.LPWSTR))
+    security = acl_buffer = sid_buffer = None
+    if owner_private:
+        if not create:
+            raise ValueError("owner-private security is only applied at creation")
+        security, acl_buffer, sid_buffer = _owner_private_descriptor()
     attributes = OBJECT_ATTRIBUTES(
         ctypes.sizeof(OBJECT_ATTRIBUTES), parent, ctypes.pointer(unicode_name),
-        OBJ_CASE_INSENSITIVE, None, None,
+        OBJ_CASE_INSENSITIVE,
+        ctypes.cast(security, ctypes.c_void_p) if security is not None else None,
+        None,
     )
     iosb = IO_STATUS_BLOCK()
     result = wintypes.HANDLE()
@@ -304,14 +594,18 @@ def _nt_open(
         | (FILE_SHARE_DELETE if share_delete else 0),
         FILE_CREATE if create else FILE_OPEN, options, None, 0,
     ))
+    # Keep the absolute descriptor's referenced buffers alive across the call.
+    del acl_buffer, sid_buffer, security
     if status < 0:
         raise _nt_error(status)
     handle = int(result.value)
     try:
         if kind is not None:
             require_direct(handle, kind, allow_multiple_links=allow_multiple_links)
-        elif info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+        elif not allow_indirect and info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
             raise OSError("private-tree node is indirected")
+        if owner_private:
+            require_owner_private(handle, kind if kind is not None else "file")
         return handle
     except BaseException:
         if create:
@@ -336,6 +630,23 @@ def open_directory(
 
 def create_directory(parent: int, name: str) -> int:
     return _nt_open(parent, name, kind="directory", create=True, writable=True)
+
+
+def create_owner_private_directory(parent: int, name: str) -> int:
+    """Create a directory with an explicit protected single-ACE owner DACL."""
+    return _nt_open(
+        parent, name, kind="directory", create=True, writable=True, owner_private=True
+    )
+
+
+def create_owner_private_file(
+    parent: int, name: str, *, share_delete: bool = True, share_write: bool = True
+) -> int:
+    """Create a file with an explicit protected single-ACE owner DACL."""
+    return _nt_open(
+        parent, name, kind="file", create=True, writable=True,
+        share_delete=share_delete, share_write=share_write, owner_private=True,
+    )
 
 
 def open_file(
@@ -378,6 +689,36 @@ def create_file(
 
 def open_node(parent: int, name: str) -> int:
     return _nt_open(parent, name, kind=None, create=False)
+
+
+def probe_leaf_node(parent: int, name: str) -> NodeInfo | None:  # pragma: no cover - native Windows
+    """Report the named leaf under ``parent``, or ``None`` when it is absent.
+
+    The Spec 73 joint topology preflight is the native counterpart of a POSIX
+    ``os.stat(name, dir_fd=parent, follow_symlinks=False)``: it must learn
+    whether a name exists, what kind of node it is, whether it is indirected,
+    and what its ``(volume_serial, file_id)`` identity is -- without following
+    the name and without the open itself deciding the refusal. :func:`open_node`
+    refuses an indirected node outright, which would collapse "a reparse point
+    is sitting here" into the same answer as "the volume is unreadable", so this
+    opens the same no-follow, metadata-only handle and *reports* what it found.
+
+    ``None`` is returned only for a confirmed absence (``FileNotFoundError``,
+    which covers both a missing final name and a missing intermediate path
+    component). Every other failure propagates as an ``OSError`` for the caller
+    to convert into its own refusal: an unanswerable probe is never an absence.
+    """
+    try:
+        handle = _nt_open(parent, name, kind=None, create=False, allow_indirect=True)
+    except FileNotFoundError:
+        return None
+    try:
+        return info(handle)
+    finally:
+        try:
+            close(handle)
+        except OSError:
+            pass
 
 
 def open_absolute_file(path: Path, *, writable: bool = False) -> int:

@@ -1,0 +1,65 @@
+entries:
+- id: register_composition_sweep
+  script_path: plugins/setec-voiceprint/scripts/register_sweep.py
+  surface: validation
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: validation
+  purpose: 'Aggregate register-family count inventory for an explicitly scoped slice
+    of a private corpus manifest. Runs the receipt-bound H1 register classifier over
+    the scoped documents and emits fixed zero-filled count buckets (declared family,
+    classified family, their crosstab, refusal reasons, and same/different/unresolved
+    match counts). It answers one hygiene question only — is this slice obviously
+    register-mixed enough to warrant a human check? — and it does not answer that
+    question itself: there is no score, threshold, band, rank, percentage, flag, or
+    verdict anywhere in the output.
+
+    '
+  use_when:
+  - You are about to use a corpus slice whose register composition you have not looked
+    at, and you want a count inventory to decide whether a human should hand-check
+    it
+  - You want the declared `register` metadata and the classifier's family output counted
+    side by side, as counts, without any accuracy or agreement claim
+  - You need a deterministic, resumable, private-by-construction pass over a large
+    manifest slice (immutable sealed shards; fresh and resumed reports are byte-identical)
+  do_not_use_when:
+  - You want a calibrated or reportable register distribution — the H1 classifier is
+    an uncalibrated heuristic proxy confounded by topic, project, date, and length
+  - You want classifier accuracy, correctness, or agreement evidence — the same/different/unresolved
+    buckets are counts, not truth labels
+  - You want source, source-family, or provenance analysis — those manifest fields
+    are outside this contract and are never read
+  - You want the tool to select, exclude, disposition, register, activate, retag, publish,
+    or authorize training on a corpus — every such decision needs its own authority
+    outside this tool
+  inputs:
+    target: corpus manifest JSONL
+  outputs:
+    schema_version: setec-register-sweep-report/2
+    artifacts:
+    - register-composition-sweep report JSON (create-new, owner-private)
+    - register-NNNNNNNN.sqlite checkpoint shards
+  compute:
+    tier: core
+    cost_note: stdlib only; no model, GPU, network, or API cost
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Inventory the baseline slice of a manifest
+    cmd: python3 plugins/setec-voiceprint/scripts/register_sweep.py --manifest corpus/manifest.jsonl
+      --report-out out/register-sweep.json --checkpoint-dir out/register-sweep-state
+      --use baseline
+  - description: Resume an interrupted sweep from its sealed shards
+    cmd: python3 plugins/setec-voiceprint/scripts/register_sweep.py --manifest corpus/manifest.jsonl
+      --report-out out/register-sweep.json --checkpoint-dir out/register-sweep-state
+      --use baseline --resume
+  references:
+  - specs/73-register-composition-sweep.md
+  - plugins/setec-voiceprint/references/register-classifier-h1-receipt.json
