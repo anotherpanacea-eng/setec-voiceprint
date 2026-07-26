@@ -386,7 +386,21 @@ class TestTaxonomy:
             "teaching": "academic",
         }
         assert CANONICAL_REGISTER_TO_FAMILY == expected
-        assert set(CANONICAL_REGISTER_TO_FAMILY) == manifest_validator.ALLOWED_REGISTER
+        # The classifier's canonical mapping is byte-frozen by the H1 closeout
+        # receipt (Spec 73), so validator-vocabulary growth cannot extend it.
+        # Registers the mapping does not know resolve to the "unknown"
+        # declared family by design. The tripwire therefore pins the EXACT
+        # unmapped set rather than equality: any new unmapped register must be
+        # added here deliberately, with the declared-unknown consequence named
+        # in its PR.
+        unmapped_to_unknown = {"social_media_facebook"}
+        assert (
+            manifest_validator.ALLOWED_REGISTER - set(CANONICAL_REGISTER_TO_FAMILY)
+            == unmapped_to_unknown
+        )
+        assert set(CANONICAL_REGISTER_TO_FAMILY) <= manifest_validator.ALLOWED_REGISTER
+        for register in unmapped_to_unknown:
+            assert resolve_family(register) == "unknown"
 
     def test_legacy_mapping_is_exact(self):
         assert LEGACY_REGISTER_TO_FAMILY == {
