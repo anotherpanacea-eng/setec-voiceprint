@@ -251,6 +251,93 @@ def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] 
                     pass
 
 
+def _posix_bind(path: Path) -> tuple[int, int, int, int, int]:
+    """Verify one candidate is a safe, non-symlink regular file.
+
+    Returns its identity/mutation-sensitive fingerprint without reading any
+    content. Shares ``_posix_read``'s directory-walk and revalidation idioms
+    but stops short of opening a data stream: this is a stat-only seam for
+    Spec 73 / H2 document-plan construction.
+    """
+    parent_fd, directories = _posix_open_directory(path.parent)
+    descriptor = -1
+    try:
+        _posix_revalidate_chain(path.parent, directories)
+        before = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode):
+            raise _fail()
+        flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
+        descriptor = os.open(path.name, flags, dir_fd=parent_fd)
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or _file_fingerprint(before) != _file_fingerprint(opened):
+            raise _fail()
+        _posix_revalidate_chain(path.parent, directories)
+        named = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if _file_fingerprint(named) != _file_fingerprint(opened):
+            raise _fail()
+        return _file_fingerprint(opened)
+    except (OSError, TypeError, ValueError):
+        raise _fail() from None
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _close_all(directories)
+
+
+def _windows_bind(path: Path) -> tuple[int, ...]:  # pragma: no cover - native Windows
+    """Native-Windows counterpart of :func:`_posix_bind`.
+
+    Not yet implemented. The frozen 9-field Windows fingerprint domain
+    (``target_path``/``file_fingerprint``, Spec 73) needs a ``change_time``
+    field so a same-size content mutation with a restored ``LastWriteTime``
+    still changes the fingerprint; ``windows_descriptor_io.NodeInfo`` does not
+    currently expose one. Rather than emit an incomplete fingerprint, this
+    refuses. Adding ``change_time`` to ``windows_descriptor_io`` and completing
+    this function is a follow-on, tracked for the native-Windows leg of Spec 73.
+    """
+    raise _fail()
+
+
+def bind_regular(
+    candidates: list[os.PathLike[str] | str] | tuple[os.PathLike[str] | str, ...],
+) -> tuple[Path, int, tuple[int, ...]]:
+    """Resolve a frozen candidate-path vector to one safe regular file.
+
+    ``candidates`` is the caller's ordered, 1-to-3-item resolve-path candidate
+    vector (Spec 73 / H2: index 0 is the sole candidate for an absolute path,
+    otherwise the frozen 3-candidate relative vector in priority order).
+
+    Returns ``(absolute_path, candidate_index, fingerprint_fields)`` for the
+    first candidate that is *present* -- an ``os.lstat`` on it succeeds,
+    following no symlink -- in the given order. A present-but-unsafe candidate
+    (a symlink, a non-regular file, or any identity-verification failure)
+    refuses immediately rather than falling through to the next candidate: an
+    attacker who can place a symlink at the highest-priority candidate cannot
+    use that to redirect resolution to a lower-priority one. An ``OSError``
+    while merely probing presence (including "not found") is treated as "this
+    candidate is absent" and the next candidate is tried. No candidate being
+    present at all refuses too.
+
+    ``fingerprint_fields`` is the 5-tuple POSIX identity/mutation fingerprint
+    ``(dev, ino, size, mtime_ns, ctime_ns)`` on POSIX. Native-Windows support
+    is not yet implemented (see :func:`_windows_bind`).
+    """
+    if type(candidates) not in (list, tuple) or not candidates or len(candidates) > 3:
+        raise _fail()
+    for index, candidate in enumerate(candidates):
+        absolute = _absolute(candidate)
+        try:
+            os.lstat(absolute)
+        except OSError:
+            continue
+        fingerprint = _windows_bind(absolute) if os.name == "nt" else _posix_bind(absolute)
+        return absolute, index, fingerprint
+    raise _fail()
+
+
 def read_bounded_regular(
     path: os.PathLike[str] | str,
     maximum: int,
@@ -564,6 +651,7 @@ def publish_create_new(destination: os.PathLike[str] | str, payload: bytes) -> N
 
 __all__ = [
     "SecureIOError",
+    "bind_regular",
     "publish_create_new",
     "read_bounded_regular",
     "read_bounded_regular_excluding_siblings",
