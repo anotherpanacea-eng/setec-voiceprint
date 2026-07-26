@@ -90,6 +90,10 @@ ALLOWED_REGISTER = {
     "regulatory_comment", "professional_letter", "teaching",
     "message.imessage",
 }
+# Owner-approved registers that are valid manifest values but deliberately
+# excluded from the frozen register-classifier taxonomy. These registers are
+# usable only through their own exact-register paths.
+PROFILE_ONLY_REGISTERS = {"message.imessage"}
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
 ALLOWED_USE = {

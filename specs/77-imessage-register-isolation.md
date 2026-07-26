@@ -60,10 +60,13 @@ reference:
 Each path must call the shared assertion before feature extraction or
 period/profile centroid construction.
 
-The register classifier maps `message.imessage` to its existing
-`short_social` descriptive family so the manifest vocabulary remains total.
-That classifier-family mapping is not a baseline-composition permission: the
-exact `message.imessage` guard still requires register-scoped references.
+`message.imessage` is an owner-approved manifest register but is deliberately
+excluded from the frozen `register_families/v2` classifier taxonomy. It
+therefore resolves to the classifier's `unknown` refusal sentinel rather than
+being collapsed into `short_social` or an essay family. The classifier's H1
+receipt and public mapping identity remain byte-for-byte unchanged. The exact
+`message.imessage` guard is the only composition authority and requires
+register-scoped references.
 
 The companion Voicewright consumer must separately refuse `message.imessage`
 records at every training/revision materialization seam. That consumer guard
@@ -105,6 +108,8 @@ dates, and whole-artifact hashes.
 - Voicewright's ordinary-target, revision-group, and mirror-group
   materializers refuse selectable `message.imessage` rows before yielding prose.
 - Existing non-message mixed-register warning behavior remains unchanged.
+- The frozen register-classifier source, H1 receipt, mapping digest, and
+  refusal-contract digest remain unchanged.
 - The private append is exactly 9,221 rows / 363,083 words.
 - The forward denominator is recorded as 42,107 turns / 606,547 words.
 - The pooled pre-existing reference remains 1,025 rows / 1,793,410 words with

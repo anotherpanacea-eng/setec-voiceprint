@@ -384,10 +384,13 @@ class TestTaxonomy:
             "policy_advocacy": "formal_legal_policy",
             "professional_letter": "formal_first_person",
             "teaching": "academic",
-            "message.imessage": "short_social",
         }
         assert CANONICAL_REGISTER_TO_FAMILY == expected
-        assert set(CANONICAL_REGISTER_TO_FAMILY) == manifest_validator.ALLOWED_REGISTER
+        assert set(CANONICAL_REGISTER_TO_FAMILY) == (
+            manifest_validator.ALLOWED_REGISTER
+            - manifest_validator.PROFILE_ONLY_REGISTERS
+        )
+        assert manifest_validator.PROFILE_ONLY_REGISTERS == {"message.imessage"}
 
     def test_legacy_mapping_is_exact(self):
         assert LEGACY_REGISTER_TO_FAMILY == {
@@ -420,7 +423,7 @@ class TestTaxonomy:
         assert resolve_family("first_person_essay") == "first_person_essay"
         assert resolve_family("personal") == "first_person_essay"
         assert resolve_family("personal_essay") == "first_person_essay"
-        assert resolve_family("message.imessage") == "short_social"
+        assert resolve_family("message.imessage") == "unknown"
         assert resolve_family("not-a-register") == "unknown"
 
     def test_public_results_always_carry_taxonomy(self):
