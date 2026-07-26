@@ -389,15 +389,42 @@ def _posix_bind(path: Path) -> tuple[int, int, int, int, int]:
 def _windows_bind(path: Path) -> tuple[int, ...]:  # pragma: no cover - native Windows
     """Native-Windows counterpart of :func:`_posix_bind`.
 
-    Not yet implemented. The frozen 9-field Windows fingerprint domain
-    (``target_path``/``file_fingerprint``, Spec 73) needs a ``change_time``
-    field so a same-size content mutation with a restored ``LastWriteTime``
-    still changes the fingerprint; ``windows_descriptor_io.NodeInfo`` does not
-    currently expose one. Rather than emit an incomplete fingerprint, this
-    refuses. Adding ``change_time`` to ``windows_descriptor_io`` and completing
-    this function is a follow-on, tracked for the native-Windows leg of Spec 73.
+    Returns the frozen 9-field scoped handle fingerprint
+    (``windows_descriptor_io.scoped_fingerprint``), which includes
+    ``change_time`` so a same-size content mutation with a restored
+    ``LastWriteTime`` still changes the fingerprint. The historical eight-field
+    ``NodeInfo.identity`` is deliberately not used: legacy checkpoint behaviour
+    keeps that identity unchanged.
+
+    Mirrors ``_posix_bind``'s shape with the native idioms: pin and revalidate
+    the parent, open a metadata handle that reads no data, take the scoped
+    fingerprint, revalidate the parent again, and rebind the name to prove the
+    identity and fingerprint did not move underneath the observation.
     """
-    raise _fail()
+    winio = _windows_module()
+    parent_anchor = parent = handle = verify = 0
+    try:
+        parent_anchor, parent, _name = winio.pin_directory(path.parent, writable_final=False)
+        _windows_revalidate_directory(path.parent, parent)
+        handle = winio.open_file(parent, path.name, allow_multiple_links=True)
+        opened = winio.require_direct(handle, "file", allow_multiple_links=True)
+        fingerprint = _windows_scoped_fingerprint(winio, handle)
+        _windows_revalidate_directory(path.parent, parent)
+        verify = winio.open_file(parent, path.name, allow_multiple_links=True)
+        named = winio.require_direct(verify, "file", allow_multiple_links=True)
+        if opened.identity != named.identity:
+            raise _fail()
+        _require_expected(fingerprint, _windows_scoped_fingerprint(winio, verify))
+        return fingerprint
+    except (OSError, TypeError, ValueError):
+        raise _fail() from None
+    finally:
+        for item in (verify, handle, parent, parent_anchor):
+            if item:
+                try:
+                    winio.close(item)
+                except (OSError, MemoryError):
+                    pass
 
 
 def bind_regular(
@@ -421,8 +448,8 @@ def bind_regular(
     present at all refuses too.
 
     ``fingerprint_fields`` is the 5-tuple POSIX identity/mutation fingerprint
-    ``(dev, ino, size, mtime_ns, ctime_ns)`` on POSIX. Native-Windows support
-    is not yet implemented (see :func:`_windows_bind`).
+    ``(dev, ino, size, mtime_ns, ctime_ns)`` on POSIX, and the 9-field scoped
+    handle fingerprint on native Windows (see :func:`_windows_bind`).
     """
     if type(candidates) not in (list, tuple) or not candidates or len(candidates) > 3:
         raise _fail()

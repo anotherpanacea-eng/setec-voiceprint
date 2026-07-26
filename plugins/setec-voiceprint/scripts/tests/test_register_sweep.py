@@ -5662,3 +5662,1348 @@ def test_out_of_domain_row_values_inside_a_shard_are_a_policy_refusal(
                 corrupt, name="register-00000000.sqlite", domains=domains,
                 checkpoint_binding_sha256=BINDING_DIGEST,
             )
+
+
+# ---- Increment D2: CLI, runner, registration ----
+#
+# Acceptance tests 3 (CLI), 15 (privacy and errors, through the CLI), 16 (exact
+# output, progress goldens, fresh-vs-resume byte identity), the runtime half of
+# 1 (receipt/classifier identity refuses before any document read; no network),
+# and 18 (registration and gates).
+#
+# All fixtures are generated synthetic data. No private corpus, aggregate,
+# identifier, path, or prose enters the repository.
+
+import io
+import shutil
+import subprocess
+
+REPO_ROOT = SCRIPTS.parents[2]
+
+#: The three canonical golden error envelopes, byte-for-byte. These are the
+#: complete stdout of a controlled refusal: one object, no usage text, no
+#: traceback, no path, no digest, no filter value, no validator or caught
+#: exception text.
+GOLDEN_BAD_INPUT = (
+    b'{"ai_status":null,"available":false,"baseline":null,"claim_license":null,'
+    b'"claim_license_rendered":null,"reason":"register composition sweep refused'
+    b' invalid input","reason_category":"bad_input","results":{},'
+    b'"schema_version":"1.0","target":{"path":null,"words":0},'
+    b'"task_surface":"validation","tool":"register_sweep","version":"2.0.0",'
+    b'"warnings":[]}\n'
+)
+GOLDEN_POLICY_REFUSED = (
+    b'{"ai_status":null,"available":false,"baseline":null,"claim_license":null,'
+    b'"claim_license_rendered":null,"reason":"register composition sweep refused'
+    b' by policy","reason_category":"policy_refused","results":{},'
+    b'"schema_version":"1.0","target":{"path":null,"words":0},'
+    b'"task_surface":"validation","tool":"register_sweep","version":"2.0.0",'
+    b'"warnings":[]}\n'
+)
+GOLDEN_INTERNAL_ERROR = (
+    b'{"ai_status":null,"available":false,"baseline":null,"claim_license":null,'
+    b'"claim_license_rendered":null,"reason":"register composition sweep '
+    b'unavailable after internal failure","reason_category":"internal_error",'
+    b'"results":{},"schema_version":"1.0","target":{"path":null,"words":0},'
+    b'"task_surface":"validation","tool":"register_sweep","version":"2.0.0",'
+    b'"warnings":[]}\n'
+)
+
+#: The frozen success ClaimLicense, written out here rather than read from the
+#: module, so a one-byte change to the licensing posture fails this test.
+GOLDEN_CLAIM_LICENSE = {
+    "additional_caveats": [
+        "Register family is a confounded heuristic proxy; this inventory can "
+        "only prompt a human hand-check."
+    ],
+    "comparison_set": {},
+    "confidence_interval_95": None,
+    "does_not_license": (
+        "Multimodality or semantic-mode explanation; calibration, accuracy, or "
+        "a reportable distribution; source, source-family, or provenance "
+        "analysis; corpus selection, exclusion, disposition, registration, "
+        "activation, retagging, publication, or training authorization."
+    ),
+    "fpr_target": None,
+    "language_match": [],
+    "length_range_words": None,
+    "licenses": (
+        "Aggregate register-family count inventory for a hand-check of the "
+        "explicitly scoped manifest slice."
+    ),
+    "references": [],
+    "register_match": [],
+    "task_surface": "validation",
+}
+
+
+class _D2Sink:
+    """A minimal binary sink that records exactly what the runner wrote."""
+
+    def __init__(self) -> None:
+        self.buffer = io.BytesIO()
+
+    def write(self, data: Any) -> int:
+        return self.buffer.write(data)
+
+    def flush(self) -> None:
+        return None
+
+    @property
+    def bytes(self) -> bytes:
+        return self.buffer.getvalue()
+
+
+class _D2BrokenSink:
+    """A consumer that is already gone: every write raises."""
+
+    def __init__(self) -> None:
+        self.attempts = 0
+
+    def write(self, data: Any) -> int:
+        self.attempts += 1
+        raise BrokenPipeError("closed consumer")
+
+    def flush(self) -> None:
+        raise BrokenPipeError("closed consumer")
+
+
+def _d2_corpus(
+    root: Path,
+    count: int,
+    *,
+    body: str = "tiny synthetic document",
+    use: list[str] | None = None,
+    ai_status: str = "pre_ai_human",
+    register: str | None = None,
+    split: str | None = None,
+    persona: str | None = None,
+    extra_rows: list[dict[str, Any]] | None = None,
+    corpus_name: str = "corpus",
+    manifest_name: str = "manifest.jsonl",
+) -> Path:
+    """Write ``count`` tiny synthetic documents plus their manifest."""
+    corpus = root / corpus_name
+    corpus.mkdir(parents=True, exist_ok=True)
+    rows: list[dict[str, Any]] = []
+    for index in range(count):
+        name = f"doc{index:05d}.txt"
+        (corpus / name).write_text(f"{body} {index}\n", encoding="utf-8")
+        row: dict[str, Any] = {
+            "path": f"{corpus_name}/{name}",
+            "use": list(use) if use is not None else ["baseline"],
+            "ai_status": ai_status,
+        }
+        if register is not None:
+            row["register"] = register
+        if split is not None:
+            row["split"] = split
+        if persona is not None:
+            row["persona"] = persona
+        rows.append(row)
+    rows.extend(extra_rows or [])
+    manifest = root / manifest_name
+    manifest.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def _d2_args(root: Path, manifest: Path, *extra: str) -> list[str]:
+    return [
+        "--manifest", str(manifest),
+        "--report-out", str(root / "report.json"),
+        "--checkpoint-dir", str(root / "state"),
+        *extra,
+    ]
+
+
+def _d2_out_args(manifest: Path, out_dir: Path, *extra: str) -> list[str]:
+    """Args for a run whose outputs live under ``out_dir`` but whose corpus
+    identity (and therefore every H2 digest) is the shared ``manifest``."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return [
+        "--manifest", str(manifest),
+        "--report-out", str(out_dir / "report.json"),
+        "--checkpoint-dir", str(out_dir / "state"),
+        *extra,
+    ]
+
+
+def _d2_run(argv: list[str]) -> tuple[int, bytes, bytes]:
+    """Drive ``main()`` with recording binary streams."""
+    out = _D2Sink()
+    err = _D2Sink()
+    code = rs.main(argv, stdout=out, stderr=err)
+    return code, out.bytes, err.bytes
+
+
+def _d2_sweep(root: Path, count: int, *extra: str, **corpus: Any) -> tuple[int, bytes, bytes]:
+    manifest = _d2_corpus(root, count, **corpus)
+    return _d2_run(_d2_args(root, manifest, *extra))
+
+
+# --------------------------------------------------------------------------
+# Acceptance test 3: the closed CLI grammar
+# --------------------------------------------------------------------------
+
+
+def test_cli_grammar_is_the_closed_option_set() -> None:
+    assert rs.CLI_REQUIRED_OPTIONS == (
+        "--manifest", "--report-out", "--checkpoint-dir",
+    )
+    assert rs.CLI_FLAG_OPTIONS == ("--resume",)
+    assert rs.CLI_VALUE_OPTIONS == (
+        "--manifest", "--report-out", "--checkpoint-dir",
+        "--use", "--split", "--persona", "--ai-status", "--min-words",
+    )
+    # There is no source-related option anywhere in the grammar.
+    for option in rs.CLI_OPTIONS:
+        assert "source" not in option and "group" not in option
+    assert rs.MIN_WORDS_DEFAULT == 100
+
+
+def test_cli_accepts_every_allowed_filter_value(tmp_path: Path) -> None:
+    """Acceptance 3: every allowed `--use`/`--split`/`--ai-status` member passes
+    exact-membership validation."""
+    base = ["--manifest", "m", "--report-out", "r", "--checkpoint-dir", "s"]
+    for value in sorted(mv.ALLOWED_USE):
+        assert rs.parse_arguments(base + ["--use", value]).use == value
+    for value in sorted(mv.ALLOWED_SPLIT):
+        assert rs.parse_arguments(base + ["--split", value]).split == value
+    for value in sorted(mv.ALLOWED_AI_STATUS):
+        assert rs.parse_arguments(base + ["--ai-status", value]).ai_status == value
+
+
+def test_cli_every_allowed_use_value_runs_end_to_end(tmp_path: Path) -> None:
+    """Acceptance 3, through `main()`: a run under each allowed `--use` value
+    commits a report whose scope records exactly that value."""
+    for index, value in enumerate(sorted(mv.ALLOWED_USE)):
+        root = tmp_path / f"use{index}"
+        root.mkdir()
+        code, out, _err = _d2_sweep(root, 2, "--use", value, use=[value])
+        assert code == 0, value
+        report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        assert report["scope"]["use"] == value
+        assert report["counts"]["scoped_documents"] == 2
+        assert out.endswith(b"}\n")
+
+
+def test_cli_every_allowed_split_and_ai_status_value_runs_end_to_end(
+    tmp_path: Path,
+) -> None:
+    for index, value in enumerate(sorted(mv.ALLOWED_SPLIT)):
+        root = tmp_path / f"split{index}"
+        root.mkdir()
+        code, _out, _err = _d2_sweep(root, 1, "--split", value, split=value)
+        assert code == 0, value
+        report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        assert report["scope"]["split"] == value and report["scope"]["use"] is None
+    for index, value in enumerate(sorted(mv.ALLOWED_AI_STATUS)):
+        root = tmp_path / f"status{index}"
+        root.mkdir()
+        code, _out, _err = _d2_sweep(root, 1, "--ai-status", value, ai_status=value)
+        assert code == 0, value
+        report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        assert report["scope"]["ai_status"] == value
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        # repeated options (including a repeated required option)
+        ["--use", "baseline", "--use", "baseline"],
+        ["--use", "baseline", "--use", "train"],
+        ["--resume", "--resume"],
+        ["--min-words", "100", "--min-words", "200"],
+        # unknown options, including every former grouping spelling
+        ["--group-by-source"],
+        ["--group-by-source-family"],
+        ["--source-family", "x"],
+        ["--source-id", "x"],
+        ["--source", "x"],
+        ["--by-source"],
+        ["--group", "x"],
+        ["--verbose"],
+        ["--help"],
+        ["-h"],
+        # malformed spellings: `=` form, single dash, bare double dash,
+        # positional, abbreviation, missing value, option-shaped value
+        ["--use=baseline"],
+        ["-u", "baseline"],
+        ["--"],
+        ["extra-positional"],
+        ["--us", "baseline"],
+        ["--use"],
+        ["--use", "--split"],
+        # out-of-domain enum values
+        ["--use", "not_a_use"],
+        ["--use", "Baseline"],
+        ["--use", ""],
+        ["--split", "not_a_split"],
+        ["--ai-status", "not_a_status"],
+        # out-of-range / non-canonical integers
+        ["--min-words", "0"],
+        ["--min-words", "1000001"],
+        ["--min-words", "-1"],
+        ["--min-words", "+5"],
+        ["--min-words", "0100"],
+        ["--min-words", "1_0"],
+        ["--min-words", "1.0"],
+        ["--min-words", "true"],
+        ["--min-words", " 100"],
+        ["--min-words", "100 "],
+        ["--min-words", "１００"],
+        ["--min-words", ""],
+        # persona domain
+        ["--persona", " josh"],
+        ["--persona", "josh "],
+        ["--persona", "a" * 129],
+        ["--persona", "jósh"],
+        ["--persona", "jo‮sh"],
+        ["--persona", "jo\tsh"],
+        ["--persona", ""],
+    ],
+)
+def test_cli_refuses_before_any_output_creation(
+    tmp_path: Path, extra: list[str]
+) -> None:
+    """Acceptance 3: a bad option produces exactly the one `bad_input` golden,
+    exit 2, and neither output path exists afterwards."""
+    manifest = _d2_corpus(tmp_path, 1)
+    report = tmp_path / "report.json"
+    state = tmp_path / "state"
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest, *extra))
+    assert code == 2
+    assert out == GOLDEN_BAD_INPUT
+    assert err == b""
+    assert not report.exists()
+    assert not state.exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        [],
+        ["--manifest", "m"],
+        ["--manifest", "m", "--report-out", "r"],
+        ["--report-out", "r", "--checkpoint-dir", "s"],
+        ["--manifest", "m", "--checkpoint-dir", "s"],
+    ],
+)
+def test_cli_missing_required_option_refuses(argv: list[str]) -> None:
+    code, out, err = _d2_run(argv)
+    assert (code, out, err) == (2, GOLDEN_BAD_INPUT, b"")
+
+
+def test_cli_min_words_default_and_bounds() -> None:
+    base = ["--manifest", "m", "--report-out", "r", "--checkpoint-dir", "s"]
+    assert rs.parse_arguments(base).min_words == 100
+    assert rs.parse_arguments(base + ["--min-words", "1"]).min_words == 1
+    assert rs.parse_arguments(base + ["--min-words", "1000000"]).min_words == 1000000
+    assert rs.parse_arguments(base).persona is None
+    assert rs.parse_arguments(base).resume is False
+    assert rs.parse_arguments(base + ["--resume"]).resume is True
+
+
+def test_cli_persona_domain_matches_the_projection_seam() -> None:
+    """The CLI persona filter and the projected `persona` field share one
+    domain; the two predicates live on opposite sides of the one-way import
+    boundary, so they are pinned against one table of hostile values."""
+    table = [
+        "josh", "j", "a" * 128, "josh smith", "josé", "中文",
+        "", " ", " josh", "josh ", "a" * 129, "jósh", "jo\x00sh",
+        "jo\x01sh", "jo\x7fsh", "jo\x9fsh", "jo‮sh", "jo‏sh",
+        "jo\nsh", "jo\tsh",
+    ]
+    for value in table:
+        assert rs.valid_h2_string(value, max_bytes=rs.MAX_PERSONA_BYTES) == (
+            mv._valid_h2_string(value, max_bytes=rs.MAX_PERSONA_BYTES)
+        ), value
+    for value in (None, 1, True, b"josh", ["josh"]):
+        assert rs.valid_h2_string(value, max_bytes=rs.MAX_PERSONA_BYTES) is False
+
+
+def test_cli_options_never_render_the_raw_persona() -> None:
+    """The validated raw persona reaches only the private scope binding; the
+    options object refuses to render it."""
+    options = rs.parse_arguments(
+        ["--manifest", "m", "--report-out", "r", "--checkpoint-dir", "s",
+         "--persona", "sentinelpersonavalue"]
+    )
+    assert options.persona == "sentinelpersonavalue"
+    assert options.persona_selected is True
+    assert "sentinelpersonavalue" not in repr(options)
+    assert repr(options) == "<register sweep options>"
+
+
+def test_omitted_filters_include_every_admissible_row(tmp_path: Path) -> None:
+    """Acceptance 3: omitted filters include every H2-admissible row; there are
+    no implicit corpus-role defaults."""
+    manifest = _d2_corpus(
+        tmp_path, 3, use=["baseline", "idiolect"], split="holdout",
+        register="personal", persona="josh", ai_status="ai_edited",
+    )
+    code, _out, _err = _d2_run(_d2_args(tmp_path, manifest))
+    assert code == 0
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["counts"]["input_rows"] == 3
+    assert report["counts"]["scoped_documents"] == 3
+    assert report["scope"] == {
+        "ai_status": None,
+        "min_words": 100,
+        "persona_selected": False,
+        "scope_sha256": report["scope"]["scope_sha256"],
+        "split": None,
+        "use": None,
+    }
+
+
+def test_filters_select_the_expected_subset(tmp_path: Path) -> None:
+    """`use` is list membership; `split`, `ai_status`, and `persona` are exact
+    equality."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    rows = []
+    spec = [
+        (["baseline", "idiolect"], "holdout", "ai_edited", "alpha"),
+        (["baseline"], "train", "ai_edited", "alpha"),
+        (["idiolect"], "holdout", "pre_ai_human", "beta"),
+        (["idiolect"], "holdout", "ai_edited", None),
+    ]
+    for index, (use, split, ai_status, persona) in enumerate(spec):
+        (corpus / f"doc{index}.txt").write_text(f"body {index}\n", encoding="utf-8")
+        row: dict[str, Any] = {
+            "path": f"corpus/doc{index}.txt", "use": use,
+            "ai_status": ai_status, "split": split,
+        }
+        if persona is not None:
+            row["persona"] = persona
+        rows.append(row)
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+
+    cases = [
+        (["--use", "idiolect"], 3),
+        (["--use", "baseline"], 2),
+        (["--split", "holdout"], 3),
+        (["--ai-status", "ai_edited"], 3),
+        (["--persona", "alpha"], 2),
+        (["--use", "idiolect", "--split", "holdout", "--ai-status", "ai_edited"], 2),
+        (["--persona", "gamma"], 0),
+    ]
+    for index, (extra, expected) in enumerate(cases):
+        run_root = tmp_path / f"run{index}"
+        run_root.mkdir()
+        code, _out, _err = _d2_run(
+            ["--manifest", str(manifest),
+             "--report-out", str(run_root / "report.json"),
+             "--checkpoint-dir", str(run_root / "state"), *extra]
+        )
+        assert code == 0, extra
+        report = json.loads((run_root / "report.json").read_text(encoding="utf-8"))
+        assert report["counts"]["input_rows"] == 4
+        assert report["counts"]["scoped_documents"] == expected, extra
+
+
+def test_empty_scope_commits_a_zero_inventory_and_creates_no_shard(
+    tmp_path: Path,
+) -> None:
+    manifest = _d2_corpus(tmp_path, 3)
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest, "--use", "exclude"))
+    assert code == 0
+    assert err == b"register sweep processing-complete: completed=0 total=0 report_commit=pending\n"
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["counts"]["input_rows"] == 3
+    assert report["counts"]["scoped_documents"] == 0
+    assert report["counts"]["scoped_words"] == 0
+    assert list((tmp_path / "state").iterdir()) == []
+    for name in rs.INVENTORY_KEYS:
+        for cell in _d2_cells(report[name]):
+            assert cell == {"documents": 0, "words": 0}
+    assert json.loads(out.decode("utf-8"))["results"]["counts"] == report["counts"]
+
+
+def _d2_cells(inventory: Any) -> list[dict[str, int]]:
+    cells: list[dict[str, int]] = []
+    for value in inventory.values():
+        if set(value) == {"documents", "words"}:
+            cells.append(value)
+        else:
+            cells.extend(value.values())
+    return cells
+
+
+# --------------------------------------------------------------------------
+# Acceptance test 16: exact output, determinism, and progress goldens
+# --------------------------------------------------------------------------
+
+
+def test_two_fresh_runs_are_byte_identical(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 7, register="personal", split="baseline")
+    first_root = tmp_path / "a"
+    second_root = tmp_path / "b"
+    first_root.mkdir()
+    second_root.mkdir()
+    results = []
+    for root in (first_root, second_root):
+        code, out, err = _d2_run(
+            ["--manifest", str(manifest),
+             "--report-out", str(root / "report.json"),
+             "--checkpoint-dir", str(root / "state")]
+        )
+        assert code == 0
+        results.append(((root / "report.json").read_bytes(), out, err))
+    assert results[0][0] == results[1][0]
+    assert results[0][1] == results[1][1]
+    assert results[0][2] == results[1][2]
+    digest = hashlib.sha256(results[0][0]).hexdigest()
+    envelope = json.loads(results[0][1].decode("utf-8"))
+    assert envelope["results"]["report_sha256"] == f"sha256:{digest}"
+
+
+def test_success_envelope_is_the_canonical_golden(tmp_path: Path) -> None:
+    """Acceptance 16: the full canonical success envelope, with explicit null
+    and empty defaults and the complete frozen ClaimLicense rendering."""
+    manifest = _d2_corpus(tmp_path, 2, register="personal")
+    code, out, _err = _d2_run(_d2_args(tmp_path, manifest, "--persona", "unused"))
+    assert code == 0
+    report_bytes = (tmp_path / "report.json").read_bytes()
+    report = json.loads(report_bytes.decode("utf-8"))
+    expected = {
+        "ai_status": None,
+        "available": True,
+        "baseline": None,
+        "claim_license": GOLDEN_CLAIM_LICENSE,
+        "claim_license_rendered": (
+            "## What this result licenses\n\n"
+            "**Task surface:** validation / labeled-corpus harness\n\n"
+            "**Reports:** " + GOLDEN_CLAIM_LICENSE["licenses"] + "\n\n"
+            "**Does NOT report:** " + GOLDEN_CLAIM_LICENSE["does_not_license"]
+            + "\n\n### Caveats\n\n- "
+            + GOLDEN_CLAIM_LICENSE["additional_caveats"][0]
+        ),
+        "results": {
+            "counts": report["counts"],
+            "report_schema_version": "setec-register-sweep-report/2",
+            "report_sha256": "sha256:" + hashlib.sha256(report_bytes).hexdigest(),
+            "taxonomy": "register_families/v2",
+        },
+        "schema_version": "1.0",
+        "target": {"path": None, "words": report["counts"]["scoped_words"]},
+        "task_surface": "validation",
+        "tool": "register_sweep",
+        "version": "2.0.0",
+        "warnings": [],
+    }
+    assert out == _canonical(expected) + b"\n"
+    # The envelope carries no family cell, no plaintext filter value, no path,
+    # and no corpus identifier.
+    assert b"persona" not in out
+    assert b"unused" not in out
+
+
+@pytest.mark.parametrize("total", [0, 1, 99, 100, 101, 200])
+def test_progress_goldens_by_total(tmp_path: Path, total: int) -> None:
+    """Acceptance 16: exact progress bytes at each pinned total. No cadence line
+    at the final `K == N`, and exactly one pending-completion line."""
+    root = tmp_path / f"t{total}"
+    root.mkdir()
+    manifest = _d2_corpus(root, total)
+    code, _out, err = _d2_run(_d2_args(root, manifest))
+    assert code == 0
+    expected = "".join(
+        f"register sweep progress: completed={k} total={total}\n"
+        for k in range(100, total, 100)
+    ) + (
+        f"register sweep processing-complete: completed={total} total={total} "
+        f"report_commit=pending\n"
+    )
+    assert err.decode("ascii") == expected
+    assert err.count(b"processing-complete") == 1
+    assert f"completed={total} total={total}\n".encode() not in err
+
+
+@pytest.mark.parametrize("resume_from", [0, 50, 100, 150])
+@pytest.mark.parametrize("total", [0, 1, 99, 100, 101, 200])
+def test_progress_decision_goldens_on_resume(total: int, resume_from: int) -> None:
+    """The pure cadence decision functions, pinned at every spec resume start.
+    A shard seals every 250 rows, so starts of 50/100/150 are reachable only
+    through the decision functions, not through a real sealed chain."""
+    if resume_from > total:
+        with pytest.raises(rs.InternalError):
+            rs.progress_ordinals(total, resume_from=resume_from)
+        return
+    expected = tuple(
+        k for k in range(100, total, 100) if k > resume_from
+    )
+    assert rs.progress_ordinals(total, resume_from=resume_from) == expected
+    for k in range(0, total + 1):
+        assert rs.progress_is_eligible(k, total, resume_from=resume_from) == (
+            k in expected
+        )
+    assert rs.progress_is_eligible(total, total, resume_from=resume_from) is False
+    assert rs.processing_complete_line(total) == (
+        f"register sweep processing-complete: completed={total} total={total} "
+        f"report_commit=pending\n"
+    )
+
+
+def test_fresh_and_resumed_reports_are_byte_identical(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Acceptance 11/16: interruption after a sealed shard loses only the
+    unpublished rows; the resumed report, hash, and stdout envelope are
+    byte-identical to a fresh run, and no cadence line is replayed."""
+    total = rs.SHARD_ROWS + 1
+    manifest = _d2_corpus(tmp_path, total)
+    fresh_root = tmp_path / "fresh"
+    code, fresh_out, fresh_err = _d2_run(_d2_out_args(manifest, fresh_root))
+    assert code == 0
+    fresh_report = (fresh_root / "report.json").read_bytes()
+    assert sorted(p.name for p in (fresh_root / "state").iterdir()) == [
+        "register-00000000.sqlite", "register-00000001.sqlite",
+    ]
+
+    resume_root = tmp_path / "resumed"
+    real_read = rs.read_planned_document
+    calls = {"n": 0}
+
+    def interrupting_read(path: Any, expected_fingerprint: Any) -> bytes:
+        calls["n"] += 1
+        if calls["n"] > rs.SHARD_ROWS:
+            raise KeyboardInterrupt("synthetic interruption")
+        return real_read(path, expected_fingerprint)
+
+    monkeypatch.setattr(rs, "read_planned_document", interrupting_read)
+    with pytest.raises(KeyboardInterrupt):
+        _d2_run(_d2_out_args(manifest, resume_root))
+    monkeypatch.setattr(rs, "read_planned_document", real_read)
+    assert not (resume_root / "report.json").exists()
+    assert sorted(p.name for p in (resume_root / "state").iterdir()) == [
+        "register-00000000.sqlite",
+    ]
+
+    code, resumed_out, resumed_err = _d2_run(
+        _d2_out_args(manifest, resume_root, "--resume")
+    )
+    assert code == 0
+    assert (resume_root / "report.json").read_bytes() == fresh_report
+    assert resumed_out == fresh_out
+    # No replay: the fresh run emitted cadence lines at 100 and 200, the
+    # resumed run starts at 250 and emits none.
+    assert fresh_err.count(b"register sweep progress:") == 2
+    assert resumed_err == (
+        b"register sweep processing-complete: completed=251 total=251 "
+        b"report_commit=pending\n"
+    )
+
+
+def test_resume_of_a_complete_sealed_chain_reprocesses_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sealed chain that already covers the whole plan resumes with zero
+    document reads and still commits the identical report."""
+    total = rs.SHARD_ROWS
+    manifest = _d2_corpus(tmp_path, total)
+    control_root = tmp_path / "control"
+    assert _d2_run(_d2_out_args(manifest, control_root))[0] == 0
+    control_report = (control_root / "report.json").read_bytes()
+
+    root = tmp_path / "run"
+    real_publish = rs.TopologyPreflight.publish_report
+
+    def refusing_publish(self: Any, payload: bytes) -> None:
+        raise KeyboardInterrupt("synthetic interruption at the commit point")
+
+    monkeypatch.setattr(rs.TopologyPreflight, "publish_report", refusing_publish)
+    with pytest.raises(KeyboardInterrupt):
+        _d2_run(_d2_out_args(manifest, root))
+    monkeypatch.setattr(rs.TopologyPreflight, "publish_report", real_publish)
+    assert not (root / "report.json").exists()
+
+    reads: list[Any] = []
+    real_read = rs.read_planned_document
+
+    def counting_read(path: Any, expected_fingerprint: Any) -> bytes:
+        reads.append(path)
+        return real_read(path, expected_fingerprint)
+
+    monkeypatch.setattr(rs, "read_planned_document", counting_read)
+    code, _out, err = _d2_run(_d2_out_args(manifest, root, "--resume"))
+    assert code == 0
+    assert reads == []
+    assert (root / "report.json").read_bytes() == control_report
+    assert err == (
+        b"register sweep processing-complete: completed=250 total=250 "
+        b"report_commit=pending\n"
+    )
+
+
+def test_shards_seal_exactly_at_the_frozen_partition(tmp_path: Path) -> None:
+    """Acceptance 11 through the runner: the plan's one immutable partition."""
+    for total, names in (
+        (1, ["register-00000000.sqlite"]),
+        (rs.SHARD_ROWS, ["register-00000000.sqlite"]),
+        (rs.SHARD_ROWS + 1,
+         ["register-00000000.sqlite", "register-00000001.sqlite"]),
+    ):
+        root = tmp_path / f"n{total}"
+        root.mkdir()
+        manifest = _d2_corpus(root, total)
+        assert _d2_run(_d2_args(root, manifest))[0] == 0
+        assert sorted(p.name for p in (root / "state").iterdir()) == names
+
+
+# --------------------------------------------------------------------------
+# Acceptance test 15: privacy, errors, and the terminal commit
+# --------------------------------------------------------------------------
+
+
+SENTINEL_PERSONA = "zqsentinelpersonazq"
+SENTINEL_PATH = "zqsentineldirzq"
+SENTINEL_PROSE = "zqsentinelprosezq"
+
+
+def test_sentinel_values_never_reach_any_output_stream(tmp_path: Path) -> None:
+    """Acceptance 15: sentinel prose, path components, and the raw persona
+    filter never reach stdout, stderr, the report, or the checkpoint."""
+    root = tmp_path / SENTINEL_PATH
+    root.mkdir()
+    manifest = _d2_corpus(
+        root, 3,
+        body=SENTINEL_PROSE,
+        corpus_name=SENTINEL_PATH + "-corpus",
+        manifest_name=SENTINEL_PATH + "-manifest.jsonl",
+        use=["idiolect"], split="holdout", ai_status="ai_edited",
+        persona=SENTINEL_PERSONA,
+    )
+    code, out, err = _d2_run(
+        _d2_args(root, manifest,
+                 "--persona", SENTINEL_PERSONA,
+                 "--use", "idiolect", "--split", "holdout",
+                 "--ai-status", "ai_edited")
+    )
+    assert code == 0
+    report_bytes = (root / "report.json").read_bytes()
+    checkpoint_bytes = b"".join(
+        p.read_bytes() for p in sorted((root / "state").iterdir())
+    )
+    for sentinel in (SENTINEL_PERSONA, SENTINEL_PATH, SENTINEL_PROSE):
+        encoded = sentinel.encode("utf-8")
+        assert encoded not in out
+        assert encoded not in err
+        assert encoded not in report_bytes
+        assert encoded not in checkpoint_bytes
+    # The three validated categorical selectors appear ONLY in the report's
+    # closed `scope` object -- never in stdout, stderr, or the checkpoint.
+    report = json.loads(report_bytes.decode("utf-8"))
+    assert report["scope"]["use"] == "idiolect"
+    assert report["scope"]["split"] == "holdout"
+    assert report["scope"]["ai_status"] == "ai_edited"
+    assert report["scope"]["persona_selected"] is True
+    for selector in (b"idiolect", b"holdout", b"ai_edited"):
+        assert selector not in out
+        assert selector not in err
+        assert selector not in checkpoint_bytes
+        assert report_bytes.count(selector) == 1
+
+
+def test_persona_selected_toggles_only_with_a_valid_persona_filter(
+    tmp_path: Path,
+) -> None:
+    for index, (extra, expected) in enumerate(
+        [([], False), (["--persona", "alpha"], True)]
+    ):
+        root = tmp_path / f"p{index}"
+        root.mkdir()
+        manifest = _d2_corpus(root, 2, persona="alpha")
+        assert _d2_run(_d2_args(root, manifest, *extra))[0] == 0
+        report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        assert report["scope"]["persona_selected"] is expected
+
+
+def test_broken_stdout_after_the_commit_still_exits_zero(tmp_path: Path) -> None:
+    """Acceptance 15: a closed consumer after the terminal report commit is
+    absorbed by the total sink -- exit 0, no stderr, report byte-identical."""
+    manifest = _d2_corpus(tmp_path, 3)
+    control_root = tmp_path / "control"
+    assert _d2_run(_d2_out_args(manifest, control_root))[0] == 0
+    control_report = (control_root / "report.json").read_bytes()
+
+    root = tmp_path / "broken"
+    out = _D2BrokenSink()
+    err = _D2Sink()
+    code = rs.main(_d2_out_args(manifest, root), stdout=out, stderr=err)
+    assert code == 0
+    assert out.attempts == 1
+    assert (root / "report.json").read_bytes() == control_report
+    assert err.bytes == (
+        b"register sweep processing-complete: completed=3 total=3 "
+        b"report_commit=pending\n"
+    )
+    assert b"reason_category" not in err.bytes
+
+
+def test_no_stderr_or_error_envelope_follows_the_commit(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 2)
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert code == 0
+    assert err.endswith(b"report_commit=pending\n")
+    assert err.count(b"report_commit=pending") == 1
+    assert b"reason_category" not in err
+    assert json.loads(out.decode("utf-8"))["available"] is True
+
+
+def test_missing_document_refuses_with_the_bad_input_golden(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 2)
+    (tmp_path / "corpus" / "doc00001.txt").unlink()
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out) == (2, GOLDEN_BAD_INPUT)
+    assert err == b""
+    assert not (tmp_path / "report.json").exists()
+    assert not (tmp_path / "state").exists()
+
+
+def test_non_utf8_document_refuses_with_the_bad_input_golden(
+    tmp_path: Path,
+) -> None:
+    manifest = _d2_corpus(tmp_path, 2)
+    (tmp_path / "corpus" / "doc00001.txt").write_bytes(b"\xff\xfe not utf-8")
+    code, out, _err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out) == (2, GOLDEN_BAD_INPUT)
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_report_and_checkpoint_topology_collision_refuses(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 1)
+    code, out, _err = _d2_run(
+        ["--manifest", str(manifest),
+         "--report-out", str(tmp_path / "same"),
+         "--checkpoint-dir", str(tmp_path / "same")]
+    )
+    assert (code, out) == (3, GOLDEN_POLICY_REFUSED)
+    assert not (tmp_path / "same").exists()
+
+
+def test_existing_report_refuses_before_creating_the_checkpoint(
+    tmp_path: Path,
+) -> None:
+    manifest = _d2_corpus(tmp_path, 1)
+    (tmp_path / "report.json").write_text("{}", encoding="utf-8")
+    code, out, _err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out) == (3, GOLDEN_POLICY_REFUSED)
+    assert (tmp_path / "report.json").read_text(encoding="utf-8") == "{}"
+    assert not (tmp_path / "state").exists()
+
+
+def test_resume_without_a_checkpoint_directory_refuses(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 1)
+    code, out, _err = _d2_run(_d2_args(tmp_path, manifest, "--resume"))
+    assert (code, out) == (3, GOLDEN_POLICY_REFUSED)
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_internal_error_after_processing_complete_publishes_no_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Acceptance 16: a failure after `processing-complete` but before
+    publication emits the one controlled envelope and commits nothing."""
+    manifest = _d2_corpus(tmp_path, 2)
+
+    def refusing_freeze(**_kwargs: Any) -> tuple[bytes, str, dict, bytes]:
+        raise rs.InternalError()
+
+    monkeypatch.setattr(rs, "freeze_publication", refusing_freeze)
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out) == (4, GOLDEN_INTERNAL_ERROR)
+    assert err == (
+        b"register sweep processing-complete: completed=2 total=2 "
+        b"report_commit=pending\n"
+    )
+    assert not (tmp_path / "report.json").exists()
+    assert sorted(p.name for p in (tmp_path / "state").iterdir()) == [
+        "register-00000000.sqlite",
+    ]
+
+
+def test_keyboard_interrupt_is_never_converted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _d2_corpus(tmp_path, 1)
+
+    def interrupting(*_args: Any, **_kwargs: Any) -> bytes:
+        raise KeyboardInterrupt("synthetic")
+
+    monkeypatch.setattr(rs, "read_planned_document", interrupting)
+    with pytest.raises(KeyboardInterrupt):
+        _d2_run(_d2_args(tmp_path, manifest))
+    assert not (tmp_path / "report.json").exists()
+
+
+# --------------------------------------------------------------------------
+# Acceptance test 1, runtime side: H1 identity and no network
+# --------------------------------------------------------------------------
+
+
+def _d2_h1_copy(tmp_path: Path) -> tuple[Path, Path]:
+    """Copy the real receipt and classifier into a writable fixture tree."""
+    receipt_path, classifier_path = rs.default_h1_paths()
+    references = tmp_path / "h1" / "references"
+    scripts = tmp_path / "h1" / "scripts"
+    references.mkdir(parents=True)
+    scripts.mkdir(parents=True)
+    receipt_copy = references / receipt_path.name
+    classifier_copy = scripts / classifier_path.name
+    shutil.copyfile(receipt_path, receipt_copy)
+    shutil.copyfile(classifier_path, classifier_copy)
+    return receipt_copy, classifier_copy
+
+
+@pytest.mark.parametrize("target", ["receipt", "classifier"])
+def test_tampered_h1_artifact_refuses_before_any_document_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """Acceptance 1, runtime: a tampered receipt or classifier refuses with
+    `policy_refused` before the first document body is read and before either
+    output is created."""
+    receipt_copy, classifier_copy = _d2_h1_copy(tmp_path)
+    if target == "receipt":
+        receipt_copy.write_bytes(receipt_copy.read_bytes().replace(b"{", b"{ ", 1))
+    else:
+        classifier_copy.write_bytes(
+            classifier_copy.read_bytes() + b"\n# tampered\n"
+        )
+    monkeypatch.setattr(
+        rs, "default_h1_paths", lambda: (receipt_copy, classifier_copy)
+    )
+    reads: list[Any] = []
+    monkeypatch.setattr(
+        rs, "read_planned_document",
+        lambda path, fingerprint: reads.append(path) or b"",
+    )
+    manifest = _d2_corpus(tmp_path, 2)
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out, err) == (3, GOLDEN_POLICY_REFUSED, b"")
+    assert reads == []
+    assert not (tmp_path / "report.json").exists()
+    assert not (tmp_path / "state").exists()
+
+
+def test_runtime_makes_no_network_call_with_sockets_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A socket-blocking harness: every socket constructor raises for the whole
+    run, and the sweep still commits."""
+    import socket as socket_module
+
+    def refuse(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("H2 runtime attempted a network call")
+
+    for name in (
+        "socket", "socketpair", "create_connection", "getaddrinfo",
+        "gethostbyname",
+    ):
+        monkeypatch.setattr(socket_module, name, refuse, raising=False)
+    manifest = _d2_corpus(tmp_path, 3)
+    assert _d2_run(_d2_args(tmp_path, manifest))[0] == 0
+
+
+def test_runtime_import_graph_reaches_no_network_module(tmp_path: Path) -> None:
+    """The module import graph -- including the exec'd receipt-bound classifier
+    -- pulls in no network module. Run in a child interpreter so the enclosing
+    test session's own imports cannot mask the answer."""
+    root = tmp_path / "probe"
+    root.mkdir()
+    manifest = _d2_corpus(root, 2)
+    program = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(SCRIPTS)!r})\n"
+        "import io\n"
+        "import register_sweep as rs\n"
+        "out = io.BytesIO(); err = io.BytesIO()\n"
+        "code = rs.main(["
+        f"'--manifest', {str(manifest)!r},"
+        f"'--report-out', {str(root / 'report.json')!r},"
+        f"'--checkpoint-dir', {str(root / 'state')!r}"
+        "], stdout=out, stderr=err)\n"
+        "network = sorted(\n"
+        "    name for name in sys.modules\n"
+        "    if name.split('.')[0] in {\n"
+        "        'socket', '_socket', 'ssl', '_ssl', 'urllib', 'http',\n"
+        "        'ftplib', 'smtplib', 'telnetlib', 'asyncio', 'selectors',\n"
+        "        'requests', 'httpx', 'subprocess',\n"
+        "    }\n"
+        ")\n"
+        "print(code, network)\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        capture_output=True, text=True, check=True,
+    )
+    assert completed.stdout.strip() == "0 []", completed.stdout + completed.stderr
+
+
+# --------------------------------------------------------------------------
+# Fail-before wiring checks
+# --------------------------------------------------------------------------
+
+
+def test_scoped_plan_collision_refuses_before_any_document_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Removing the scoped-subset collision check would let a repeated row
+    inflate the inventory; the runner must refuse before the first body read."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "doc.txt").write_text("only document\n", encoding="utf-8")
+    rows = [
+        {"path": "corpus/doc.txt", "use": ["baseline"], "ai_status": "pre_ai_human"},
+        {"path": "corpus/doc.txt", "use": ["baseline"], "ai_status": "pre_ai_human"},
+    ]
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    reads: list[Any] = []
+    real_read = rs.read_planned_document
+    monkeypatch.setattr(
+        rs, "read_planned_document",
+        lambda path, fingerprint: reads.append(path) or real_read(path, fingerprint),
+    )
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out, err) == (2, GOLDEN_BAD_INPUT, b"")
+    assert reads == []
+    assert not (tmp_path / "state").exists()
+
+
+def test_a_filtered_out_collision_does_not_refuse(tmp_path: Path) -> None:
+    """The collision check runs on the SCOPED subset: a duplicate row that the
+    filters exclude is not a collision."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "doc.txt").write_text("only document\n", encoding="utf-8")
+    rows = [
+        {"path": "corpus/doc.txt", "use": ["baseline"], "ai_status": "pre_ai_human"},
+        {"path": "corpus/doc.txt", "use": ["exclude"], "ai_status": "pre_ai_human"},
+    ]
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    code, _out, _err = _d2_run(_d2_args(tmp_path, manifest, "--use", "baseline"))
+    assert code == 0
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["counts"]["input_rows"] == 2
+    assert report["counts"]["scoped_documents"] == 1
+
+
+def test_topology_is_revalidated_before_the_terminal_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dropping the explicit pre-publication revalidate leaves only the
+    post-create call and the one inside `publish_report`."""
+    manifest = _d2_corpus(tmp_path, 1)
+    real_revalidate = rs.TopologyPreflight.revalidate
+    calls = {"n": 0}
+
+    def counting(self: Any) -> None:
+        calls["n"] += 1
+        real_revalidate(self)
+
+    monkeypatch.setattr(rs.TopologyPreflight, "revalidate", counting)
+    assert _d2_run(_d2_args(tmp_path, manifest))[0] == 0
+    # 1: after checkpoint create. 2: the explicit pre-publication revalidate.
+    # 3: the one publish_report performs itself.
+    assert calls["n"] == 3
+
+
+def test_processing_complete_follows_the_aggregate_reassembly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The pending-completion line is emitted only after every shard/aggregate
+    reassembly check succeeds, so a reassembly failure never fabricates it."""
+    manifest = _d2_corpus(tmp_path, 2)
+
+    def refusing_reassemble(*_args: Any, **_kwargs: Any) -> dict:
+        raise rs.InternalError()
+
+    monkeypatch.setattr(rs, "reassemble_aggregate", refusing_reassemble)
+    code, out, err = _d2_run(_d2_args(tmp_path, manifest))
+    assert (code, out) == (4, GOLDEN_INTERNAL_ERROR)
+    assert err == b""
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_scope_binding_commits_the_raw_persona(tmp_path: Path) -> None:
+    """The report's `scope_sha256` is the digest of the private scope payload,
+    which includes the raw persona; two runs differing only in persona commit
+    different scope digests while both report `persona_selected: true`."""
+    digests = []
+    for index, persona in enumerate(("alpha", "beta")):
+        root = tmp_path / f"s{index}"
+        root.mkdir()
+        manifest = _d2_corpus(root, 1, persona="alpha")
+        code, _out, _err = _d2_run(
+            _d2_args(root, manifest, "--persona", persona)
+        )
+        assert code == 0
+        report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        assert report["scope"]["persona_selected"] is True
+        digests.append(report["scope"]["scope_sha256"])
+        expected = rs.prefixed(
+            rs.scope_binding(
+                use=None, split=None, ai_status=None,
+                persona=persona, min_words=100,
+            )[1]
+        )
+        assert report["scope"]["scope_sha256"] == expected
+    assert digests[0] != digests[1]
+
+
+def test_min_words_reaches_the_classifier_and_is_not_a_row_filter(
+    tmp_path: Path,
+) -> None:
+    """`--min-words` is passed straight to `classify_register`: at the default
+    every tiny document refuses `short_text`, and at 1 every one classifies.
+    The scoped row count is identical either way."""
+    counts = []
+    for index, extra in enumerate(([], ["--min-words", "1"])):
+        root = tmp_path / f"m{index}"
+        root.mkdir()
+        manifest = _d2_corpus(root, 3, register="personal")
+        assert _d2_run(_d2_args(root, manifest, *extra))[0] == 0
+        report = json.loads((root / "report.json").read_text(encoding="utf-8"))
+        counts.append(report["counts"])
+        assert report["counts"]["scoped_documents"] == 3
+    assert counts[0]["refused_documents"] == 3
+    assert counts[0]["classified_documents"] == 0
+    assert counts[1]["refused_documents"] == 0
+    assert counts[1]["classified_documents"] == 3
+
+
+def test_report_counts_conserve_the_scoped_totals(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 6, register="personal")
+    assert _d2_run(_d2_args(tmp_path, manifest, "--min-words", "1"))[0] == 0
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    counts = report["counts"]
+    assert (
+        counts["resolved_declared_documents"]
+        + counts["unresolved_declared_documents"]
+        == counts["scoped_documents"]
+    )
+    assert (
+        counts["classified_documents"] + counts["refused_documents"]
+        == counts["scoped_documents"]
+    )
+    assert (
+        counts["classified_words"] + counts["refused_words"]
+        == counts["scoped_words"]
+    )
+    for measure in ("documents", "words"):
+        assert sum(
+            cell[measure]
+            for cell in report["declared_family_inventory"].values()
+        ) == counts[f"scoped_{measure}"]
+        assert sum(
+            cell[measure] for cell in report["match_inventory"].values()
+        ) == counts[f"scoped_{measure}"]
+
+
+# --------------------------------------------------------------------------
+# Acceptance test 18: registration and gates
+# --------------------------------------------------------------------------
+
+
+def test_module_declares_the_capability_task_surface() -> None:
+    assert rs.TASK_SURFACE == "validation"
+
+
+def test_capability_fragment_and_golden_agree() -> None:
+    import capabilities as _capabilities  # type: ignore
+
+    manifest = _capabilities.load_manifest(SCRIPTS.parent / "capabilities.d")
+    entry = {e["id"]: e for e in manifest["entries"]}["register_composition_sweep"]
+    golden = json.loads(
+        (
+            Path(__file__).resolve().parent
+            / "_golden_capabilities"
+            / "register_composition_sweep.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert entry == golden
+    assert entry["surface"] == rs.TASK_SURFACE == "validation"
+    assert entry["status"] == "heuristic"
+    assert entry["consumers"] == []
+    assert entry["script_path"] == (
+        "plugins/setec-voiceprint/scripts/register_sweep.py"
+    )
+    assert entry["dependencies"]["python"] == []
+
+
+def test_no_orphan_script_or_surface_drift_for_this_capability() -> None:
+    """The drift linter's Check 1/Check 3 conditions, asserted directly.
+
+    The linter itself is a CI gate (it imports the plugin's optional-dependency
+    fixture generators); what this pins is the property it checks: the script
+    declares a module-level ``TASK_SURFACE`` constant, and the fragment's
+    ``surface`` equals it.
+    """
+    import ast as _ast
+
+    tree = _ast.parse(
+        (SCRIPTS / "register_sweep.py").read_text(encoding="utf-8")
+    )
+    declared = [
+        node.value.value
+        for node in tree.body
+        if isinstance(node, _ast.Assign)
+        for target in node.targets
+        if isinstance(target, _ast.Name)
+        and target.id == "TASK_SURFACE"
+        and isinstance(node.value, _ast.Constant)
+    ]
+    assert declared == ["validation"]
+    fragment = (
+        SCRIPTS.parent / "capabilities.d" / "register_composition_sweep.yaml"
+    ).read_text(encoding="utf-8")
+    assert "surface: validation" in fragment
+    assert "consumers: []" in fragment
+    assert "status: heuristic" in fragment
+
+
+def test_docs_freshness_is_green() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "tools" / "check_docs_freshness.py")],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_changelog_fragment_names_the_capability_id_verbatim() -> None:
+    fragment = (
+        REPO_ROOT / "changelog.d" / "feat-register-composition-sweep-encoders.md"
+    ).read_text(encoding="utf-8")
+    assert "register_composition_sweep" in fragment
+
+
+def test_script_is_executable_as_a_module_entry_point() -> None:
+    """`__main__` wiring: an argument-less invocation refuses with the one
+    `bad_input` golden on stdout, exit 2, and no usage text."""
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPTS / "register_sweep.py")],
+        capture_output=True, cwd=str(REPO_ROOT),
+    )
+    assert completed.returncode == 2
+    assert completed.stdout == GOLDEN_BAD_INPUT
+    assert completed.stderr == b""
+
+
+def test_end_to_end_through_the_real_process_entry_point(tmp_path: Path) -> None:
+    manifest = _d2_corpus(tmp_path, 2)
+    completed = subprocess.run(
+        [sys.executable, str(SCRIPTS / "register_sweep.py"),
+         *_d2_args(tmp_path, manifest)],
+        capture_output=True, cwd=str(REPO_ROOT),
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stderr == (
+        b"register sweep processing-complete: completed=2 total=2 "
+        b"report_commit=pending\n"
+    )
+    report_bytes = (tmp_path / "report.json").read_bytes()
+    envelope = json.loads(completed.stdout.decode("utf-8"))
+    assert envelope["results"]["report_sha256"] == (
+        "sha256:" + hashlib.sha256(report_bytes).hexdigest()
+    )
+
+
+# --------------------------------------------------------------------------
+# Native-Windows document-plan binding (fake backend)
+# --------------------------------------------------------------------------
+
+
+def test_windows_bind_returns_the_scoped_nine_field_fingerprint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_windows_bind` is no longer a refuse-always stub: it returns the frozen
+    9-field scoped handle fingerprint, which includes `change_time`."""
+    fingerprint = (11, 22, 33, 44, 55, 66, 77, 88, 99)
+    closed: list[int] = []
+
+    class Direct:
+        def __init__(self, identity: tuple[object, ...]) -> None:
+            self.identity = identity
+
+    class FakeWindowsIo:
+        next_handle = 100
+
+        def pin_directory(self, _path: Path, *, writable_final: bool) -> tuple[int, int, str]:
+            assert not writable_final
+            self.next_handle += 2
+            return self.next_handle - 1, self.next_handle, "parent"
+
+        def open_file(self, _parent: int, _name: str, *, allow_multiple_links: bool = False) -> int:
+            self.next_handle += 1
+            return self.next_handle
+
+        def require_direct(self, _handle: int, kind: str, *, allow_multiple_links: bool = False) -> Direct:
+            return Direct(("directory",) if kind == "directory" else ("file", 7))
+
+        def scoped_fingerprint(self, _handle: int) -> tuple[int, ...]:
+            return fingerprint
+
+        def close(self, handle: int) -> None:
+            closed.append(handle)
+
+    monkeypatch.setattr(
+        shingle_dedup_io, "_windows_module", lambda: FakeWindowsIo()
+    )
+    assert shingle_dedup_io._windows_bind(tmp_path / "doc.txt") == fingerprint
+    assert closed
+    payload, digest = rs.windows_fingerprint_binding(fingerprint)
+    assert payload == _canonical(
+        {"fields": list(fingerprint), "platform": "windows"}
+    )
+    assert digest == hashlib.sha256(
+        b"setec-register-sweep-file-fingerprint-v2\n"
+        + struct.pack(">Q", len(payload))
+        + payload
+    ).hexdigest()
+
+
+def test_windows_bind_refuses_when_the_name_rebinds_to_another_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Direct:
+        def __init__(self, identity: tuple[object, ...]) -> None:
+            self.identity = identity
+
+    class SwappingWindowsIo:
+        next_handle = 200
+        file_opens = 0
+
+        def pin_directory(self, _path: Path, *, writable_final: bool) -> tuple[int, int, str]:
+            self.next_handle += 2
+            return self.next_handle - 1, self.next_handle, "parent"
+
+        def open_file(self, _parent: int, _name: str, *, allow_multiple_links: bool = False) -> int:
+            self.next_handle += 1
+            return self.next_handle
+
+        def require_direct(self, _handle: int, kind: str, *, allow_multiple_links: bool = False) -> Direct:
+            if kind == "directory":
+                return Direct(("directory",))
+            self.file_opens += 1
+            return Direct(("file", self.file_opens))
+
+        def scoped_fingerprint(self, _handle: int) -> tuple[int, ...]:
+            return (1, 2, 3, 4, 5, 6, 7, 8, 9)
+
+        def close(self, _handle: int) -> None:
+            return None
+
+    monkeypatch.setattr(
+        shingle_dedup_io, "_windows_module", lambda: SwappingWindowsIo()
+    )
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io._windows_bind(tmp_path / "doc.txt")

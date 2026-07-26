@@ -17,13 +17,12 @@ The manifest fields ``source``, ``source_id``, and ``source_family`` are outside
 this contract. They are never read, normalized, hashed, inferred from, grouped
 by, checkpointed, or emitted.
 
-This increment supplies the canonical-encoding layer and the H1 binding layer:
-every framed digest domain in the spec, the strict H1 receipt read, and the
-receipt-bound classifier load plus its closed public-result validation. The
-manifest projection, checkpoint codec, and report now live in the
-delimited increment sections below; the runner and capability registration
-land in later
-increments against these exact encoders.
+The first section supplies the canonical-encoding layer and the H1 binding
+layer: every framed digest domain in the spec, the strict H1 receipt read, and
+the receipt-bound classifier load plus its closed public-result validation. The
+manifest projection, aggregation and report, checkpoint codec, topology
+preflight, and the CLI/runner each live in one delimited section below, built
+against those exact encoders.
 """
 
 from __future__ import annotations
@@ -4117,3 +4116,577 @@ class TopologyPreflight:
 
     def __exit__(self, _kind: object, _value: object, _traceback: object) -> None:
         self.close()
+
+
+# ==========================================================================
+# Increment D2: CLI, runner, and capability registration
+#
+# Everything below this banner is wiring. It adds no encoder, no classifier
+# behaviour, no aggregate rule, and no checkpoint format: it composes the
+# increment A/B/C/D1 seams in the spec's exact run order, emits the spec's
+# exact progress lines, and hands the frozen report bytes to the terminal
+# commit point.
+# ==========================================================================
+
+#: Capability task surface. ``tools/check_capabilities_drift.py`` reads this
+#: module-level constant and requires a matching ``capabilities.d/`` fragment
+#: whose ``surface`` equals it.
+TASK_SURFACE = "validation"
+
+#: The closed CLI grammar. There is no source-related option, no abbreviation,
+#: no ``--option=value`` spelling, no single-dash alias, no positional, and no
+#: usage text: an unknown, repeated, or malformed option refuses before any
+#: output is created. Former grouping spellings are simply unknown options.
+CLI_FLAG_OPTIONS = ("--resume",)
+CLI_VALUE_OPTIONS = (
+    "--manifest",
+    "--report-out",
+    "--checkpoint-dir",
+    "--use",
+    "--split",
+    "--persona",
+    "--ai-status",
+    "--min-words",
+)
+CLI_REQUIRED_OPTIONS = ("--manifest", "--report-out", "--checkpoint-dir")
+CLI_OPTIONS = CLI_FLAG_OPTIONS + CLI_VALUE_OPTIONS
+
+#: ``--min-words`` default. The value is passed straight to
+#: ``classify_register`` and is never a row filter.
+MIN_WORDS_DEFAULT = 100
+
+#: Canonical base-10 spelling of a positive integer: no sign, no whitespace,
+#: no underscore, no leading zero, no non-ASCII digit.
+_CANONICAL_INTEGER_RE = re.compile(r"[1-9][0-9]*\Z", re.ASCII)
+
+
+def valid_h2_string(value: Any, *, max_bytes: int) -> bool:
+    """The shared H2 string domain: NFC, nonblank, no edge whitespace, 1..N
+    UTF-8 bytes, and no NUL, C0/C1, unpaired surrogate, or bidi control.
+
+    The CLI ``--persona`` filter and the projected ``persona`` field share
+    exactly this domain; ``path`` differs only in its byte ceiling. The
+    projection seam owns the identical predicate on its side of the import
+    boundary, and a test pins the two against one table of hostile values so
+    they cannot drift apart.
+    """
+    if type(value) is not str:
+        return False
+    if unicodedata.normalize("NFC", value) != value:
+        return False
+    if value != value.strip():
+        return False
+    try:
+        encoded_len = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        return False
+    if not (1 <= encoded_len <= max_bytes):
+        return False
+    for char in value:
+        code = ord(char)
+        if code == 0 or code < 0x20 or 0x7F <= code <= 0x9F:
+            return False
+        if 0xD800 <= code <= 0xDFFF:
+            return False
+        if char in BIDI_CONTROLS:
+            return False
+    return True
+
+
+@dataclass(frozen=True, repr=False)
+class RunOptions:
+    """One validated invocation of the runner.
+
+    ``persona`` holds the raw validated filter. It reaches only
+    :func:`scope_binding`; the fixed ``__repr__`` keeps it out of any
+    accidental diagnostic rendering, and the report records only the Boolean
+    ``persona_selected``.
+    """
+
+    manifest: str
+    report_out: str
+    checkpoint_dir: str
+    resume: bool
+    use: str | None
+    split: str | None
+    persona: str | None
+    ai_status: str | None
+    min_words: int
+
+    def __repr__(self) -> str:
+        return "<register sweep options>"
+
+    @property
+    def persona_selected(self) -> bool:
+        return self.persona is not None
+
+
+def _require_option_value(value: Any) -> str:
+    """A value token: a nonempty string that is not itself an option spelling."""
+    if type(value) is not str or not value or value.startswith("-"):
+        raise BadInput()
+    if "\x00" in value:
+        raise BadInput()
+    return value
+
+
+def parse_arguments(argv: Sequence[str] | None = None) -> RunOptions:
+    """Parse and validate the closed CLI grammar.
+
+    Refuses with :class:`BadInput` — the exit-2 ``bad_input`` envelope — on an
+    unknown option, a repeated option, a missing required option, a missing or
+    option-shaped value, or any out-of-domain value. No usage text, option
+    suggestion, echoed token, or rejected value ever reaches an output stream.
+    """
+    tokens = list(sys.argv[1:]) if argv is None else list(argv)
+    seen: dict[str, Any] = {}
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if type(token) is not str:
+            raise BadInput()
+        if token in seen:
+            raise BadInput()
+        if token in CLI_FLAG_OPTIONS:
+            seen[token] = True
+            index += 1
+            continue
+        if token in CLI_VALUE_OPTIONS:
+            if index + 1 >= len(tokens):
+                raise BadInput()
+            seen[token] = _require_option_value(tokens[index + 1])
+            index += 2
+            continue
+        raise BadInput()
+
+    for required in CLI_REQUIRED_OPTIONS:
+        if required not in seen:
+            raise BadInput()
+
+    # Deferred import: see the module-header note on the one-way import rule.
+    from manifest_validator import (  # type: ignore
+        ALLOWED_AI_STATUS,
+        ALLOWED_SPLIT,
+        ALLOWED_USE,
+    )
+
+    use = _validated_enum(seen.get("--use"), ALLOWED_USE)
+    split = _validated_enum(seen.get("--split"), ALLOWED_SPLIT)
+    ai_status = _validated_enum(seen.get("--ai-status"), ALLOWED_AI_STATUS)
+
+    persona = seen.get("--persona")
+    if persona is not None and not valid_h2_string(persona, max_bytes=MAX_PERSONA_BYTES):
+        raise BadInput()
+
+    raw_min_words = seen.get("--min-words")
+    if raw_min_words is None:
+        min_words = MIN_WORDS_DEFAULT
+    else:
+        if _CANONICAL_INTEGER_RE.fullmatch(raw_min_words) is None:
+            raise BadInput()
+        min_words = int(raw_min_words)
+        if not (MIN_WORDS_FLOOR <= min_words <= MIN_WORDS_CEILING):
+            raise BadInput()
+
+    return RunOptions(
+        manifest=seen["--manifest"],
+        report_out=seen["--report-out"],
+        checkpoint_dir=seen["--checkpoint-dir"],
+        resume=bool(seen.get("--resume", False)),
+        use=use,
+        split=split,
+        persona=persona,
+        ai_status=ai_status,
+        min_words=min_words,
+    )
+
+
+def _validated_enum(value: Any, allowed: Any) -> str | None:
+    """Exact membership in one closed ``manifest_validator`` enum, or null.
+
+    Deliberately stricter than the warning-tolerant general validator: an
+    unknown value refuses instead of producing a warning-only acceptance.
+    """
+    if value is None:
+        return None
+    if type(value) is not str or value not in allowed:
+        raise BadInput()
+    return value
+
+
+# --------------------------------------------------------------------------
+# Runner
+# --------------------------------------------------------------------------
+
+
+def _resolve_stream(stream: Any, fallback: Any) -> Any:
+    if stream is not None:
+        return stream
+    return getattr(fallback, "buffer", fallback)
+
+
+def _emit_bytes(stream: Any, payload: bytes) -> None:
+    """Write exact bytes to a pre-commit stream. Failures are controlled."""
+    try:
+        view = memoryview(payload)
+        while view:
+            written = stream.write(view)
+            if type(written) is not int or written <= 0:
+                raise InternalError()
+            view = view[written:]
+        flush = getattr(stream, "flush", None)
+        if flush is not None:
+            flush()
+    except SweepRefusal:
+        raise
+    except Exception as exc:  # noqa: BLE001 - closed controlled refusal
+        raise InternalError() from exc
+
+
+def _emit_progress(stream: Any, line: str) -> None:
+    """Privacy-check one stderr progress leaf, then emit its exact bytes."""
+    if type(line) is not str or claim_text_is_refused(line):
+        raise InternalError()
+    _emit_bytes(stream, line.encode("ascii", errors="strict"))
+
+
+def _read_manifest(path: str) -> bytes:
+    """One bounded 128 MiB read of a non-symlink regular manifest.
+
+    Digest, validation, parsing, filtering, and planning all consume this one
+    immutable byte string; the manifest is never reopened.
+    """
+    try:
+        return read_bounded_regular(path, MAX_MANIFEST_BYTES)
+    except (SecureIOError, OSError, ValueError) as exc:
+        raise BadInput() from exc
+
+
+def _projected_row_object(row: Any) -> dict[str, Any]:
+    """The canonical seven-field projected-row object for one projected row."""
+    return {
+        "ai_status": row.ai_status,
+        "manifest_ordinal": row.manifest_ordinal,
+        "path": row.path,
+        "persona": row.persona,
+        "register": row.register,
+        "split": row.split,
+        "use": list(row.use),
+    }
+
+
+def _fingerprint_digest(fields: tuple[int, ...]) -> str:
+    """Frame the platform fingerprint the planner already froze."""
+    if os.name == "nt":  # pragma: no cover - native Windows
+        return prefixed(windows_fingerprint_binding(fields)[1])
+    return prefixed(posix_fingerprint_binding(fields)[1])
+
+
+def _row_in_scope(row: Any, options: RunOptions) -> bool:
+    """Apply the four scope filters to one H2-admissible projected row.
+
+    ``use`` is membership in the row's validated list; ``split``, ``ai_status``,
+    and ``persona`` are exact equality. An omitted filter includes every
+    H2-admissible row; there are no implicit corpus-role defaults.
+    """
+    if options.use is not None and options.use not in row.use:
+        return False
+    if options.split is not None and row.split != options.split:
+        return False
+    if options.ai_status is not None and row.ai_status != options.ai_status:
+        return False
+    if options.persona is not None and row.persona != options.persona:
+        return False
+    return True
+
+
+def _run(options: RunOptions, *, stdout: Any, stderr: Any) -> int:
+    """Execute the spec's fixed run order and return the process exit code."""
+    # Deferred import: see the module-header note on the one-way import rule.
+    from manifest_validator import (  # type: ignore
+        check_document_plan_collisions,
+        project_register_sweep_manifest_bytes,
+    )
+
+    manifest_bytes = _read_manifest(options.manifest)
+    projection = project_register_sweep_manifest_bytes(
+        manifest_bytes, manifest_path=options.manifest
+    )
+    # The parser, the projected identities, and the planner have now all
+    # consumed that one immutable byte string, and the manifest is never
+    # reopened. From here the runner holds only bounded metadata plus one
+    # document's text at a time.
+    del manifest_bytes
+
+    # -- scope selection over the already-frozen projection ----------------
+    row_digests = [
+        prefixed(projected_row_binding(_projected_row_object(row))[1])
+        for row in projection.rows
+    ]
+    plan_by_ordinal = {
+        entry.manifest_ordinal: entry for entry in projection.document_plan
+    }
+    if len(plan_by_ordinal) != len(projection.document_plan):
+        raise InternalError()
+
+    scoped_rows: list[Any] = []
+    scoped_plan: list[Any] = []
+    scoped_row_entries: list[dict[str, Any]] = []
+    plan_entries: list[dict[str, Any]] = []
+    for row in projection.rows:
+        if not _row_in_scope(row, options):
+            continue
+        scoped_ordinal = len(scoped_rows)
+        if scoped_ordinal >= MAX_SCOPED_DOCUMENTS:
+            raise BadInput()
+        entry = plan_by_ordinal.get(row.manifest_ordinal)
+        if entry is None:
+            raise InternalError()
+        scoped_rows.append(row)
+        scoped_plan.append(entry)
+        scoped_row_entries.append(
+            {
+                "manifest_ordinal": row.manifest_ordinal,
+                "projected_row_sha256": row_digests[row.manifest_ordinal],
+                "scoped_ordinal": scoped_ordinal,
+            }
+        )
+        plan_entries.append(
+            {
+                "candidate_index": entry.candidate_index,
+                "file_fingerprint_sha256": _fingerprint_digest(entry.fingerprint),
+                "projected_row_sha256": row_digests[row.manifest_ordinal],
+                "scoped_ordinal": scoped_ordinal,
+                "target_path_sha256": prefixed(
+                    target_path_binding(entry.absolute_path)[1]
+                ),
+            }
+        )
+
+    # No two scoped rows may select the same normalized absolute path or the
+    # same retained file identity. This runs on the scoped subset, before the
+    # first document body is read.
+    check_document_plan_collisions(tuple(scoped_plan))
+
+    total = len(scoped_rows)
+
+    # -- frozen identities -------------------------------------------------
+    projected_manifest_sha256 = prefixed(
+        projected_manifest_binding(row_digests)[1]
+    )
+    scope_sha256 = prefixed(
+        scope_binding(
+            use=options.use,
+            split=options.split,
+            ai_status=options.ai_status,
+            persona=options.persona,
+            min_words=options.min_words,
+        )[1]
+    )
+    scoped_rows_sha256 = prefixed(scoped_rows_binding(scoped_row_entries)[1])
+    document_plan_sha256 = prefixed(document_plan_binding(plan_entries)[1])
+
+    # -- receipt-bound H1 identity ----------------------------------------
+    receipt_path, classifier_path = default_h1_paths()
+    binding = load_h1_binding(
+        receipt_path=receipt_path, classifier_path=classifier_path
+    )
+    domains = RegisterDomains.from_binding(binding).validate()
+
+    checkpoint_binding_sha256 = prefixed(
+        checkpoint_binding(
+            classifier_sha256=prefixed(binding.classifier_sha256),
+            document_plan_sha256=document_plan_sha256,
+            h1_receipt_sha256=prefixed(binding.receipt_sha256),
+            mapping_sha256=prefixed(binding.mapping_sha256),
+            projected_manifest_sha256=projected_manifest_sha256,
+            refusal_contract_sha256=prefixed(binding.refusal_contract_sha256),
+            scope_sha256=scope_sha256,
+            scoped_rows_sha256=scoped_rows_sha256,
+        )[1]
+    )
+
+    # -- joint topology preflight, then the checkpoint ---------------------
+    preflight = TopologyPreflight.check(
+        report_path=options.report_out,
+        checkpoint_path=options.checkpoint_dir,
+        resume=options.resume,
+    )
+    try:
+        if options.resume:
+            checkpoint = RegisterCheckpoint.resume(
+                options.checkpoint_dir,
+                domains=domains,
+                checkpoint_binding_sha256=checkpoint_binding_sha256,
+            )
+        else:
+            checkpoint = RegisterCheckpoint.create(
+                options.checkpoint_dir,
+                domains=domains,
+                checkpoint_binding_sha256=checkpoint_binding_sha256,
+            )
+        try:
+            preflight.revalidate()
+            aggregate = _process_documents(
+                options,
+                binding=binding,
+                domains=domains,
+                checkpoint=checkpoint,
+                scoped_rows=scoped_rows,
+                scoped_plan=scoped_plan,
+                row_digests=row_digests,
+                total=total,
+                stderr=stderr,
+            )
+        finally:
+            checkpoint.close()
+
+        _emit_progress(stderr, processing_complete_line(total))
+
+        report = build_report(
+            domains=domains,
+            projected_manifest_sha256=projected_manifest_sha256,
+            scoped_rows_sha256=scoped_rows_sha256,
+            document_plan_sha256=document_plan_sha256,
+            h1_receipt_sha256=prefixed(binding.receipt_sha256),
+            classifier_sha256=prefixed(binding.classifier_sha256),
+            mapping_sha256=prefixed(binding.mapping_sha256),
+            refusal_contract_sha256=prefixed(binding.refusal_contract_sha256),
+            checkpoint_binding_sha256=checkpoint_binding_sha256,
+            scope=build_report_scope(
+                use=options.use,
+                split=options.split,
+                ai_status=options.ai_status,
+                min_words=options.min_words,
+                persona_selected=options.persona_selected,
+                scope_sha256=scope_sha256,
+            ),
+            input_rows=projection.input_rows,
+            aggregate=aggregate,
+        )
+        frozen_report, _report_sha256, _envelope, envelope_bytes = freeze_publication(
+            report=report, domains=domains
+        )
+        preflight.revalidate()
+        # ---- terminal commit point ----
+        preflight.publish_report(frozen_report)
+    except BaseException:
+        preflight.close()
+        raise
+    # Nothing after the commit may fail, inspect the checkpoint, emit stderr,
+    # serialize data, or map a later condition to a controlled failure. The
+    # total sink absorbs a closed or broken stdout and still returns success.
+    emit_committed_success(envelope_bytes, stdout)
+    return 0
+
+
+def _process_documents(
+    options: RunOptions,
+    *,
+    binding: H1Binding,
+    domains: RegisterDomains,
+    checkpoint: RegisterCheckpoint,
+    scoped_rows: Sequence[Any],
+    scoped_plan: Sequence[Any],
+    row_digests: Sequence[str],
+    total: int,
+    stderr: Any,
+) -> dict[str, Any]:
+    """Process the scoped plan in manifest order and reassemble the aggregate.
+
+    Resume reprocesses from the checkpoint's next sealed ordinal; every
+    identity was recomputed from inputs above and the checkpoint layer has
+    already validated binding equality for the sealed chain.
+    """
+    sizes = shard_partition(total)
+    start = checkpoint.next_scoped_ordinal
+    published = len(checkpoint.shards)
+    if published > len(sizes) or start != sum(sizes[:published]):
+        raise PolicyRefused()
+
+    pending = RegisterAggregate(domains)
+    buffered: list[dict[str, Any]] = []
+    shard_index = published
+    for scoped_ordinal in range(start, total):
+        row = scoped_rows[scoped_ordinal]
+        entry = scoped_plan[scoped_ordinal]
+        data = read_planned_document(entry.absolute_path, entry.fingerprint)
+        try:
+            text = data.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as exc:
+            raise BadInput() from exc
+        declared_family = binding.resolve_family(row.register)
+        result = binding.classify(text, min_words=options.min_words)
+        pending.add_h1_result(
+            declared_family=declared_family,
+            result=result,
+            document_bytes=len(data),
+        )
+        refusal_reason = result["refusal_reason"]
+        buffered.append(
+            {
+                "manifest_ordinal": row.manifest_ordinal,
+                "projected_row_sha256": row_digests[row.manifest_ordinal],
+                "content_sha256": prefixed(raw_sha256(data)),
+                "document_bytes": len(data),
+                "words": result["evidence"]["n_words"],
+                "declared_family": declared_family,
+                "classified_family": (
+                    None if refusal_reason is not None else result["primary"]
+                ),
+                "refusal_reason": refusal_reason,
+            }
+        )
+        if len(buffered) == sizes[shard_index]:
+            shard = checkpoint.publish_shard(
+                buffered, final=shard_index + 1 == len(sizes)
+            )
+            if canonical_json(shard.delta) != canonical_json(pending.shard_delta()):
+                raise InternalError()
+            buffered = []
+            pending = RegisterAggregate(domains)
+            shard_index += 1
+        completed = scoped_ordinal + 1
+        if progress_is_eligible(completed, total, resume_from=start):
+            _emit_progress(stderr, progress_line(completed, total))
+
+    if buffered or shard_index != len(sizes):
+        raise InternalError()
+
+    aggregate = reassemble_aggregate(
+        tuple(shard.delta for shard in checkpoint.shards), domains=domains
+    )
+    if aggregate["counts"]["scoped_documents"] != total:
+        raise InternalError()
+    return aggregate
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    stdout: Any | None = None,
+    stderr: Any | None = None,
+) -> int:
+    """Run one register-composition sweep and return its exit code.
+
+    Every controlled failure before the terminal report commit prints exactly
+    one canonical golden error envelope on stdout, publishes no report, and
+    returns 2, 3, or 4. ``KeyboardInterrupt`` and every other non-``Exception``
+    ``BaseException`` propagate unconverted. Nothing after the commit can fail.
+    """
+    out = _resolve_stream(stdout, sys.stdout)
+    err = _resolve_stream(stderr, sys.stderr)
+    try:
+        return _run(parse_arguments(argv), stdout=out, stderr=err)
+    except BaseException as exc:
+        # Re-raises ``KeyboardInterrupt`` and every other non-``Exception``.
+        frozen, exit_code = freeze_controlled_error(controlled_failure_class(exc))
+    try:
+        _emit_bytes(out, frozen)
+    except Exception:  # noqa: BLE001 - a closed consumer cannot add an artifact
+        pass
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
