@@ -2384,14 +2384,20 @@ def test_splitlines_only_row_separators_refuse(
         mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
 
 
-def test_a_crlf_manifest_refuses_rather_than_silently_reflowing(
+def test_a_crlf_terminated_manifest_projects_as_one_row(
     tmp_path: Path,
 ) -> None:
+    """A trailing "\r\n" is one Windows line terminator, not an embedded
+    break: native-Windows text-mode writers produce it for every manifest, and
+    refusing it broke the legacy validator on Windows CI. Bare/interior "\r"
+    still refuses (see the CRLF carve-in tests at the end of this file)."""
     _strict_parser_document(tmp_path)
     manifest_path = tmp_path / "m.jsonl"
     data = json.dumps(_h2_row_dict()).encode("utf-8") + b"\r\n"
-    with pytest.raises(rs.BadInput):
-        mv.project_register_sweep_manifest_bytes(data, manifest_path=manifest_path)
+    projection = mv.project_register_sweep_manifest_bytes(
+        data, manifest_path=manifest_path
+    )
+    assert projection.input_rows == 1
 
 
 def test_the_legacy_validator_shares_the_row_boundary_refusal(
@@ -7222,13 +7228,21 @@ def test_runtime_import_graph_reaches_no_network_module(tmp_path: Path) -> None:
         f"'--report-out', {str(root / 'report.json')!r},"
         f"'--checkpoint-dir', {str(root / 'state')!r}"
         "], stdout=out, stderr=err)\n"
+        # Transport-capable modules by top-level name, plus the transport
+        # submodules of urllib/http by exact name. Deliberately NOT the bare
+        # 'urllib'/'http' top-levels: 'urllib.parse' is pure string parsing
+        # with no socket, and Python 3.12's pathlib imports it at module
+        # scope (3.13 made that lazy) -- forbidding it would pin the stdlib's
+        # internals, not this module's network posture.
         "network = sorted(\n"
         "    name for name in sys.modules\n"
         "    if name.split('.')[0] in {\n"
-        "        'socket', '_socket', 'ssl', '_ssl', 'urllib', 'http',\n"
+        "        'socket', '_socket', 'ssl', '_ssl',\n"
         "        'ftplib', 'smtplib', 'telnetlib', 'asyncio', 'selectors',\n"
         "        'requests', 'httpx', 'subprocess',\n"
         "    }\n"
+        "    or name in {'urllib.request', 'urllib.error', 'http.client',\n"
+        "                'http.server', 'xmlrpc'}\n"
         ")\n"
         "print(code, network)\n"
     )
@@ -8125,3 +8139,82 @@ def test_permission_blocked_candidate_ships_the_bad_input_golden(
     assert err == b""
     assert not (tmp_path / "report.json").exists()
     assert not (tmp_path / "state").exists()
+
+
+# ---- CI round: CRLF row-terminator carve-in ----
+#
+# The C7 row-boundary hardening refused every CRLF manifest, which broke the
+# legacy validator on native Windows (text-mode writers translate "\n" to
+# "\r\n"). Exactly one trailing "\r" per line is a Windows line terminator;
+# everything else in FORBIDDEN_ROW_BREAKS still refuses.
+
+
+def _crlf_pair(tmp_path: Path) -> tuple[bytes, bytes, Path]:
+    doc = tmp_path / "doc.txt"
+    doc.write_text("word " * 150, encoding="utf-8")
+    row = (
+        '{"path": "doc.txt", "use": ["baseline"], "ai_status": "pre_ai_human",'
+        ' "register": "personal"}'
+    )
+    lf = (row + "\n").encode("utf-8")
+    crlf = (row + "\r\n").encode("utf-8")
+    return lf, crlf, tmp_path / "manifest.jsonl"
+
+
+def test_crlf_manifest_projects_identically_to_lf(tmp_path: Path) -> None:
+    lf, crlf, manifest = _crlf_pair(tmp_path)
+    projections = []
+    for data in (lf, crlf):
+        projection = mv.project_register_sweep_manifest_bytes(
+            data, manifest_path=manifest
+        )
+        assert projection.input_rows == 1
+        projections.append(projection)
+    # The raw manifest bytes are deliberately unhashed, so the CRLF and LF
+    # spellings yield byte-identical projected-row and manifest digests.
+    lf_rows = [rs.projected_row_binding(_row_object(r))[1] for r in projections[0].rows]
+    crlf_rows = [rs.projected_row_binding(_row_object(r))[1] for r in projections[1].rows]
+    assert lf_rows == crlf_rows
+
+
+def _row_object(row: object) -> dict:
+    return {
+        "ai_status": row.ai_status,
+        "manifest_ordinal": row.manifest_ordinal,
+        "path": row.path,
+        "persona": row.persona,
+        "register": row.register,
+        "split": row.split,
+        "use": list(row.use),
+    }
+
+
+def test_crlf_manifest_passes_the_legacy_validator(tmp_path: Path) -> None:
+    lf, crlf, manifest = _crlf_pair(tmp_path)
+    manifest.write_bytes(crlf)
+    result = mv.validate_manifest(str(manifest))
+    # The property under test: CRLF is a line terminator, not a row-boundary
+    # refusal. Unrelated legacy field diagnostics are out of scope here.
+    assert result["n_entries"] == 1
+    assert not any(
+        "forbidden line-break character" in issue["message"]
+        for issue in result["issues"]
+    )
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"path": "doc.txt"}\r',            # bare trailing CR, no LF terminator
+        b'{"path": "doc\rname.txt"}\n',      # interior CR inside the line
+        b'{"path": "doc.txt"}\r\r\n',        # double CR: only one is a terminator
+        "{} {}\n".encode("utf-8"),      # the original hardening still bites
+    ],
+)
+def test_non_terminator_carriage_returns_still_refuse(
+    tmp_path: Path, payload: bytes
+) -> None:
+    with pytest.raises(rs.BadInput):
+        mv.project_register_sweep_manifest_bytes(
+            payload, manifest_path=tmp_path / "manifest.jsonl"
+        )

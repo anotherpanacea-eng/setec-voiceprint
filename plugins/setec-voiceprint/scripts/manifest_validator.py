@@ -356,8 +356,18 @@ def _manifest_data_lines(text: str) -> Iterator[tuple[int, str]]:
     characters are refused here, at the LINE level and before any JSON parsing,
     so an unowned field cannot smuggle a row split past the owned fields'
     string domain. (Separately named strict-parser hardening.)
+
+    One deliberate carve-in: a ``"\r\n"`` pair is a single Windows line
+    terminator, not an embedded break -- text-mode writers on native Windows
+    (``open(..., "w")``, ``Path.write_text``) translate ``"\n"`` to it, and
+    the pre-hardening ``str.splitlines()`` always treated it as one break.
+    Exactly one trailing ``"\r"`` per line is therefore stripped before the
+    refusal check; a bare ``"\r"``, an interior ``"\r"``, or any other
+    character in :data:`FORBIDDEN_ROW_BREAKS` still refuses.
     """
     for lineno, raw in enumerate(text.split("\n"), start=1):
+        if raw.endswith("\r"):
+            raw = raw[:-1]
         for char in FORBIDDEN_ROW_BREAKS:
             if char in raw:
                 raise ManifestParseError(
