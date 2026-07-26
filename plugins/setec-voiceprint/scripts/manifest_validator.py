@@ -88,6 +88,11 @@ ALLOWED_REGISTER = {
     "literary_horror", "policy_brief", "scholarly_article",
     "legal_brief", "grant_proposal", "expert_affidavit",
     "regulatory_comment", "professional_letter", "teaching",
+    # Owner-approved 2026-07-26: the personal corpus carries Facebook
+    # conversational posts as their own register. H1's family mapping does
+    # not know it, so a declared social_media_facebook row resolves to the
+    # "unknown" declared family in the Spec 73 sweep -- by design.
+    "social_media_facebook",
 }
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
