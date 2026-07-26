@@ -547,7 +547,10 @@ def _nt_open(
     share_write: bool = True,
     allow_multiple_links: bool = False,
     owner_private: bool = False,
+    allow_indirect: bool = False,
 ) -> int:
+    if allow_indirect and (kind is not None or create):
+        raise ValueError("an indirection-tolerant open is a kindless probe only")
     component = _valid_component(name)
     buffer = ctypes.create_unicode_buffer(component)
     encoded_length = len(component.encode("utf-16-le"))
@@ -599,7 +602,7 @@ def _nt_open(
     try:
         if kind is not None:
             require_direct(handle, kind, allow_multiple_links=allow_multiple_links)
-        elif info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+        elif not allow_indirect and info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
             raise OSError("private-tree node is indirected")
         if owner_private:
             require_owner_private(handle, kind if kind is not None else "file")
@@ -686,6 +689,36 @@ def create_file(
 
 def open_node(parent: int, name: str) -> int:
     return _nt_open(parent, name, kind=None, create=False)
+
+
+def probe_leaf_node(parent: int, name: str) -> NodeInfo | None:  # pragma: no cover - native Windows
+    """Report the named leaf under ``parent``, or ``None`` when it is absent.
+
+    The Spec 73 joint topology preflight is the native counterpart of a POSIX
+    ``os.stat(name, dir_fd=parent, follow_symlinks=False)``: it must learn
+    whether a name exists, what kind of node it is, whether it is indirected,
+    and what its ``(volume_serial, file_id)`` identity is -- without following
+    the name and without the open itself deciding the refusal. :func:`open_node`
+    refuses an indirected node outright, which would collapse "a reparse point
+    is sitting here" into the same answer as "the volume is unreadable", so this
+    opens the same no-follow, metadata-only handle and *reports* what it found.
+
+    ``None`` is returned only for a confirmed absence (``FileNotFoundError``,
+    which covers both a missing final name and a missing intermediate path
+    component). Every other failure propagates as an ``OSError`` for the caller
+    to convert into its own refusal: an unanswerable probe is never an absence.
+    """
+    try:
+        handle = _nt_open(parent, name, kind=None, create=False, allow_indirect=True)
+    except FileNotFoundError:
+        return None
+    try:
+        return info(handle)
+    finally:
+        try:
+            close(handle)
+        except OSError:
+            pass
 
 
 def open_absolute_file(path: Path, *, writable: bool = False) -> int:

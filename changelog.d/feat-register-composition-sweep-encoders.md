@@ -63,7 +63,14 @@ verified through retained handles even under a hostile umask; explicit
 single-ACE protected DACL on native Windows). One joint topology preflight
 proves the report file and checkpoint directory are disjoint under native
 identity and portable component comparison before either is created, and
-revalidates after checkpoint open and immediately before publication.
+revalidates after checkpoint open and immediately before publication; on native
+Windows that preflight dispatches to the `windows_descriptor_io` backend —
+retained native directory handles and `(volume_serial, file_id)` identity in
+place of the POSIX `dir_fd` chain, with a backend missing a required seam
+refusing rather than falling back — and the shared candidate-path presence probe
+advances only on a confirmed absence (`ENOENT`/`ENOTDIR`), so an unreadable
+higher-priority candidate refuses instead of silently binding a lower-priority
+document.
 
 **CLI and runner.** `--manifest`, `--report-out`, and `--checkpoint-dir` are
 required; `--resume`, `--use`, `--split`, `--persona`, `--ai-status`, and

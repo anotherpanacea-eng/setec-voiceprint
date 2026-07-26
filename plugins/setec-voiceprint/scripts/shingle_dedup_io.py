@@ -8,6 +8,7 @@ POSIX and Windows.
 
 from __future__ import annotations
 
+import errno
 import os
 from pathlib import Path
 import secrets
@@ -22,6 +23,13 @@ LEGACY_SHINGLE_POLICY = "legacy_shingle_v1"
 OWNER_PRIVATE_POLICY = "owner_private_v1"
 PRIVACY_POLICIES = (LEGACY_SHINGLE_POLICY, OWNER_PRIVATE_POLICY)
 OWNER_PRIVATE_FILE_MODE = 0o600
+
+#: The only two ``lstat`` errno values that prove a candidate path is *absent*.
+#: ``ENOENT`` is a missing final name; ``ENOTDIR`` is a missing (or
+#: non-directory) intermediate component, which means the name cannot exist
+#: under it either. Everything else is an unresolved question about the
+#: candidate, not an answer, and :func:`bind_regular` refuses on it.
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR})
 
 
 class SecureIOError(OSError):
@@ -393,10 +401,19 @@ def bind_regular(
     (a symlink, a non-regular file, or any identity-verification failure)
     refuses immediately rather than falling through to the next candidate: an
     attacker who can place a symlink at the highest-priority candidate cannot
-    use that to redirect resolution to a lower-priority one. An ``OSError``
-    while merely probing presence (including "not found") is treated as "this
-    candidate is absent" and the next candidate is tried. No candidate being
-    present at all refuses too.
+    use that to redirect resolution to a lower-priority one.
+
+    The presence probe itself fails closed for the same reason. Only a
+    *confirmed absence* advances to the next candidate: ``ENOENT`` (the name is
+    not there) and ``ENOTDIR`` (an intermediate component of the candidate path
+    is not a directory, so the name cannot be there either). Every other
+    ``OSError`` -- ``EACCES``/``EPERM`` on an unreadable parent, ``ELOOP``,
+    ``EIO``, ``ENAMETOOLONG``, and anything else -- refuses immediately with the
+    module's standard non-disclosing refusal. An unreadable higher-priority
+    candidate must never be allowed to hand resolution silently to a
+    lower-priority file, because the sweep would then classify a different
+    document than the one the manifest names. No candidate being present at all
+    refuses too.
 
     ``fingerprint_fields`` is the 5-tuple POSIX identity/mutation fingerprint
     ``(dev, ino, size, mtime_ns, ctime_ns)`` on POSIX, and the 9-field scoped
@@ -408,8 +425,12 @@ def bind_regular(
         absolute = _absolute(candidate)
         try:
             os.lstat(absolute)
-        except OSError:
-            continue
+        except OSError as exc:
+            # Shared by both platform arms on purpose: the discrimination is
+            # errno-level, not POSIX-only, so native Windows fails closed too.
+            if exc.errno in _ABSENT_ERRNOS:
+                continue
+            raise _fail() from None
         fingerprint = _windows_bind(absolute) if os.name == "nt" else _posix_bind(absolute)
         return absolute, index, fingerprint
     raise _fail()

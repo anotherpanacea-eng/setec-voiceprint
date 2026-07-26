@@ -3929,6 +3929,206 @@ def _leaf_stat(parent: int, name: str) -> os.stat_result | None:
         raise PolicyRefused() from exc
 
 
+# --------------------------------------------------------------------------
+# Native-Windows arm of the topology preflight
+#
+# ``os.open`` on a directory fails on native Windows and ``dir_fd`` is not
+# supported there at all, so the POSIX descriptor-chain helpers above cannot
+# run under ``os.name == "nt"``. Spec 73 requires the same control shape on
+# Windows -- retained descriptor-based directory handles for the report parent
+# and the checkpoint parent, native ``(volume_serial, file_id)`` identity
+# wherever POSIX uses ``(st_dev, st_ino)``, and identity revalidation through
+# those retained handles -- so the preflight dispatches to
+# ``windows_descriptor_io`` instead of degrading to path-string calls.
+#
+# Only the platform-specific *mechanics* are dispatched. The portable-component
+# key collision logic, the ancestor/equality refusals, the leaf disjointness
+# rules, and the commit-point discipline stay in exactly one place and run
+# identically on both platforms.
+# --------------------------------------------------------------------------
+
+
+def _native_windows() -> bool:
+    """The single platform seam the topology preflight dispatches on.
+
+    One named predicate rather than an inline ``os.name`` test at each seam, so
+    the dispatch layer can be exercised on a simulated native platform without
+    mutating ``os.name`` itself -- which would also re-flavour every
+    ``pathlib.Path`` constructed during the test and prove nothing about this
+    module.
+    """
+    return os.name == "nt"
+
+
+def _windows_backend() -> Any:
+    """Import the native descriptor backend, or refuse.
+
+    Imported lazily and only from the native arm: a POSIX run never reaches
+    this, and ``windows_descriptor_io`` is not importable there at all.
+    """
+    try:
+        import windows_descriptor_io as winio  # type: ignore
+    except ImportError:
+        raise PolicyRefused() from None
+    return winio
+
+
+def _windows_helper(winio: Any, name: str) -> Any:
+    """Fetch one required native entry point, or refuse.
+
+    A backend that does not expose the seam the preflight needs is a controlled
+    refusal, never a silent fallback to the POSIX ``dir_fd`` calls.
+    """
+    helper = getattr(winio, name, None)
+    if helper is None or not callable(helper):
+        raise PolicyRefused()
+    return helper
+
+
+def _windows_constant(winio: Any, name: str) -> int:
+    """Fetch one required native constant, or refuse."""
+    value = getattr(winio, name, None)
+    if type(value) is not int:
+        raise PolicyRefused()
+    return value
+
+
+def _windows_identity_of(node: Any) -> tuple[int, int]:
+    """The native counterpart of ``(st_dev, st_ino)``."""
+    try:
+        return int(node.volume_serial), int(node.file_id)
+    except (AttributeError, TypeError, ValueError):
+        raise PolicyRefused() from None
+
+
+def _windows_close_handle(handle: int) -> None:
+    try:
+        _windows_helper(_windows_backend(), "close")(handle)
+    except (PolicyRefused, OSError, TypeError, ValueError):
+        pass
+
+
+def _windows_open_directory_chain(path: Path) -> tuple[list[int], list[tuple[int, int]]]:
+    """Retain a native handle for every directory component of ``path``.
+
+    ``pin_directory_chain`` opens the volume root and then each component
+    relative to the retained parent handle with ``FILE_OPEN_REPARSE_POINT`` and
+    ``FILE_DIRECTORY_FILE``, so an indirected or non-directory component refuses
+    exactly as ``O_NOFOLLOW | O_DIRECTORY`` does on POSIX. The handles are
+    opened read-only: the preflight creates nothing.
+    """
+    winio = _windows_backend()
+    pin = _windows_helper(winio, "pin_directory_chain")
+    require_direct = _windows_helper(winio, "require_direct")
+    opened: list[Any] = []
+    try:
+        # Collected before anything can fail, so no partial chain ever leaks.
+        opened.extend(pin(path, writable_final=False))
+        identities = [
+            _windows_identity_of(require_direct(handle, "directory")) for handle in opened
+        ]
+        retained = [int(handle) for handle in opened]
+        opened = []
+        return retained, identities
+    except (PolicyRefused, OSError, TypeError, ValueError):
+        raise PolicyRefused() from None
+    finally:
+        for handle in reversed(opened):
+            _windows_close_handle(handle)
+
+
+def _windows_revalidate_directory_chain(
+    path: Path, handles: Sequence[int], identities: Sequence[tuple[int, int]]
+) -> None:
+    """Re-resolve every named component and require the retained handles.
+
+    ``revalidate_directory_chain`` walks the names again and compares each
+    freshly opened component against the corresponding retained handle; the
+    frozen ``(volume_serial, file_id)`` pairs are then re-checked through those
+    same retained handles, so a component swapped underneath the preflight
+    refuses either way.
+    """
+    if len(handles) != len(path.parts) or len(identities) != len(handles):
+        raise PolicyRefused()
+    winio = _windows_backend()
+    revalidate = _windows_helper(winio, "revalidate_directory_chain")
+    require_direct = _windows_helper(winio, "require_direct")
+    try:
+        revalidate(path, tuple(handles))
+        for handle, identity in zip(handles, identities):
+            if _windows_identity_of(require_direct(handle, "directory")) != identity:
+                raise PolicyRefused()
+    except (PolicyRefused, OSError, TypeError, ValueError):
+        raise PolicyRefused() from None
+
+
+@dataclass(frozen=True)
+class _TopologyLeaf:
+    """One present leaf, in the platform-neutral terms the preflight uses."""
+
+    is_directory: bool
+    is_indirect: bool
+    identity: tuple[int, int]
+
+
+def _windows_leaf_node(parent: int, name: str) -> _TopologyLeaf | None:
+    winio = _windows_backend()
+    probe = _windows_helper(winio, "probe_leaf_node")
+    reparse = _windows_constant(winio, "FILE_ATTRIBUTE_REPARSE_POINT")
+    try:
+        node = probe(parent, name)
+        if node is None:
+            return None
+        return _TopologyLeaf(
+            is_directory=getattr(node, "kind", None) == "directory",
+            is_indirect=bool(int(getattr(node, "attributes", 0)) & reparse),
+            identity=_windows_identity_of(node),
+        )
+    except (PolicyRefused, OSError, TypeError, ValueError):
+        raise PolicyRefused() from None
+
+
+# -- the platform seams the preflight actually calls ------------------------
+
+
+def _topology_open_chain(path: Path) -> tuple[list[int], list[tuple[int, int]]]:
+    if _native_windows():
+        return _windows_open_directory_chain(path)
+    return _open_directory_chain(path)
+
+
+def _topology_revalidate_chain(
+    path: Path, handles: Sequence[int], identities: Sequence[tuple[int, int]]
+) -> None:
+    if _native_windows():
+        _windows_revalidate_directory_chain(path, handles, identities)
+        return
+    _revalidate_directory_chain(path, handles, identities)
+
+
+def _topology_leaf(parent: int, name: str) -> _TopologyLeaf | None:
+    if _native_windows():
+        return _windows_leaf_node(parent, name)
+    info = _leaf_stat(parent, name)
+    if info is None:
+        return None
+    return _TopologyLeaf(
+        is_directory=stat.S_ISDIR(info.st_mode),
+        is_indirect=bool(getattr(info, "st_reparse_tag", 0)),
+        identity=_identity_of(info),
+    )
+
+
+def _topology_close(handle: int) -> None:
+    if _native_windows():
+        _windows_close_handle(handle)
+        return
+    try:
+        os.close(handle)
+    except OSError:
+        pass
+
+
 class TopologyPreflight:
     """One joint topology preflight over the report file and checkpoint directory.
 
@@ -3997,11 +4197,11 @@ class TopologyPreflight:
             if left != right and portable_component_key(left) == portable_component_key(right):
                 raise PolicyRefused()
 
-        report_handles, report_identities = _open_directory_chain(report.parent)
+        report_handles, report_identities = _topology_open_chain(report.parent)
         checkpoint_handles: list[int] = []
         checkpoint_identities: list[tuple[int, int]] = []
         try:
-            checkpoint_handles, checkpoint_identities = _open_directory_chain(
+            checkpoint_handles, checkpoint_identities = _topology_open_chain(
                 checkpoint.parent
             )
             if report_identities[-1] == checkpoint_identities[-1] and (
@@ -4023,47 +4223,41 @@ class TopologyPreflight:
             return preflight
         except BaseException:
             for descriptor in reversed(checkpoint_handles):
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
+                _topology_close(descriptor)
             for descriptor in reversed(report_handles):
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
+                _topology_close(descriptor)
             raise
 
     # -- internals ---------------------------------------------------------
 
     def _revalidate_chains(self) -> None:
-        _revalidate_directory_chain(
+        _topology_revalidate_chain(
             self.report_path.parent, self._report_handles, self._report_identities
         )
-        _revalidate_directory_chain(
+        _topology_revalidate_chain(
             self.checkpoint_path.parent,
             self._checkpoint_handles,
             self._checkpoint_identities,
         )
 
     def _require_disjoint_leaves(self, *, fresh_checkpoint: bool) -> None:
-        report_leaf = _leaf_stat(self._report_handles[-1], self.report_path.name)
+        report_leaf = _topology_leaf(self._report_handles[-1], self.report_path.name)
         if report_leaf is not None:
             # The report name is absent in fresh mode and in resume mode alike,
             # and it is never deleted, chmodded, rewritten, or followed.
             raise PolicyRefused()
-        checkpoint_leaf = _leaf_stat(
+        checkpoint_leaf = _topology_leaf(
             self._checkpoint_handles[-1], self.checkpoint_path.name
         )
         if fresh_checkpoint:
             if checkpoint_leaf is not None:
                 raise PolicyRefused()
             return
-        if checkpoint_leaf is None or not stat.S_ISDIR(checkpoint_leaf.st_mode):
+        if checkpoint_leaf is None or not checkpoint_leaf.is_directory:
             raise PolicyRefused()
-        if getattr(checkpoint_leaf, "st_reparse_tag", 0):
+        if checkpoint_leaf.is_indirect:
             raise PolicyRefused()
-        identity = _identity_of(checkpoint_leaf)
+        identity = checkpoint_leaf.identity
         # An existing identity alias may not make the checkpoint directory an
         # ancestor of the report, however it is lexically spelled.
         if identity in set(self._report_identities):
@@ -4110,15 +4304,9 @@ class TopologyPreflight:
             return
         self._closed = True
         for descriptor in reversed(self._checkpoint_handles):
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+            _topology_close(descriptor)
         for descriptor in reversed(self._report_handles):
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
+            _topology_close(descriptor)
 
     def close(self) -> None:
         self._release()

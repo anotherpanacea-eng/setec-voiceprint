@@ -7599,3 +7599,529 @@ def test_windows_bind_refuses_when_the_name_rebinds_to_another_identity(
     )
     with pytest.raises(shingle_dedup_io.SecureIOError):
         shingle_dedup_io._windows_bind(tmp_path / "doc.txt")
+
+
+# ---- Codex round: windows topology dispatch ----
+#
+# Two Codex-review findings on PR #361.
+#
+# X1: ``TopologyPreflight`` opened its retained directory chains with POSIX
+# ``os.open`` + ``dir_fd``-relative ``os.stat``. Neither exists on native
+# Windows -- ``os.open`` cannot open a directory there and ``dir_fd`` is
+# unsupported -- so every native-Windows sweep refused at the preflight,
+# contradicting the spec's native-Windows support. The preflight now dispatches
+# its platform mechanics to ``windows_descriptor_io`` while the portable
+# collision/ancestor/leaf rules stay in one platform-neutral place. These are
+# fake-backend tests: they prove the dispatch layer reaches the native entry
+# points, that a backend missing a seam is a controlled refusal rather than a
+# POSIX fallback, and that a POSIX run never touches the native arm at all.
+#
+# X2: ``shingle_dedup_io.bind_regular``'s candidate-presence probe treated any
+# ``OSError`` as absence, so ``EACCES``/``ELOOP``/``EIO`` on a higher-priority
+# candidate silently selected a lower-priority file -- the sweep could classify
+# a different document than the manifest names. Only ``ENOENT``/``ENOTDIR``
+# advance now.
+
+import errno as _errno
+
+
+class _FakeWinNode:
+    """The ``NodeInfo``-shaped record the fake native backend returns."""
+
+    def __init__(self, kind: str, file_id: int, attributes: int = 0) -> None:
+        self.kind = kind
+        self.volume_serial = 4711
+        self.file_id = file_id
+        self.attributes = attributes
+
+
+class _FakeWinBackend:
+    """A fake ``windows_descriptor_io`` answering from an in-memory tree.
+
+    Only the seams the topology preflight is required to reach are implemented,
+    so a dispatch that quietly fell back to the POSIX ``dir_fd`` calls, or that
+    reached a seam it should not, is visible in ``events``.
+    """
+
+    FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+    def __init__(
+        self,
+        directories: Any,
+        leaves: dict[Path, _FakeWinNode] | None = None,
+    ) -> None:
+        self.events: list[tuple[Any, ...]] = []
+        self.open_handles: set[int] = set()
+        self.directories = {Path(item) for item in directories}
+        self.leaves = dict(leaves or {})
+        self._ids: dict[str, int] = {}
+        self._by_handle: dict[int, Path] = {}
+        self._next = 100
+
+    # -- fixture control ---------------------------------------------------
+
+    def identity_of(self, path: Path) -> int:
+        key = str(path)
+        if key not in self._ids:
+            self._next += 1
+            self._ids[key] = self._next
+        return self._ids[key]
+
+    def drift(self, path: Path) -> None:
+        """Swap one component's native file id, as a live rebind would."""
+        self.identity_of(path)
+        self._next += 1
+        self._ids[str(path)] = self._next
+
+    def kinds(self) -> list[Any]:
+        return [event[0] for event in self.events]
+
+    # -- the native seams --------------------------------------------------
+
+    def _open(self, path: Path) -> int:
+        self._next += 1
+        handle = self._next
+        self._by_handle[handle] = path
+        self.open_handles.add(handle)
+        return handle
+
+    def pin_directory_chain(self, path: Any, *, writable_final: bool = True) -> tuple[int, ...]:
+        target = Path(path)
+        self.events.append(("pin_directory_chain", str(target), writable_final))
+        handles: list[int] = []
+        for index in range(len(target.parts)):
+            prefix = Path(*target.parts[: index + 1])
+            if prefix not in self.directories:
+                for handle in reversed(handles):
+                    self.close(handle)
+                raise FileNotFoundError(_errno.ENOENT, "no such directory")
+            handles.append(self._open(prefix))
+        return tuple(handles)
+
+    def revalidate_directory_chain(self, path: Any, retained: tuple[int, ...]) -> None:
+        target = Path(path)
+        self.events.append(("revalidate_directory_chain", str(target), tuple(retained)))
+        if len(retained) != len(target.parts):
+            raise OSError("directory chain length changed")
+        for handle, index in zip(retained, range(len(target.parts))):
+            if self._by_handle.get(handle) != Path(*target.parts[: index + 1]):
+                raise OSError("directory chain identity changed")
+
+    def require_direct(self, handle: int, kind: str, *, allow_multiple_links: bool = False) -> _FakeWinNode:
+        path = self._by_handle.get(handle)
+        if path is None or handle not in self.open_handles:
+            raise OSError("stale native handle")
+        self.events.append(("require_direct", handle, kind))
+        if kind == "directory" and path not in self.directories:
+            raise OSError("native node is not a directory")
+        return _FakeWinNode("directory", self.identity_of(path))
+
+    def probe_leaf_node(self, parent: int, name: str) -> _FakeWinNode | None:
+        base = self._by_handle.get(parent)
+        if base is None or parent not in self.open_handles:
+            raise OSError("stale native handle")
+        target = base / name
+        self.events.append(("probe_leaf_node", str(target)))
+        if target in self.directories:
+            return _FakeWinNode("directory", self.identity_of(target))
+        return self.leaves.get(target)
+
+    def close(self, handle: int) -> None:
+        self.events.append(("close", handle))
+        self.open_handles.discard(handle)
+
+
+def _win_ancestors(*paths: Path) -> list[Path]:
+    """Every directory component of every given path, as the fake volume."""
+    seen: list[Path] = []
+    for path in paths:
+        for index in range(len(path.parts)):
+            prefix = Path(*path.parts[: index + 1])
+            if prefix not in seen:
+                seen.append(prefix)
+    return seen
+
+
+def _forbid_posix_topology(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(*_args: object, **_kwargs: object) -> Any:
+        raise AssertionError("the native arm must never reach the POSIX seams")
+
+    monkeypatch.setattr(rs, "_open_directory_chain", forbidden)
+    monkeypatch.setattr(rs, "_revalidate_directory_chain", forbidden)
+    monkeypatch.setattr(rs, "_leaf_stat", forbidden)
+
+
+def _simulate_nt(monkeypatch: pytest.MonkeyPatch, backend: Any) -> None:
+    """Simulate a native-Windows platform through the module's own seam.
+
+    ``os.name`` itself is deliberately left alone: mutating it would re-flavour
+    every ``pathlib.Path`` built during the test into a ``WindowsPath`` over a
+    POSIX temporary directory, which proves nothing about this module's
+    dispatch. ``_native_windows`` is the one predicate the preflight consults.
+    """
+    monkeypatch.setitem(sys.modules, "windows_descriptor_io", backend)
+    monkeypatch.setattr(rs, "_native_windows", lambda: True)
+
+
+def test_the_native_platform_seam_is_bound_to_os_name(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: the simulated-``nt`` tests below are only meaningful if the seam they
+    drive is the real platform test. No ``Path`` is built here, so mutating
+    ``os.name`` for one assertion is safe."""
+    assert rs._native_windows() is (os.name == "nt")
+    monkeypatch.setattr(rs.os, "name", "nt")
+    assert rs._native_windows() is True
+    monkeypatch.setattr(rs.os, "name", "posix")
+    assert rs._native_windows() is False
+
+
+def test_nt_topology_preflight_reaches_the_native_descriptor_seams(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: on a simulated ``nt`` platform ``check`` uses the native entry
+    points -- retained chains for both parents, native identity, and the same
+    leaf-absence rules -- and still creates nothing."""
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    backend = _FakeWinBackend(_win_ancestors(tmp_path))
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+
+    with rs.TopologyPreflight.check(
+        report_path=report, checkpoint_path=state, resume=False
+    ) as preflight:
+        assert preflight.report_path == report
+        assert preflight.checkpoint_path == state
+        assert not preflight.committed
+
+    kinds = backend.kinds()
+    # One retained chain per target parent, revalidated through the handles.
+    assert kinds.count("pin_directory_chain") == 2
+    assert kinds.count("revalidate_directory_chain") >= 2
+    assert kinds.count("require_direct") > 0
+    # Both leaves probed natively, neither present, nothing created.
+    assert ("probe_leaf_node", str(report)) in backend.events
+    assert ("probe_leaf_node", str(state)) in backend.events
+    assert backend.open_handles == set()
+    assert sorted(item.name for item in tmp_path.iterdir()) == []
+
+
+def test_nt_topology_preflight_binds_native_volume_serial_and_file_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: identity is ``(volume_serial, file_id)`` on the native arm, and it
+    is revalidated through the retained handles -- a component that rebinds to
+    another native id refuses."""
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    backend = _FakeWinBackend(_win_ancestors(tmp_path, state))
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+
+    preflight = rs.TopologyPreflight.check(
+        report_path=report, checkpoint_path=state, resume=True
+    )
+    try:
+        assert preflight._report_identities[-1] == (4711, backend.identity_of(tmp_path))
+        preflight.revalidate()
+        backend.drift(tmp_path)
+        with pytest.raises(rs.PolicyRefused):
+            preflight.revalidate()
+    finally:
+        preflight.close()
+    assert backend.open_handles == set()
+
+
+def test_nt_topology_publish_routes_through_the_native_seams(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: ``publish_report`` revalidates through the retained native handles
+    before the terminal create-new commit."""
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    backend = _FakeWinBackend(_win_ancestors(tmp_path, state))
+    published: list[tuple[Any, ...]] = []
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+    monkeypatch.setattr(
+        rs, "publish_create_new",
+        lambda path, payload, *, privacy_policy: published.append(
+            (path, payload, privacy_policy)
+        ),
+    )
+
+    preflight = rs.TopologyPreflight.check(
+        report_path=report, checkpoint_path=state, resume=True
+    )
+    before = backend.kinds().count("revalidate_directory_chain")
+    preflight.publish_report(b'{"ok":true}\n')
+
+    assert preflight.committed
+    assert published == [(report, b'{"ok":true}\n', rs.PRIVACY_POLICY)]
+    assert backend.kinds().count("revalidate_directory_chain") > before
+    # The terminal commit releases every retained native handle.
+    assert backend.open_handles == set()
+    with pytest.raises(rs.InternalError):
+        preflight.publish_report(b'{"ok":true}\n')
+
+
+@pytest.mark.parametrize("resume,leaves,reason", [
+    (False, {"report.json": _FakeWinNode("file", 55)}, "an existing report name"),
+    (False, {"cp": _FakeWinNode("directory", 56)}, "a fresh checkpoint that exists"),
+    (True, {}, "a resume checkpoint that is absent"),
+    (True, {"cp": _FakeWinNode("file", 57)}, "a resume checkpoint that is a file"),
+    (True, {"cp": _FakeWinNode("directory", 58, attributes=0x400)},
+     "a resume checkpoint that is a reparse point"),
+])
+def test_nt_topology_leaf_rules_match_the_posix_refusals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    resume: bool, leaves: dict[str, _FakeWinNode], reason: str
+) -> None:
+    """X1: the native arm reproduces the POSIX leaf refusals exactly."""
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    backend = _FakeWinBackend(
+        _win_ancestors(tmp_path),
+        {tmp_path / name: node for name, node in leaves.items()},
+    )
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+    with pytest.raises(rs.PolicyRefused):
+        rs.TopologyPreflight.check(
+            report_path=report, checkpoint_path=state, resume=resume
+        )
+    # Refusing never leaks a retained native handle.
+    assert backend.open_handles == set()
+
+
+def test_nt_portable_key_collisions_refuse_before_any_native_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: the portable-component-key collision logic is platform-neutral -- it
+    is not duplicated into the native arm and runs before any handle opens."""
+    backend = _FakeWinBackend(_win_ancestors(tmp_path))
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+    with pytest.raises(rs.PolicyRefused):
+        rs.TopologyPreflight.check(
+            report_path=tmp_path / "report.json",
+            checkpoint_path=tmp_path / "REPORT.JSON",
+            resume=False,
+        )
+    assert backend.events == []
+
+
+def test_nt_backend_without_the_leaf_probe_refuses_instead_of_falling_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: a native backend that lacks a required seam is a controlled
+    ``PolicyRefused``, never a silent fallback to the POSIX ``dir_fd`` calls."""
+    class WithoutLeafProbe(_FakeWinBackend):
+        probe_leaf_node = None  # type: ignore[assignment]
+
+    backend = WithoutLeafProbe(_win_ancestors(tmp_path))
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+    with pytest.raises(rs.PolicyRefused):
+        rs.TopologyPreflight.check(
+            report_path=tmp_path / "report.json",
+            checkpoint_path=tmp_path / "cp",
+            resume=False,
+        )
+    # The chain arm was reached natively; only the missing seam refused.
+    assert "pin_directory_chain" in backend.kinds()
+    assert backend.open_handles == set()
+
+
+@pytest.mark.parametrize("missing", [
+    "pin_directory_chain", "revalidate_directory_chain", "require_direct",
+    "FILE_ATTRIBUTE_REPARSE_POINT",
+])
+def test_nt_backend_missing_any_required_seam_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    backend = _FakeWinBackend(_win_ancestors(tmp_path))
+    monkeypatch.delattr(type(backend), missing, raising=True)
+    _forbid_posix_topology(monkeypatch)
+    _simulate_nt(monkeypatch, backend)
+    with pytest.raises(rs.PolicyRefused):
+        rs.TopologyPreflight.check(
+            report_path=tmp_path / "report.json",
+            checkpoint_path=tmp_path / "cp",
+            resume=False,
+        )
+
+
+def test_nt_topology_refuses_when_the_native_backend_cannot_be_imported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: no native backend at all is still a refusal, not a POSIX fallback."""
+    _forbid_posix_topology(monkeypatch)
+    # ``sys.modules[name] is None`` makes ``import name`` raise ImportError.
+    monkeypatch.setitem(sys.modules, "windows_descriptor_io", None)
+    monkeypatch.setattr(rs, "_native_windows", lambda: True)
+    with pytest.raises(rs.PolicyRefused):
+        rs.TopologyPreflight.check(
+            report_path=tmp_path / "report.json",
+            checkpoint_path=tmp_path / "cp",
+            resume=False,
+        )
+
+
+@POSIX_ONLY
+def test_posix_topology_preflight_never_reaches_the_native_arm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """X1: a POSIX run touches none of the Windows entry points, across all
+    three public seams (check, revalidate, publish)."""
+    def forbidden(*_args: object, **_kwargs: object) -> Any:
+        raise AssertionError("a POSIX run must not reach the native backend")
+
+    for name in (
+        "_windows_backend", "_windows_open_directory_chain",
+        "_windows_revalidate_directory_chain", "_windows_leaf_node",
+        "_windows_close_handle", "_windows_helper", "_windows_constant",
+    ):
+        monkeypatch.setattr(rs, name, forbidden)
+
+    report = tmp_path / "report.json"
+    state = tmp_path / "cp"
+    with rs.TopologyPreflight.check(
+        report_path=report, checkpoint_path=state, resume=False
+    ) as fresh:
+        assert not fresh.committed
+    state.mkdir()
+    with rs.TopologyPreflight.check(
+        report_path=report, checkpoint_path=state, resume=True
+    ) as preflight:
+        preflight.revalidate()
+        preflight.publish_report(b'{"ok":true}\n')
+        assert preflight.committed
+    assert report.read_bytes() == b'{"ok":true}\n'
+
+
+# ---- Codex round: fail-closed candidate probing ----
+
+
+def _blocking_lstat(
+    monkeypatch: pytest.MonkeyPatch, blocked: Path, error: OSError
+) -> None:
+    """Raise ``error`` for exactly one candidate path, delegate the rest."""
+    real = os.lstat
+
+    def probe(path: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            same = os.fspath(path) == str(blocked)
+        except TypeError:
+            same = False
+        if same:
+            raise error
+        return real(path, *args, **kwargs)
+
+    monkeypatch.setattr(shingle_dedup_io.os, "lstat", probe)
+
+
+@pytest.mark.parametrize("error", [
+    PermissionError(_errno.EACCES, "permission denied"),
+    OSError(_errno.ELOOP, "too many levels of symbolic links"),
+    OSError(_errno.EIO, "input/output error"),
+    OSError(),  # errno is None: still not a confirmed absence
+])
+def test_bind_regular_refuses_a_candidate_probe_that_is_not_an_absence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
+) -> None:
+    """X2: an unanswerable probe on a higher-priority candidate must never let
+    a lower-priority candidate be bound in its place."""
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    second.write_text("second\n", encoding="utf-8")
+    _blocking_lstat(monkeypatch, first, error)
+    with pytest.raises(shingle_dedup_io.SecureIOError):
+        shingle_dedup_io.bind_regular([first, second])
+
+
+@pytest.mark.parametrize("error", [
+    FileNotFoundError(_errno.ENOENT, "no such file or directory"),
+    NotADirectoryError(_errno.ENOTDIR, "not a directory"),
+])
+def test_bind_regular_still_advances_on_a_confirmed_absence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: OSError
+) -> None:
+    """X2: ENOENT and a missing intermediate directory (ENOTDIR) remain
+    absences, so the frozen candidate order is unchanged."""
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    second.write_text("second\n", encoding="utf-8")
+    _blocking_lstat(monkeypatch, first, error)
+    absolute, index, fingerprint = shingle_dedup_io.bind_regular([first, second])
+    assert (absolute, index) == (second, 1)
+    assert len(fingerprint) == 5
+
+
+@POSIX_ONLY
+def test_bind_regular_refuses_a_real_permission_blocked_candidate(
+    tmp_path: Path
+) -> None:
+    """X2: the same rule on a real filesystem -- candidate 0 sits under an
+    unsearchable parent while candidate 1 is a perfectly good file."""
+    blocked_parent = tmp_path / "blocked"
+    blocked_parent.mkdir()
+    first = blocked_parent / "doc.txt"
+    first.write_text("first\n", encoding="utf-8")
+    second = tmp_path / "doc.txt"
+    second.write_text("second\n", encoding="utf-8")
+    os.chmod(blocked_parent, 0o000)
+    try:
+        # Pre-condition: the probe really is blocked for this process.
+        with pytest.raises(PermissionError):
+            os.lstat(first)
+        with pytest.raises(shingle_dedup_io.SecureIOError):
+            shingle_dedup_io.bind_regular([first, second])
+    finally:
+        os.chmod(blocked_parent, 0o700)
+
+
+@POSIX_ONLY
+def test_missing_intermediate_directory_is_an_absence_on_a_real_filesystem(
+    tmp_path: Path
+) -> None:
+    """X2: the ENOTDIR arm, unmocked -- a file standing where an intermediate
+    directory should be is an absence, not an unanswerable probe."""
+    (tmp_path / "notadir").write_text("i am a file\n", encoding="utf-8")
+    first = tmp_path / "notadir" / "doc.txt"
+    second = tmp_path / "doc.txt"
+    second.write_text("second\n", encoding="utf-8")
+    absolute, index, _fingerprint = shingle_dedup_io.bind_regular([first, second])
+    assert (absolute, index) == (second, 1)
+
+
+@POSIX_ONLY
+def test_permission_blocked_candidate_ships_the_bad_input_golden(
+    tmp_path: Path
+) -> None:
+    """X2 end to end: an unreadable candidate-0 document is an *input* failure.
+
+    The spec's failure map puts manifest/document/input failures in
+    ``bad_input`` (exit 2), and the projection seam already converts
+    ``shingle_dedup_io.SecureIOError`` from the document planner into
+    ``register_sweep.BadInput``. Candidate 1 here is a valid document, so
+    before the fail-closed fix this run bound the wrong file and exited 0.
+    """
+    manifest = _d2_corpus(tmp_path, 1)
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    shadow = inner / "corpus"
+    shadow.mkdir()
+    (shadow / "doc00000.txt").write_text("shadowed document 0\n", encoding="utf-8")
+    inner_manifest = inner / "manifest.jsonl"
+    inner_manifest.write_bytes(manifest.read_bytes())
+    os.chmod(shadow, 0o000)
+    try:
+        code, out, err = _d2_run(_d2_args(tmp_path, inner_manifest))
+    finally:
+        os.chmod(shadow, 0o700)
+    assert (code, out) == (2, GOLDEN_BAD_INPUT)
+    assert err == b""
+    assert not (tmp_path / "report.json").exists()
+    assert not (tmp_path / "state").exists()
