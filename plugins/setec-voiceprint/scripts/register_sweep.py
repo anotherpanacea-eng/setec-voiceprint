@@ -20,21 +20,34 @@ by, checkpointed, or emitted.
 This increment supplies the canonical-encoding layer and the H1 binding layer:
 every framed digest domain in the spec, the strict H1 receipt read, and the
 receipt-bound classifier load plus its closed public-result validation. The
-manifest projection, checkpoint codec, runner, and report land in later
+immutable shard checkpoint codec, the owner-private checkpoint directory, and
+the joint topology preflight follow in the clearly delimited section at the end
+of this module. The manifest projection, runner, and report land in later
 increments against these exact encoders.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import math
 import os
+import re
+import sqlite3
 import stat
 import struct
 import unicodedata
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
+
+from shingle_dedup_checkpoint import CheckpointRefusal, ImmutableShardDirectory
+from shingle_dedup_io import (
+    SecureIOError,
+    planned_fingerprint,
+    publish_create_new,
+    read_bounded_regular,
+)
 
 # --------------------------------------------------------------------------
 # Fixed identities
@@ -1314,3 +1327,1312 @@ def default_h1_paths() -> tuple[Path, Path]:
     classifier = scripts / CLASSIFIER_FILENAME
     receipt = scripts.parent / "references" / RECEIPT_FILENAME
     return receipt, classifier
+
+
+# ==========================================================================
+# Increment C: immutable shard checkpoint, owner-private policy, topology
+#
+# Everything below this banner implements the spec's "Checkpoint, privacy,
+# platform, and resume" section against the encoders above. It adds no
+# classifier behaviour, no report construction, and no runner.
+# ==========================================================================
+
+#: SQLite application id ``RSW1`` and user version for an H2 shard.
+SHARD_APPLICATION_ID = 0x52535731
+SHARD_USER_VERSION = 1
+SHARD_PAGE_SIZE = 4096
+
+SHARD_NAME_TEMPLATE = "register-{:08d}.sqlite"
+SHARD_NAME_RE = re.compile(r"register-(\d{8})\.sqlite\Z")
+#: The only tolerated non-shard names in a resume directory. Their bytes are
+#: inert crash debris: they are never opened, deserialized, hashed as progress,
+#: deleted, or overwritten.
+RESERVED_TEMP_RE = re.compile(
+    r"\.tmp-(?:[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    r"(?:-journal|-wal|-shm)?\Z"
+)
+
+SHARD_META_SQL = (
+    "CREATE TABLE checkpoint_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL)"
+    " WITHOUT ROWID"
+)
+SHARD_ROWS_SQL = (
+    "CREATE TABLE rows(scoped_ordinal INTEGER PRIMARY KEY,row_json BLOB NOT NULL,"
+    "row_sha256 BLOB NOT NULL)"
+)
+SHARD_DELTA_SQL = (
+    "CREATE TABLE aggregate_delta(key TEXT PRIMARY KEY,value_json BLOB NOT NULL)"
+    " WITHOUT ROWID"
+)
+SHARD_OBJECTS = {
+    ("table", "aggregate_delta"): SHARD_DELTA_SQL,
+    ("table", "checkpoint_meta"): SHARD_META_SQL,
+    ("table", "rows"): SHARD_ROWS_SQL,
+}
+
+SHARD_META_KEYS = (
+    "checkpoint_binding_sha256",
+    "first_scoped_ordinal",
+    "kind",
+    "next_scoped_ordinal",
+    "prior_shard_sha256",
+    "schema_version",
+    "shard_number",
+    "shard_sha256",
+)
+#: The seven metadata keys that enter the logical shard payload. ``shard_sha256``
+#: is the digest of that payload and therefore cannot be inside it.
+SHARD_PAYLOAD_META_KEYS = tuple(
+    key for key in SHARD_META_KEYS if key != "shard_sha256"
+)
+
+DELTA_KEYS = (
+    "counts",
+    "declared_family_inventory",
+    "classified_family_inventory",
+    "declared_by_classified_family",
+    "refusal_inventory",
+    "match_inventory",
+)
+DELTA_COUNT_KEYS = (
+    "scoped_documents",
+    "scoped_bytes",
+    "scoped_words",
+    "resolved_declared_documents",
+    "resolved_declared_words",
+    "unresolved_declared_documents",
+    "unresolved_declared_words",
+    "classified_documents",
+    "classified_words",
+    "refused_documents",
+    "refused_words",
+)
+CHECKPOINT_ROW_KEYS = (
+    "manifest_ordinal",
+    "projected_row_sha256",
+    "content_sha256",
+    "document_bytes",
+    "words",
+    "declared_family",
+    "classified_family",
+    "refusal_reason",
+)
+
+
+# --------------------------------------------------------------------------
+# Fixed inventory domains
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RegisterDomains:
+    """The frozen ``D``/``F``/``R`` domains for one receipt-bound H1 namespace.
+
+    ``declared`` is ``D``, ``classified`` is ``F``, and ``refusals`` is ``R``.
+    ``unknown`` is a declared bucket only; it is never a classified family.
+    """
+
+    declared: tuple[str, ...]
+    classified: tuple[str, ...]
+    refusals: tuple[str, ...]
+
+    @classmethod
+    def from_binding(cls, binding: "H1Binding") -> "RegisterDomains":
+        return cls(
+            declared=binding.declared_domain,
+            classified=binding.classified_domain,
+            refusals=binding.refusal_domain,
+        )
+
+    def validate(self) -> "RegisterDomains":
+        if (
+            type(self.declared) is not tuple
+            or type(self.classified) is not tuple
+            or type(self.refusals) is not tuple
+            or not self.classified
+            or not self.refusals
+            or self.declared != self.classified + ("unknown",)
+            or "unknown" in self.classified
+            or len(set(self.declared)) != len(self.declared)
+            or len(set(self.refusals)) != len(self.refusals)
+            or any(type(item) is not str for item in self.declared)
+            or any(type(item) is not str for item in self.refusals)
+        ):
+            raise InternalError()
+        return self
+
+
+def _add_cell(cell: dict[str, int], words: int) -> None:
+    cell["documents"] += 1
+    cell["words"] += words
+
+
+def compute_aggregate_delta(
+    rows: Sequence[dict[str, Any]], domains: RegisterDomains
+) -> dict[str, Any]:
+    """Return the six-key aggregate delta for one shard's completed rows.
+
+    These are count buckets only. ``same``/``different``/``unresolved`` are not
+    accuracy or truth labels, and no percentage, rate, share, entropy,
+    threshold, band, or dominant-family value exists here or anywhere else.
+    """
+    domains.validate()
+    if len(rows) > SHARD_ROWS:
+        raise InternalError()
+    delta = zero_inventories(
+        domains.declared, domains.classified, domains.refusals
+    )
+    counts = {key: 0 for key in DELTA_COUNT_KEYS}
+    for row in rows:
+        if set(row) != set(CHECKPOINT_ROW_KEYS):
+            raise InternalError()
+        declared = row["declared_family"]
+        classified = row["classified_family"]
+        refusal = row["refusal_reason"]
+        words = _require_int(row["words"], 0, INT64_MAX)
+        document_bytes = _require_int(row["document_bytes"], 0, MAX_DOCUMENT_BYTES)
+        if declared not in domains.declared:
+            raise InternalError()
+        if (classified is None) == (refusal is None):
+            raise InternalError()
+        if classified is not None and classified not in domains.classified:
+            raise InternalError()
+        if refusal is not None and refusal not in domains.refusals:
+            raise InternalError()
+
+        counts["scoped_documents"] += 1
+        counts["scoped_bytes"] += document_bytes
+        counts["scoped_words"] += words
+        _add_cell(delta["declared_family_inventory"][declared], words)
+        if declared == "unknown":
+            counts["unresolved_declared_documents"] += 1
+            counts["unresolved_declared_words"] += words
+        else:
+            counts["resolved_declared_documents"] += 1
+            counts["resolved_declared_words"] += words
+
+        if classified is not None:
+            counts["classified_documents"] += 1
+            counts["classified_words"] += words
+            _add_cell(delta["classified_family_inventory"][classified], words)
+            _add_cell(
+                delta["declared_by_classified_family"][declared][classified], words
+            )
+            if declared == "unknown":
+                bucket = "unresolved"
+            elif declared == classified:
+                bucket = "same"
+            else:
+                bucket = "different"
+        else:
+            counts["refused_documents"] += 1
+            counts["refused_words"] += words
+            _add_cell(delta["refusal_inventory"][refusal], words)
+            bucket = "unresolved"
+        _add_cell(delta["match_inventory"][bucket], words)
+
+    for key in DELTA_COUNT_KEYS:
+        _require_int(counts[key], 0, INT64_MAX)
+    if counts["scoped_documents"] > SHARD_ROWS:
+        raise InternalError()
+    delta["counts"] = counts
+    return {key: delta[key] for key in DELTA_KEYS}
+
+
+def validate_aggregate_delta(
+    delta: Any, rows: Sequence[dict[str, Any]], domains: RegisterDomains
+) -> dict[str, Any]:
+    """Require ``delta`` to be exactly the delta implied by ``rows``.
+
+    Every document count is at most 250 and every row sum must agree, so a
+    tampered delta cannot survive alongside honest rows or the reverse.
+    """
+    if type(delta) is not dict or tuple(sorted(delta)) != tuple(sorted(DELTA_KEYS)):
+        raise PolicyRefused()
+    expected = compute_aggregate_delta(rows, domains)
+    if canonical_json(delta) != canonical_json(expected):
+        raise PolicyRefused()
+    counts = delta["counts"]
+    for key in DELTA_COUNT_KEYS:
+        value = counts[key]
+        if type(value) is not int or isinstance(value, bool) or not (
+            0 <= value <= INT64_MAX
+        ):
+            raise PolicyRefused()
+    if counts["scoped_documents"] > SHARD_ROWS:
+        raise PolicyRefused()
+    if (
+        counts["resolved_declared_documents"]
+        + counts["unresolved_declared_documents"]
+        != counts["scoped_documents"]
+        or counts["classified_documents"] + counts["refused_documents"]
+        != counts["scoped_documents"]
+        or counts["resolved_declared_words"] + counts["unresolved_declared_words"]
+        != counts["scoped_words"]
+        or counts["classified_words"] + counts["refused_words"]
+        != counts["scoped_words"]
+    ):
+        raise PolicyRefused()
+    return delta
+
+
+def add_aggregate_deltas(
+    total: dict[str, Any], delta: dict[str, Any]
+) -> dict[str, Any]:
+    """Add one sealed shard delta into a running total, in shard order."""
+
+    def merge(left: Any, right: Any) -> Any:
+        if type(left) is not type(right):
+            raise InternalError()
+        if type(left) is int:
+            return _require_int(left + right, 0, INT64_MAX)
+        if type(left) is not dict or set(left) != set(right):
+            raise InternalError()
+        return {key: merge(left[key], right[key]) for key in left}
+
+    if set(total) != set(DELTA_KEYS) or set(delta) != set(DELTA_KEYS):
+        raise InternalError()
+    return {key: merge(total[key], delta[key]) for key in DELTA_KEYS}
+
+
+def zero_aggregate_delta(domains: RegisterDomains) -> dict[str, Any]:
+    """The all-zero six-key delta: an empty scope's sealed progress."""
+    return compute_aggregate_delta((), domains)
+
+
+def shard_partition(total_rows: int) -> tuple[int, ...]:
+    """Return the one immutable shard partition of a plan of ``total_rows``.
+
+    Every non-final shard holds exactly 250 contiguous completed rows and the
+    final shard holds the remaining 1-250. An empty plan creates no shard, so a
+    fixed plan cannot produce alternate chains such as 200/200/101.
+    """
+    _require_int(total_rows, 0, MAX_SCOPED_DOCUMENTS)
+    full, remainder = divmod(total_rows, SHARD_ROWS)
+    sizes = [SHARD_ROWS] * full
+    if remainder:
+        sizes.append(remainder)
+    return tuple(sizes)
+
+
+# --------------------------------------------------------------------------
+# Shard codec
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RegisterShard:
+    """One fully validated immutable shard."""
+
+    name: str
+    shard_number: int
+    first_scoped_ordinal: int
+    next_scoped_ordinal: int
+    checkpoint_binding_sha256: str
+    prior_shard_sha256: str | None
+    shard_sha256: str
+    aggregate_delta_sha256: str
+    rows: tuple[dict[str, Any], ...]
+    row_digests: tuple[str, ...]
+    delta: dict[str, Any]
+
+
+def shard_name(shard_number: int) -> str:
+    """Return ``register-NNNNNNNN.sqlite`` for a zero-based shard number."""
+    _require_int(shard_number, 0, MAX_FINAL_SHARDS - 1)
+    return SHARD_NAME_TEMPLATE.format(shard_number)
+
+
+def _meta_text(value: Any) -> str:
+    """``canonical_json(logical_scalar)`` decoded as text, with no terminal LF."""
+    return canonical_json(value).decode("utf-8")
+
+
+def _meta_scalar(text: Any) -> Any:
+    """Invert :func:`_meta_text` under strict, canonical-only decoding."""
+    if type(text) is not str:
+        raise PolicyRefused()
+    try:
+        value = json.loads(text)
+    except (ValueError, RecursionError) as exc:
+        raise PolicyRefused() from exc
+    if type(value) not in (str, int, type(None)) or isinstance(value, bool):
+        raise PolicyRefused()
+    if _meta_text(value) != text:
+        raise PolicyRefused()
+    return value
+
+
+def _shard_metadata(
+    *,
+    shard_number: int,
+    first_scoped_ordinal: int,
+    next_scoped_ordinal: int,
+    checkpoint_binding_sha256: str,
+    prior_shard_sha256: str | None,
+) -> dict[str, Any]:
+    _require_int(shard_number, 0, MAX_FINAL_SHARDS - 1)
+    _require_int(first_scoped_ordinal, 0, MAX_SCOPED_DOCUMENTS - 1)
+    _require_int(next_scoped_ordinal, 1, MAX_SCOPED_DOCUMENTS)
+    if not 1 <= next_scoped_ordinal - first_scoped_ordinal <= SHARD_ROWS:
+        raise InternalError()
+    if (shard_number == 0) != (prior_shard_sha256 is None):
+        raise InternalError()
+    if shard_number == 0 and first_scoped_ordinal != 0:
+        raise InternalError()
+    if prior_shard_sha256 is not None:
+        _require_prefixed(prior_shard_sha256)
+    return {
+        "checkpoint_binding_sha256": _require_prefixed(checkpoint_binding_sha256),
+        "first_scoped_ordinal": first_scoped_ordinal,
+        "kind": CHECKPOINT_KIND,
+        "next_scoped_ordinal": next_scoped_ordinal,
+        "prior_shard_sha256": prior_shard_sha256,
+        "schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "shard_number": shard_number,
+    }
+
+
+def _configure_shard_connection(connection: sqlite3.Connection) -> None:
+    connection.execute("PRAGMA encoding='UTF-8'")
+    connection.execute(f"PRAGMA page_size={SHARD_PAGE_SIZE}")
+    if connection.execute("PRAGMA journal_mode=MEMORY").fetchone() != ("memory",):
+        raise InternalError()
+    connection.execute("PRAGMA trusted_schema=OFF")
+    connection.execute("PRAGMA cache_size=-16384")
+    connection.execute(f"PRAGMA application_id={SHARD_APPLICATION_ID}")
+    connection.execute(f"PRAGMA user_version={SHARD_USER_VERSION}")
+
+
+def encode_register_shard(
+    *,
+    shard_number: int,
+    first_scoped_ordinal: int,
+    checkpoint_binding_sha256: str,
+    prior_shard_sha256: str | None,
+    rows: Sequence[dict[str, Any]],
+    domains: RegisterDomains,
+) -> tuple[bytes, RegisterShard]:
+    """Build one create-new SQLite shard artifact in memory.
+
+    Returns the exact serialized bytes and the shard those bytes decode to. The
+    caller performs the read-only verification pass before publication.
+    """
+    if not 1 <= len(rows) <= SHARD_ROWS:
+        raise InternalError()
+    metadata = _shard_metadata(
+        shard_number=shard_number,
+        first_scoped_ordinal=first_scoped_ordinal,
+        next_scoped_ordinal=first_scoped_ordinal + len(rows),
+        checkpoint_binding_sha256=checkpoint_binding_sha256,
+        prior_shard_sha256=prior_shard_sha256,
+    )
+    encoded_rows: list[tuple[int, bytes, bytes]] = []
+    payload_rows: list[dict[str, Any]] = []
+    for offset, row in enumerate(rows):
+        ordinal = first_scoped_ordinal + offset
+        _require_int(ordinal, 0, MAX_SCOPED_DOCUMENTS - 1)
+        row_json, row_digest = checkpoint_row_binding(row)
+        encoded_rows.append((ordinal, row_json, row_digest))
+        payload_rows.append(
+            {
+                "row_json_sha256": prefixed(row_digest.hex()),
+                "scoped_ordinal": ordinal,
+            }
+        )
+    delta = compute_aggregate_delta(rows, domains)
+    _, delta_digest = aggregate_delta_binding(delta)
+    _, shard_digest = shard_binding(
+        aggregate_delta_sha256=prefixed(delta_digest),
+        metadata=metadata,
+        rows=payload_rows,
+    )
+    sealed = dict(metadata)
+    sealed["shard_sha256"] = prefixed(shard_digest)
+
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(":memory:")
+        _configure_shard_connection(connection)
+        connection.execute(SHARD_META_SQL)
+        connection.execute(SHARD_ROWS_SQL)
+        connection.execute(SHARD_DELTA_SQL)
+        connection.executemany(
+            "INSERT INTO checkpoint_meta VALUES(?,?)",
+            sorted((key, _meta_text(sealed[key])) for key in SHARD_META_KEYS),
+        )
+        connection.executemany("INSERT INTO rows VALUES(?,?,?)", encoded_rows)
+        connection.executemany(
+            "INSERT INTO aggregate_delta VALUES(?,?)",
+            sorted((key, canonical_json(delta[key])) for key in DELTA_KEYS),
+        )
+        connection.commit()
+        raw = connection.serialize()
+    except (sqlite3.Error, OSError, TypeError, ValueError, MemoryError) as exc:
+        raise InternalError() from exc
+    finally:
+        if connection is not None:
+            connection.close()
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_SHARD_BYTES:
+        raise InternalError()
+    return raw, decode_register_shard(
+        raw,
+        name=shard_name(shard_number),
+        domains=domains,
+        checkpoint_binding_sha256=checkpoint_binding_sha256,
+    )
+
+
+def decode_register_shard(
+    raw: bytes,
+    *,
+    name: str,
+    domains: RegisterDomains,
+    checkpoint_binding_sha256: str,
+) -> RegisterShard:
+    """Read-only in-memory validation of one shard's exact bytes.
+
+    Every schema object, PRAGMA, metadata key/domain, filename ordinal, row
+    digest, delta equation, and hash-chain link is revalidated here. Holes,
+    extras, mutation, replacement, and corruption refuse.
+    """
+    domains.validate()
+    matched = SHARD_NAME_RE.fullmatch(name)
+    if matched is None:
+        raise PolicyRefused()
+    expected_number = int(matched.group(1))
+    if type(raw) is not bytes or not 0 < len(raw) <= MAX_SHARD_BYTES:
+        raise PolicyRefused()
+    if not hasattr(sqlite3.Connection, "deserialize"):
+        raise PolicyRefused()
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(":memory:")
+        connection.deserialize(raw)
+        connection.execute("PRAGMA trusted_schema=OFF")
+        connection.execute("PRAGMA query_only=ON")
+        connection.execute("PRAGMA cache_size=-16384")
+        if connection.execute("PRAGMA trusted_schema").fetchone() != (0,):
+            raise PolicyRefused()
+        if connection.execute("PRAGMA query_only").fetchone() != (1,):
+            raise PolicyRefused()
+        for pragma, expected in (
+            ("application_id", (SHARD_APPLICATION_ID,)),
+            ("user_version", (SHARD_USER_VERSION,)),
+            ("encoding", ("UTF-8",)),
+            ("page_size", (SHARD_PAGE_SIZE,)),
+            ("journal_mode", ("memory",)),
+        ):
+            if connection.execute(f"PRAGMA {pragma}").fetchone() != expected:
+                raise PolicyRefused()
+        page_count = connection.execute("PRAGMA page_count").fetchone()
+        if (
+            page_count is None
+            or type(page_count[0]) is not int
+            or page_count[0] < 1
+            or page_count[0] * SHARD_PAGE_SIZE != len(raw)
+        ):
+            raise PolicyRefused()
+        objects = {
+            (row[0], row[1]): row[2]
+            for row in connection.execute(
+                "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+            )
+        }
+        if objects != SHARD_OBJECTS:
+            raise PolicyRefused()
+
+        meta_rows = tuple(
+            connection.execute(
+                "SELECT key,value FROM checkpoint_meta ORDER BY key COLLATE BINARY"
+            )
+        )
+        if len(meta_rows) != len(SHARD_META_KEYS) or any(
+            type(key) is not str or type(value) is not str
+            for key, value in meta_rows
+        ):
+            raise PolicyRefused()
+        meta = {key: _meta_scalar(value) for key, value in meta_rows}
+        if tuple(sorted(meta)) != SHARD_META_KEYS:
+            raise PolicyRefused()
+        if (
+            meta["schema_version"] != CHECKPOINT_SCHEMA_VERSION
+            or meta["kind"] != CHECKPOINT_KIND
+        ):
+            raise PolicyRefused()
+        shard_number = meta["shard_number"]
+        first = meta["first_scoped_ordinal"]
+        following = meta["next_scoped_ordinal"]
+        if (
+            type(shard_number) is not int
+            or not 0 <= shard_number <= MAX_FINAL_SHARDS - 1
+            or shard_number != expected_number
+            or type(first) is not int
+            or not 0 <= first <= MAX_SCOPED_DOCUMENTS - 1
+            or type(following) is not int
+            or not 1 <= following <= MAX_SCOPED_DOCUMENTS
+            or not 1 <= following - first <= SHARD_ROWS
+        ):
+            raise PolicyRefused()
+        if shard_number == 0 and (first != 0 or meta["prior_shard_sha256"] is not None):
+            raise PolicyRefused()
+        if shard_number != 0 and meta["prior_shard_sha256"] is None:
+            raise PolicyRefused()
+        for key in ("checkpoint_binding_sha256", "shard_sha256"):
+            if type(meta[key]) is not str:
+                raise PolicyRefused()
+            try:
+                _require_prefixed(meta[key])
+            except InternalError as exc:
+                raise PolicyRefused() from exc
+        if meta["prior_shard_sha256"] is not None:
+            try:
+                _require_prefixed(meta["prior_shard_sha256"])
+            except InternalError as exc:
+                raise PolicyRefused() from exc
+        if meta["checkpoint_binding_sha256"] != _require_prefixed(
+            checkpoint_binding_sha256
+        ):
+            raise PolicyRefused()
+
+        row_records = tuple(
+            connection.execute(
+                "SELECT scoped_ordinal,row_json,row_sha256 FROM rows"
+                " ORDER BY scoped_ordinal"
+            )
+        )
+        if [record[0] for record in row_records] != list(range(first, following)):
+            raise PolicyRefused()
+        rows: list[dict[str, Any]] = []
+        digests: list[str] = []
+        payload_rows: list[dict[str, Any]] = []
+        for ordinal, row_json, row_digest in row_records:
+            if type(row_json) is not bytes or type(row_digest) is not bytes:
+                raise PolicyRefused()
+            if len(row_digest) != 32:
+                raise PolicyRefused()
+            if hashlib.sha256(row_json).digest() != row_digest:
+                raise PolicyRefused()
+            try:
+                row = json.loads(row_json.decode("utf-8", errors="strict"))
+            except (UnicodeError, ValueError, RecursionError) as exc:
+                raise PolicyRefused() from exc
+            if type(row) is not dict or set(row) != set(CHECKPOINT_ROW_KEYS):
+                raise PolicyRefused()
+            try:
+                encoded, recomputed = checkpoint_row_binding(row)
+            except InternalError as exc:
+                raise PolicyRefused() from exc
+            if encoded != row_json or recomputed != row_digest:
+                raise PolicyRefused()
+            # The codec revalidates the closed value domains itself rather than
+            # relying on the shared builders as its only line of defence.
+            if (
+                row["declared_family"] not in domains.declared
+                or (
+                    row["classified_family"] is not None
+                    and row["classified_family"] not in domains.classified
+                )
+                or (
+                    row["refusal_reason"] is not None
+                    and row["refusal_reason"] not in domains.refusals
+                )
+                or (row["classified_family"] is None)
+                == (row["refusal_reason"] is None)
+            ):
+                raise PolicyRefused()
+            rows.append(row)
+            digests.append(prefixed(row_digest.hex()))
+            payload_rows.append(
+                {
+                    "row_json_sha256": prefixed(row_digest.hex()),
+                    "scoped_ordinal": ordinal,
+                }
+            )
+
+        delta_records = tuple(
+            connection.execute(
+                "SELECT key,value_json FROM aggregate_delta ORDER BY key COLLATE BINARY"
+            )
+        )
+        if len(delta_records) != len(DELTA_KEYS):
+            raise PolicyRefused()
+        delta: dict[str, Any] = {}
+        for key, value_json in delta_records:
+            if type(key) is not str or type(value_json) is not bytes:
+                raise PolicyRefused()
+            if key not in DELTA_KEYS or key in delta:
+                raise PolicyRefused()
+            try:
+                value = json.loads(value_json.decode("utf-8", errors="strict"))
+            except (UnicodeError, ValueError, RecursionError) as exc:
+                raise PolicyRefused() from exc
+            if canonical_json(value) != value_json:
+                raise PolicyRefused()
+            delta[key] = value
+        try:
+            validate_aggregate_delta(delta, rows, domains)
+            _, delta_digest = aggregate_delta_binding(delta)
+            _, shard_digest = shard_binding(
+                aggregate_delta_sha256=prefixed(delta_digest),
+                metadata={key: meta[key] for key in SHARD_PAYLOAD_META_KEYS},
+                rows=payload_rows,
+            )
+        except InternalError as exc:
+            # A corrupt artifact is a policy refusal, never an internal error.
+            raise PolicyRefused() from exc
+        if prefixed(shard_digest) != meta["shard_sha256"]:
+            raise PolicyRefused()
+        if connection.execute("PRAGMA quick_check").fetchone() != ("ok",):
+            raise PolicyRefused()
+    except (sqlite3.Error, OSError, TypeError, ValueError, KeyError, MemoryError) as exc:
+        raise PolicyRefused() from exc
+    finally:
+        if connection is not None:
+            connection.close()
+    return RegisterShard(
+        name=name,
+        shard_number=shard_number,
+        first_scoped_ordinal=first,
+        next_scoped_ordinal=following,
+        checkpoint_binding_sha256=meta["checkpoint_binding_sha256"],
+        prior_shard_sha256=meta["prior_shard_sha256"],
+        shard_sha256=meta["shard_sha256"],
+        aggregate_delta_sha256=prefixed(delta_digest),
+        rows=tuple(rows),
+        row_digests=tuple(digests),
+        delta=delta,
+    )
+
+
+# --------------------------------------------------------------------------
+# Owner-private immutable shard directory and resume
+# --------------------------------------------------------------------------
+
+
+class RegisterShardDirectory(ImmutableShardDirectory):
+    """The H2 checkpoint directory: owner-private, register shard grammar."""
+
+    policy = PRIVACY_POLICY
+    final_pattern = SHARD_NAME_RE
+    temp_pattern = RESERVED_TEMP_RE
+
+    @classmethod
+    def _limits(cls) -> tuple[int, int, int, int, int]:
+        return (
+            MAX_FINAL_SHARDS + MAX_RESERVED_TEMPORARY_NAMES,
+            MAX_FINAL_SHARDS,
+            MAX_RESERVED_TEMPORARY_NAMES,
+            MAX_SHARD_BYTES,
+            MAX_CHECKPOINT_CUMULATIVE_BYTES,
+        )
+
+
+class RegisterCheckpoint:
+    """The sealed shard chain behind ``--checkpoint-dir``.
+
+    Fresh mode requires the directory absent; resume requires it present. No
+    named SQLite database is ever opened, no published shard is ever mutated,
+    and no second directory or race protocol is invented.
+    """
+
+    __slots__ = (
+        "_directory",
+        "_domains",
+        "_binding_sha256",
+        "_shards",
+        "_delta",
+        "_closed",
+        "_sealed_final",
+    )
+
+    def __init__(
+        self,
+        directory: RegisterShardDirectory,
+        *,
+        domains: RegisterDomains,
+        checkpoint_binding_sha256: str,
+        shards: tuple[RegisterShard, ...],
+    ) -> None:
+        self._directory = directory
+        self._domains = domains
+        self._binding_sha256 = checkpoint_binding_sha256
+        self._shards = list(shards)
+        self._closed = False
+        self._sealed_final = bool(shards) and len(shards[-1].rows) < SHARD_ROWS
+        total = zero_aggregate_delta(domains)
+        for shard in shards:
+            total = add_aggregate_deltas(total, shard.delta)
+        self._delta = total
+
+    # -- lifecycle ---------------------------------------------------------
+
+    @classmethod
+    def create(
+        cls,
+        path: os.PathLike[str] | str,
+        *,
+        domains: RegisterDomains,
+        checkpoint_binding_sha256: str,
+    ) -> "RegisterCheckpoint":
+        """Create the owner-private checkpoint directory. It must be absent."""
+        domains.validate()
+        _require_prefixed(checkpoint_binding_sha256)
+        try:
+            directory = RegisterShardDirectory.open_new(path)
+        except CheckpointRefusal as exc:
+            raise PolicyRefused() from exc
+        try:
+            finals, temporaries, _total = _frozen_listing(directory)
+            if finals or temporaries:
+                raise PolicyRefused()
+        except BaseException:
+            directory.close()
+            raise
+        return cls(
+            directory,
+            domains=domains,
+            checkpoint_binding_sha256=checkpoint_binding_sha256,
+            shards=(),
+        )
+
+    @classmethod
+    def resume(
+        cls,
+        path: os.PathLike[str] | str,
+        *,
+        domains: RegisterDomains,
+        checkpoint_binding_sha256: str,
+    ) -> "RegisterCheckpoint":
+        """Reopen and fully revalidate an existing checkpoint directory.
+
+        An empty or reserved-temporary-only directory resumes at exactly zero
+        progress: zero sealed rows, a zero aggregate delta, a null prior-shard
+        digest, next shard number 0, and next scoped ordinal 0. Reserved
+        temporaries are inert crash debris and grant no continuation, so a
+        temporary holding valid-looking SQLite bytes is never accepted as a row,
+        delta, or prior hash.
+        """
+        domains.validate()
+        _require_prefixed(checkpoint_binding_sha256)
+        try:
+            directory = RegisterShardDirectory.open_resume(path)
+        except CheckpointRefusal as exc:
+            raise PolicyRefused() from exc
+        try:
+            finals, temporaries, _total = _frozen_listing(directory)
+            shards = _snapshot_chain(
+                directory,
+                finals,
+                domains=domains,
+                checkpoint_binding_sha256=checkpoint_binding_sha256,
+            )
+            try:
+                directory.require_unchanged((*finals, *temporaries))
+            except CheckpointRefusal as exc:
+                raise PolicyRefused() from exc
+        except BaseException:
+            directory.close()
+            raise
+        return cls(
+            directory,
+            domains=domains,
+            checkpoint_binding_sha256=checkpoint_binding_sha256,
+            shards=shards,
+        )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._directory.close()
+
+    def __enter__(self) -> "RegisterCheckpoint":
+        return self
+
+    def __exit__(self, _kind: object, _value: object, _traceback: object) -> None:
+        self.close()
+
+    # -- sealed progress ---------------------------------------------------
+
+    @property
+    def path(self) -> Path:
+        return self._directory.path
+
+    @property
+    def shards(self) -> tuple[RegisterShard, ...]:
+        return tuple(self._shards)
+
+    @property
+    def next_shard_number(self) -> int:
+        return len(self._shards)
+
+    @property
+    def next_scoped_ordinal(self) -> int:
+        """The first ordinal a resumed run must reprocess."""
+        return self._shards[-1].next_scoped_ordinal if self._shards else 0
+
+    @property
+    def prior_shard_sha256(self) -> str | None:
+        return self._shards[-1].shard_sha256 if self._shards else None
+
+    @property
+    def sealed_delta(self) -> dict[str, Any]:
+        """The six sealed deltas added in shard order."""
+        return json.loads(canonical_json(self._delta).decode("utf-8"))
+
+    @property
+    def checkpoint_binding_sha256(self) -> str:
+        return self._binding_sha256
+
+    # -- publication -------------------------------------------------------
+
+    def publish_shard(
+        self, rows: Sequence[dict[str, Any]], *, final: bool
+    ) -> RegisterShard:
+        """Seal and publish one immutable shard create-new.
+
+        A non-final shard must carry exactly 250 contiguous completed rows; the
+        final shard carries 1-250. Interruption therefore loses the current
+        unpublished rows rather than sealing a short non-final shard, and a
+        fixed plan has exactly one immutable shard partition.
+        """
+        if self._closed:
+            raise InternalError()
+        if type(final) is not bool:
+            raise InternalError()
+        if self._sealed_final:
+            raise PolicyRefused()
+        rows = list(rows)
+        if final:
+            if not 1 <= len(rows) <= SHARD_ROWS:
+                raise InternalError()
+        elif len(rows) != SHARD_ROWS:
+            raise InternalError()
+        number = self.next_shard_number
+        if number >= MAX_FINAL_SHARDS:
+            raise PolicyRefused()
+        raw, shard = encode_register_shard(
+            shard_number=number,
+            first_scoped_ordinal=self.next_scoped_ordinal,
+            checkpoint_binding_sha256=self._binding_sha256,
+            prior_shard_sha256=self.prior_shard_sha256,
+            rows=rows,
+            domains=self._domains,
+        )
+        # Read-only in-memory verification pass before publication: the exact
+        # bytes about to be published are decoded and revalidated from scratch.
+        verified = decode_register_shard(
+            raw,
+            name=shard.name,
+            domains=self._domains,
+            checkpoint_binding_sha256=self._binding_sha256,
+        )
+        if canonical_json(verified.delta) != canonical_json(shard.delta):
+            raise InternalError()
+        if verified.shard_sha256 != shard.shard_sha256:
+            raise InternalError()
+        try:
+            self._directory.publish_entry(shard.name, raw)
+        except CheckpointRefusal as exc:
+            raise PolicyRefused() from exc
+        self._shards.append(verified)
+        self._delta = add_aggregate_deltas(self._delta, verified.delta)
+        self._sealed_final = final
+        return verified
+
+
+def _frozen_listing(
+    directory: RegisterShardDirectory,
+) -> tuple[tuple[tuple[str, int, object], ...], tuple[tuple[str, int, object], ...], int]:
+    try:
+        return directory.freeze_listing()
+    except CheckpointRefusal as exc:
+        raise PolicyRefused() from exc
+
+
+def _snapshot_chain(
+    directory: RegisterShardDirectory,
+    finals: Sequence[tuple[str, int, object]],
+    *,
+    domains: RegisterDomains,
+    checkpoint_binding_sha256: str,
+) -> tuple[RegisterShard, ...]:
+    """Validate the complete bound shard chain, or refuse.
+
+    No row, aggregate delta, completed ordinal, or prior hash is accepted
+    unless it is contained in a fully validated final shard and its complete
+    bound chain.
+    """
+    ordered = sorted(name for name, _size, _fingerprint in finals)
+    if ordered != [shard_name(index) for index in range(len(ordered))]:
+        raise PolicyRefused()
+    shards: list[RegisterShard] = []
+    for index, name in enumerate(ordered):
+        try:
+            raw = directory.snapshot_entry(name)
+        except CheckpointRefusal as exc:
+            raise PolicyRefused() from exc
+        shard = decode_register_shard(
+            raw,
+            name=name,
+            domains=domains,
+            checkpoint_binding_sha256=checkpoint_binding_sha256,
+        )
+        expected_first = shards[-1].next_scoped_ordinal if shards else 0
+        expected_prior = shards[-1].shard_sha256 if shards else None
+        if (
+            shard.shard_number != index
+            or shard.first_scoped_ordinal != expected_first
+            or shard.prior_shard_sha256 != expected_prior
+        ):
+            raise PolicyRefused()
+        if index + 1 < len(ordered) and len(shard.rows) != SHARD_ROWS:
+            raise PolicyRefused()
+        shards.append(shard)
+    return tuple(shards)
+
+
+# --------------------------------------------------------------------------
+# Expected-fingerprint document read
+# --------------------------------------------------------------------------
+
+
+def plan_document_fingerprint(path: os.PathLike[str] | str) -> tuple[int, ...]:
+    """Freeze one planned document's identity/mutation fingerprint.
+
+    POSIX binds device, inode, size, ``mtime_ns``, and ``ctime_ns``. Native
+    Windows binds the scoped handle fingerprint, which adds ``change_time`` so a
+    same-size content mutation with a restored LastWriteTime still refuses.
+    """
+    try:
+        return planned_fingerprint(path)
+    except (SecureIOError, OSError) as exc:
+        raise BadInput() from exc
+
+
+def read_planned_document(
+    path: os.PathLike[str] | str, expected_fingerprint: tuple[int, ...]
+) -> bytes:
+    """Read one planned document exactly once under the 16 MiB ceiling.
+
+    The pre-open, open-handle, post-read, and rebound-name fingerprints must all
+    agree with the frozen plan's expected fingerprint. Content digest, UTF-8
+    text, and classifier input all derive from this one byte string; the
+    document is never reopened.
+    """
+    if type(expected_fingerprint) is not tuple or not expected_fingerprint:
+        raise InternalError()
+    try:
+        return read_bounded_regular(
+            path, MAX_DOCUMENT_BYTES, expected_fingerprint=expected_fingerprint
+        )
+    except (SecureIOError, OSError) as exc:
+        raise BadInput() from exc
+
+
+# --------------------------------------------------------------------------
+# Joint topology preflight
+# --------------------------------------------------------------------------
+
+
+def portable_component_key(component: str) -> str:
+    """The portable comparison key for one path component."""
+    if type(component) is not str:
+        raise InternalError()
+    return unicodedata.normalize("NFC", component).casefold().rstrip(" .")
+
+
+def _identity_of(info: os.stat_result) -> tuple[int, int]:
+    return int(info.st_dev), int(info.st_ino)
+
+
+def _absolute_target(path: os.PathLike[str] | str) -> Path:
+    try:
+        raw = os.fspath(path)
+    except (TypeError, ValueError) as exc:
+        raise BadInput() from exc
+    if type(raw) is not str or not raw or "\x00" in raw:
+        raise BadInput()
+    absolute = Path(os.path.abspath(raw))
+    if not absolute.is_absolute() or absolute.name in {"", ".", ".."}:
+        raise BadInput()
+    if any(part in {"", ".", ".."} for part in absolute.parts[1:]):
+        raise BadInput()
+    return absolute
+
+
+def _open_directory_chain(path: Path) -> tuple[list[int], list[tuple[int, int]]]:
+    """Pin every directory component of ``path`` through descriptor handles.
+
+    ``O_NOFOLLOW | O_DIRECTORY`` refuses a symlink or non-directory component,
+    and each opened handle is required to be the exact node the name resolved
+    to, so a component swapped between the lookup and the open refuses.
+    """
+    flags = (
+        os.O_RDONLY
+        | int(getattr(os, "O_DIRECTORY", 0))
+        | int(getattr(os, "O_CLOEXEC", 0))
+        | int(getattr(os, "O_NOFOLLOW", 0))
+        | int(getattr(os, "O_BINARY", 0))
+    )
+    opened: list[int] = []
+    identities: list[tuple[int, int]] = []
+    try:
+        current = os.open(path.anchor or "/", flags)
+        opened.append(current)
+        anchor = os.fstat(current)
+        if not stat.S_ISDIR(anchor.st_mode):
+            raise PolicyRefused()
+        identities.append(_identity_of(anchor))
+        for component in path.parts[1:]:
+            named = os.stat(component, dir_fd=current, follow_symlinks=False)
+            following = os.open(component, flags, dir_fd=current)
+            opened.append(following)
+            info = os.fstat(following)
+            if (
+                not stat.S_ISDIR(named.st_mode)
+                or not stat.S_ISDIR(info.st_mode)
+                or _identity_of(named) != _identity_of(info)
+            ):
+                raise PolicyRefused()
+            identities.append(_identity_of(info))
+            current = following
+        return opened, identities
+    except (PolicyRefused, OSError, TypeError, ValueError):
+        for descriptor in reversed(opened):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        raise PolicyRefused() from None
+
+
+def _revalidate_directory_chain(path: Path, descriptors: Sequence[int],
+                                identities: Sequence[tuple[int, int]]) -> None:
+    if len(descriptors) != len(path.parts) or len(identities) != len(descriptors):
+        raise PolicyRefused()
+    try:
+        if _identity_of(os.fstat(descriptors[0])) != identities[0]:
+            raise PolicyRefused()
+        for index, component in enumerate(path.parts[1:]):
+            named = os.stat(component, dir_fd=descriptors[index], follow_symlinks=False)
+            opened = os.fstat(descriptors[index + 1])
+            if (
+                not stat.S_ISDIR(named.st_mode)
+                or _identity_of(named) != _identity_of(opened)
+                or _identity_of(opened) != identities[index + 1]
+            ):
+                raise PolicyRefused()
+    except (PolicyRefused, OSError, TypeError, ValueError):
+        raise PolicyRefused() from None
+
+
+def _leaf_stat(parent: int, name: str) -> os.stat_result | None:
+    try:
+        return os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise PolicyRefused() from exc
+
+
+class TopologyPreflight:
+    """One joint topology preflight over the report file and checkpoint directory.
+
+    The two targets must be disjoint under native identity and portable
+    component comparison. Nothing is created, deleted, chmodded, rewritten, or
+    followed here, and no failure path creates the second target after the first
+    target fails. Report publication is the terminal commit point: there is no
+    post-publication revalidation.
+    """
+
+    __slots__ = (
+        "report_path",
+        "checkpoint_path",
+        "resume",
+        "_report_handles",
+        "_report_identities",
+        "_checkpoint_handles",
+        "_checkpoint_identities",
+        "_closed",
+        "_committed",
+    )
+
+    def __init__(
+        self,
+        *,
+        report_path: Path,
+        checkpoint_path: Path,
+        resume: bool,
+        report_handles: list[int],
+        report_identities: list[tuple[int, int]],
+        checkpoint_handles: list[int],
+        checkpoint_identities: list[tuple[int, int]],
+    ) -> None:
+        self.report_path = report_path
+        self.checkpoint_path = checkpoint_path
+        self.resume = resume
+        self._report_handles = report_handles
+        self._report_identities = report_identities
+        self._checkpoint_handles = checkpoint_handles
+        self._checkpoint_identities = checkpoint_identities
+        self._closed = False
+        self._committed = False
+
+    @classmethod
+    def check(
+        cls,
+        *,
+        report_path: os.PathLike[str] | str,
+        checkpoint_path: os.PathLike[str] | str,
+        resume: bool,
+    ) -> "TopologyPreflight":
+        """Resolve, retain, and jointly validate both targets before creation."""
+        if type(resume) is not bool:
+            raise InternalError()
+        report = _absolute_target(report_path)
+        checkpoint = _absolute_target(checkpoint_path)
+        if report == checkpoint or report.parts == checkpoint.parts:
+            raise PolicyRefused()
+        shorter, longer = sorted((report.parts, checkpoint.parts), key=len)
+        if longer[: len(shorter)] == shorter:
+            raise PolicyRefused()
+        # Corresponding existing ancestor components that collide portably but
+        # are spelled differently natively are refused at every shared depth,
+        # including the two leaves when they sit at the same depth.
+        for left, right in zip(report.parts, checkpoint.parts):
+            if left != right and portable_component_key(left) == portable_component_key(right):
+                raise PolicyRefused()
+
+        report_handles, report_identities = _open_directory_chain(report.parent)
+        checkpoint_handles: list[int] = []
+        checkpoint_identities: list[tuple[int, int]] = []
+        try:
+            checkpoint_handles, checkpoint_identities = _open_directory_chain(
+                checkpoint.parent
+            )
+            if report_identities[-1] == checkpoint_identities[-1] and (
+                portable_component_key(report.name)
+                == portable_component_key(checkpoint.name)
+            ):
+                raise PolicyRefused()
+            preflight = cls(
+                report_path=report,
+                checkpoint_path=checkpoint,
+                resume=resume,
+                report_handles=report_handles,
+                report_identities=report_identities,
+                checkpoint_handles=checkpoint_handles,
+                checkpoint_identities=checkpoint_identities,
+            )
+            preflight._require_disjoint_leaves(fresh_checkpoint=not resume)
+            preflight._revalidate_chains()
+            return preflight
+        except BaseException:
+            for descriptor in reversed(checkpoint_handles):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            for descriptor in reversed(report_handles):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            raise
+
+    # -- internals ---------------------------------------------------------
+
+    def _revalidate_chains(self) -> None:
+        _revalidate_directory_chain(
+            self.report_path.parent, self._report_handles, self._report_identities
+        )
+        _revalidate_directory_chain(
+            self.checkpoint_path.parent,
+            self._checkpoint_handles,
+            self._checkpoint_identities,
+        )
+
+    def _require_disjoint_leaves(self, *, fresh_checkpoint: bool) -> None:
+        report_leaf = _leaf_stat(self._report_handles[-1], self.report_path.name)
+        if report_leaf is not None:
+            # The report name is absent in fresh mode and in resume mode alike,
+            # and it is never deleted, chmodded, rewritten, or followed.
+            raise PolicyRefused()
+        checkpoint_leaf = _leaf_stat(
+            self._checkpoint_handles[-1], self.checkpoint_path.name
+        )
+        if fresh_checkpoint:
+            if checkpoint_leaf is not None:
+                raise PolicyRefused()
+            return
+        if checkpoint_leaf is None or not stat.S_ISDIR(checkpoint_leaf.st_mode):
+            raise PolicyRefused()
+        if getattr(checkpoint_leaf, "st_reparse_tag", 0):
+            raise PolicyRefused()
+        identity = _identity_of(checkpoint_leaf)
+        # An existing identity alias may not make the checkpoint directory an
+        # ancestor of the report, however it is lexically spelled.
+        if identity in set(self._report_identities):
+            raise PolicyRefused()
+
+    # -- public seams ------------------------------------------------------
+
+    def revalidate(self) -> None:
+        """Revalidate after checkpoint open/create and before report publication.
+
+        There is deliberately no post-publication revalidation: once the report
+        is published this refuses rather than reopening the terminal commit.
+        """
+        if self._committed:
+            raise InternalError()
+        if self._closed:
+            raise PolicyRefused()
+        self._revalidate_chains()
+        self._require_disjoint_leaves(fresh_checkpoint=False)
+        self._revalidate_chains()
+
+    def publish_report(self, payload: bytes) -> None:
+        """Publish the report create-new. This is the terminal commit point."""
+        if self._committed:
+            raise InternalError()
+        if self._closed or type(payload) is not bytes:
+            raise PolicyRefused()
+        self.revalidate()
+        try:
+            publish_create_new(
+                self.report_path, payload, privacy_policy=PRIVACY_POLICY
+            )
+        except (SecureIOError, OSError) as exc:
+            raise PolicyRefused() from exc
+        self._committed = True
+        self._release()
+
+    @property
+    def committed(self) -> bool:
+        return self._committed
+
+    def _release(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for descriptor in reversed(self._checkpoint_handles):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        for descriptor in reversed(self._report_handles):
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        self._release()
+
+    def __enter__(self) -> "TopologyPreflight":
+        return self
+
+    def __exit__(self, _kind: object, _value: object, _traceback: object) -> None:
+        self.close()
