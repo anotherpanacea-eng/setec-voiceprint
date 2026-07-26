@@ -86,6 +86,7 @@ from stylometry_core import (  # type: ignore
     feature_vector,
     select_feature_names,
     vector_stats,
+    assert_personal_register_isolated,
 )
 
 
@@ -302,6 +303,9 @@ def _load_manifest_entries(
             f"Skipped {skipped} manifest entry/entries with missing "
             f"or unparseable date_written.\n"
         )
+    assert_personal_register_isolated([
+        {"metadata": entry.extra} for entry in out
+    ])
     return out
 
 
@@ -487,6 +491,11 @@ def build_period_profiles(
     so an operator running a multi-minute drift report sees what
     period the loop is in.
     """
+    assert_personal_register_isolated([
+        {"metadata": entry.extra}
+        for entries in grouped.values()
+        for entry in entries
+    ])
     items_by_period: dict[str, list[dict[str, Any]]] = {}
     n_docs_by_period: dict[str, int] = {}
     n_words_by_period: dict[str, int] = {}

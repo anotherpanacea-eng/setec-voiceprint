@@ -88,6 +88,7 @@ ALLOWED_REGISTER = {
     "literary_horror", "policy_brief", "scholarly_article",
     "legal_brief", "grant_proposal", "expert_affidavit",
     "regulatory_comment", "professional_letter", "teaching",
+    "message.imessage",
 }
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
@@ -881,6 +882,12 @@ def validate_entry(
                 f"Entry tagged 'use: baseline' but 'split: {split}'. "
                 "Baseline use typically sits in 'split: baseline'.",
             ))
+    if register == "message.imessage" and isinstance(use, list) and "baseline" in use:
+        issues.append(Issue(
+            "error", lineno, entry_id, "use",
+            "message.imessage is a profile-only conversational register and "
+            "must not carry baseline use or enter the pooled author reference.",
+        ))
 
     # Privacy ratchet for voiceprint sources. A voice profile or
     # idiolect corpus is a voice-cloning input; sources should be marked

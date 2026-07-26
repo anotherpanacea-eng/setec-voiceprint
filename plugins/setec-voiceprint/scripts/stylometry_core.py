@@ -488,6 +488,31 @@ def _matches_filter(value: Any, expected: str | None) -> bool:
     return str(value) == expected
 
 
+PROFILE_ONLY_PERSONAL_REGISTER = "message.imessage"
+
+
+def assert_personal_register_isolated(
+    baseline_entries: list[dict[str, Any]],
+) -> None:
+    """Refuse a message/essay reference mixture before prose processing."""
+    registers: list[str | None] = []
+    for entry in baseline_entries:
+        metadata = entry.get("metadata")
+        value = (
+            metadata.get("register")
+            if isinstance(metadata, dict) and "register" in metadata
+            else entry.get("register")
+        )
+        registers.append(value if isinstance(value, str) and value else None)
+    if PROFILE_ONLY_PERSONAL_REGISTER in registers and any(
+        value != PROFILE_ONLY_PERSONAL_REGISTER for value in registers
+    ):
+        raise ValueError(
+            "message.imessage is a profile-only conversational register and "
+            "cannot be pooled with another or missing register"
+        )
+
+
 def load_entries_from_manifest(
     manifest_path: str | Path,
     *,
@@ -832,6 +857,7 @@ def compare_to_baseline(
 ) -> "dict[str, Any]":
     if not baseline_entries:
         raise ValueError("Baseline contains no usable entries")
+    assert_personal_register_isolated(baseline_entries)
 
     target_features = extract_features(
         target_text,
@@ -1024,6 +1050,7 @@ def build_profile(
 ) -> "dict[str, Any]":
     if not baseline_entries:
         raise ValueError("Baseline contains no usable entries")
+    assert_personal_register_isolated(baseline_entries)
     baseline_features = extract_entry_features(
         baseline_entries,
         include_spacy=include_spacy,
