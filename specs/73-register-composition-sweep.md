@@ -6,16 +6,22 @@
 > register-mixed enough to warrant a human check?** The tool does not answer that
 > question itself. It emits no score, threshold, band, flag, or verdict.
 
-- **Status:** H2 **BUILD-READY — unclaimed**. This exact contract (SHA-256
-  `c22023808b21954b802ec4a488fed57ad8169a16f3939a176b178eaa3b88f457`)
-  is the one `ROADMAP.md` records as independently spec-review clear. Spec 76's
+- **Status:** H2 **LANDED**. The implementation merged 2026-07-26 via PR #361,
+  merge commit `48f1a1332b80f885ee3bbb3a16be7d128ed3df7c`, as the
+  `register_composition_sweep` capability. The build sequence's first step is
+  done: the H1 closeout receipt's raw SHA-256
+  `626e32652d476ac88d7d0caf3c78de17dd93c0c81f175405502b83f563922839` is now an
+  implementation constant (`H1_RECEIPT_SHA256`) and is pinned in the capability
+  golden — it is a landed constant, not a remaining precondition. Spec 76's
   implementation landed in merge commit
   `7ffabd343066585de2a80c22b4aeba25d27d5450`, and the H1 closeout receipt landed
-  in merge commit `c6d7cbc72da2a7429fbe986c5cd7df38aad69da3` (PR #357) at raw
-  SHA-256 `626e32652d476ac88d7d0caf3c78de17dd93c0c81f175405502b83f563922839`.
-  The receipt/checker gate below has passed, so H2 implementation is authorized.
-  Pinning that raw receipt digest is the first implementation step, not a
-  remaining precondition.
+  in merge commit `c6d7cbc72da2a7429fbe986c5cd7df38aad69da3` (PR #357).
+  Contract-digest history: the bytes independently cleared by spec review hash
+  to SHA-256
+  `c22023808b21954b802ec4a488fed57ad8169a16f3939a176b178eaa3b88f457`, and the
+  post-#360 on-disk bytes hashed to `80dbf2f4…`; both are historical. This
+  post-implementation amendment changes the file again — see `ROADMAP.md`, which
+  records the current digest and the diffable delta.
 - **Tier:** near-term (stdlib, local/private corpus runner; CI uses generated
   synthetic data only)
 - **GPU required:** no
@@ -803,8 +809,11 @@ Before any document read, the runner:
 2. verifies the landed/current Spec 37 and structured-refusal spec bindings;
 3. reads the expected sibling classifier source once with a 1 MiB ceiling and
    checks the receipt's post-follow-on `classifier_sha256`;
-4. computes and checks the public mapping and refusal-contract digests; and
-5. compiles and executes those exact source bytes in a private module namespace.
+4. compiles and executes those exact source bytes in a private module
+   namespace, gated solely by the receipt's raw `classifier_sha256`; and
+5. computes the public mapping and refusal-contract digests from that executed
+   namespace — they are derived from it, so they cannot gate the exec — and
+   checks them against the receipt before any classifier call.
 
 It consumes only the receipt-bound public symbols:
 
@@ -1000,7 +1009,12 @@ counts.unresolved_declared_m
     = declared_family_inventory["unknown"].m
 ```
 
-Every crosstab row/column marginal must agree. Empty scope emits every fixed
+Crosstab column marginals must equal `classified_family_inventory` exactly, and
+the grand crosstab total must equal `counts.classified_m`. Each row's crosstab
+total must be ≤ its `declared_family_inventory` cell: the gap is that row's
+refused documents, and the report does not break refusals out per declared
+family (`refusal_inventory` is keyed by reason), so an exact row marginal is
+not recoverable from the report. Empty scope emits every fixed
 domain zero-filled. Scoped bytes are conserved in checkpoint rows and total
 counts but are not a family-cell measure.
 
@@ -1219,6 +1233,15 @@ ceiling is revalidated before continuation. Holes, extras, mutation,
 replacement, and corruption refuse. Interruption loses at most the current
 unpublished shard; fresh and resumed logical reports are byte-identical.
 
+The integrity model behind those refusals is honest about its boundary. The
+chain detects corruption, drift, and accident, and every sealed row resumed
+from a shard is re-associated with the current frozen plan (manifest ordinal,
+projected-row digest, planned size, declared family), so a shard cannot be
+replayed against a different scope. The checkpoint directory is nevertheless
+owner-trusted (`0700`/`0600`): a same-UID writer who can recompute the internal
+hashes is outside the threat model, and no pure-hash scheme kept inside the
+directory it protects can exclude them.
+
 H2 freezes the zero-progress resume case. A resume directory with no final
 `register-NNNNNNNN.sqlite` shard is accepted only when it is empty or contains
 1–16 owner-private, direct, single-link regular files whose names full-match:
@@ -1351,6 +1374,8 @@ assumptions
 claim_license
 warnings
 ```
+
+That enumerated block is exhaustive: exactly 23 keys.
 
 `tool == "register_sweep"`, `version == "2.0.0"`, and
 `taxonomy == "register_families/v2"`. SHA fields are `sha256:` plus 64 lowercase
