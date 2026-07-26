@@ -6,12 +6,16 @@
 > register-mixed enough to warrant a human check?** The tool does not answer that
 > question itself. It emits no score, threshold, band, flag, or verdict.
 
-- **Status:** H2 resolution candidate;
-  **NEEDS-FRESH-INDEPENDENT-REVIEW**. No internal-clear status is claimed until
-  this exact repaired contract clears review. Spec 76's implementation landed
-  in merge commit `7ffabd343066585de2a80c22b4aeba25d27d5450`; no H1 closeout
-  receipt exists yet. H2 implementation remains forbidden until the spec review
-  clears and the receipt/checker gate below passes.
+- **Status:** H2 **BUILD-READY — unclaimed**. This exact contract (SHA-256
+  `c22023808b21954b802ec4a488fed57ad8169a16f3939a176b178eaa3b88f457`)
+  is the one `ROADMAP.md` records as independently spec-review clear. Spec 76's
+  implementation landed in merge commit
+  `7ffabd343066585de2a80c22b4aeba25d27d5450`, and the H1 closeout receipt landed
+  in merge commit `c6d7cbc72da2a7429fbe986c5cd7df38aad69da3` (PR #357) at raw
+  SHA-256 `626e32652d476ac88d7d0caf3c78de17dd93c0c81f175405502b83f563922839`.
+  The receipt/checker gate below has passed, so H2 implementation is authorized.
+  Pinning that raw receipt digest is the first implementation step, not a
+  remaining precondition.
 - **Tier:** near-term (stdlib, local/private corpus runner; CI uses generated
   synthetic data only)
 - **GPU required:** no
@@ -74,7 +78,7 @@ build, a repository gate must prove:
 
 H2 does not infer review status from Git history or runtime behavior.
 
-### Spec 76 structured-refusal follow-on: landed, closeout receipt pending
+### Spec 76 structured-refusal follow-on: landed, closeout receipt landed
 
 H2 needs H1-owned, machine-readable reasons for the classifier's `unknown`
 outcome. It must not parse `warning` prose or reproduce H1 thresholds, tie
@@ -91,17 +95,21 @@ SHA-256 is
 Historical or moving pull-request heads are not runtime prerequisites: the
 closeout receipt binds the final landed commit and exact artifacts.
 The exact landed-main `push` workflow run `30131248170`, attempt `1`, completed
-successfully with the seven required jobs on 2026-07-24. That run is candidate
-evidence only until the checker validates it and the closeout receipt commits
-its exact identity.
+successfully with the seven required jobs on 2026-07-24. The checker has since
+validated that exact attempt and the committed closeout receipt binds its
+identity, so it is now bound evidence rather than candidate evidence.
 
-H2 build remains forbidden until:
+Both preconditions on the H2 build are satisfied:
 
-1. the closeout checker below validates run `30131248170` attempt `1`, the
+1. the closeout checker below validated run `30131248170` attempt `1`, the
    exact landed artifacts, and
    review/CI attestations; and
-2. the resulting immutable receipt is committed and its raw SHA-256 is pinned
-   in H2 implementation and registration goldens.
+2. the resulting immutable receipt is committed, at the raw SHA-256 recorded in
+   the Status above.
+
+Pinning that digest in the H2 implementation and registration goldens is the
+first step of the H2 build itself, per the build sequence at the end of this
+spec -- not a precondition to starting it.
 
 The required public H1 addition is closed:
 
