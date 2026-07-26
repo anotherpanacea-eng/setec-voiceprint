@@ -30,11 +30,21 @@ import hashlib
 import json
 import math
 import os
+import re
 import stat
 import struct
+import sys
 import unicodedata
 from pathlib import Path
 from typing import Any
+
+from claim_license import ClaimLicense  # type: ignore
+from manifest_validator import (  # type: ignore
+    ALLOWED_AI_STATUS,
+    ALLOWED_SPLIT,
+    ALLOWED_USE,
+)
+from output_schema import build_error_output, build_output  # type: ignore
 
 # --------------------------------------------------------------------------
 # Fixed identities
@@ -1314,3 +1324,1215 @@ def default_h1_paths() -> tuple[Path, Path]:
     classifier = scripts / CLASSIFIER_FILENAME
     receipt = scripts.parent / "references" / RECEIPT_FILENAME
     return receipt, classifier
+
+
+# --------------------------------------------------------------------------
+# Increment D1: aggregation, report, claim posture guard, and output envelopes
+#
+# Everything below is pure in-memory construction over the encoders and the
+# receipt-bound H1 domains above. It reads no file, opens no checkpoint, and
+# performs no I/O apart from the one terminal committed-success stdout sink at
+# the end of the section.
+# --------------------------------------------------------------------------
+
+#: The additive per-shard/whole-run count keys. ``input_rows`` is deliberately
+#: absent: it is the whole-run prefilter projection object-row count, not a
+#: per-shard quantity, and summing it over shards would double-count. The
+#: spec's normative one-row aggregate-delta vector pins this exact key set.
+AGGREGATE_COUNT_KEYS = (
+    "scoped_documents",
+    "scoped_bytes",
+    "scoped_words",
+    "resolved_declared_documents",
+    "resolved_declared_words",
+    "unresolved_declared_documents",
+    "unresolved_declared_words",
+    "classified_documents",
+    "classified_words",
+    "refused_documents",
+    "refused_words",
+)
+
+#: The exact closed report ``counts`` key set.
+REPORT_COUNT_KEYS = ("input_rows",) + AGGREGATE_COUNT_KEYS
+
+#: The five fixed inventory names, in report order.
+INVENTORY_KEYS = (
+    "declared_family_inventory",
+    "classified_family_inventory",
+    "declared_by_classified_family",
+    "refusal_inventory",
+    "match_inventory",
+)
+
+#: The six-key aggregate object ``aggregate_delta_binding`` frames.
+AGGREGATE_KEYS = ("counts",) + INVENTORY_KEYS
+
+#: The exact closed report key set, in the order the spec enumerates it.
+#: The spec's enumerated block has 23 entries.
+REPORT_KEYS = (
+    "schema_version",
+    "tool",
+    "version",
+    "taxonomy",
+    "projected_manifest_sha256",
+    "scoped_rows_sha256",
+    "document_plan_sha256",
+    "h1_receipt_sha256",
+    "classifier_sha256",
+    "mapping_sha256",
+    "refusal_contract_sha256",
+    "checkpoint_binding_sha256",
+    "scope",
+    "limits",
+    "counts",
+    *INVENTORY_KEYS,
+    "assumptions",
+    "claim_license",
+    "warnings",
+)
+
+#: The eight report digest fields, in report order.
+REPORT_DIGEST_KEYS = (
+    "projected_manifest_sha256",
+    "scoped_rows_sha256",
+    "document_plan_sha256",
+    "h1_receipt_sha256",
+    "classifier_sha256",
+    "mapping_sha256",
+    "refusal_contract_sha256",
+    "checkpoint_binding_sha256",
+)
+
+#: The exact closed report ``scope`` key set. It never carries a path, corpus
+#: identifier, raw persona, or free-text metadata.
+REPORT_SCOPE_KEYS = (
+    "ai_status",
+    "min_words",
+    "persona_selected",
+    "scope_sha256",
+    "split",
+    "use",
+)
+
+#: The exact fixed ``assumptions`` object. These four values are frozen text,
+#: not run-dependent commentary.
+REPORT_ASSUMPTIONS: dict[str, str] = {
+    "purpose": "aggregate_hygiene_inventory_for_hand_check",
+    "classifier_posture": "uncalibrated_heuristic",
+    "register_role": "confounded_proxy",
+    "reporting_status": "not_calibrated_or_reportable",
+}
+
+CLAIM_TASK_SURFACE = "validation"
+CLAIM_LICENSES = (
+    "Aggregate register-family count inventory for a hand-check of the "
+    "explicitly scoped manifest slice."
+)
+CLAIM_DOES_NOT_LICENSE = (
+    "Multimodality or semantic-mode explanation; calibration, accuracy, or a "
+    "reportable distribution; source, source-family, or provenance analysis; "
+    "corpus selection, exclusion, disposition, registration, activation, "
+    "retagging, publication, or training authorization."
+)
+CLAIM_CAVEAT = (
+    "Register family is a confounded heuristic proxy; this inventory can only "
+    "prompt a human hand-check."
+)
+
+
+def fixed_claim_license() -> ClaimLicense:
+    """Return the one frozen success ClaimLicense.
+
+    Every field other than the three fixed strings and the single caveat keeps
+    its exact empty/null dataclass default; the report pins the complete
+    ``to_dict()`` result.
+    """
+    return ClaimLicense(
+        task_surface=CLAIM_TASK_SURFACE,
+        licenses=CLAIM_LICENSES,
+        does_not_license=CLAIM_DOES_NOT_LICENSE,
+        additional_caveats=[CLAIM_CAVEAT],
+    )
+
+
+# --------------------------------------------------------------------------
+# Fixed aggregate domains
+# --------------------------------------------------------------------------
+
+
+class RegisterDomains:
+    """The frozen ``D``/``F``/``R`` domains of one receipt-bound H1 binding.
+
+    ``declared`` is ``F + ("unknown",)``; ``unknown`` is never a classified
+    family and never a crosstab column.
+    """
+
+    __slots__ = ("declared", "classified", "refusals")
+
+    def __init__(
+        self,
+        declared: tuple[str, ...],
+        classified: tuple[str, ...],
+        refusals: tuple[str, ...],
+    ) -> None:
+        declared = tuple(declared)
+        classified = tuple(classified)
+        refusals = tuple(refusals)
+        for domain in (declared, classified, refusals):
+            if not domain or len(set(domain)) != len(domain):
+                raise InternalError()
+            if any(type(name) is not str or not name for name in domain):
+                raise InternalError()
+        if declared != classified + ("unknown",):
+            raise InternalError()
+        if "unknown" in classified:
+            raise InternalError()
+        self.declared = declared
+        self.classified = classified
+        self.refusals = refusals
+
+    @classmethod
+    def from_binding(cls, binding: H1Binding) -> RegisterDomains:
+        """Build the domains from a loaded, receipt-bound H1 namespace."""
+        return cls(
+            binding.declared_domain,
+            binding.classified_domain,
+            binding.refusal_domain,
+        )
+
+    def zero(self) -> dict[str, Any]:
+        """Return the five zero-filled fixed inventories."""
+        return zero_inventories(self.declared, self.classified, self.refusals)
+
+
+def _zero_counts() -> dict[str, int]:
+    return {key: 0 for key in AGGREGATE_COUNT_KEYS}
+
+
+def _require_count(value: Any) -> int:
+    """Accept only a non-Boolean, non-negative, signed-64-bit JSON integer."""
+    if type(value) is not int or not (0 <= value <= INT64_MAX):
+        raise InternalError()
+    return value
+
+
+def _require_cell(cell: Any) -> tuple[int, int]:
+    if type(cell) is not dict or set(cell) != {"documents", "words"}:
+        raise InternalError()
+    return _require_count(cell["documents"]), _require_count(cell["words"])
+
+
+def _bump(cell: dict[str, int], documents: int, words: int) -> None:
+    cell["documents"] = _require_count(cell["documents"] + documents)
+    cell["words"] = _require_count(cell["words"] + words)
+
+
+# --------------------------------------------------------------------------
+# Aggregate accumulator
+# --------------------------------------------------------------------------
+
+
+class RegisterAggregate:
+    """Fixed-domain count accumulator for one shard or one whole run.
+
+    The accumulator holds only counts. It never stores document text, a path,
+    a corpus identifier, a per-row result, a percentage, a rate, an entropy, a
+    threshold, a band, a rank, or a mixture flag. Word counts arrive only from
+    an already-validated H1 ``evidence.n_words``; H2 has no tokenizer.
+    """
+
+    __slots__ = ("domains", "counts", "inventories")
+
+    def __init__(self, domains: RegisterDomains) -> None:
+        if type(domains) is not RegisterDomains:
+            raise InternalError()
+        self.domains = domains
+        self.counts = _zero_counts()
+        self.inventories = domains.zero()
+
+    # -- per-document accumulation -------------------------------------
+
+    def add_document(
+        self,
+        *,
+        declared_family: str,
+        primary: str,
+        refusal_reason: str | None,
+        n_words: int,
+        document_bytes: int,
+    ) -> None:
+        """Apply one completed scoped document to the fixed cells.
+
+        ``declared_family`` is the H1 ``resolve_family`` result (``unknown``
+        when the admissible declared metadata is absent/null or unresolvable).
+        ``primary``/``refusal_reason`` come from an already-validated H1
+        result. A refusal is recorded once in the refusal inventory and never
+        in a family cell or the crosstab.
+        """
+        domains = self.domains
+        if declared_family not in domains.declared:
+            raise InternalError()
+        if primary != "unknown" and primary not in domains.classified:
+            raise InternalError()
+        if refusal_reason is not None and refusal_reason not in domains.refusals:
+            raise InternalError()
+        if (primary == "unknown") != (refusal_reason is not None):
+            raise InternalError()
+        words = _require_count(n_words)
+        size = _require_count(document_bytes)
+        if size > MAX_DOCUMENT_BYTES:
+            raise InternalError()
+
+        counts = self.counts
+        counts["scoped_documents"] = _require_count(counts["scoped_documents"] + 1)
+        if counts["scoped_documents"] > MAX_SCOPED_DOCUMENTS:
+            raise InternalError()
+        counts["scoped_bytes"] = _require_count(counts["scoped_bytes"] + size)
+        if counts["scoped_bytes"] > MAX_SCOPED_BYTES:
+            raise InternalError()
+        counts["scoped_words"] = _require_count(counts["scoped_words"] + words)
+
+        inventories = self.inventories
+        _bump(inventories["declared_family_inventory"][declared_family], 1, words)
+        if declared_family == "unknown":
+            counts["unresolved_declared_documents"] += 1
+            counts["unresolved_declared_words"] += words
+        else:
+            counts["resolved_declared_documents"] += 1
+            counts["resolved_declared_words"] += words
+
+        if refusal_reason is not None:
+            _bump(inventories["refusal_inventory"][refusal_reason], 1, words)
+            _bump(inventories["match_inventory"]["unresolved"], 1, words)
+            counts["refused_documents"] += 1
+            counts["refused_words"] += words
+            return
+
+        _bump(inventories["classified_family_inventory"][primary], 1, words)
+        _bump(
+            inventories["declared_by_classified_family"][declared_family][primary],
+            1,
+            words,
+        )
+        counts["classified_documents"] += 1
+        counts["classified_words"] += words
+        if declared_family == "unknown":
+            bucket = "unresolved"
+        elif declared_family == primary:
+            bucket = "same"
+        else:
+            bucket = "different"
+        _bump(inventories["match_inventory"][bucket], 1, words)
+
+    def add_h1_result(
+        self,
+        *,
+        declared_family: str,
+        result: dict[str, Any],
+        document_bytes: int,
+    ) -> None:
+        """Apply one already-validated H1 result and its planned byte size."""
+        if type(result) is not dict or set(result) != CLASSIFICATION_KEYS:
+            raise InternalError()
+        evidence = result["evidence"]
+        if type(evidence) is not dict or "n_words" not in evidence:
+            raise InternalError()
+        self.add_document(
+            declared_family=declared_family,
+            primary=result["primary"],
+            refusal_reason=result["refusal_reason"],
+            n_words=evidence["n_words"],
+            document_bytes=document_bytes,
+        )
+
+    # -- delta extraction and reassembly --------------------------------
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return an independent copy of the six-key aggregate object."""
+        return {
+            "counts": dict(self.counts),
+            "declared_family_inventory": {
+                name: dict(cell)
+                for name, cell in self.inventories[
+                    "declared_family_inventory"
+                ].items()
+            },
+            "classified_family_inventory": {
+                name: dict(cell)
+                for name, cell in self.inventories[
+                    "classified_family_inventory"
+                ].items()
+            },
+            "declared_by_classified_family": {
+                outer: {inner: dict(cell) for inner, cell in row.items()}
+                for outer, row in self.inventories[
+                    "declared_by_classified_family"
+                ].items()
+            },
+            "refusal_inventory": {
+                name: dict(cell)
+                for name, cell in self.inventories["refusal_inventory"].items()
+            },
+            "match_inventory": {
+                name: dict(cell)
+                for name, cell in self.inventories["match_inventory"].items()
+            },
+        }
+
+    def shard_delta(self) -> dict[str, Any]:
+        """Return the per-shard six-key delta.
+
+        A shard seals at most ``SHARD_ROWS`` documents, so a delta claiming
+        more is an in-memory construction violation.
+        """
+        if self.counts["scoped_documents"] > SHARD_ROWS:
+            raise InternalError()
+        delta = self.snapshot()
+        validate_aggregate(delta, domains=self.domains)
+        return delta
+
+    def add_delta(self, delta: dict[str, Any]) -> None:
+        """Add one sealed shard delta into this accumulator."""
+        validate_aggregate(delta, domains=self.domains)
+        for key in AGGREGATE_COUNT_KEYS:
+            self.counts[key] = _require_count(
+                self.counts[key] + delta["counts"][key]
+            )
+        for name in (
+            "declared_family_inventory",
+            "classified_family_inventory",
+            "refusal_inventory",
+            "match_inventory",
+        ):
+            for member, entry in delta[name].items():
+                documents, words = _require_cell(entry)
+                _bump(self.inventories[name][member], documents, words)
+        for outer, row in delta["declared_by_classified_family"].items():
+            for inner, entry in row.items():
+                documents, words = _require_cell(entry)
+                _bump(
+                    self.inventories["declared_by_classified_family"][outer][inner],
+                    documents,
+                    words,
+                )
+        if self.counts["scoped_documents"] > MAX_SCOPED_DOCUMENTS:
+            raise InternalError()
+        if self.counts["scoped_bytes"] > MAX_SCOPED_BYTES:
+            raise InternalError()
+
+
+def reassemble_aggregate(
+    deltas: tuple[dict[str, Any], ...] | list[dict[str, Any]],
+    *,
+    domains: RegisterDomains,
+) -> dict[str, Any]:
+    """Add the sealed shard deltas in shard order and validate once.
+
+    Report construction consumes this result. Addition is commutative, but the
+    caller still supplies shards in ascending shard order so that a hole,
+    reordering, or duplicate is a chain failure upstream rather than a silent
+    arithmetic success here.
+    """
+    total = RegisterAggregate(domains)
+    for delta in deltas:
+        total.add_delta(delta)
+    aggregate = total.snapshot()
+    validate_aggregate(aggregate, domains=domains)
+    return aggregate
+
+
+# --------------------------------------------------------------------------
+# Equation validation
+# --------------------------------------------------------------------------
+
+
+def validate_aggregate(
+    aggregate: Any, *, domains: RegisterDomains
+) -> dict[str, Any]:
+    """Validate the six-key aggregate object's shape, domains, and equations.
+
+    Every marginal and conservation equation in the spec's aggregate hygiene
+    inventory is checked. Any disagreement is a violation of H2's own
+    already-validated in-memory construction and refuses as ``InternalError``.
+    """
+    if type(aggregate) is not dict or set(aggregate) != set(AGGREGATE_KEYS):
+        raise InternalError()
+    counts = aggregate["counts"]
+    if type(counts) is not dict or set(counts) != set(AGGREGATE_COUNT_KEYS):
+        raise InternalError()
+    for key in AGGREGATE_COUNT_KEYS:
+        _require_count(counts[key])
+
+    declared = aggregate["declared_family_inventory"]
+    classified = aggregate["classified_family_inventory"]
+    crosstab = aggregate["declared_by_classified_family"]
+    refusals = aggregate["refusal_inventory"]
+    matches = aggregate["match_inventory"]
+    if type(declared) is not dict or tuple(sorted(declared)) != tuple(
+        sorted(domains.declared)
+    ):
+        raise InternalError()
+    if type(classified) is not dict or tuple(sorted(classified)) != tuple(
+        sorted(domains.classified)
+    ):
+        raise InternalError()
+    if type(refusals) is not dict or tuple(sorted(refusals)) != tuple(
+        sorted(domains.refusals)
+    ):
+        raise InternalError()
+    if type(matches) is not dict or tuple(sorted(matches)) != tuple(
+        sorted(MATCH_DOMAIN)
+    ):
+        raise InternalError()
+    if type(crosstab) is not dict or tuple(sorted(crosstab)) != tuple(
+        sorted(domains.declared)
+    ):
+        raise InternalError()
+    for row in crosstab.values():
+        if type(row) is not dict or tuple(sorted(row)) != tuple(
+            sorted(domains.classified)
+        ):
+            raise InternalError()
+
+    def cell(mapping: dict[str, Any], name: str) -> tuple[int, int]:
+        return _require_cell(mapping[name])
+
+    def total(mapping: dict[str, Any], names: tuple[str, ...]) -> tuple[int, int]:
+        documents = 0
+        words = 0
+        for name in names:
+            one_documents, one_words = cell(mapping, name)
+            documents += one_documents
+            words += one_words
+        return documents, words
+
+    scoped = (counts["scoped_documents"], counts["scoped_words"])
+    if counts["scoped_documents"] > MAX_SCOPED_DOCUMENTS:
+        raise InternalError()
+    if counts["scoped_bytes"] > MAX_SCOPED_BYTES:
+        raise InternalError()
+
+    # sum(D declared_family_inventory[*].m) = T_m
+    if total(declared, domains.declared) != scoped:
+        raise InternalError()
+    # sum(A match_inventory[*].m) = T_m
+    if total(matches, MATCH_DOMAIN) != scoped:
+        raise InternalError()
+    # sum(F classified_family_inventory[*].m) = counts.classified_m
+    classified_total = total(classified, domains.classified)
+    if classified_total != (
+        counts["classified_documents"],
+        counts["classified_words"],
+    ):
+        raise InternalError()
+    # sum(R refusal_inventory[*].m) = counts.refused_m
+    if total(refusals, domains.refusals) != (
+        counts["refused_documents"],
+        counts["refused_words"],
+    ):
+        raise InternalError()
+
+    # Crosstab marginals. Every column marginal equals its classified family
+    # cell; the grand total equals the classified totals; and no declared row
+    # may carry more than that declared family's whole-inventory cell (the
+    # remainder is exactly that family's refused share, which by construction
+    # lives only in the refusal inventory).
+    crosstab_documents = 0
+    crosstab_words = 0
+    for declared_name in domains.declared:
+        row_documents = 0
+        row_words = 0
+        for classified_name in domains.classified:
+            one_documents, one_words = cell(
+                crosstab[declared_name], classified_name
+            )
+            row_documents += one_documents
+            row_words += one_words
+        declared_documents, declared_words = cell(declared, declared_name)
+        if row_documents > declared_documents or row_words > declared_words:
+            raise InternalError()
+        crosstab_documents += row_documents
+        crosstab_words += row_words
+    if (crosstab_documents, crosstab_words) != classified_total:
+        raise InternalError()
+    for classified_name in domains.classified:
+        column_documents = 0
+        column_words = 0
+        for declared_name in domains.declared:
+            one_documents, one_words = cell(
+                crosstab[declared_name], classified_name
+            )
+            column_documents += one_documents
+            column_words += one_words
+        if (column_documents, column_words) != cell(classified, classified_name):
+            raise InternalError()
+
+    # match_inventory["same"/"different"/"unresolved"]
+    same_documents = 0
+    same_words = 0
+    different_documents = 0
+    different_words = 0
+    for declared_name in domains.classified:
+        for classified_name in domains.classified:
+            one_documents, one_words = cell(
+                crosstab[declared_name], classified_name
+            )
+            if declared_name == classified_name:
+                same_documents += one_documents
+                same_words += one_words
+            else:
+                different_documents += one_documents
+                different_words += one_words
+    if (same_documents, same_words) != cell(matches, "same"):
+        raise InternalError()
+    if (different_documents, different_words) != cell(matches, "different"):
+        raise InternalError()
+    unresolved_documents = 0
+    unresolved_words = 0
+    for classified_name in domains.classified:
+        one_documents, one_words = cell(crosstab["unknown"], classified_name)
+        unresolved_documents += one_documents
+        unresolved_words += one_words
+    unresolved_documents += counts["refused_documents"]
+    unresolved_words += counts["refused_words"]
+    if (unresolved_documents, unresolved_words) != cell(matches, "unresolved"):
+        raise InternalError()
+
+    # Declared resolution and the count conservation equations.
+    unknown_documents, unknown_words = cell(declared, "unknown")
+    if (
+        counts["unresolved_declared_documents"],
+        counts["unresolved_declared_words"],
+    ) != (unknown_documents, unknown_words):
+        raise InternalError()
+    if (
+        counts["resolved_declared_documents"]
+        + counts["unresolved_declared_documents"]
+        != counts["scoped_documents"]
+    ):
+        raise InternalError()
+    if (
+        counts["resolved_declared_words"] + counts["unresolved_declared_words"]
+        != counts["scoped_words"]
+    ):
+        raise InternalError()
+    if (
+        counts["classified_documents"] + counts["refused_documents"]
+        != counts["scoped_documents"]
+    ):
+        raise InternalError()
+    if (
+        counts["classified_words"] + counts["refused_words"]
+        != counts["scoped_words"]
+    ):
+        raise InternalError()
+    for key in AGGREGATE_COUNT_KEYS:
+        if key.endswith("_documents") and counts[key] > counts["scoped_documents"]:
+            raise InternalError()
+        if key.endswith("_words") and counts[key] > counts["scoped_words"]:
+            raise InternalError()
+    return aggregate
+
+
+# --------------------------------------------------------------------------
+# Report construction
+# --------------------------------------------------------------------------
+
+
+def build_report_scope(
+    *,
+    use: str | None,
+    split: str | None,
+    ai_status: str | None,
+    min_words: int,
+    persona_selected: bool,
+    scope_sha256: str,
+) -> dict[str, Any]:
+    """Build the closed six-key report ``scope`` object.
+
+    The raw persona filter never enters this object; only the separate private
+    scope-binding digest, which itself commits the raw persona, does.
+    """
+    if use is not None and (type(use) is not str or use not in ALLOWED_USE):
+        raise InternalError()
+    if split is not None and (type(split) is not str or split not in ALLOWED_SPLIT):
+        raise InternalError()
+    if ai_status is not None and (
+        type(ai_status) is not str or ai_status not in ALLOWED_AI_STATUS
+    ):
+        raise InternalError()
+    if type(persona_selected) is not bool:
+        raise InternalError()
+    return {
+        "ai_status": ai_status,
+        "min_words": _require_int(min_words, MIN_WORDS_FLOOR, MIN_WORDS_CEILING),
+        "persona_selected": persona_selected,
+        "scope_sha256": _require_prefixed(scope_sha256),
+        "split": split,
+        "use": use,
+    }
+
+
+def validate_report_scope(scope: Any) -> dict[str, Any]:
+    """Validate an already-built report ``scope`` object."""
+    if type(scope) is not dict or set(scope) != set(REPORT_SCOPE_KEYS):
+        raise InternalError()
+    return build_report_scope(
+        use=scope["use"],
+        split=scope["split"],
+        ai_status=scope["ai_status"],
+        min_words=scope["min_words"],
+        persona_selected=scope["persona_selected"],
+        scope_sha256=scope["scope_sha256"],
+    )
+
+
+def build_report(
+    *,
+    domains: RegisterDomains,
+    projected_manifest_sha256: str,
+    scoped_rows_sha256: str,
+    document_plan_sha256: str,
+    h1_receipt_sha256: str,
+    classifier_sha256: str,
+    mapping_sha256: str,
+    refusal_contract_sha256: str,
+    checkpoint_binding_sha256: str,
+    scope: dict[str, Any],
+    input_rows: int,
+    aggregate: dict[str, Any],
+) -> dict[str, Any]:
+    """Build the complete 22-key create-new private report.
+
+    The report is a count inventory and nothing else: no percentage, rate,
+    share, entropy, effective-mode count, threshold, band, rank, dominant
+    family, mixture flag, or row-level result exists in it, and no aggregate
+    in it is calibrated or reportable.
+    """
+    validate_aggregate(aggregate, domains=domains)
+    report = {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "tool": TOOL,
+        "version": VERSION,
+        "taxonomy": TAXONOMY,
+        "projected_manifest_sha256": projected_manifest_sha256,
+        "scoped_rows_sha256": scoped_rows_sha256,
+        "document_plan_sha256": document_plan_sha256,
+        "h1_receipt_sha256": h1_receipt_sha256,
+        "classifier_sha256": classifier_sha256,
+        "mapping_sha256": mapping_sha256,
+        "refusal_contract_sha256": refusal_contract_sha256,
+        "checkpoint_binding_sha256": checkpoint_binding_sha256,
+        "scope": validate_report_scope(scope),
+        "limits": dict(LIMITS),
+        "counts": {
+            "input_rows": _require_count(input_rows),
+            **{key: aggregate["counts"][key] for key in AGGREGATE_COUNT_KEYS},
+        },
+        "declared_family_inventory": aggregate["declared_family_inventory"],
+        "classified_family_inventory": aggregate["classified_family_inventory"],
+        "declared_by_classified_family": aggregate[
+            "declared_by_classified_family"
+        ],
+        "refusal_inventory": aggregate["refusal_inventory"],
+        "match_inventory": aggregate["match_inventory"],
+        "assumptions": dict(REPORT_ASSUMPTIONS),
+        "claim_license": fixed_claim_license().to_dict(),
+        "warnings": [],
+    }
+    validate_report_schema(report, domains=domains)
+    return report
+
+
+def validate_report_schema(
+    report: Any, *, domains: RegisterDomains
+) -> dict[str, Any]:
+    """Validate the complete report shape, domains, bounds, and equations."""
+    if type(report) is not dict or set(report) != set(REPORT_KEYS):
+        raise InternalError()
+    if report["schema_version"] != REPORT_SCHEMA_VERSION:
+        raise InternalError()
+    if report["tool"] != TOOL or report["version"] != VERSION:
+        raise InternalError()
+    if report["taxonomy"] != TAXONOMY:
+        raise InternalError()
+    for key in REPORT_DIGEST_KEYS:
+        _require_prefixed(report[key])
+    validate_report_scope(report["scope"])
+    if type(report["limits"]) is not dict or report["limits"] != LIMITS:
+        raise InternalError()
+    if type(report["assumptions"]) is not dict or (
+        report["assumptions"] != REPORT_ASSUMPTIONS
+    ):
+        raise InternalError()
+    if report["claim_license"] != fixed_claim_license().to_dict():
+        raise InternalError()
+    if type(report["warnings"]) is not list or report["warnings"] != []:
+        raise InternalError()
+
+    counts = report["counts"]
+    if type(counts) is not dict or set(counts) != set(REPORT_COUNT_KEYS):
+        raise InternalError()
+    input_rows = _require_count(counts["input_rows"])
+    aggregate = {
+        "counts": {key: counts[key] for key in AGGREGATE_COUNT_KEYS},
+        **{name: report[name] for name in INVENTORY_KEYS},
+    }
+    validate_aggregate(aggregate, domains=domains)
+    if counts["scoped_documents"] > input_rows:
+        raise InternalError()
+    return report
+
+
+def canonical_report_bytes(
+    report: dict[str, Any], *, domains: RegisterDomains
+) -> bytes:
+    """Return the frozen canonical report bytes: sorted keys, compact
+    separators, UTF-8, ``allow_nan=False``, exactly one terminal LF, and no
+    timestamp, random identifier, or local path."""
+    validate_report_schema(report, domains=domains)
+    return canonical_json(report) + b"\n"
+
+
+def artifact_sha256(frozen_bytes: bytes) -> str:
+    """Return the prefixed raw digest of a frozen artifact's exact bytes."""
+    return prefixed(raw_sha256(frozen_bytes))
+
+
+# --------------------------------------------------------------------------
+# Mechanical recursive claim-posture guard
+#
+# The atom and sequence tables below are the guard's own closed vocabularies.
+# They are the only place in this module where those words appear as data, and
+# no H2 key or value is allowed to contain them.
+# --------------------------------------------------------------------------
+
+_FORBIDDEN_KEY_ATOM_SPEC = (
+    "verdict label score probability rate ratio share proportion percentage "
+    "percent threshold band rank dominant homogeneity unimodality accuracy "
+    "quality correctness authorship"
+)
+FORBIDDEN_KEY_ATOMS = frozenset(_FORBIDDEN_KEY_ATOM_SPEC.split())
+
+_FORBIDDEN_KEY_SEQUENCE_SPEC = (
+    "selection_decision disposition activation_decision training_decision "
+    "is_ai is_human source_group source_id source_family semantic_mode "
+    "multimodality mixture_flag"
+)
+FORBIDDEN_KEY_SEQUENCES = tuple(
+    tuple(entry.split("_")) for entry in _FORBIDDEN_KEY_SEQUENCE_SPEC.split()
+)
+
+_KEY_SEPARATOR_RUN = re.compile(r"[^0-9a-z]+")
+
+FORBIDDEN_VALUE_PATTERNS = (
+    re.compile(
+        r"\b(?:verdict|label|score|probability|threshold|band|rank|dominant"
+        r"|homogeneous|unimodal|multimodal|accuracy|quality|correctness"
+        r"|authorship|is[_ -]?ai|is[_ -]?human|selection[_ -]?decision"
+        r"|activation[_ -]?decision|training[_ -]?decision|mixture[_ -]?flag"
+        r"|semantic[_ -]?mode|source[_ -]?(?:group|id|family))\b",
+        re.ASCII | re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:is|are|was|were|shows?|proves?|explains?|indicates?|means?"
+        r"|licenses?|authorizes?|recommends?)\b.{0,64}"
+        r"\b(?:ai|human|accurate|correct|homogeneous|unimodal|multimodal"
+        r"|mixed|selected|excluded|registered|activated|approved|safe)\b",
+        re.ASCII | re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:select|exclude|discard|keep|register|activate|train|publish)\b"
+        r".{0,32}\b(?:this|the)?\s*(?:corpus|row|document|data)\b",
+        re.ASCII | re.IGNORECASE,
+    ),
+)
+
+#: The three context exceptions, each valid only after the artifact's
+#: ``claim_license`` is byte-equal to the frozen object.
+CLAIM_EXEMPT_LICENSE_PATHS = (
+    ("claim_license", "does_not_license"),
+    ("claim_license", "additional_caveats", 0),
+)
+CLAIM_EXEMPT_RENDER_PATH = ("claim_license_rendered",)
+
+
+def normalize_claim_key(key: str) -> tuple[str, ...]:
+    """Return a mapping key's normalized components.
+
+    NFKC + casefold, each maximal non-ASCII-alphanumeric run collapsed to
+    ``_``, edge underscores stripped, then split on ``_``. The check is
+    component-based, so ``scoped`` does not match the ``score`` atom while
+    ``final_verdict`` does match ``verdict``.
+    """
+    if type(key) is not str:
+        raise InternalError()
+    folded = unicodedata.normalize("NFKC", key).casefold()
+    collapsed = _KEY_SEPARATOR_RUN.sub("_", folded).strip("_")
+    if not collapsed:
+        return ()
+    return tuple(part for part in collapsed.split("_") if part)
+
+
+def claim_key_is_refused(key: str) -> bool:
+    """Return whether a mapping key hits the closed atom or sequence tables."""
+    components = normalize_claim_key(key)
+    if any(component in FORBIDDEN_KEY_ATOMS for component in components):
+        return True
+    for sequence in FORBIDDEN_KEY_SEQUENCES:
+        span = len(sequence)
+        for start in range(len(components) - span + 1):
+            if components[start : start + span] == sequence:
+                return True
+    return False
+
+
+def claim_text_is_refused(text: str) -> bool:
+    """Return whether a string leaf matches a forbidden value pattern."""
+    if type(text) is not str:
+        raise InternalError()
+    folded = unicodedata.normalize("NFKC", text).casefold()
+    return any(pattern.search(folded) for pattern in FORBIDDEN_VALUE_PATTERNS)
+
+
+def assert_claim_posture(artifact: Any) -> None:
+    """Recursively enforce the mechanical claim posture on a complete artifact.
+
+    Every mapping key and every string leaf is checked. Exactly three context
+    exceptions exist, and only after the artifact's ``claim_license`` is
+    byte-equal to the frozen success object: the negative
+    ``does_not_license`` leaf, the single negative caveat, and a top-level
+    ``claim_license_rendered`` byte-equal to that same object's rendered
+    block. The positive ``licenses`` leaf, every warning, and every assumption
+    stay checked.
+    """
+    frozen = fixed_claim_license()
+    frozen_bytes = canonical_json(frozen.to_dict())
+    exempt: set[tuple[Any, ...]] = set()
+    if type(artifact) is dict:
+        license_object = artifact.get("claim_license")
+        if type(license_object) is dict:
+            try:
+                same = canonical_json(license_object) == frozen_bytes
+            except InternalError:
+                same = False
+            if same:
+                exempt.update(CLAIM_EXEMPT_LICENSE_PATHS)
+                rendered = artifact.get("claim_license_rendered")
+                if (
+                    type(rendered) is str
+                    and rendered == frozen.render_block().rstrip()
+                ):
+                    exempt.add(CLAIM_EXEMPT_RENDER_PATH)
+    _walk_claim_posture(artifact, (), exempt)
+
+
+def _walk_claim_posture(
+    node: Any, path: tuple[Any, ...], exempt: set[tuple[Any, ...]]
+) -> None:
+    if type(node) is dict:
+        for key, value in node.items():
+            if claim_key_is_refused(key):
+                raise InternalError()
+            _walk_claim_posture(value, path + (key,), exempt)
+        return
+    if type(node) in (list, tuple):
+        for index, item in enumerate(node):
+            _walk_claim_posture(item, path + (index,), exempt)
+        return
+    if type(node) is str:
+        if path in exempt:
+            return
+        if claim_text_is_refused(node):
+            raise InternalError()
+
+
+# --------------------------------------------------------------------------
+# Normalized success and controlled error envelopes
+# --------------------------------------------------------------------------
+
+
+def build_success_envelope(
+    *, report_sha256: str, counts: dict[str, Any]
+) -> dict[str, Any]:
+    """Build the normalized success envelope with every argument explicit.
+
+    The envelope carries no family cell, plaintext filter value, path, corpus
+    identifier, or free-text metadata; ``report_sha256`` indirectly commits
+    the private report's closed validated scope object.
+    """
+    _require_prefixed(report_sha256)
+    if type(counts) is not dict or set(counts) != set(REPORT_COUNT_KEYS):
+        raise InternalError()
+    for key in REPORT_COUNT_KEYS:
+        _require_count(counts[key])
+    try:
+        return build_output(
+            task_surface=CLAIM_TASK_SURFACE,
+            tool=TOOL,
+            version=VERSION,
+            target_path=None,
+            target_words=counts["scoped_words"],
+            baseline=None,
+            results={
+                "report_sha256": report_sha256,
+                "report_schema_version": REPORT_SCHEMA_VERSION,
+                "taxonomy": TAXONOMY,
+                "counts": dict(counts),
+            },
+            claim_license=fixed_claim_license(),
+            available=True,
+            warnings=[],
+            ai_status=None,
+            target_extra=None,
+            extra=None,
+            validate_bounds=True,
+        )
+    except Exception as exc:  # noqa: BLE001 - closed controlled refusal
+        raise InternalError() from exc
+
+
+def validate_success_envelope(envelope: Any) -> dict[str, Any]:
+    """Validate the normalized success envelope before the guard runs."""
+    if type(envelope) is not dict:
+        raise InternalError()
+    if set(envelope) != {
+        "schema_version",
+        "task_surface",
+        "tool",
+        "version",
+        "available",
+        "target",
+        "baseline",
+        "results",
+        "claim_license",
+        "claim_license_rendered",
+        "warnings",
+        "ai_status",
+    }:
+        raise InternalError()
+    if envelope["task_surface"] != CLAIM_TASK_SURFACE:
+        raise InternalError()
+    if envelope["tool"] != TOOL or envelope["version"] != VERSION:
+        raise InternalError()
+    if envelope["available"] is not True:
+        raise InternalError()
+    if envelope["baseline"] is not None or envelope["ai_status"] is not None:
+        raise InternalError()
+    if envelope["warnings"] != []:
+        raise InternalError()
+    target = envelope["target"]
+    if type(target) is not dict or set(target) != {"path", "words"}:
+        raise InternalError()
+    if target["path"] is not None:
+        raise InternalError()
+    results = envelope["results"]
+    if type(results) is not dict or set(results) != {
+        "report_sha256",
+        "report_schema_version",
+        "taxonomy",
+        "counts",
+    }:
+        raise InternalError()
+    _require_prefixed(results["report_sha256"])
+    if results["report_schema_version"] != REPORT_SCHEMA_VERSION:
+        raise InternalError()
+    if results["taxonomy"] != TAXONOMY:
+        raise InternalError()
+    counts = results["counts"]
+    if type(counts) is not dict or set(counts) != set(REPORT_COUNT_KEYS):
+        raise InternalError()
+    for key in REPORT_COUNT_KEYS:
+        _require_count(counts[key])
+    if _require_count(target["words"]) != counts["scoped_words"]:
+        raise InternalError()
+    frozen = fixed_claim_license()
+    if envelope["claim_license"] != frozen.to_dict():
+        raise InternalError()
+    if envelope["claim_license_rendered"] != frozen.render_block().rstrip():
+        raise InternalError()
+    return envelope
+
+
+def canonical_envelope_bytes(envelope: dict[str, Any]) -> bytes:
+    """Freeze an envelope's canonical bytes with exactly one terminal LF."""
+    return canonical_json(envelope) + b"\n"
+
+
+def freeze_publication(
+    *, report: dict[str, Any], domains: RegisterDomains
+) -> tuple[bytes, str, dict[str, Any], bytes]:
+    """Freeze the complete publication artifacts before the terminal commit.
+
+    Schema equality runs first; the guard then runs on the report and the
+    envelope independently. Returns the frozen report bytes, the prefixed
+    report digest, the success envelope, and its frozen bytes. The caller
+    publishes the report bytes and only afterwards hands the envelope bytes to
+    :func:`emit_committed_success`.
+    """
+    validate_report_schema(report, domains=domains)
+    frozen_report = canonical_report_bytes(report, domains=domains)
+    report_sha256 = artifact_sha256(frozen_report)
+    assert_claim_posture(report)
+    envelope = build_success_envelope(
+        report_sha256=report_sha256, counts=report["counts"]
+    )
+    validate_success_envelope(envelope)
+    assert_claim_posture(envelope)
+    return frozen_report, report_sha256, envelope, canonical_envelope_bytes(envelope)
+
+
+def controlled_failure_class(exc: BaseException) -> type[SweepRefusal]:
+    """Map a caught exception to one of the three controlled failure rows.
+
+    ``KeyboardInterrupt`` and every other non-``Exception`` ``BaseException``
+    is re-raised unchanged: it is never converted into an output artifact.
+    """
+    if isinstance(exc, BadInput):
+        return BadInput
+    if isinstance(exc, PolicyRefused):
+        return PolicyRefused
+    if isinstance(exc, Exception):
+        return InternalError
+    raise exc
+
+
+def build_controlled_error_envelope(
+    failure: type[SweepRefusal] | SweepRefusal,
+) -> dict[str, Any]:
+    """Build the one controlled error envelope for a failure row.
+
+    Parameters are fixed and path-free: no path, digest, filter value,
+    validator text, or caught-exception text reaches the envelope.
+    """
+    cls = failure if isinstance(failure, type) else type(failure)
+    if cls not in (BadInput, PolicyRefused, InternalError):
+        raise InternalError()
+    try:
+        return build_error_output(
+            task_surface=CLAIM_TASK_SURFACE,
+            tool=TOOL,
+            version=VERSION,
+            reason=cls.reason,
+            reason_category=cls.reason_category,
+            target_path=None,
+            target_words=0,
+            warnings=[],
+            extra=None,
+        )
+    except Exception as exc:  # noqa: BLE001 - closed controlled refusal
+        raise InternalError() from exc
+
+
+def freeze_controlled_error(
+    failure: type[SweepRefusal] | SweepRefusal,
+) -> tuple[bytes, int]:
+    """Return one canonical golden error envelope's bytes and its exit code."""
+    cls = failure if isinstance(failure, type) else type(failure)
+    envelope = build_controlled_error_envelope(cls)
+    assert_claim_posture(envelope)
+    return canonical_envelope_bytes(envelope), cls.exit_code
+
+
+# --------------------------------------------------------------------------
+# Progress lines
+# --------------------------------------------------------------------------
+
+PROGRESS_INTERVAL = 100
+PROGRESS_TEMPLATE = "register sweep progress: completed={completed} total={total}\n"
+PROGRESS_COMPLETE_TEMPLATE = (
+    "register sweep processing-complete: completed={total} total={total} "
+    "report_commit=pending\n"
+)
+
+
+def _require_ordinal(value: Any) -> int:
+    if type(value) is not int or not (0 <= value <= MAX_SCOPED_DOCUMENTS):
+        raise InternalError()
+    return value
+
+
+def progress_is_eligible(completed: int, total: int, *, resume_from: int = 0) -> bool:
+    """Return whether the cadence line is emitted after ordinal ``completed``.
+
+    ``completed`` must be a positive multiple of ``PROGRESS_INTERVAL`` and
+    strictly less than ``total``; the cadence line is never emitted at
+    ``completed == total``. On resume from ``resume_from`` sealed rows no
+    earlier line is replayed.
+    """
+    _require_ordinal(completed)
+    _require_ordinal(total)
+    _require_ordinal(resume_from)
+    if resume_from > total:
+        raise InternalError()
+    if completed <= 0 or completed % PROGRESS_INTERVAL != 0:
+        return False
+    if completed >= total:
+        return False
+    return completed > resume_from
+
+
+def progress_ordinals(total: int, *, resume_from: int = 0) -> tuple[int, ...]:
+    """Return every eligible cadence ordinal for a run, in emission order.
+
+    The first eligible line is the smallest multiple of ``PROGRESS_INTERVAL``
+    strictly greater than ``resume_from`` and strictly less than ``total``.
+    """
+    _require_ordinal(total)
+    _require_ordinal(resume_from)
+    if resume_from > total:
+        raise InternalError()
+    first = (resume_from // PROGRESS_INTERVAL + 1) * PROGRESS_INTERVAL
+    return tuple(range(first, total, PROGRESS_INTERVAL))
+
+
+def progress_line(completed: int, total: int) -> str:
+    """Return the exact ASCII cadence line for ``completed`` of ``total``."""
+    _require_ordinal(completed)
+    _require_ordinal(total)
+    if completed <= 0 or completed >= total:
+        raise InternalError()
+    return PROGRESS_TEMPLATE.format(completed=completed, total=total)
+
+
+def processing_complete_line(total: int) -> str:
+    """Return the exact ASCII pending-completion line, emitted exactly once.
+
+    ``report_commit=pending`` is literal: document work and aggregate
+    reassembly finished, and committed success has not happened yet.
+    """
+    _require_ordinal(total)
+    return PROGRESS_COMPLETE_TEMPLATE.format(total=total)
+
+
+# --------------------------------------------------------------------------
+# Terminal committed-success sink
+# --------------------------------------------------------------------------
+
+
+def emit_committed_success(frozen_bytes: bytes, stream: Any = None) -> bool:
+    """Best-effort deliver already-frozen success bytes after the commit.
+
+    This is total. Once the report is published the run may not fail, so a
+    closed, broken, or exhausted consumer is absorbed without stderr, without
+    rollback, and without changing exit 0. It never raises and always reports
+    success.
+    """
+    try:
+        sink = sys.stdout.buffer if stream is None else stream
+        view = memoryview(frozen_bytes)
+        while view:
+            written = sink.write(view)
+            if type(written) is not int or written <= 0:
+                # Partial-write exhaustion: stop rather than spin. The report
+                # is already authoritative; only the convenience envelope is
+                # lost.
+                break
+            view = view[written:]
+        flush = getattr(sink, "flush", None)
+        if flush is not None:
+            flush()
+    except Exception:  # noqa: BLE001 - the sink absorbs every delivery failure
+        pass
+    return True
