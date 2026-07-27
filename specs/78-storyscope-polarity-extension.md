@@ -17,11 +17,11 @@
   authorized)
 - **Upstream / prior art:** Russell et al. 2026 (StoryScope,
   arXiv:2604.03136v4). In-repo, verified at `origin/main`:
-  `scripts/calibration/narrative_polarity_audit.py` — the in-range polarity
+  `narrative_polarity_audit.py` — the in-range polarity
   precedent this child extends, whose direction-aware Mann-Whitney AUC +
   Hanley-McNeil CI + `min_class_n` forced-`chance` guard this child **reuses
-  rather than reinvents**; `scripts/narrative_feature_schema.py`;
-  `scripts/narrative_judge.py`.
+  rather than reinvents**; `narrative_feature_schema.py`;
+  `narrative_judge.py`.
 - **License decision:** N/A — extends existing clean-room calibration.
 
 ## Inherited contracts
@@ -156,7 +156,7 @@ insufficient_support`
 
 ## Contract
 
-`scripts/calibration/narrative_polarity_extension.py` — calibration-side, not a
+`narrative_polarity_extension` (planned) — calibration-side, not a
 `setec_run` surface, pure Python, judge-free over precomputed values. Flat flags:
 `--arm {segment_regime|subfloor} --manifest PATH --thresholds PATH
 [--register | --evaluate] --out PATH`.
@@ -204,7 +204,7 @@ claims additionally require Arm B.
 
 ## Test contract
 
-`scripts/tests/test_narrative_polarity_extension.py`, model-free and judge-free:
+`test_narrative_polarity_extension` (planned), model-free and judge-free:
 registration-before-evaluate with post-hoc thresholds refused; hash round-trip;
 cluster-aware floors enforced with `insufficient_support` below them;
 zero-variance → `indeterminate` with no epsilon division; AUC and Hedges *g*

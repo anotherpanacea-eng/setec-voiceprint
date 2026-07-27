@@ -15,10 +15,10 @@
   discharges the Dickens umbrella's StoryScope acceptance item
 - **GPU required:** no
 - **Upstream:** Russell et al. 2026 (StoryScope, arXiv:2604.03136v4; corpus mean
-  4,753 words). In-repo: `scripts/narrative_decision_audit.py`,
-  `scripts/narrative_feature_schema.py`, `scripts/narrative_judge.py`,
-  `scripts/output_schema.py`, `scripts/claim_license.py`,
-  `scripts/setec_run_set.py`, `scripts/calibration/narrative_polarity_audit.py`,
+  4,753 words). In-repo: `narrative_decision_audit.py`,
+  `narrative_feature_schema.py`, `narrative_judge.py`,
+  `output_schema.py`, `claim_license.py`,
+  `setec_run_set.py`, `narrative_polarity_audit.py`,
   `manuscript_audit.py`.
 - **License decision:** N/A — extends an existing clean-room surface.
 
