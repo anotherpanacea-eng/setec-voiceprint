@@ -7,7 +7,7 @@
 > and receipt contracts spec 78 reuses.
 
 - **Status:** **AS-BUILT (M1)** — implemented 2026-07-27 on
-  `feat/spec77-longform-m1` (commit `858352c`; 11 files, 98 module tests,
+  `feat/spec77-longform-m1` (branch name predates the renumber) (commit `858352c`; 11 files, 100 module tests,
   full plugin suite 8,752 green). **Where this document and the code
   disagree, the code and its tests govern**; §"As built" records every
   divergence. M2 (receipts, thresholds, licensing) remains unbuilt.
@@ -15,10 +15,10 @@
   discharges the Dickens umbrella's StoryScope acceptance item
 - **GPU required:** no
 - **Upstream:** Russell et al. 2026 (StoryScope, arXiv:2604.03136v4; corpus mean
-  4,753 words). In-repo: `scripts/narrative_decision_audit.py`,
-  `scripts/narrative_feature_schema.py`, `scripts/narrative_judge.py`,
-  `scripts/output_schema.py`, `scripts/claim_license.py`,
-  `scripts/setec_run_set.py`, `scripts/calibration/narrative_polarity_audit.py`,
+  4,753 words). In-repo: `narrative_decision_audit.py`,
+  `narrative_feature_schema.py`, `narrative_judge.py`,
+  `output_schema.py`, `claim_license.py`,
+  `setec_run_set.py`, `narrative_polarity_audit.py`,
   `manuscript_audit.py`.
 - **License decision:** N/A — extends an existing clean-room surface.
 
@@ -78,7 +78,7 @@ that the eight single-leaning option-bearing signals
 `intertextual_strategy_types.explicit_named`,
 `moral_polarity_toward_protagonist.ambivalent_or_mixed`) each retain their
 suffix. A v3-style "6-from-3-dual-leaning" pin would pass an implementation that
-drops the suffix on those eight and silently breaks every 77↔78 join.
+drops the suffix on those eight and silently breaks every 78↔79 join.
 
 A signal absent from a receipt is `insufficient_support`, never a pass.
 
@@ -125,7 +125,7 @@ human actually read each segment.
 ### S2a — hashing convention
 
 Stated once so no field's derivation is left to inference. Every `*_sha256` in
-specs 77 and 78 is an **ordinary SHA-256 over exact file bytes** — no domain
+specs 78 and 79 is an **ordinary SHA-256 over exact file bytes** — no domain
 separation, no canonicalization — with exactly two exceptions, both computed
 over canonical JSON per the calibration script's existing
 `_manifest_content_hash` idiom: `derivation_sha256` and `signal_id_set_sha256`.
