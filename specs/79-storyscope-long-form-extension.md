@@ -403,7 +403,7 @@ it.**
 
 ## Calibration script
 
-`scripts/calibration/narrative_longform_agreement.py` — pure Python, judge-free,
+`narrative_longform_agreement` (M1 module) — pure Python, judge-free,
 consuming precomputed values, mirroring `narrative_polarity_audit`'s
 cost-external posture. Rows: `{work_id, n_words, whole_work: {signal_id:
 {value, available}}, segments: [{segment_id, content_sha256, n_words, signals:
@@ -425,7 +425,7 @@ the relevant denominator and are counted.
 
 ## Test contract
 
-`scripts/tests/test_narrative_decision_long_form.py`, model-free and judge-free:
+`test_narrative_decision_long_form` (M1 module), model-free and judge-free:
 the S1 pin above (33 unique, 19/14 split, eight named suffixes retained);
 operator-table disjointness *and* totality with the 12/12/9 counts pinned;
 deterministic segmentation across two processes; four boundary tiers; **descent
@@ -526,7 +526,7 @@ Five prose rounds could not converge; M1 was then built code-first by three
 builders with disjoint ownership, and this section records where the code
 decided differently from the drafts. Each entry is tested.
 
-**Segmenter** (`narrative_longform_segment.py`, 30 tests):
+**Segmenter** (`narrative_longform_segment`, 30 tests):
 - Segment construction is **greedy packing over boundary units** — the rule
   every draft omitted. 60 × 500-word chapters pack to 7 in-range segments.
 - Post-merge descent re-check confirmed present (draft P1).
@@ -544,7 +544,7 @@ decided differently from the drafts. Each entry is tested.
   violate the leaf discipline), so a receipt cannot prove *which* words were
   dropped — custody, not mechanism.
 
-**Orchestrator** (`narrative_decision_long_form.py`, 38 tests):
+**Orchestrator** (`narrative_decision_long_form`, 38 tests):
 - `signal_id_for` lives in the orchestrator, importing nothing new into the
   frozen schema module. NB the schema module's own docstring misstates its
   partition ("27 single-leaning + 3 dual") — the real split is 19
@@ -577,7 +577,7 @@ decided differently from the drafts. Each entry is tested.
   3 (`internal_error`). Routing word count uses the segmenter's `\S+`
   counter so routing and compliance share units.
 
-**Calibration** (`calibration/narrative_longform_agreement.py`, 33 tests):
+**Calibration** (`narrative_longform_agreement`, 33 tests):
 - The verdict rule is one pure function, in order: a-priori
   `not_aggregatable` → corpus floor → per-signal support floor →
   per-class floor (prevalence) → degenerate → thresholds (mean requires BOTH
@@ -608,9 +608,18 @@ carrier, and the increment that lands it. **None is landed yet.**
 
 | Id | Amends | Status | Landed by |
 |---|---|---|---|
-| `CLA-79-A1` | the `calibration_only` claim license (`narrative_decision_long_form.CALIBRATION_DOES_NOT_LICENSE`) — a narrow permission for spec 78's Arm A to consume `--calibration-emit-segments` rows as polarity-audit manifest input, and for nothing else | **pending** | spec 78 M1; exact wording, home, emission point, and its four scoping tests are specified in [spec 78](78-storyscope-polarity-extension.md) §"Claim license and amendment CLA-79-A1" |
+| `CLA-79-A1` | the `calibration_only` claim license (`CALIBRATION_DOES_NOT_LICENSE` in the M1 orchestrator) — a narrow permission for spec 78's Arm A to consume `--calibration-emit-segments` segment rows as polarity-audit manifest input, permitting an internal never-emitted per-work reduction and refusing any reported work-level value | **pending** | spec 78 M1 |
+| `CLA-79-A2` | the same license surface — a narrow permission for **per-signal whole-work raw judge responses of an over-ceiling work**, obtained under base-audit register extension `REG-AUDIT-B1`, to be consumed **as spec-78 Arm A bridge-control rows only** | **pending** | spec 78 M1 |
 
-Until `CLA-79-A1` lands, `CALIBRATION_DOES_NOT_LICENSE` refuses all evidentiary
+Exact wording, home, emission point, and the scoping tests for both amendments
+are specified in [spec 78](78-storyscope-polarity-extension.md) §"Claim
+licenses, amendments, and the register extension". Spec 78 M1 additionally
+lands `REG-AUDIT-B1`, a bridge-scoped extension to the **base audit's** declared
+`length_range_words`; its arrival re-scopes this spec's base-surface pin from
+"the tuple is byte-unchanged" to "the tuple is byte-unchanged without
+`--bridge-control`", plus a new pin for the bridge tuple.
+
+Until these land, `CALIBRATION_DOES_NOT_LICENSE` refuses all evidentiary
 use of `calibration_only` output without exception, exactly as built.
 
 ## Consumer note
