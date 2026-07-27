@@ -601,6 +601,18 @@ decided differently from the drafts. Each entry is tested.
 consumer surface; golden, claim-license drop-in, changelog fragment, and
 regenerated calibration-readiness doc all landed with it.
 
+## Amendment record
+
+Amendments to this spec's claim licenses are listed here, each with its id, its
+carrier, and the increment that lands it. **None is landed yet.**
+
+| Id | Amends | Status | Landed by |
+|---|---|---|---|
+| `CLA-79-A1` | the `calibration_only` claim license (`narrative_decision_long_form.CALIBRATION_DOES_NOT_LICENSE`) — a narrow permission for spec 78's Arm A to consume `--calibration-emit-segments` rows as polarity-audit manifest input, and for nothing else | **pending** | spec 78 M1; exact wording, home, emission point, and its four scoping tests are specified in [spec 78](78-storyscope-polarity-extension.md) §"Claim license and amendment CLA-79-A1" |
+
+Until `CLA-79-A1` lands, `CALIBRATION_DOES_NOT_LICENSE` refuses all evidentiary
+use of `calibration_only` output without exception, exactly as built.
+
 ## Consumer note
 
 First consumer: the Dickens Craft Atlas. **Novel-scale validated aggregates do
