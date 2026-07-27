@@ -6,14 +6,14 @@
   "handoff": "experimental",
   "consumers": [],
   "family": "narrative-decision",
-  "purpose": "Score a work ABOVE the narrative-decision audit's 25,000-word ceiling by deterministic segmentation (chapter/scene/blank-line/paragraph tiers, greedy packing) plus per-segment scoring with the unchanged base audit. M1 emits per-segment raw responses only: every work-level aggregate is suppressed as provisional_unvalidated until a validation receipt exists (spec 77 M2). Not a provenance verdict; reducing per-segment values to a work-level scalar is derivable but outside the claim license.\n",
+  "purpose": "Score a work ABOVE the narrative-decision audit's 25,000-word ceiling by deterministic segmentation (chapter/scene/blank-line/paragraph tiers, greedy packing) plus per-segment scoring with the unchanged base audit. M1 emits per-segment raw responses only: every work-level aggregate is suppressed as provisional_unvalidated until a validation receipt exists (spec 79 M2). Not a provenance verdict; reducing per-segment values to a work-level scalar is derivable but outside the claim license.\n",
   "registers": [
     "fiction"
   ],
   "use_when": [
     "Target is long-form fiction ABOVE 25,000 words (novels)",
     "You want per-segment narrative-decision distributions across a book",
-    "Calibration segment emission for the spec 77/78 agreement studies"
+    "Calibration segment emission for the spec 79/78 agreement studies"
   ],
   "do_not_use_when": [
     "Target is within the base audit's 2,000-25,000 word range (use narrative_decision_audit)",
@@ -94,7 +94,7 @@
     "python3 plugins/setec-voiceprint/scripts/narrative_decision_long_form.py novel.txt --judge manifest --judge-manifest segments.json --json"
   ],
   "references": [
-    "specs/77-storyscope-long-form-extension.md",
+    "specs/79-storyscope-long-form-extension.md",
     "Russell et al. 2026 (StoryScope, arXiv:2604.03136v4)"
   ]
 }

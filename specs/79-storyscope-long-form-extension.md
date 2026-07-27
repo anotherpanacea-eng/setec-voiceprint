@@ -1,4 +1,4 @@
-# 77-storyscope-long-form-extension
+# 79-storyscope-long-form-extension
 
 > Score works above the narrative-decision audit's 25,000-word ceiling by
 > deterministic segmentation plus per-signal aggregation, licensed only by a
