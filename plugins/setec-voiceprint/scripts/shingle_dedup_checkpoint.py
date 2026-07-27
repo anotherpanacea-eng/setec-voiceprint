@@ -6,6 +6,15 @@ named SQLite database to SQLite.  Final shards are read once through retained
 directory handles, deserialized into memory, exactly validated, and represented
 by :class:`CheckpointSnapshot` objects.  New shards are built in memory and
 published create-new through the retained directory handle.
+
+:class:`ImmutableShardDirectory` is the narrow generic half of that boundary:
+retained-handle directory opening, bounded frozen listing, one-read snapshots,
+identity revalidation, create-new publication, and stable non-disclosing
+refusal.  Its ``policy`` class attribute selects the filesystem privacy
+contract.  ``legacy_shingle_v1`` is the historical shingle-dedup behaviour and
+is byte-for-byte unchanged: every owner-private hook is a strict no-op that
+issues no additional syscall.  ``owner_private_v1`` is the Spec 73 contract
+used by the register-composition sweep.
 """
 
 from __future__ import annotations
@@ -40,6 +49,14 @@ MAX_SHINGLES_PER_DOCUMENT = 500_000
 CHECKPOINT_APPLICATION_ID = 0x53484331
 CHECKPOINT_USER_VERSION = 1
 CHECKPOINT_SCHEMA_VERSION = "setec-shingle-checkpoint/1"
+
+#: The historical shingle-dedup filesystem contract.  Preserved byte-for-byte.
+LEGACY_SHINGLE_POLICY = "legacy_shingle_v1"
+#: The Spec 73 owner-private filesystem contract.
+OWNER_PRIVATE_POLICY = "owner_private_v1"
+SHARD_POLICIES = (LEGACY_SHINGLE_POLICY, OWNER_PRIVATE_POLICY)
+OWNER_PRIVATE_DIRECTORY_MODE = 0o700
+OWNER_PRIVATE_FILE_MODE = 0o600
 
 _FINAL_RE = re.compile(r"(inventory|build|batch)-(\d{8})\.sqlite\Z")
 _TEMP_RE = re.compile(
@@ -315,8 +332,146 @@ def _posix_revalidate(path: Path, descriptors: Sequence[int]) -> None:
         raise _refuse() from None
 
 
-class CheckpointDirectory:
-    """A retained, identity-checked checkpoint directory handle."""
+class ImmutableShardDirectory:
+    """A retained, identity-checked immutable-shard directory handle.
+
+    The generic half of the checkpoint filesystem boundary: retained-handle
+    directory opening, bounded frozen listing, one-read snapshots, identity
+    revalidation, create-new publication, and stable non-disclosing refusal.
+
+    Subclasses supply the shard/temporary filename grammars, the directory
+    ceilings, and the filesystem privacy ``policy``.  Under
+    ``legacy_shingle_v1`` every privacy hook returns before issuing a syscall,
+    so the historical shingle-dedup syscall sequence is unchanged.
+    """
+
+    policy = LEGACY_SHINGLE_POLICY
+    final_pattern = _FINAL_RE
+    temp_pattern = _TEMP_RE
+
+    @classmethod
+    def _limits(cls) -> tuple[int, int, int, int, int]:
+        """Return ``(entries, final_shards, temps, shard_bytes, cumulative)``.
+
+        Read lazily from the module ceilings so a caller (or a bounds test)
+        that lowers one of them is honoured on the next operation.
+        """
+        return (MAX_ENTRIES, MAX_FINAL_SHARDS, MAX_RESERVED_TEMPS,
+                MAX_SHARD_BYTES, MAX_CUMULATIVE_BYTES)
+
+    # ------------------------------------------------------------------
+    # Owner-private policy.  Every hook returns immediately under
+    # ``legacy_shingle_v1`` without issuing a syscall.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _owner_private(cls) -> bool:
+        return cls.policy == OWNER_PRIVATE_POLICY
+
+    @classmethod
+    def _require_posix_directory(cls, info: os.stat_result) -> None:
+        if not cls._owner_private():
+            return
+        if (not stat.S_ISDIR(info.st_mode)
+                or stat.S_IMODE(info.st_mode) != OWNER_PRIVATE_DIRECTORY_MODE
+                or int(info.st_uid) != os.geteuid()):
+            raise _refuse()
+
+    @classmethod
+    def _require_posix_file(cls, info: os.stat_result) -> None:
+        if not cls._owner_private():
+            return
+        if (not stat.S_ISREG(info.st_mode)
+                or stat.S_IMODE(info.st_mode) != OWNER_PRIVATE_FILE_MODE
+                or int(info.st_uid) != os.geteuid() or int(info.st_nlink) != 1):
+            raise _refuse()
+
+    @classmethod
+    def _verify_posix_directory_handle(cls, descriptor: int) -> None:
+        if not cls._owner_private():
+            return
+        cls._require_posix_directory(os.fstat(descriptor))
+
+    @classmethod
+    def _posix_mkdir(cls, name: str, parent_fd: int) -> None:
+        """Create the leaf directory relative to the retained parent handle.
+
+        POSIX has no ``mkdirat`` that hands back a descriptor, and a directory
+        that a hostile umask reduced to ``0000`` cannot be opened at all, so it
+        could never be repaired through a retained handle.  Under
+        ``owner_private_v1`` the umask is therefore tightened for exactly this
+        one syscall and restored immediately; the authority for the final mode
+        is still the ``fchmod`` plus ``fstat`` on the retained descriptor.
+        ``legacy_shingle_v1`` keeps the historical bare ``mkdir``.
+        """
+        if not cls._owner_private():
+            os.mkdir(name, 0o700, dir_fd=parent_fd)
+            return
+        previous = os.umask(0o077)
+        try:
+            os.mkdir(name, 0o700, dir_fd=parent_fd)
+        finally:
+            os.umask(previous)
+
+    @classmethod
+    def _harden_posix_directory(cls, descriptor: int) -> None:
+        """Set and then re-verify ``0700`` through the retained handle."""
+        if not cls._owner_private():
+            return
+        os.fchmod(descriptor, OWNER_PRIVATE_DIRECTORY_MODE)
+        cls._require_posix_directory(os.fstat(descriptor))
+
+    @classmethod
+    def _harden_posix_file(cls, descriptor: int) -> None:
+        """Set and then re-verify ``0600`` through the retained handle.
+
+        A hostile umask cannot survive this: the mode is asserted from the
+        descriptor after the ``fchmod``, never from the creation mode argument.
+        The link count is deliberately not asserted here, because the create-new
+        publication holds the temporary and the final name on one inode between
+        the link and the unlink.
+        """
+        if not cls._owner_private():
+            return
+        os.fchmod(descriptor, OWNER_PRIVATE_FILE_MODE)
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode)
+                or stat.S_IMODE(info.st_mode) != OWNER_PRIVATE_FILE_MODE
+                or int(info.st_uid) != os.geteuid()):
+            raise _refuse()
+
+    def _verify_posix_published(self, control_descriptor: int,
+                               named: os.stat_result) -> None:
+        if not self._owner_private():
+            return
+        self._require_posix_file(os.fstat(control_descriptor))
+        self._require_posix_file(named)
+
+    @classmethod
+    def _windows_helper(cls, winio: Any, name: str) -> Any:
+        helper = getattr(winio, name, None)
+        if helper is None:
+            # Missing native owner-private support is a controlled refusal.
+            raise _refuse()
+        return helper
+
+    @classmethod
+    def _windows_create_directory(cls, winio: Any, parent: int, name: str) -> int:
+        if not cls._owner_private():
+            return winio.create_directory(parent, name)
+        return cls._windows_helper(winio, "create_owner_private_directory")(parent, name)
+
+    @classmethod
+    def _windows_create_file(cls, winio: Any, parent: int, name: str) -> int:
+        if not cls._owner_private():
+            return winio.create_file(parent, name)
+        return cls._windows_helper(winio, "create_owner_private_file")(parent, name)
+
+    @classmethod
+    def _require_windows_owner_private(cls, winio: Any, handle: int, kind: str) -> None:
+        if not cls._owner_private():
+            return
+        cls._windows_helper(winio, "require_owner_private")(handle, kind)
 
     def __init__(self, path: Path, *, posix_handles: list[int] | None = None,
                  windows_handles: tuple[int, ...] | None = None) -> None:
@@ -329,20 +484,38 @@ class CheckpointDirectory:
         self._windows_listing: dict[str, tuple[int, int, int, int, int]] = {}
 
     @classmethod
-    def open_resume(cls, path: os.PathLike[str] | str) -> "CheckpointDirectory":
+    def open_resume(cls, path: os.PathLike[str] | str) -> "ImmutableShardDirectory":
         target = _absolute(path)
         if os.name == "nt":  # pragma: no cover - exercised on Windows CI
+            handles: tuple[int, ...] = ()
             try:
                 import windows_descriptor_io as winio
                 handles = winio.pin_directory_chain(target, writable_final=True)
-                return cls(target, windows_handles=handles)
-            except (ImportError, OSError, TypeError, ValueError):
+                # Resume never chmods, rewrites security, or repairs: it only
+                # verifies the retained handle.
+                cls._require_windows_owner_private(winio, handles[-1], "directory")
+                result = cls(target, windows_handles=handles)
+                handles = ()
+                return result
+            except (CheckpointRefusal, ImportError, OSError, TypeError, ValueError):
                 raise _refuse() from None
-        _directory, handles = _posix_pin_directory(target)
-        return cls(target, posix_handles=handles)
+            finally:
+                for handle in reversed(handles):
+                    try: winio.close(handle)
+                    except (NameError, OSError): pass
+        _directory, handles_posix = _posix_pin_directory(target)
+        try:
+            # Resume verifies but never chmods or repairs.
+            cls._verify_posix_directory_handle(handles_posix[-1])
+        except (CheckpointRefusal, OSError, TypeError, ValueError):
+            for descriptor in reversed(handles_posix):
+                try: os.close(descriptor)
+                except OSError: pass
+            raise _refuse() from None
+        return cls(target, posix_handles=handles_posix)
 
     @classmethod
-    def open_new(cls, path: os.PathLike[str] | str) -> "CheckpointDirectory":
+    def open_new(cls, path: os.PathLike[str] | str) -> "ImmutableShardDirectory":
         target = _absolute(path)
         if target.name in {"", ".", ".."}:
             raise _refuse()
@@ -353,15 +526,16 @@ class CheckpointDirectory:
                 import windows_descriptor_io as winio
                 parent_chain = winio.pin_directory_chain(target.parent, writable_final=True)
                 winio.revalidate_directory_chain(target.parent, parent_chain)
-                created = winio.create_directory(parent_chain[-1], target.name)
+                created = cls._windows_create_directory(winio, parent_chain[-1], target.name)
                 handles = (*parent_chain, created)
                 winio.revalidate_directory_chain(target, handles)
+                cls._require_windows_owner_private(winio, created, "directory")
                 result = cls(target, windows_handles=handles)
                 result._known_names = set()
                 parent_chain = ()
                 created = 0
                 return result
-            except (ImportError, OSError, TypeError, ValueError):
+            except (CheckpointRefusal, ImportError, OSError, TypeError, ValueError):
                 raise _refuse() from None
             finally:
                 if created:
@@ -375,17 +549,20 @@ class CheckpointDirectory:
         created = -1
         try:
             _posix_revalidate(target.parent, parents)
-            os.mkdir(target.name, 0o700, dir_fd=parent_fd)
+            cls._posix_mkdir(target.name, parent_fd)
             created = os.open(target.name, flags, dir_fd=parent_fd)
             named = os.stat(target.name, dir_fd=parent_fd, follow_symlinks=False)
             if not stat.S_ISDIR(named.st_mode) or _identity(named) != _identity(os.fstat(created)):
                 raise _refuse()
+            # Parent permissions are never proof and are never changed; the
+            # created leaf is hardened and re-verified through its own handle.
+            cls._harden_posix_directory(created)
             handles = parents + [created]
             _posix_revalidate(target, handles)
             result = cls(target, posix_handles=handles)
             result._known_names = set()
-            # Ownership transfers to the returned CheckpointDirectory only
-            # after all post-open validation has succeeded.
+            # Ownership transfers to the returned directory object only after
+            # all post-open validation has succeeded.
             parents = []
             created = -1
             return result
@@ -403,7 +580,7 @@ class CheckpointDirectory:
                 except OSError:
                     pass
 
-    def __enter__(self) -> "CheckpointDirectory":
+    def __enter__(self) -> "ImmutableShardDirectory":
         return self
 
     def __exit__(self, _kind: object, _value: object, _traceback: object) -> None:
@@ -465,10 +642,13 @@ class CheckpointDirectory:
                 info = os.stat(name, dir_fd=self._posix_handles[-1], follow_symlinks=False)
                 if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                     raise _refuse()
+                # POSIX proves the owner-private predicates from the frozen
+                # listing's stat alone, so a reserved temporary is never opened.
+                self._require_posix_file(info)
                 return int(info.st_size), _fingerprint(info)
             import windows_descriptor_io as winio  # pragma: no cover - Windows CI
             assert self._windows_handles is not None
-            if _TEMP_RE.fullmatch(name) is not None:
+            if self.temp_pattern.fullmatch(name) is not None and not self._owner_private():
                 metadata = self._windows_listing.get(name)
                 if metadata is None:
                     raise _refuse()
@@ -479,20 +659,86 @@ class CheckpointDirectory:
             handle = winio.open_file(self._windows_handles[-1], name)
             try:
                 info = winio.require_direct(handle, "file")
+                # Metadata-only handle: owner/DACL/link/type verification never
+                # reads, deserializes, or hashes an entry's bytes.
+                self._require_windows_owner_private(winio, handle, "file")
                 return info.size, info.identity
             finally:
                 winio.close(handle)
-        except (OSError, TypeError, ValueError):
+        except (CheckpointRefusal, OSError, TypeError, ValueError):
             raise _refuse() from None
 
+    # ------------------------------------------------------------------
+    # The narrow generic API.
+    # ------------------------------------------------------------------
+
+    def revalidate(self) -> None:
+        """Re-verify every retained ancestor handle against its current name."""
+        self._revalidate()
+
+    def freeze_listing(self) -> tuple[tuple[tuple[str, int, object], ...],
+                                      tuple[tuple[str, int, object], ...], int]:
+        """Enumerate the directory once and freeze the result.
+
+        Returns ``(finals, reserved_temporaries, cumulative_bytes)`` where each
+        entry is ``(name, size, fingerprint)``.  Any name matching neither
+        grammar, any entry that is not a direct single-linked regular file, any
+        oversized entry, and any breach of the count or cumulative ceilings is a
+        stable non-disclosing refusal.  Nothing is opened for its content,
+        deserialized, hashed, deleted, or overwritten here.
+        """
+        entries, shards, temps, shard_bytes, cumulative = self._limits()
+        names = self._list_names()
+        if len(names) > entries:
+            raise _refuse()
+        finals: list[tuple[str, int, object]] = []
+        temporaries: list[tuple[str, int, object]] = []
+        total = 0
+        for name in names:
+            is_final = self.final_pattern.fullmatch(name) is not None
+            if not is_final and self.temp_pattern.fullmatch(name) is None:
+                raise _refuse()
+            size, fingerprint = self._entry_info(name)
+            if size < 0 or size > shard_bytes:
+                raise _refuse()
+            total += size
+            (finals if is_final else temporaries).append((name, size, fingerprint))
+        if len(finals) > shards or len(temporaries) > temps or total > cumulative:
+            raise _refuse()
+        self._known_names = {name for name, _size, _fingerprint in (*finals, *temporaries)}
+        return tuple(finals), tuple(temporaries), total
+
+    def require_unchanged(self, entries: Iterable[tuple[str, int, object]]) -> None:
+        """Require the frozen listing to still hold after the snapshot reads."""
+        expected = {name: fingerprint for name, _size, fingerprint in entries}
+        current = self._list_names()
+        if len(current) != len(expected) or set(current) != set(expected):
+            raise _refuse()
+        for name in current:
+            _size, fingerprint = self._entry_info(name)
+            if fingerprint != expected[name]:
+                raise _refuse()
+
+    def snapshot_entry(self, name: str) -> bytes:
+        """Read one final shard's exact bytes once through the retained handle."""
+        if self.final_pattern.fullmatch(name) is None:
+            raise _refuse()
+        return self._read_final(name)
+
+    def publish_entry(self, name: str, raw: bytes) -> None:
+        """Publish one immutable shard create-new through the retained handle."""
+        self._publish_raw(name, raw)
+
     def _read_final(self, name: str) -> bytes:
+        maximum = self._limits()[3]
         if self._posix_handles is not None:
             descriptor = -1
             try:
                 parent = self._posix_handles[-1]
                 before = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not 0 <= before.st_size <= MAX_SHARD_BYTES:
+                if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1 or not 0 <= before.st_size <= maximum:
                     raise _refuse()
+                self._require_posix_file(before)
                 flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
                 descriptor = os.open(name, flags, dir_fd=parent)
                 opened = os.fstat(descriptor)
@@ -501,11 +747,11 @@ class CheckpointDirectory:
                 parts: list[bytes] = []
                 total = 0
                 while True:
-                    chunk = os.read(descriptor, min(1024 * 1024, MAX_SHARD_BYTES + 1 - total))
+                    chunk = os.read(descriptor, min(1024 * 1024, maximum + 1 - total))
                     if not chunk:
                         break
                     parts.append(chunk); total += len(chunk)
-                    if total > MAX_SHARD_BYTES:
+                    if total > maximum:
                         raise _refuse()
                 after = os.fstat(descriptor)
                 self._revalidate()
@@ -529,16 +775,17 @@ class CheckpointDirectory:
             verify = 0
             try:
                 opened = winio.require_direct(handle, "file")
-                if not 0 <= opened.size <= MAX_SHARD_BYTES:
+                self._require_windows_owner_private(winio, handle, "file")
+                if not 0 <= opened.size <= maximum:
                     raise _refuse()
                 parts: list[bytes] = []
                 total = 0
                 while True:
-                    chunk = winio.read(handle, min(1024 * 1024, MAX_SHARD_BYTES + 1 - total))
+                    chunk = winio.read(handle, min(1024 * 1024, maximum + 1 - total))
                     if not chunk:
                         break
                     parts.append(chunk); total += len(chunk)
-                    if total > MAX_SHARD_BYTES:
+                    if total > maximum:
                         raise _refuse()
                 after = winio.require_direct(handle, "file")
                 self._revalidate()
@@ -552,6 +799,224 @@ class CheckpointDirectory:
                 winio.close(handle)
         except (ImportError, OSError, TypeError, ValueError):
             raise _refuse() from None
+
+    def _publish_raw(self, name: str, raw: bytes) -> None:
+        entries, shards, temps, shard_bytes, cumulative = self._limits()
+        if self.final_pattern.fullmatch(name) is None or not isinstance(raw, bytes) or len(raw) > shard_bytes:
+            raise _refuse()
+        current = self._list_names()
+        if self._known_names is not None and set(current) != self._known_names:
+            raise _refuse()
+        final_count = sum(self.final_pattern.fullmatch(item) is not None for item in current)
+        cumulative_bytes = sum(self._entry_info(item)[0] for item in current)
+        if (name in current or len(current) >= entries or final_count >= shards
+                or cumulative_bytes + len(raw) > cumulative):
+            raise _refuse()
+        temp_count = sum(self.temp_pattern.fullmatch(item) is not None for item in current)
+        # A directory already holding the full reserved-temporary allowance
+        # refuses publication rather than reusing one of those names.
+        if temp_count >= temps:
+            raise _refuse()
+        if self._posix_handles is not None:
+            self._posix_publish(name, raw)
+        else:
+            self._windows_publish(name, raw)
+        expected = set(current) | {name}
+        actual = self._list_names()
+        if len(actual) != len(expected) or set(actual) != expected:
+            raise _refuse()
+        self._known_names = expected
+
+    def _posix_publish(self, name: str, raw: bytes) -> None:
+        assert self._posix_handles is not None
+        parent = self._posix_handles[-1]
+        temp_name = ".tmp-" + os.urandom(16).hex()
+        descriptor = -1
+        control_descriptor = -1
+        control_verified = False
+        identity: tuple[int, int] | None = None
+        published_identity: tuple[int, int] | None = None
+        try:
+            self._revalidate()
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _optional_flag("O_CLOEXEC") | _optional_flag("O_BINARY")
+            descriptor = os.open(temp_name, flags, 0o600, dir_fd=parent)
+            self._harden_posix_file(descriptor)
+            identity = _identity(os.fstat(descriptor))
+            view = memoryview(raw)
+            while view:
+                count = os.write(descriptor, view)
+                if count <= 0: raise _refuse()
+                view = view[count:]
+            os.fsync(descriptor)
+            written = os.fstat(descriptor)
+            named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
+            if _fingerprint(named) != _fingerprint(written):
+                raise _refuse()
+            control_flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
+            control_descriptor = os.open(temp_name, control_flags, dir_fd=parent)
+            controlled = os.fstat(control_descriptor)
+            if not stat.S_ISREG(controlled.st_mode) or _fingerprint(controlled) != _fingerprint(written):
+                raise _refuse()
+            identity = _identity(controlled)
+            control_verified = True
+            os.close(descriptor); descriptor = -1
+            self._revalidate()
+            if os.link not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
+                raise _refuse()
+            try:
+                os.link(temp_name, name, src_dir_fd=parent, dst_dir_fd=parent,
+                        follow_symlinks=False)
+            except BaseException:
+                if identity is not None and control_descriptor >= 0:
+                    try:
+                        linked = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                        if _identity(linked) == _identity(os.fstat(control_descriptor)):
+                            published_identity = identity
+                    except (OSError, MemoryError):
+                        pass
+                raise
+            published_identity = identity
+            controlled = os.fstat(control_descriptor)
+            temp_named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
+            final = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if (_identity(controlled) != identity or _identity(temp_named) != identity
+                    or _identity(final) != identity):
+                raise _refuse()
+            _posix_verify_content(control_descriptor, raw)
+            os.unlink(temp_name, dir_fd=parent)
+            identity = None
+            final_after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            if _identity(final_after) != _identity(final):
+                raise _refuse()
+            self._verify_posix_published(control_descriptor, final_after)
+            self._revalidate()
+            published_identity = None
+            try:
+                os.fsync(parent)
+            except OSError:
+                pass
+        except (OSError, TypeError, ValueError, MemoryError):
+            raise _refuse() from None
+        finally:
+            try:
+                owner_descriptor = control_descriptor if control_verified else descriptor
+                # Both removals are gated on the live owner handle, never on the
+                # predictable temporary/shard *name*: a raced replacement is a
+                # different inode and is left intact.  The rolled-back final is
+                # only attempted once we actually linked it.
+                _unlink_if_owned(parent, temp_name, owner_descriptor)
+                if published_identity is not None:
+                    _unlink_if_owned(parent, name, owner_descriptor)
+            finally:
+                for item in (control_descriptor, descriptor):
+                    if item >= 0:
+                        try: os.close(item)
+                        except (OSError, MemoryError): pass
+
+    def _windows_publish(self, name: str, raw: bytes) -> None:  # pragma: no cover - Windows CI
+        try:
+            import windows_descriptor_io as winio
+            assert self._windows_handles is not None
+            parent = self._windows_handles[-1]
+            temp_name = ".tmp-" + os.urandom(16).hex()
+            payload = pin = verifier = control = 0
+            pin_verified = False
+            verifier_verified = False
+            control_verified = False
+            try:
+                self._revalidate()
+                payload = self._windows_create_file(winio, parent, temp_name)
+                view = memoryview(raw)
+                while view:
+                    count = winio.write(payload, view[:1024 * 1024])
+                    if count <= 0: raise _refuse()
+                    view = view[count:]
+                winio.flush(payload)
+                payload_info = winio.require_direct(payload, "file")
+                if payload_info.size != len(raw):
+                    raise _refuse()
+                pin = winio.open_file(parent, temp_name, delete_access=True,
+                                      share_delete=True, share_write=True)
+                pin_info = winio.require_direct(pin, "file")
+                if pin_info.identity != payload_info.identity or pin_info.size != len(raw):
+                    raise _refuse()
+                pin_verified = True
+                winio.close(payload); payload = 0
+                pin_after_close = winio.require_direct(pin, "file")
+                if pin_after_close.identity[:2] != pin_info.identity[:2] or pin_after_close.size != len(raw):
+                    raise _refuse()
+                verifier = winio.open_file(parent, temp_name, delete_access=True,
+                                           share_delete=True, share_write=False)
+                verifier_info = winio.require_direct(verifier, "file")
+                if verifier_info.identity != pin_after_close.identity or verifier_info.size != len(raw):
+                    raise _refuse()
+                verifier_verified = True
+                offset = 0
+                while offset < len(raw):
+                    chunk = winio.read(verifier, min(1024 * 1024, len(raw) - offset))
+                    if not chunk or chunk != raw[offset:offset + len(chunk)]:
+                        raise _refuse()
+                    offset += len(chunk)
+                if winio.read(verifier, 1):
+                    raise _refuse()
+                control = winio.open_file(parent, temp_name, delete_access=True,
+                                          share_delete=True, share_write=False)
+                control_info = winio.require_direct(control, "file")
+                if control_info.identity != verifier_info.identity or control_info.size != len(raw):
+                    raise _refuse()
+                control_verified = True
+                original = control_info.identity
+                winio.close(pin); pin = 0
+                winio.close(verifier); verifier = 0
+                self._revalidate()
+                winio.rename(control, parent, name, replace=False)
+                self._revalidate()
+                verify = winio.open_file(parent, name)
+                try:
+                    # Durable (volume, file-id) identity only: NTFS file tunneling
+                    # can reissue a reused shard name's creation_time on rename, so
+                    # the time fields are not identity. Exact bytes/size were
+                    # verified before the rename.
+                    if winio.require_direct(verify, "file").identity[:2] != original[:2]:
+                        raise _refuse()
+                    self._require_windows_owner_private(winio, verify, "file")
+                finally:
+                    winio.close(verify)
+                winio.close(control); control = 0
+            except BaseException:
+                try:
+                    if control and control_verified:
+                        winio.delete(control)
+                    elif verifier and verifier_verified:
+                        winio.delete(verifier)
+                    elif payload:
+                        winio.delete(payload)
+                    elif pin and pin_verified:
+                        winio.delete(pin)
+                except (OSError, MemoryError):
+                    pass
+                raise
+            finally:
+                for handle in (control, verifier, pin, payload):
+                    if handle:
+                        try: winio.close(handle)
+                        except (OSError, MemoryError): pass
+        except (ImportError, OSError, TypeError, ValueError, MemoryError):
+            raise _refuse() from None
+
+
+class CheckpointDirectory(ImmutableShardDirectory):
+    """The ``shingle_dedup`` checkpoint directory.
+
+    Delegates every filesystem operation to :class:`ImmutableShardDirectory`
+    under ``legacy_shingle_v1`` and keeps the shingle-specific shard
+    grammar, sequencing, and codec here.  Behaviour is byte-for-byte the
+    behaviour that predates the factoring.
+    """
+
+    policy = LEGACY_SHINGLE_POLICY
+    final_pattern = _FINAL_RE
+    temp_pattern = _TEMP_RE
 
     def load(self, *, mode: str, config_sha256: str,
              source_manifest_sha256: str | None = None,
@@ -675,204 +1140,6 @@ class CheckpointDirectory:
             snapshot.pair_rows,
         ))
         return snapshot
-
-    def _publish_raw(self, name: str, raw: bytes) -> None:
-        if _FINAL_RE.fullmatch(name) is None or not isinstance(raw, bytes) or len(raw) > MAX_SHARD_BYTES:
-            raise _refuse()
-        current = self._list_names()
-        if self._known_names is not None and set(current) != self._known_names:
-            raise _refuse()
-        final_count = sum(_FINAL_RE.fullmatch(item) is not None for item in current)
-        cumulative_bytes = sum(self._entry_info(item)[0] for item in current)
-        if (name in current or len(current) >= MAX_ENTRIES or final_count >= MAX_FINAL_SHARDS
-                or cumulative_bytes + len(raw) > MAX_CUMULATIVE_BYTES):
-            raise _refuse()
-        temp_count = sum(_TEMP_RE.fullmatch(item) is not None for item in current)
-        if temp_count >= MAX_RESERVED_TEMPS:
-            raise _refuse()
-        if self._posix_handles is not None:
-            self._posix_publish(name, raw)
-        else:
-            self._windows_publish(name, raw)
-        expected = set(current) | {name}
-        actual = self._list_names()
-        if len(actual) != len(expected) or set(actual) != expected:
-            raise _refuse()
-        self._known_names = expected
-
-    def _posix_publish(self, name: str, raw: bytes) -> None:
-        assert self._posix_handles is not None
-        parent = self._posix_handles[-1]
-        temp_name = ".tmp-" + os.urandom(16).hex()
-        descriptor = -1
-        control_descriptor = -1
-        control_verified = False
-        identity: tuple[int, int] | None = None
-        published_identity: tuple[int, int] | None = None
-        try:
-            self._revalidate()
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _optional_flag("O_CLOEXEC") | _optional_flag("O_BINARY")
-            descriptor = os.open(temp_name, flags, 0o600, dir_fd=parent)
-            identity = _identity(os.fstat(descriptor))
-            view = memoryview(raw)
-            while view:
-                count = os.write(descriptor, view)
-                if count <= 0: raise _refuse()
-                view = view[count:]
-            os.fsync(descriptor)
-            written = os.fstat(descriptor)
-            named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
-            if _fingerprint(named) != _fingerprint(written):
-                raise _refuse()
-            control_flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
-            control_descriptor = os.open(temp_name, control_flags, dir_fd=parent)
-            controlled = os.fstat(control_descriptor)
-            if not stat.S_ISREG(controlled.st_mode) or _fingerprint(controlled) != _fingerprint(written):
-                raise _refuse()
-            identity = _identity(controlled)
-            control_verified = True
-            os.close(descriptor); descriptor = -1
-            self._revalidate()
-            if os.link not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
-                raise _refuse()
-            try:
-                os.link(temp_name, name, src_dir_fd=parent, dst_dir_fd=parent,
-                        follow_symlinks=False)
-            except BaseException:
-                if identity is not None and control_descriptor >= 0:
-                    try:
-                        linked = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                        if _identity(linked) == _identity(os.fstat(control_descriptor)):
-                            published_identity = identity
-                    except (OSError, MemoryError):
-                        pass
-                raise
-            published_identity = identity
-            controlled = os.fstat(control_descriptor)
-            temp_named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
-            final = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if (_identity(controlled) != identity or _identity(temp_named) != identity
-                    or _identity(final) != identity):
-                raise _refuse()
-            _posix_verify_content(control_descriptor, raw)
-            os.unlink(temp_name, dir_fd=parent)
-            identity = None
-            final_after = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if _identity(final_after) != _identity(final):
-                raise _refuse()
-            self._revalidate()
-            published_identity = None
-            try:
-                os.fsync(parent)
-            except OSError:
-                pass
-        except (OSError, TypeError, ValueError, MemoryError):
-            raise _refuse() from None
-        finally:
-            try:
-                owner_descriptor = control_descriptor if control_verified else descriptor
-                # Both removals are gated on the live owner handle, never on the
-                # predictable temporary/shard *name*: a raced replacement is a
-                # different inode and is left intact.  The rolled-back final is
-                # only attempted once we actually linked it.
-                _unlink_if_owned(parent, temp_name, owner_descriptor)
-                if published_identity is not None:
-                    _unlink_if_owned(parent, name, owner_descriptor)
-            finally:
-                for item in (control_descriptor, descriptor):
-                    if item >= 0:
-                        try: os.close(item)
-                        except (OSError, MemoryError): pass
-
-    def _windows_publish(self, name: str, raw: bytes) -> None:  # pragma: no cover - Windows CI
-        try:
-            import windows_descriptor_io as winio
-            assert self._windows_handles is not None
-            parent = self._windows_handles[-1]
-            temp_name = ".tmp-" + os.urandom(16).hex()
-            payload = pin = verifier = control = 0
-            pin_verified = False
-            verifier_verified = False
-            control_verified = False
-            try:
-                self._revalidate()
-                payload = winio.create_file(parent, temp_name)
-                view = memoryview(raw)
-                while view:
-                    count = winio.write(payload, view[:1024 * 1024])
-                    if count <= 0: raise _refuse()
-                    view = view[count:]
-                winio.flush(payload)
-                payload_info = winio.require_direct(payload, "file")
-                if payload_info.size != len(raw):
-                    raise _refuse()
-                pin = winio.open_file(parent, temp_name, delete_access=True,
-                                      share_delete=True, share_write=True)
-                pin_info = winio.require_direct(pin, "file")
-                if pin_info.identity != payload_info.identity or pin_info.size != len(raw):
-                    raise _refuse()
-                pin_verified = True
-                winio.close(payload); payload = 0
-                pin_after_close = winio.require_direct(pin, "file")
-                if pin_after_close.identity[:2] != pin_info.identity[:2] or pin_after_close.size != len(raw):
-                    raise _refuse()
-                verifier = winio.open_file(parent, temp_name, delete_access=True,
-                                           share_delete=True, share_write=False)
-                verifier_info = winio.require_direct(verifier, "file")
-                if verifier_info.identity != pin_after_close.identity or verifier_info.size != len(raw):
-                    raise _refuse()
-                verifier_verified = True
-                offset = 0
-                while offset < len(raw):
-                    chunk = winio.read(verifier, min(1024 * 1024, len(raw) - offset))
-                    if not chunk or chunk != raw[offset:offset + len(chunk)]:
-                        raise _refuse()
-                    offset += len(chunk)
-                if winio.read(verifier, 1):
-                    raise _refuse()
-                control = winio.open_file(parent, temp_name, delete_access=True,
-                                          share_delete=True, share_write=False)
-                control_info = winio.require_direct(control, "file")
-                if control_info.identity != verifier_info.identity or control_info.size != len(raw):
-                    raise _refuse()
-                control_verified = True
-                original = control_info.identity
-                winio.close(pin); pin = 0
-                winio.close(verifier); verifier = 0
-                self._revalidate()
-                winio.rename(control, parent, name, replace=False)
-                self._revalidate()
-                verify = winio.open_file(parent, name)
-                try:
-                    # Durable (volume, file-id) identity only: NTFS file tunneling
-                    # can reissue a reused shard name's creation_time on rename, so
-                    # the time fields are not identity. Exact bytes/size were
-                    # verified before the rename.
-                    if winio.require_direct(verify, "file").identity[:2] != original[:2]:
-                        raise _refuse()
-                finally:
-                    winio.close(verify)
-                winio.close(control); control = 0
-            except BaseException:
-                try:
-                    if control and control_verified:
-                        winio.delete(control)
-                    elif verifier and verifier_verified:
-                        winio.delete(verifier)
-                    elif payload:
-                        winio.delete(payload)
-                    elif pin and pin_verified:
-                        winio.delete(pin)
-                except (OSError, MemoryError):
-                    pass
-                raise
-            finally:
-                for handle in (control, verifier, pin, payload):
-                    if handle:
-                        try: winio.close(handle)
-                        except (OSError, MemoryError): pass
-        except (ImportError, OSError, TypeError, ValueError, MemoryError):
-            raise _refuse() from None
 
 
 def _configure_read(connection: sqlite3.Connection, budget: _SharedVmBudget) -> None:
@@ -1293,4 +1560,6 @@ def _encode_checkpoint(kind: str, meta: Mapping[str, str], *,
         if connection is not None: connection.close()
 
 
-__all__ = ["CheckpointDirectory", "CheckpointRefusal", "CheckpointSnapshot", "CheckpointState"]
+__all__ = ["CheckpointDirectory", "CheckpointRefusal", "CheckpointSnapshot",
+           "CheckpointState", "ImmutableShardDirectory", "LEGACY_SHINGLE_POLICY",
+           "OWNER_PRIVATE_POLICY", "SHARD_POLICIES"]

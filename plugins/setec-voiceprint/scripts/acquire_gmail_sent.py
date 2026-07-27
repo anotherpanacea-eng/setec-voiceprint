@@ -43,6 +43,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
+import atomic_publish  # noqa: E402
 
 
 TASK_SURFACE = "voice_coherence_acquisition"
@@ -1023,33 +1024,6 @@ def _extraction_code_sha256() -> str:
     """Hash the extraction implementation that a human-reviewed smoke ran."""
     return _file_sha256(Path(__file__).resolve())
 
-def _atomic_write_text(path: Path, text: str) -> None:
-    """Publish text to ``path`` atomically (unique temp + fsync + replace).
-
-    Used for the internal dotfile checkpoints (thread index, receipt, smoke
-    descriptor) and for the manifest tail-repair rewrite.  Separate from
-    ``acquisition_core._write_text_atomic`` (which backs the per-piece sidecar)
-    so a kill-point test can monkeypatch the sidecar seam without also
-    intercepting these control-plane writes.
-    """
-    import os
-    import uuid
-
-    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with open(tmp, "wb") as fh:
-            fh.write(text.encode("utf-8"))
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    finally:
-        try:
-            if tmp.exists():
-                tmp.unlink()
-        except OSError:
-            pass
-
 
 def _behavior_fingerprint_from_public(params: object) -> str | None:
     """Recompute the behavior fingerprint from the PUBLIC descriptor params.
@@ -1180,7 +1154,7 @@ def _write_receipt(
         "extraction_code_sha256": _extraction_code_sha256(),
     }
     data.update(extra)
-    _atomic_write_text(
+    atomic_publish.atomic_write_private(
         output_dir / RECEIPT_NAME,
         json.dumps(data, indent=2, sort_keys=True) + "\n",
     )
@@ -1502,7 +1476,7 @@ def _thread_index_save(
     output_dir: Path, mbox_sha: str, resume_fingerprint: str,
     roots: dict[str, str | None], acquired_via_date: _dt.date,
 ) -> None:
-    _atomic_write_text(
+    atomic_publish.atomic_write_private(
         output_dir / THREAD_INDEX_NAME,
         json.dumps(
             {
@@ -2123,7 +2097,7 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
                 )
                 return 2
         if inspection.repair_bytes is not None:
-            _atomic_write_text(
+            atomic_publish.atomic_write_private(
                 opts.manifest_path,
                 inspection.repair_bytes.decode("utf-8"),
             )
@@ -2318,7 +2292,7 @@ def write_smoke_descriptor(
         "created_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "tool_version": SCRAPER_VERSION,
     }
-    _atomic_write_text(
+    atomic_publish.atomic_write_private(
         opts.output_dir / SMOKE_DESCRIPTOR_NAME,
         json.dumps(data, indent=2, sort_keys=True) + "\n",
     )

@@ -15,10 +15,12 @@ Pins (against a synthetic repo so the suite is hermetic):
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 TOOLS = REPO_ROOT / "tools"
@@ -26,6 +28,329 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 import spec_anchor_lint as sal  # noqa: E402
+import check_changed_spec_anchors as csa  # noqa: E402
+
+
+CHANGED_GATE = TOOLS / "check_changed_spec_anchors.py"
+
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def _commit(repo: Path, message: str) -> str:
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-m", message)
+    return _git(repo, "rev-parse", "HEAD").stdout.strip()
+
+
+def _make_changed_gate_repo(root: Path) -> tuple[Path, Path]:
+    repo = root / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Spec Gate Test")
+    _git(repo, "config", "user.email", "spec-gate@example.invalid")
+    (repo / "specs").mkdir()
+    (repo / "tools").mkdir()
+    linter = repo / "tools" / "stub_linter.py"
+    linter.write_text(
+        "\n".join(
+            [
+                "import json, os, sys",
+                "spec = sys.argv[sys.argv.index('--spec') + 1]",
+                "with open(os.environ['SPEC_LINT_LOG'], 'a', encoding='utf-8') as out:",
+                "    out.write(json.dumps(spec, ensure_ascii=False) + '\\n')",
+                "raise SystemExit(int(os.environ.get('SPEC_LINT_RC', '0')))",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return repo, linter
+
+
+def _run_changed_gate(
+    repo: Path,
+    *,
+    base: str,
+    linter: Path,
+    log: Path,
+    lint_rc: int = 0,
+) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["SPEC_LINT_LOG"] = str(log)
+    env["SPEC_LINT_RC"] = str(lint_rc)
+    return subprocess.run(
+        [
+            sys.executable,
+            str(CHANGED_GATE),
+            "--repo",
+            str(repo),
+            "--base",
+            base,
+            "--linter",
+            str(linter),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_changed_spec_gate_fails_closed_when_base_is_missing(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    (repo / "specs" / "12-base.md").write_text("# Spec 12\n", encoding="utf-8")
+    _commit(repo, "base")
+    result = _run_changed_gate(
+        repo,
+        base="refs/heads/does-not-exist",
+        linter=linter,
+        log=tmp_path / "lint.log",
+    )
+    assert result.returncode == 1
+    assert "Unable to enumerate changed specs" in result.stderr
+
+
+def test_changed_spec_gate_skips_a_true_no_spec_diff(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    (repo / "specs" / "12-base.md").write_text("# Spec 12\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    (repo / "README.md").write_text("not a spec\n", encoding="utf-8")
+    _commit(repo, "non-spec")
+    log = tmp_path / "lint.log"
+    result = _run_changed_gate(repo, base=base, linter=linter, log=log)
+    assert result.returncode == 0
+    assert "No spec changes" in result.stdout
+    assert not log.exists()
+
+
+def test_changed_spec_gate_preserves_whitespace_unicode_and_newline_path(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    name = "98 probe-é\nline.md"
+    path = repo / "specs" / name
+    path.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    path.write_text("# Spec 98\n\nchanged\n", encoding="utf-8")
+    _commit(repo, "change odd path")
+    log = tmp_path / "lint.log"
+    result = _run_changed_gate(repo, base=base, linter=linter, log=log)
+    assert result.returncode == 0, result.stderr
+    linted = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert linted == [str(path)]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"M\0specs/12-base.md",
+        b"M\0\0",
+        b"M100\0specs/12-base.md\0",
+        b"R101\0specs/12-old.md\0specs/12-new.md\0",
+        b"R55\0specs/12-old.md\0specs/12-new.md\0",
+        b"C999\0specs/12-old.md\0specs/12-new.md\0",
+        b"R100\0specs/12-old.md\0",
+    ],
+)
+def test_changed_spec_gate_rejects_malformed_name_status(payload):
+    with pytest.raises(csa.Refusal):
+        csa._parse_name_status(payload)
+
+
+@pytest.mark.parametrize("status", ["R000", "R055", "R100", "C000", "C055", "C100"])
+def test_changed_spec_gate_accepts_git_similarity_statuses(status):
+    parsed = csa._parse_name_status(
+        status.encode("ascii") + b"\0specs/12-old.md\0specs/12-new.md\0"
+    )
+    assert parsed == [
+        csa.Change(
+            status=status,
+            old_path="specs/12-old.md",
+            new_path="specs/12-new.md",
+        )
+    ]
+
+
+def test_changed_spec_gate_rejects_a_spec_symlink_type_change(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    spec = repo / "specs" / "12-base.md"
+    spec.write_text("`definitely_missing.py`\n", encoding="utf-8")
+    (repo / "README.md").write_text("no anchors\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    spec.unlink()
+    spec.symlink_to("../README.md")
+    _commit(repo, "replace spec with symlink")
+    result = _run_changed_gate(
+        repo, base=base, linter=linter, log=tmp_path / "lint.log"
+    )
+    assert result.returncode == 1
+    assert "not a direct regular file" in result.stderr
+
+
+def test_changed_spec_gate_accepts_a_partial_similarity_rename(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    old = repo / "specs" / "98-old.md"
+    old.write_text(
+        "\n".join(f"stable distinct line {index}" for index in range(100)) + "\n",
+        encoding="utf-8",
+    )
+    base = _commit(repo, "base")
+    new = repo / "specs" / "98-new.md"
+    _git(repo, "mv", str(old.relative_to(repo)), str(new.relative_to(repo)))
+    new.write_text(
+        "\n".join(
+            [
+                *[f"stable distinct line {index}" for index in range(60)],
+                *[f"replacement distinct line {index}" for index in range(40)],
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _commit(repo, "partial rename")
+    name_status = _git(
+        repo, "diff", "--name-status", "--find-renames", f"{base}...HEAD"
+    ).stdout
+    assert name_status.startswith("R") and not name_status.startswith("R100")
+    log = tmp_path / "lint.log"
+    result = _run_changed_gate(repo, base=base, linter=linter, log=log)
+    assert result.returncode == 0, result.stderr
+    assert [Path(json.loads(line)).name for line in log.read_text().splitlines()] == [
+        "98-new.md"
+    ]
+
+
+def test_changed_spec_gate_rejects_deleted_spec_with_live_number_reference(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    (repo / "specs" / "12-consumer.md").write_text(
+        "Depends on spec 98.\n", encoding="utf-8"
+    )
+    removed = repo / "specs" / "98-removed.md"
+    removed.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    removed.unlink()
+    _commit(repo, "delete spec")
+    result = _run_changed_gate(
+        repo, base=base, linter=linter, log=tmp_path / "lint.log"
+    )
+    assert result.returncode == 1
+    assert "retains an anchor" in result.stderr
+    assert "98-removed.md" in result.stderr
+
+
+def test_dependency_error_escapes_workflow_commands_in_surviving_path(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    consumer = repo / "specs" / "12\n::warning::pwn.md"
+    consumer.write_text("Depends on spec 98.\n", encoding="utf-8")
+    removed = repo / "specs" / "98-removed.md"
+    removed.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    removed.unlink()
+    _commit(repo, "delete spec")
+    result = _run_changed_gate(
+        repo, base=base, linter=linter, log=tmp_path / "lint.log"
+    )
+    assert result.returncode == 1
+    assert "\n::warning::" not in result.stderr
+    assert "\\n::warning::pwn.md" in result.stderr
+
+
+def test_changed_spec_gate_scans_nested_surviving_specs_for_old_paths(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    nested = repo / "specs" / "nested"
+    nested.mkdir()
+    (nested / "12-consumer.md").write_text(
+        "See specs/98-old.md.\n", encoding="utf-8"
+    )
+    old = repo / "specs" / "98-old.md"
+    new = repo / "specs" / "98-new.md"
+    old.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    _git(repo, "mv", str(old.relative_to(repo)), str(new.relative_to(repo)))
+    _commit(repo, "rename spec")
+    result = _run_changed_gate(
+        repo, base=base, linter=linter, log=tmp_path / "lint.log"
+    )
+    assert result.returncode == 1
+    assert "nested/12-consumer.md" in result.stderr
+    assert "98-old.md" in result.stderr
+
+
+def test_changed_spec_gate_catches_bare_number_for_nested_deleted_spec(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    (repo / "specs" / "12-consumer.md").write_text(
+        "Depends on spec 98.\n", encoding="utf-8"
+    )
+    nested = repo / "specs" / "nested"
+    nested.mkdir()
+    removed = nested / "98-old.md"
+    removed.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    removed.unlink()
+    _commit(repo, "delete nested spec")
+    result = _run_changed_gate(
+        repo, base=base, linter=linter, log=tmp_path / "lint.log"
+    )
+    assert result.returncode == 1
+    assert "12-consumer.md" in result.stderr
+    assert "nested/98-old.md" in result.stderr
+
+
+def test_changed_spec_gate_rejects_rename_with_live_old_path_reference(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    consumer = repo / "specs" / "12-consumer.md"
+    consumer.write_text("See specs/98-old.md.\n", encoding="utf-8")
+    old = repo / "specs" / "98-old.md"
+    new = repo / "specs" / "98-new.md"
+    old.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    _git(repo, "mv", str(old.relative_to(repo)), str(new.relative_to(repo)))
+    _commit(repo, "rename spec")
+    result = _run_changed_gate(
+        repo, base=base, linter=linter, log=tmp_path / "lint.log"
+    )
+    assert result.returncode == 1
+    assert "98-old.md" in result.stderr
+
+
+def test_changed_spec_gate_lints_renamed_spec_after_dependents_move(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    consumer = repo / "specs" / "12-consumer.md"
+    consumer.write_text("See specs/98-old.md.\n", encoding="utf-8")
+    old = repo / "specs" / "98-old.md"
+    new = repo / "specs" / "98-new.md"
+    old.write_text("# Spec 98\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    _git(repo, "mv", str(old.relative_to(repo)), str(new.relative_to(repo)))
+    consumer.write_text("See specs/98-new.md.\n", encoding="utf-8")
+    _commit(repo, "rename and update")
+    log = tmp_path / "lint.log"
+    result = _run_changed_gate(repo, base=base, linter=linter, log=log)
+    assert result.returncode == 0, result.stderr
+    linted = {Path(json.loads(line)).name for line in log.read_text().splitlines()}
+    assert linted == {"12-consumer.md", "98-new.md"}
+
+
+def test_changed_spec_gate_propagates_linter_failure(tmp_path):
+    repo, linter = _make_changed_gate_repo(tmp_path)
+    spec = repo / "specs" / "12-base.md"
+    spec.write_text("# Spec 12\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    spec.write_text("# Spec 12\n\nchanged\n", encoding="utf-8")
+    _commit(repo, "change spec")
+    result = _run_changed_gate(
+        repo,
+        base=base,
+        linter=linter,
+        log=tmp_path / "lint.log",
+        lint_rc=7,
+    )
+    assert result.returncode == 1
 
 
 def _make_repo(root: Path) -> Path:

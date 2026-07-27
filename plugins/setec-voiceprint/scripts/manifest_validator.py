@@ -31,14 +31,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import stat
 import sys
 import time
+import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Iterator, TextIO
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -46,6 +48,16 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from claim_license import ClaimLicense  # type: ignore
 from output_schema import build_output  # type: ignore
+import shingle_dedup_io  # type: ignore
+from register_sweep import (  # type: ignore
+    BadInput,
+    BIDI_CONTROLS,
+    INT64_MAX,
+    InternalError,
+    MAX_PATH_BYTES,
+    MAX_PERSONA_BYTES,
+    MAX_USE_MEMBERS,
+)
 
 # Task-surface tag. The validator is a validation-spine tool, distinct
 # from the smoothing-diagnosis and voice-coherence scripts.
@@ -76,7 +88,17 @@ ALLOWED_REGISTER = {
     "literary_horror", "policy_brief", "scholarly_article",
     "legal_brief", "grant_proposal", "expert_affidavit",
     "regulatory_comment", "professional_letter", "teaching",
+    "message.imessage",
+    # Owner-approved 2026-07-26: the personal corpus carries Facebook
+    # conversational posts as their own register. H1's family mapping does
+    # not know it, so a declared social_media_facebook row resolves to the
+    # "unknown" declared family in the Spec 73 sweep -- by design.
+    "social_media_facebook",
 }
+# Owner-approved registers that are valid manifest values but deliberately
+# excluded from the frozen register-classifier taxonomy. These registers are
+# usable only through their own exact-register paths.
+PROFILE_ONLY_REGISTERS = {"message.imessage"}
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
 ALLOWED_USE = {
@@ -130,6 +152,14 @@ ALLOWED_LANGUAGE_STATUS = {
     "native", "non_native_advanced", "non_native_intermediate",
     "learner", "unknown",
 }
+# ``source_family`` is a deliberately small, operator-declared analytic
+# axis. It is not a path, an acquisition mechanism, or a substitute for
+# document-level ``source_id`` provenance. Unlike the extensible legacy enum
+# fields above, this initial vocabulary is closed so a typo cannot silently
+# split a corpus slice.
+ALLOWED_SOURCE_FAMILY = {
+    "facebook", "metafilter", "wordpress", "unclassified",
+}
 
 # Fields required on every entry. Missing required fields are errors.
 REQUIRED_FIELDS = ("id", "path", "ai_status", "use")
@@ -162,7 +192,7 @@ KNOWN_FIELDS = {
     "genre", "date_written", "ai_status", "editing_status",
     "word_count", "use", "split", "privacy", "source", "notes",
     "language_status",
-    "adversarial_class", "source_id", "transform",
+    "adversarial_class", "source_id", "source_family", "transform",
     # Extra fields surfaced by some manifests.
     "pov", "tags",
     # Impostor-corpus fields (see ALLOWED_CORPUS_ROLE etc. above).
@@ -216,21 +246,470 @@ class Issue:
 
 # ---------- Path resolution ----------
 
+def _relative_candidates(manifest: Path, raw: str) -> tuple[Path, ...]:
+    """The frozen 3-candidate relative-path resolve order.
+
+    Shared by ``resolve_path`` (existence-probing, warning-tolerant) and the
+    H2 register-sweep projection seam (safety-checked, refusal-on-unsafe).
+    Both must try candidates in exactly this order for a relative path.
+    """
+    p = Path(raw)
+    return (
+        manifest.parent / p,
+        manifest.parent.parent / p,
+        Path.cwd() / p,
+    )
+
+
 def resolve_path(manifest: Path, raw: str) -> Path:
     """Match ``stylometry_core.resolve_manifest_path`` so the validator
     accepts the same path conventions the readers do."""
     p = Path(raw)
     if p.is_absolute():
         return p
-    candidates = [
-        manifest.parent / p,
-        manifest.parent.parent / p,
-        Path.cwd() / p,
-    ]
+    candidates = _relative_candidates(manifest, raw)
     for c in candidates:
         if c.exists():
             return c
     return candidates[0]
+
+
+# ---------- Shared strict byte/row parser ----------
+#
+# One strict parsing layer feeds both the legacy full-row validator
+# (``validate_manifest``) and the H2 register-composition-sweep projection
+# seam (``project_register_sweep_manifest_bytes``, Spec 73). Sharing this
+# layer means a manifest-bytes hardening (BOM, non-UTF-8, duplicate keys at
+# any depth, non-finite numeric constants) applies identically to both call
+# paths instead of drifting between two hand-written JSON readers.
+
+
+class ManifestParseError(Exception):
+    """A malformed-manifest failure at the shared strict-parser layer.
+
+    Carries no manifest byte, path, or caught-exception text beyond a fixed
+    category description; callers that must not disclose input content wrap
+    this in a controlled refusal instead of surfacing ``str(exc)``.
+    """
+
+
+def _strict_row_pairs_hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in out:
+            raise ManifestParseError("duplicate object key")
+        out[key] = value
+    return out
+
+
+def _reject_non_finite_constant(name: str) -> None:
+    raise ManifestParseError(f"non-finite JSON constant {name!r}")
+
+
+def parse_manifest_row(line: str) -> Any:
+    """Strictly parse one JSONL manifest data row.
+
+    Rejects duplicate object keys at any nesting depth (``object_pairs_hook``
+    fires for every object ``json.loads`` constructs, including nested ones)
+    and non-finite numeric constants (``NaN``, ``Infinity``, ``-Infinity``).
+    Raises :class:`ManifestParseError` on malformed JSON syntax or either
+    strict-hook rejection. Returns the parsed JSON value (of any type)
+    otherwise unvalidated: callers decide what to do with a non-object row.
+    """
+    try:
+        return json.loads(
+            line,
+            object_pairs_hook=_strict_row_pairs_hook,
+            parse_constant=_reject_non_finite_constant,
+        )
+    except ManifestParseError:
+        raise
+    except json.JSONDecodeError as exc:
+        raise ManifestParseError(exc.msg) from exc
+    except (RecursionError, ValueError) as exc:
+        raise ManifestParseError(exc.__class__.__name__) from exc
+
+
+def decode_manifest_bytes(data: bytes) -> str:
+    """Strictly decode one manifest's raw bytes: reject a BOM or non-UTF-8.
+
+    Shared by the legacy full-row validator (given the bytes it reads from
+    disk) and the H2 projection seam (given the runner's already-bounded-read
+    bytes; the manifest is never reopened or reread).
+    """
+    if type(data) is not bytes:
+        raise ManifestParseError("manifest bytes must be bytes")
+    if data[:3] == b"\xef\xbb\xbf":
+        raise ManifestParseError("manifest bytes begin with a UTF-8 BOM")
+    try:
+        return data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ManifestParseError("manifest bytes are not valid UTF-8") from exc
+
+
+#: Every character ``str.splitlines()`` treats as a row terminator that a strict
+#: JSONL row boundary must not: CR, VT, FF, FS, GS, RS, the C1 NEL, and the two
+#: Unicode line/paragraph separators.
+FORBIDDEN_ROW_BREAKS = "\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
+
+
+def _manifest_data_lines(text: str) -> Iterator[tuple[int, str]]:
+    """Yield ``(lineno, line)`` for nonblank, noncomment JSONL data rows.
+
+    Shared line-splitting rule: 1-based line numbers over a split on ``"\n"``
+    ALONE, skipping blank lines and lines whose stripped form starts with ``#``.
+
+    ``str.splitlines()`` also breaks on the characters in
+    :data:`FORBIDDEN_ROW_BREAKS`, so one physical JSONL row carrying any of them
+    would silently become two logical rows -- and under Spec 73 / H2 the row
+    count and every row's ordinal are baked into frozen digests. Those
+    characters are refused here, at the LINE level and before any JSON parsing,
+    so an unowned field cannot smuggle a row split past the owned fields'
+    string domain. (Separately named strict-parser hardening.)
+
+    One deliberate carve-in: a ``"\r\n"`` pair is a single Windows line
+    terminator, not an embedded break -- text-mode writers on native Windows
+    (``open(..., "w")``, ``Path.write_text``) translate ``"\n"`` to it, and
+    the pre-hardening ``str.splitlines()`` always treated it as one break.
+    Exactly one trailing ``"\r"`` per line is therefore stripped before the
+    refusal check; a bare ``"\r"``, an interior ``"\r"``, or any other
+    character in :data:`FORBIDDEN_ROW_BREAKS` still refuses.
+    """
+    for lineno, raw in enumerate(text.split("\n"), start=1):
+        if raw.endswith("\r"):
+            raw = raw[:-1]
+        for char in FORBIDDEN_ROW_BREAKS:
+            if char in raw:
+                raise ManifestParseError(
+                    "manifest row carries a forbidden line-break character"
+                )
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        yield lineno, line
+
+
+# ---------- H2 register-composition-sweep projection seam (Spec 73) ----------
+#
+# ``project_register_sweep_manifest_bytes`` is a closed, source-blind
+# projection: it reads exactly six owned keys per row (``path``, ``register``,
+# ``use``, ``split``, ``persona``, ``ai_status``) via bracket subscript only,
+# never iterates or tests containment on a row mapping, and never reads
+# ``source``, ``source_id``, or ``source_family``. Any owned-field error
+# refuses the *complete* projection (no partial plan, no warnings) with
+# ``register_sweep.BadInput`` -- the one exception type the Spec 73 runner
+# needs to catch from this seam. H2-admissible strictness is stricter than
+# the warning-tolerant checks in ``validate_entry`` above: an unknown
+# ``register``/``use``/``split``/``ai_status`` value that the general
+# validator only warns about is not H2-admissible and refuses here.
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class H2ProjectedRow:
+    """One manifest row's seven owned H2 fields (Spec 73 lines ~661-670)."""
+
+    manifest_ordinal: int
+    path: str
+    register: str | None
+    use: tuple[str, ...]
+    split: str | None
+    persona: str | None
+    ai_status: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class H2PlannedDocument:
+    """One frozen document-plan entry for a projected row's resolved path."""
+
+    manifest_ordinal: int
+    candidate_index: int
+    absolute_path: Path
+    fingerprint: tuple[int, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RegisterSweepManifestProjection:
+    """The complete H2 projection: every row plus its frozen document plan."""
+
+    input_rows: int
+    rows: tuple[H2ProjectedRow, ...]
+    document_plan: tuple[H2PlannedDocument, ...]
+
+
+_MISSING = object()
+
+
+def _row_item(row: Any, key: str) -> Any:
+    """Fetch one key by bracket subscript only.
+
+    Never calls ``.get``, ``keys``, ``items``, ``values``, ``__iter__``, or
+    ``__contains__`` on ``row``: only ``__getitem__``, and only for the exact
+    key named. This is what lets the source-metamorphic invariant test pass
+    an instrumented mapping that raises on every access path except a
+    ``__getitem__`` of one of the six owned names.
+    """
+    try:
+        return row[key]
+    except KeyError:
+        return _MISSING
+
+
+def _valid_h2_string(value: Any, *, max_bytes: int) -> bool:
+    """The shared H2 string domain: NFC, nonblank, no leading/trailing
+    whitespace, 1..max_bytes UTF-8 bytes, no NUL/C0/C1/unpaired-surrogate/
+    bidi-control character. Used for both ``path`` and ``persona``: the CLI
+    persona filter (Spec 73 lines ~542-543) and the projected ``persona``
+    field share exactly this domain, and ``path`` differs only in its byte
+    ceiling.
+    """
+    if type(value) is not str:
+        return False
+    if unicodedata.normalize("NFC", value) != value:
+        return False
+    if value != value.strip():
+        return False
+    try:
+        encoded_len = len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        return False
+    if not (1 <= encoded_len <= max_bytes):
+        return False
+    for char in value:
+        code = ord(char)
+        if code == 0 or code < 0x20 or 0x7F <= code <= 0x9F:
+            return False
+        if 0xD800 <= code <= 0xDFFF:
+            return False
+        if char in BIDI_CONTROLS:
+            return False
+    return True
+
+
+def _project_h2_row(row: Any, *, manifest_ordinal: int) -> H2ProjectedRow:
+    """Project one already-parsed manifest row's seven owned fields.
+
+    ``row`` need not be a ``dict``: only ``__getitem__`` is required, which is
+    what the source-metamorphic invariant test exercises directly with a
+    hostile mapping. The caller (``project_register_sweep_manifest_bytes``)
+    is responsible for having already confirmed the parsed JSON value is an
+    object before calling this. Raises ``register_sweep.BadInput`` on any
+    owned-field type, domain, or shape violation; there is no partial result.
+    """
+    if not (0 <= manifest_ordinal <= INT64_MAX):
+        raise InternalError()
+
+    raw_path = _row_item(row, "path")
+    if raw_path is _MISSING or not _valid_h2_string(raw_path, max_bytes=MAX_PATH_BYTES):
+        raise BadInput()
+
+    raw_register = _row_item(row, "register")
+    if raw_register is _MISSING or raw_register is None:
+        register: str | None = None
+    elif type(raw_register) is str and raw_register in ALLOWED_REGISTER:
+        register = raw_register
+    else:
+        raise BadInput()
+
+    raw_use = _row_item(row, "use")
+    if raw_use is _MISSING or type(raw_use) is not list:
+        raise BadInput()
+    if not (1 <= len(raw_use) <= MAX_USE_MEMBERS):
+        raise BadInput()
+    seen_use: set[str] = set()
+    ordered_use: list[str] = []
+    for item in raw_use:
+        if type(item) is not str or item not in ALLOWED_USE or item in seen_use:
+            raise BadInput()
+        seen_use.add(item)
+        ordered_use.append(item)
+    use = tuple(ordered_use)
+
+    raw_split = _row_item(row, "split")
+    if raw_split is _MISSING or raw_split is None:
+        split: str | None = None
+    elif type(raw_split) is str and raw_split in ALLOWED_SPLIT:
+        split = raw_split
+    else:
+        raise BadInput()
+
+    raw_persona = _row_item(row, "persona")
+    if raw_persona is _MISSING or raw_persona is None:
+        persona: str | None = None
+    elif _valid_h2_string(raw_persona, max_bytes=MAX_PERSONA_BYTES):
+        persona = raw_persona
+    else:
+        raise BadInput()
+
+    raw_ai_status = _row_item(row, "ai_status")
+    if (
+        raw_ai_status is _MISSING
+        or type(raw_ai_status) is not str
+        or raw_ai_status not in ALLOWED_AI_STATUS
+    ):
+        raise BadInput()
+
+    return H2ProjectedRow(
+        manifest_ordinal=manifest_ordinal,
+        path=raw_path,
+        register=register,
+        use=use,
+        split=split,
+        persona=persona,
+        ai_status=raw_ai_status,
+    )
+
+
+def _h2_candidate_vector(manifest: Path, raw: str) -> tuple[Path, ...]:
+    """The frozen document-plan candidate vector for one projected path.
+
+    Mirrors ``resolve_path``'s exact candidate order via the same shared
+    ``_relative_candidates`` helper: one candidate (index 0) for an absolute
+    path, or the same three-candidate relative vector in the same order. No
+    existence probe happens here; ``shingle_dedup_io.bind_regular`` does that
+    safety-checked selection.
+    """
+    p = Path(raw)
+    if p.is_absolute():
+        return (p,)
+    return _relative_candidates(manifest, raw)
+
+
+def _emit_h2_progress(progress_stream: TextIO, *, phase: str, rows: int, started_at: float) -> None:
+    elapsed = time.monotonic() - started_at
+    print(
+        f"[{TOOL_NAME}] phase={phase} surface=register_sweep_projection "
+        f"rows={rows} elapsed_seconds={elapsed:.1f}",
+        file=progress_stream, flush=True,
+    )
+
+
+def project_register_sweep_manifest_bytes(
+    data: bytes,
+    *,
+    manifest_path: str | Path,
+    progress_every: int = 0,
+    progress_stream: TextIO | None = None,
+) -> RegisterSweepManifestProjection:
+    """Project one manifest's H2-owned fields and plan its frozen document set.
+
+    Consumes exactly the caller's already-bounded-read ``data`` bytes -- the
+    manifest is not reopened or reread. Refuses the complete projection
+    (raises ``register_sweep.BadInput``) on any BOM/non-UTF-8/malformed-JSON/
+    duplicate-key/non-finite byte- or JSON-level problem, any non-object data
+    row, any owned-field violation, or any unsafe/absent frozen document-plan
+    candidate. There is no partial result: either every parsed-object row
+    projects and plans, or nothing is returned.
+
+    This function does **not** apply CLI scope filters and does **not** check
+    for cross-row collisions in the resulting document plan: it plans every
+    parsed-object row unconditionally, indexed by ``manifest_ordinal``. The
+    Spec 73 runner selects the scoped subset (a later increment) and must
+    call ``check_document_plan_collisions`` on that subset itself, before
+    reading a first document body.
+    """
+    _validate_progress_options(progress_every, progress_stream)
+    started_at = time.monotonic()
+    if type(data) is not bytes:
+        raise BadInput()
+    manifest = Path(manifest_path)
+
+    try:
+        text = decode_manifest_bytes(data)
+    except ManifestParseError as exc:
+        raise BadInput() from exc
+
+    try:
+        data_lines = list(_manifest_data_lines(text))
+    except ManifestParseError as exc:
+        raise BadInput() from exc
+
+    rows: list[H2ProjectedRow] = []
+    document_plan: list[H2PlannedDocument] = []
+    processed = 0
+    for _lineno, line in data_lines:
+        try:
+            parsed = parse_manifest_row(line)
+        except ManifestParseError as exc:
+            raise BadInput() from exc
+        if type(parsed) is not dict:
+            raise BadInput()
+
+        ordinal = processed
+        processed += 1
+        row = _project_h2_row(parsed, manifest_ordinal=ordinal)
+        rows.append(row)
+
+        candidates = _h2_candidate_vector(manifest, row.path)
+        try:
+            absolute_path, candidate_index, fingerprint = shingle_dedup_io.bind_regular(
+                candidates
+            )
+        except shingle_dedup_io.SecureIOError as exc:
+            raise BadInput() from exc
+        document_plan.append(
+            H2PlannedDocument(
+                manifest_ordinal=ordinal,
+                candidate_index=candidate_index,
+                absolute_path=absolute_path,
+                fingerprint=tuple(fingerprint),
+            )
+        )
+
+        if progress_every and processed % progress_every == 0:
+            assert progress_stream is not None
+            _emit_h2_progress(progress_stream, phase="scan", rows=processed, started_at=started_at)
+
+    if progress_every:
+        assert progress_stream is not None
+        _emit_h2_progress(progress_stream, phase="complete", rows=processed, started_at=started_at)
+
+    return RegisterSweepManifestProjection(
+        input_rows=processed,
+        rows=tuple(rows),
+        document_plan=tuple(document_plan),
+    )
+
+
+def _collision_key(absolute_path: Path) -> bytes:
+    text = unicodedata.normalize("NFC", str(absolute_path))
+    if os.name == "nt":
+        text = text.casefold()
+    return text.encode("utf-8", errors="surrogatepass")
+
+
+def check_document_plan_collisions(
+    entries: list[H2PlannedDocument] | tuple[H2PlannedDocument, ...],
+) -> None:
+    """Refuse if any two planned documents in ``entries`` collide.
+
+    Pure and read-only: no filesystem I/O. The caller passes whatever subset
+    of the full document plan it has selected -- the Spec 73 runner passes
+    the CLI-scoped subset -- and this must be called before that caller reads
+    a first document body.
+
+    Two entries collide when they share the same normalized absolute-path
+    collision key (NFC absolute-path bytes on POSIX; NFC plus Unicode
+    casefold on native Windows) or the same retained file identity: their raw
+    fingerprint tuples are equal, which a repeated row or a POSIX hardlink
+    alias of one inode necessarily produces (both name the same file at the
+    same instant, so every fingerprint field matches). Either collision
+    raises ``register_sweep.BadInput``. No unowned source field participates.
+    """
+    if type(entries) not in (list, tuple):
+        raise InternalError()
+    seen_keys: set[bytes] = set()
+    seen_fingerprints: set[tuple[int, ...]] = set()
+    for entry in entries:
+        if type(entry) is not H2PlannedDocument:
+            raise InternalError()
+        key = _collision_key(entry.absolute_path)
+        if key in seen_keys:
+            raise BadInput()
+        seen_keys.add(key)
+        fingerprint = tuple(entry.fingerprint)
+        if fingerprint in seen_fingerprints:
+            raise BadInput()
+        seen_fingerprints.add(fingerprint)
 
 
 # ---------- Per-entry checks ----------
@@ -357,6 +836,25 @@ def validate_entry(
             f"Unknown language_status '{language_status}'. "
             f"Known values: {', '.join(sorted(ALLOWED_LANGUAGE_STATUS))}.",
         ))
+    source_family = entry.get("source_family")
+    if "source_family" in entry:
+        if not isinstance(source_family, str):
+            issues.append(Issue(
+                "error", lineno, entry_id, "source_family",
+                "source_family must be a string when present. "
+                f"Got {type(source_family).__name__}.",
+            ))
+        elif not source_family or source_family != source_family.strip():
+            issues.append(Issue(
+                "error", lineno, entry_id, "source_family",
+                "source_family must be a non-empty, unpadded string.",
+            ))
+        elif source_family not in ALLOWED_SOURCE_FAMILY:
+            issues.append(Issue(
+                "error", lineno, entry_id, "source_family",
+                f"Unknown source_family '{source_family}'. "
+                f"Allowed values: {', '.join(sorted(ALLOWED_SOURCE_FAMILY))}.",
+            ))
 
     # 'use' must be a list per the manifest spec.
     use = entry.get("use")
@@ -393,6 +891,12 @@ def validate_entry(
                 f"Entry tagged 'use: baseline' but 'split: {split}'. "
                 "Baseline use typically sits in 'split: baseline'.",
             ))
+    if register == "message.imessage" and isinstance(use, list) and "baseline" in use:
+        issues.append(Issue(
+            "error", lineno, entry_id, "use",
+            "message.imessage is a profile-only conversational register and "
+            "must not carry baseline use or enter the pooled author reference.",
+        ))
 
     # Privacy ratchet for voiceprint sources. A voice profile or
     # idiolect corpus is a voice-cloning input; sources should be marked
@@ -728,8 +1232,8 @@ def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
     tripwires_seen: set[str] = set()
     rows_processed = 0
 
-    if not path.exists():
-        # Honor the unconditional completion heartbeat even on this early bail-out: emit a
+    def _early_bail_out(message: str) -> dict[str, Any]:
+        # Honor the unconditional completion heartbeat even on an early bail-out: emit a
         # phase=complete record (no rows scanned, one error) before returning when progress is on.
         if progress_every:
             assert progress_stream is not None
@@ -747,50 +1251,48 @@ def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
                 "lineno": 0,
                 "id": None,
                 "field": None,
-                "message": f"Manifest file '{path}' does not exist.",
+                "message": message,
             }],
             "summary": {},
         }
+
+    if not path.exists():
+        return _early_bail_out(f"Manifest file '{path}' does not exist.")
 
     try:
-        text = path.read_text(encoding="utf-8")
+        raw_bytes = path.read_bytes()
     except OSError as exc:
-        # Same unconditional completion heartbeat contract for the unreadable-file bail-out.
-        if progress_every:
-            assert progress_stream is not None
-            _emit_progress(progress_stream, phase="complete", rows=0,
-                           entries=0, n_errors=1, n_warnings=0,
-                           started_at=started_at)
-        return {
-            "task_surface": TASK_SURFACE,
-            "manifest_path": str(path),
-            "n_entries": 0,
-            "n_errors": 1,
-            "n_warnings": 0,
-            "issues": [{
-                "severity": "error",
-                "lineno": 0,
-                "id": None,
-                "field": None,
-                "message": f"Could not read manifest: {exc}.",
-            }],
-            "summary": {},
-        }
+        return _early_bail_out(f"Could not read manifest: {exc}.")
 
-    for lineno, raw in enumerate(text.splitlines(), start=1):
-        line = raw.strip()
-        if not line or line.startswith("#"):
-            continue
+    try:
+        # Shared strict decode (Spec 73 / H2): also used by
+        # project_register_sweep_manifest_bytes below. A BOM or non-UTF-8
+        # manifest previously either crashed (read_text's implicit strict
+        # UTF-8) or silently mis-parsed the first line; both now bail out
+        # the same way an unreadable file does, with a fixed message.
+        text = decode_manifest_bytes(raw_bytes)
+    except ManifestParseError:
+        return _early_bail_out("Could not read manifest: not valid UTF-8 JSONL text.")
+
+    try:
+        data_lines = list(_manifest_data_lines(text))
+    except ManifestParseError:
+        return _early_bail_out(
+            "Could not read manifest: a row carries a forbidden line-break "
+            "character."
+        )
+
+    for lineno, line in data_lines:
         # A progress row is one nonblank, noncomment JSONL candidate, whether it proves to be a
         # valid object, malformed JSON, or another JSON type. This keeps cadence tied to actual
         # scan work without letting bad input make the heartbeat disappear.
         rows_processed += 1
         try:
-            entry = json.loads(line)
-        except json.JSONDecodeError as exc:
+            entry = parse_manifest_row(line)
+        except ManifestParseError as exc:
             issues.append(Issue(
                 "error", lineno, None, None,
-                f"Malformed JSON on line {lineno}: {exc.msg}.",
+                f"Malformed JSON on line {lineno}: {exc}.",
             ))
             if progress_every and rows_processed % progress_every == 0:
                 assert progress_stream is not None

@@ -208,6 +208,33 @@ def test_clean_tree_passes_drift_checker():
     assert report.passed, [f"{v.kind}:{v.where}" for v in report.violations]
 
 
+def test_voice_distance_fixture_has_live_register_family_contract():
+    """Static shape gate: mutually stale generator+golden must still fail."""
+    regenerated = gen.regenerate_surface("voice_distance")
+    committed = gen.load_golden("voice_distance")
+    assert committed is not None
+    for envelope in (regenerated, committed):
+        block = envelope["results"]["register_match"]
+        classification = block["target_classification"]
+        match = block["match"]
+        assert classification["taxonomy"] == "register_families/v2"
+        assert match["taxonomy"] == "register_families/v2"
+        assert classification["primary"] in {
+            "formal_legal_policy", "formal_first_person", "academic",
+            "journalism", "narrative_fiction", "first_person_essay",
+            "promotional", "short_social", "unknown",
+        }
+        assert isinstance(classification["secondary"], list)
+        assert match["target_family"] == classification["primary"]
+        assert "baseline_family_distribution" in match
+        assert "strength" in match
+        assert "verdict" not in match
+        assert (
+            envelope["claim_license"]["comparison_set"]["register_match"]
+            == match["strength"]
+        )
+
+
 # ---- (e) determinism ---------------------------------------------------
 
 @pytest.mark.parametrize("surface", ALL_SURFACES)

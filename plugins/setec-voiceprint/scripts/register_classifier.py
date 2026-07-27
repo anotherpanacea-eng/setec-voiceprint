@@ -2,9 +2,10 @@
 """register_classifier.py — heuristic register / genre detection.
 
 Phase-1 trustworthiness layer (Release 1, paired-release schedule).
-The framework's manifests already tag entries with a `register`
-field (`blog_essay`, `literary_fiction`, `academic_philosophy`,
-`policy_advocacy`, `testimony_policy`, etc.). The framework's
+Voiceprint manifests tag entries with canonical document-type
+registers owned by ``manifest_validator.ALLOWED_REGISTER``. The
+classifier emits a smaller family vocabulary that reflects what its
+eight surface-heuristic scorers can honestly distinguish. The framework's
 claim-license blocks already say "matched register." But the match
 isn't operationalized — when a target text is supplied without a
 register declaration, or when target and baseline registers
@@ -26,19 +27,25 @@ plus the per-feature evidence.
 Public API:
 
     classify_register(text, hint=None) -> {
-        "primary": "blog_essay",
+        "primary": "first_person_essay",
         "confidence": 0.62,
-        "secondary": ["personal_essay"],
-        "scores": {"blog_essay": 0.62, "personal_essay": 0.41, ...},
+        "secondary": ["short_social"],
+        "scores": {"first_person_essay": 0.62, "short_social": 0.41, ...},
         "evidence": {"citation_density_per_1k": 0.0,
                      "dialogue_ratio": 0.05, ...},
+        "warning": None,
+        "taxonomy": "register_families/v2",
+        "refusal_reason": None,
     }
 
     register_match(target_register, baseline_registers) -> {
         "strength": "strong" | "moderate" | "weak" | "mismatch",
         "rationale": str,
-        "target": "blog_essay",
-        "baseline_distribution": {"blog_essay": 12, "personal_essay": 3},
+        "target": "personal",
+        "baseline_distribution": {"personal": 12, "blog_essay": 3},
+        "target_family": "first_person_essay",
+        "baseline_family_distribution": {"first_person_essay": 15},
+        "taxonomy": "register_families/v2",
     }
 
 Honest framing: this is heuristic, not labeled-corpus-validated.
@@ -50,32 +57,73 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable
 
 TASK_SURFACE = "validation"
 
-# Canonical register taxonomy — the manifest's `register` field
-# uses these slugs. Classifier returns from this set or "unknown".
-KNOWN_REGISTERS: tuple[str, ...] = (
-    "blog_essay",
-    "personal_essay",
-    "literary_fiction",
-    "commercial_fiction",
-    "literary_horror",
-    "academic_philosophy",
-    "academic_general",
-    "legal_memo",
-    "policy_advocacy",
-    "policy_memo",
-    "testimony_policy",
+# Classifier output taxonomy. Manifest document-type registers map into these
+# scorer-backed families; ``unknown`` is a refusal sentinel and is never scored.
+REGISTER_TAXONOMY = "register_families/v2"
+REGISTER_REFUSAL_REASONS: tuple[str, ...] = (
+    "short_text",
+    "all_weak",
+    "exact_top_tie",
+)
+REGISTER_FAMILIES: tuple[str, ...] = (
+    "formal_legal_policy",
+    "formal_first_person",
+    "academic",
     "journalism",
-    "marketing",
-    "newsletter",
-    "report_prose",
-    "social_thread",
-    "email",
+    "narrative_fiction",
+    "first_person_essay",
+    "promotional",
+    "short_social",
     "unknown",
 )
+KNOWN_REGISTERS = REGISTER_FAMILIES
+
+CANONICAL_REGISTER_TO_FAMILY: dict[str, str] = {
+    "literary_fiction": "narrative_fiction",
+    "literary_horror": "narrative_fiction",
+    "blog_essay": "first_person_essay",
+    "personal": "first_person_essay",
+    "academic_philosophy": "academic",
+    "scholarly_article": "academic",
+    "testimony_policy": "formal_first_person",
+    "expert_affidavit": "formal_first_person",
+    "policy_brief": "formal_legal_policy",
+    "legal_brief": "formal_legal_policy",
+    "regulatory_comment": "formal_legal_policy",
+    "grant_proposal": "formal_legal_policy",
+    "policy_advocacy": "formal_legal_policy",
+    "professional_letter": "formal_first_person",
+    "teaching": "academic",
+}
+
+LEGACY_REGISTER_TO_FAMILY: dict[str, str] = {
+    "personal_essay": "first_person_essay",
+    "commercial_fiction": "narrative_fiction",
+    "academic_general": "academic",
+    "legal_memo": "formal_legal_policy",
+    "policy_memo": "formal_legal_policy",
+    "newsletter": "first_person_essay",
+    "marketing": "promotional",
+    "report_prose": "journalism",
+    "social_thread": "short_social",
+    "email": "formal_first_person",
+}
+
+
+def resolve_family(value: str | None) -> str:
+    """Resolve family, canonical, and deprecated spellings in that order."""
+    normalized = (value or "unknown").strip() or "unknown"
+    if normalized in REGISTER_FAMILIES:
+        return normalized
+    if normalized in CANONICAL_REGISTER_TO_FAMILY:
+        return CANONICAL_REGISTER_TO_FAMILY[normalized]
+    if normalized in LEGACY_REGISTER_TO_FAMILY:
+        return LEGACY_REGISTER_TO_FAMILY[normalized]
+    return "unknown"
 
 
 # --- Feature extractors -----------------------------------------
@@ -332,24 +380,37 @@ def _score_social_thread(f: dict[str, float]) -> float:
 
 
 _SCORERS = {
-    "legal_memo": _score_legal_or_policy_memo,
-    "policy_memo": _score_legal_or_policy_memo,
-    "testimony_policy": _score_testimony_policy,
-    "academic_philosophy": _score_academic,
-    "academic_general": _score_academic,
+    "formal_legal_policy": _score_legal_or_policy_memo,
+    "formal_first_person": _score_testimony_policy,
+    "academic": _score_academic,
     "journalism": _score_journalism,
-    "literary_fiction": _score_literary_fiction,
-    "commercial_fiction": _score_literary_fiction,
-    "literary_horror": _score_literary_fiction,
-    "blog_essay": _score_blog_or_personal_essay,
-    "personal_essay": _score_blog_or_personal_essay,
-    "newsletter": _score_blog_or_personal_essay,
-    "marketing": _score_marketing,
-    "social_thread": _score_social_thread,
+    "narrative_fiction": _score_literary_fiction,
+    "first_person_essay": _score_blog_or_personal_essay,
+    "promotional": _score_marketing,
+    "short_social": _score_social_thread,
 }
 
 
 # --- Public API ------------------------------------------------
+
+
+def _unrecognized_hint_warning(hint: str) -> str:
+    return f"Ignored unrecognized register hint {hint!r}."
+
+
+def _short_text_warning(n_words: int, min_words: int) -> str:
+    return (
+        f"Text has {n_words} words; register classification "
+        f"requires at least {min_words}. Returning 'unknown'."
+    )
+
+
+def _exact_top_tie_warning(tied: list[str]) -> str:
+    return (
+        "Exact top register-family tie among "
+        + ", ".join(f"`{register}`" for register in tied)
+        + "; returning 'unknown'."
+    )
 
 
 def classify_register(
@@ -362,8 +423,12 @@ def classify_register(
 
     Returns a dict with `primary` (best match), `confidence` (the
     primary score in [0, 1]), `secondary` (registers within 0.10 of
-    the primary), `scores` (per-register), and `evidence` (the
-    feature vector).
+    the primary), `scores` (per-register), `evidence` (the feature
+    vector), `warning` (advisory prose or ``None``), `taxonomy`, and
+    `refusal_reason` (one of :data:`REGISTER_REFUSAL_REASONS` or
+    ``None``). ``primary == "unknown"`` if and only if
+    ``refusal_reason`` is a member of
+    :data:`REGISTER_REFUSAL_REASONS`.
 
     Below ``min_words``, the classifier refuses with primary
     ``"unknown"`` and confidence 0.0 — heuristics are noisy on short
@@ -372,35 +437,58 @@ def classify_register(
     but wants the classifier to confirm.
     """
     features = _features(text)
+    hint_family = resolve_family(hint) if hint else None
+    warnings: list[str] = []
+    if hint and hint_family == "unknown" and hint.strip() != "unknown":
+        warnings.append(_unrecognized_hint_warning(hint))
     n_words = features.get("n_words", 0) or 0
     if n_words < min_words:
+        warnings.append(_short_text_warning(n_words, min_words))
         return {
             "primary": "unknown",
             "confidence": 0.0,
             "secondary": [],
             "scores": {},
             "evidence": features,
-            "warning": (
-                f"Text has {n_words} words; register classification "
-                f"requires at least {min_words}. Returning 'unknown'."
-            ),
+            "warning": "; ".join(warnings),
+            "taxonomy": REGISTER_TAXONOMY,
+            "refusal_reason": "short_text",
         }
 
     scores: dict[str, float] = {}
     for register, scorer in _SCORERS.items():
         scores[register] = round(scorer(features), 4)
-    if hint and hint in scores:
-        scores[hint] = min(1.0, scores[hint] + 0.05)
+    if hint_family and hint_family in scores:
+        scores[hint_family] = round(min(1.0, scores[hint_family] + 0.05), 4)
 
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
     primary = ranked[0][0] if ranked else "unknown"
     primary_score = ranked[0][1] if ranked else 0.0
-    secondary = [
-        r for r, s in ranked[1:]
-        if (primary_score - s) < 0.10 and s > 0.30
-    ]
+    refusal_reason: str | None = None
     if primary_score < 0.30:
         primary = "unknown"
+        refusal_reason = "all_weak"
+        secondary: list[str] = [
+            register for register, score in ranked[1:]
+            if (primary_score - score) < 0.10 and score > 0.30
+        ]
+    else:
+        tied = [register for register, score in ranked if score == primary_score]
+        if len(tied) > 1:
+            primary = "unknown"
+            refusal_reason = "exact_top_tie"
+            secondary = tied + [
+                register for register, score in ranked
+                if register not in tied
+                and (primary_score - score) < 0.10
+                and score > 0.30
+            ]
+            warnings.append(_exact_top_tie_warning(tied))
+        else:
+            secondary = [
+                register for register, score in ranked[1:]
+                if (primary_score - score) < 0.10 and score > 0.30
+            ]
 
     return {
         "primary": primary,
@@ -408,7 +496,9 @@ def classify_register(
         "secondary": secondary,
         "scores": scores,
         "evidence": features,
-        "warning": None,
+        "warning": "; ".join(warnings) if warnings else None,
+        "taxonomy": REGISTER_TAXONOMY,
+        "refusal_reason": refusal_reason,
     }
 
 
@@ -430,9 +520,13 @@ def register_match(
     explicitly rather than silently producing unanchored numbers.
     """
     target = (target_register or "unknown").strip() or "unknown"
+    target_family = resolve_family(target)
     counter: Counter[str] = Counter()
+    family_counter: Counter[str] = Counter()
     for r in baseline_registers:
-        counter[(r or "unknown").strip() or "unknown"] += 1
+        raw = (r or "unknown").strip() or "unknown"
+        counter[raw] += 1
+        family_counter[resolve_family(raw)] += 1
     total = sum(counter.values())
     if total == 0:
         return {
@@ -440,11 +534,14 @@ def register_match(
             "rationale": "Baseline contains no registered entries.",
             "target": target,
             "baseline_distribution": {},
+            "taxonomy": REGISTER_TAXONOMY,
+            "target_family": target_family,
+            "baseline_family_distribution": {},
         }
-    target_in_baseline = counter.get(target, 0)
+    target_in_baseline = family_counter.get(target_family, 0)
     fraction = target_in_baseline / total
 
-    if target == "unknown":
+    if target_family == "unknown":
         return {
             "strength": "weak",
             "rationale": (
@@ -455,41 +552,62 @@ def register_match(
             ),
             "target": target,
             "baseline_distribution": dict(counter),
+            "taxonomy": REGISTER_TAXONOMY,
+            "target_family": target_family,
+            "baseline_family_distribution": dict(family_counter),
         }
 
     if fraction >= 0.80:
         strength = "strong"
         rationale = (
             f"{target_in_baseline}/{total} baseline entries match "
-            f"target register `{target}`."
+            f"target register family `{target_family}`."
         )
     elif fraction >= 0.50:
         strength = "moderate"
         rationale = (
             f"{target_in_baseline}/{total} baseline entries match "
-            f"target register `{target}`. Other registers present: "
+            f"target register family `{target_family}`. Other families present: "
             + ", ".join(
                 f"{k}={v}"
-                for k, v in counter.most_common()
-                if k != target
+                for k, v in family_counter.most_common()
+                if k != target_family
             ) + "."
         )
     elif fraction >= 0.20:
         strength = "weak"
         rationale = (
             f"Only {target_in_baseline}/{total} baseline entries "
-            f"match target register `{target}`. Comparison strength "
+            f"match target register family `{target_family}`. Comparison strength "
             "reduced; consider filtering the baseline."
         )
     else:
         strength = "mismatch"
-        biggest = counter.most_common(1)[0]
+        biggest = family_counter.most_common(1)[0]
         rationale = (
-            f"Target register `{target}` is rare in baseline "
+            f"Target register family `{target_family}` is rare in baseline "
             f"({target_in_baseline}/{total}); baseline is "
             f"dominantly `{biggest[0]}` ({biggest[1]}/{total}). "
             "Reading any cross-register voice distance as voice "
             "drift is unsafe."
+        )
+
+    matched_raw = sorted(
+        raw for raw in counter
+        if resolve_family(raw) == target_family
+    )
+    if target_in_baseline and (
+        len(matched_raw) >= 2 or any(raw != target for raw in matched_raw)
+    ):
+        described = set(matched_raw)
+        if target not in REGISTER_FAMILIES:
+            described.add(target)
+        rationale += (
+            " Family-level match: target and baseline resolve to "
+            f"`{target_family}`; raw values represented here: "
+            + ", ".join(f"`{value}`" for value in sorted(described))
+            + "; even a strong family match does not distinguish document types "
+            "within the family."
         )
 
     return {
@@ -497,6 +615,9 @@ def register_match(
         "rationale": rationale,
         "target": target,
         "baseline_distribution": dict(counter),
+        "taxonomy": REGISTER_TAXONOMY,
+        "target_family": target_family,
+        "baseline_family_distribution": dict(family_counter),
     }
 
 
@@ -514,6 +635,12 @@ def render_register_match_block(match: dict[str, Any]) -> str:
 __all__ = [
     "TASK_SURFACE",
     "KNOWN_REGISTERS",
+    "REGISTER_FAMILIES",
+    "REGISTER_TAXONOMY",
+    "REGISTER_REFUSAL_REASONS",
+    "CANONICAL_REGISTER_TO_FAMILY",
+    "LEGACY_REGISTER_TO_FAMILY",
+    "resolve_family",
     "classify_register",
     "register_match",
     "render_register_match_block",

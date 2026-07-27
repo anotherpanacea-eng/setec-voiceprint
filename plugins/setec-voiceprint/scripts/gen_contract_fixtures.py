@@ -285,6 +285,7 @@ def _build_repetition_audit() -> dict[str, Any]:
 
 def _build_voice_distance() -> dict[str, Any]:
     import voice_distance as m  # type: ignore
+    from register_classifier import classify_register  # type: ignore
 
     # Mirrors stylometry_core.compare_to_baseline() + main()'s additions
     # (task_surface, register_match). One representative family entry with
@@ -318,7 +319,7 @@ def _build_voice_distance() -> dict[str, Any]:
             "mean_words": 8000.0,
             "min_words": 5000,
             "max_words": 12000,
-            "registers": ["literary_fiction"],
+            "registers": ["personal"],
             "personas": [],
             "privacy_values": [],
             "files": [
@@ -334,15 +335,23 @@ def _build_voice_distance() -> dict[str, Any]:
             "interpretation": "Target sits a moderate distance from the baseline voice.",
             "threshold_note": "Provisional bands; calibration pending.",
         },
-        "register_match": {
-            "target_classification": {
-                "primary": "literary_fiction",
-                "confidence": 0.71,
-                "secondary": "blog_essay",
-            },
-            "match": {"verdict": "match", "baseline_registers": ["literary_fiction"]},
-        },
     }
+    classifier_fixture = (
+        "I remember my old neighborhood and I write about our shared past. "
+        "My experience still shapes how I understand the ordinary choices we make. "
+    ) * 12
+    classification = classify_register(
+        classifier_fixture,
+        hint="personal",
+    )
+    baseline_entries = [
+        {"id": f"prior_{index}", "metadata": {"register": "personal"}}
+        for index in range(6)
+    ]
+    result["register_match"] = m._build_register_guard(
+        baseline_entries,
+        classification,
+    )
     return m.build_audit_payload(result, target_path="<fixture>")
 
 

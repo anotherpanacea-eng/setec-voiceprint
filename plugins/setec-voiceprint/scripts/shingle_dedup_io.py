@@ -8,6 +8,7 @@ POSIX and Windows.
 
 from __future__ import annotations
 
+import errno
 import os
 from pathlib import Path
 import secrets
@@ -16,6 +17,19 @@ from typing import Any
 
 
 _CHUNK = 1024 * 1024
+
+#: Filesystem privacy contracts understood by the create-new publisher.
+LEGACY_SHINGLE_POLICY = "legacy_shingle_v1"
+OWNER_PRIVATE_POLICY = "owner_private_v1"
+PRIVACY_POLICIES = (LEGACY_SHINGLE_POLICY, OWNER_PRIVATE_POLICY)
+OWNER_PRIVATE_FILE_MODE = 0o600
+
+#: The only two ``lstat`` errno values that prove a candidate path is *absent*.
+#: ``ENOENT`` is a missing final name; ``ENOTDIR`` is a missing (or
+#: non-directory) intermediate component, which means the name cannot exist
+#: under it either. Everything else is an unresolved question about the
+#: candidate, not an answer, and :func:`bind_regular` refuses on it.
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR})
 
 
 class SecureIOError(OSError):
@@ -134,7 +148,16 @@ def _posix_require_absent(parent: int, leaf: str, suffixes: tuple[str, ...]) -> 
         raise _fail()
 
 
-def _posix_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] = ()) -> bytes:
+def _require_expected(expected: tuple[int, ...] | None, actual: tuple[int, ...]) -> None:
+    """Require one observed fingerprint to equal the frozen plan's."""
+    if expected is None:
+        return
+    if type(expected) is not tuple or tuple(expected) != tuple(actual):
+        raise _fail()
+
+
+def _posix_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] = (),
+                expected_fingerprint: tuple[int, ...] | None = None) -> bytes:
     parent_fd, directories = _posix_open_directory(path.parent)
     descriptor = -1
     try:
@@ -143,11 +166,15 @@ def _posix_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] = 
         before = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode) or before.st_size < 0 or before.st_size > maximum:
             raise _fail()
+        # Pre-open agreement: a replacement or mutation between planning and
+        # this read refuses before the file is opened at all.
+        _require_expected(expected_fingerprint, _file_fingerprint(before))
         flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
         descriptor = os.open(path.name, flags, dir_fd=parent_fd)
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode) or _file_fingerprint(before) != _file_fingerprint(opened):
             raise _fail()
+        _require_expected(expected_fingerprint, _file_fingerprint(opened))
         parts: list[bytes] = []
         total = 0
         while True:
@@ -166,6 +193,9 @@ def _posix_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] = 
                 or _file_fingerprint(opened) != _file_fingerprint(named)
                 or after.st_size != total):
             raise _fail()
+        # Post-read and rebound-name agreement.
+        _require_expected(expected_fingerprint, _file_fingerprint(after))
+        _require_expected(expected_fingerprint, _file_fingerprint(named))
         return b"".join(parts)
     except (OSError, TypeError, ValueError):
         raise _fail() from None
@@ -211,15 +241,40 @@ def _windows_require_absent(parent: int, leaf: str, suffixes: tuple[str, ...]) -
         raise _fail()
 
 
-def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] = ()) -> bytes:  # pragma: no cover - native Windows
+def _windows_scoped_fingerprint(winio: Any, handle: int) -> tuple[int, ...]:
+    """The Spec 73 scoped handle fingerprint, which adds ``change_time``.
+
+    ``NodeInfo.identity`` is deliberately not used here: the legacy checkpoint
+    behaviour keeps the historical eight-field identity, while a planned
+    document read additionally binds ``change_time`` so a same-size content
+    mutation with a restored ``LastWriteTime`` still refuses.
+    """
+    helper = getattr(winio, "scoped_fingerprint", None)
+    if helper is None:
+        raise _fail()
+    return tuple(helper(handle))
+
+
+def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] = (),
+                  expected_fingerprint: tuple[int, ...] | None = None) -> bytes:  # pragma: no cover - native Windows
     winio = _windows_module()
-    parent_anchor = parent = handle = verify = 0
+    parent_anchor = parent = handle = verify = probe = 0
     try:
         parent_anchor, parent, _name = winio.pin_directory(path.parent, writable_final=False)
         _windows_revalidate_directory(path.parent, parent)
         _windows_require_absent(parent, path.name, forbidden_suffixes)
+        if expected_fingerprint is not None:
+            # Windows has no stat-without-open, so the pre-open observation is
+            # a separate metadata handle that reads no data.
+            probe = winio.open_file(parent, path.name, allow_multiple_links=True)
+            winio.require_direct(probe, "file", allow_multiple_links=True)
+            _require_expected(expected_fingerprint, _windows_scoped_fingerprint(winio, probe))
+            winio.close(probe)
+            probe = 0
         handle = winio.open_file(parent, path.name, allow_multiple_links=True)
         opened = winio.require_direct(handle, "file", allow_multiple_links=True)
+        if expected_fingerprint is not None:
+            _require_expected(expected_fingerprint, _windows_scoped_fingerprint(winio, handle))
         if opened.size < 0 or opened.size > maximum:
             raise _fail()
         parts: list[bytes] = []
@@ -239,11 +294,14 @@ def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] 
         named = winio.require_direct(verify, "file", allow_multiple_links=True)
         if opened.identity != after.identity or opened.identity != named.identity or after.size != total:
             raise _fail()
+        if expected_fingerprint is not None:
+            _require_expected(expected_fingerprint, _windows_scoped_fingerprint(winio, handle))
+            _require_expected(expected_fingerprint, _windows_scoped_fingerprint(winio, verify))
         return b"".join(parts)
     except (OSError, TypeError, ValueError):
         raise _fail() from None
     finally:
-        for item in (verify, handle, parent, parent_anchor):
+        for item in (verify, handle, probe, parent, parent_anchor):
             if item:
                 try:
                     winio.close(item)
@@ -251,23 +309,164 @@ def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] 
                     pass
 
 
+def _posix_bind(path: Path) -> tuple[int, int, int, int, int]:
+    """Verify one candidate is a safe, non-symlink regular file.
+
+    Returns its identity/mutation-sensitive fingerprint without reading any
+    content. Shares ``_posix_read``'s directory-walk and revalidation idioms
+    but stops short of opening a data stream: this is a stat-only seam for
+    Spec 73 / H2 document-plan construction.
+    """
+    parent_fd, directories = _posix_open_directory(path.parent)
+    descriptor = -1
+    try:
+        _posix_revalidate_chain(path.parent, directories)
+        before = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode):
+            raise _fail()
+        flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
+        descriptor = os.open(path.name, flags, dir_fd=parent_fd)
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or _file_fingerprint(before) != _file_fingerprint(opened):
+            raise _fail()
+        _posix_revalidate_chain(path.parent, directories)
+        named = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+        if _file_fingerprint(named) != _file_fingerprint(opened):
+            raise _fail()
+        return _file_fingerprint(opened)
+    except (OSError, TypeError, ValueError):
+        raise _fail() from None
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _close_all(directories)
+
+
+def _windows_bind(path: Path) -> tuple[int, ...]:  # pragma: no cover - native Windows
+    """Native-Windows counterpart of :func:`_posix_bind`.
+
+    Returns the frozen 9-field scoped handle fingerprint
+    (``windows_descriptor_io.scoped_fingerprint``), which includes
+    ``change_time`` so a same-size content mutation with a restored
+    ``LastWriteTime`` still changes the fingerprint. The historical eight-field
+    ``NodeInfo.identity`` is deliberately not used: legacy checkpoint behaviour
+    keeps that identity unchanged.
+
+    Mirrors ``_posix_bind``'s shape with the native idioms: pin and revalidate
+    the parent, open a metadata handle that reads no data, take the scoped
+    fingerprint, revalidate the parent again, and rebind the name to prove the
+    identity and fingerprint did not move underneath the observation.
+    """
+    winio = _windows_module()
+    parent_anchor = parent = handle = verify = 0
+    try:
+        parent_anchor, parent, _name = winio.pin_directory(path.parent, writable_final=False)
+        _windows_revalidate_directory(path.parent, parent)
+        handle = winio.open_file(parent, path.name, allow_multiple_links=True)
+        opened = winio.require_direct(handle, "file", allow_multiple_links=True)
+        fingerprint = _windows_scoped_fingerprint(winio, handle)
+        _windows_revalidate_directory(path.parent, parent)
+        verify = winio.open_file(parent, path.name, allow_multiple_links=True)
+        named = winio.require_direct(verify, "file", allow_multiple_links=True)
+        if opened.identity != named.identity:
+            raise _fail()
+        _require_expected(fingerprint, _windows_scoped_fingerprint(winio, verify))
+        return fingerprint
+    except (OSError, TypeError, ValueError):
+        raise _fail() from None
+    finally:
+        for item in (verify, handle, parent, parent_anchor):
+            if item:
+                try:
+                    winio.close(item)
+                except (OSError, MemoryError):
+                    pass
+
+
+def bind_regular(
+    candidates: list[os.PathLike[str] | str] | tuple[os.PathLike[str] | str, ...],
+) -> tuple[Path, int, tuple[int, ...]]:
+    """Resolve a frozen candidate-path vector to one safe regular file.
+
+    ``candidates`` is the caller's ordered, 1-to-3-item resolve-path candidate
+    vector (Spec 73 / H2: index 0 is the sole candidate for an absolute path,
+    otherwise the frozen 3-candidate relative vector in priority order).
+
+    Returns ``(absolute_path, candidate_index, fingerprint_fields)`` for the
+    first candidate that is *present* -- an ``os.lstat`` on it succeeds,
+    following no symlink -- in the given order. A present-but-unsafe candidate
+    (a symlink, a non-regular file, or any identity-verification failure)
+    refuses immediately rather than falling through to the next candidate: an
+    attacker who can place a symlink at the highest-priority candidate cannot
+    use that to redirect resolution to a lower-priority one.
+
+    The presence probe itself fails closed for the same reason. Only a
+    *confirmed absence* advances to the next candidate: ``ENOENT`` (the name is
+    not there) and ``ENOTDIR`` (an intermediate component of the candidate path
+    is not a directory, so the name cannot be there either). Every other
+    ``OSError`` -- ``EACCES``/``EPERM`` on an unreadable parent, ``ELOOP``,
+    ``EIO``, ``ENAMETOOLONG``, and anything else -- refuses immediately with the
+    module's standard non-disclosing refusal. An unreadable higher-priority
+    candidate must never be allowed to hand resolution silently to a
+    lower-priority file, because the sweep would then classify a different
+    document than the one the manifest names. No candidate being present at all
+    refuses too.
+
+    ``fingerprint_fields`` is the 5-tuple POSIX identity/mutation fingerprint
+    ``(dev, ino, size, mtime_ns, ctime_ns)`` on POSIX, and the 9-field scoped
+    handle fingerprint on native Windows (see :func:`_windows_bind`).
+    """
+    if type(candidates) not in (list, tuple) or not candidates or len(candidates) > 3:
+        raise _fail()
+    for index, candidate in enumerate(candidates):
+        absolute = _absolute(candidate)
+        try:
+            os.lstat(absolute)
+        except OSError as exc:
+            # Shared by both platform arms on purpose: the discrimination is
+            # errno-level, not POSIX-only, so native Windows fails closed too.
+            if exc.errno in _ABSENT_ERRNOS:
+                continue
+            raise _fail() from None
+        fingerprint = _windows_bind(absolute) if os.name == "nt" else _posix_bind(absolute)
+        return absolute, index, fingerprint
+    raise _fail()
+
+
 def read_bounded_regular(
     path: os.PathLike[str] | str,
     maximum: int,
     *,
     root: os.PathLike[str] | str | None = None,
+    expected_fingerprint: tuple[int, ...] | None = None,
 ) -> bytes:
     """Read a direct regular file from a verified handle, bounded by bytes.
 
     When ``root`` is supplied, the lexical absolute target must remain beneath
     that root; the subsequent component-wise opens still reject indirect
     components rather than relying on string containment for security.
+
+    When ``expected_fingerprint`` is supplied, the file is read exactly once and
+    the pre-open, open-handle, post-read, and rebound-name fingerprints must all
+    equal it.  A replaced, relinked, or in-place mutated document therefore
+    refuses instead of contributing bytes to the caller.
     """
     if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 0:
         raise _fail()
+    if expected_fingerprint is not None and (
+        type(expected_fingerprint) is not tuple
+        or not expected_fingerprint
+        or any(type(item) is not int or isinstance(item, bool) for item in expected_fingerprint)
+    ):
+        raise _fail()
     absolute = _absolute(path)
     _require_beneath(absolute, root)
-    return _windows_read(absolute, maximum) if os.name == "nt" else _posix_read(absolute, maximum)
+    if os.name == "nt":  # pragma: no cover - native Windows
+        return _windows_read(absolute, maximum, (), expected_fingerprint)
+    return _posix_read(absolute, maximum, (), expected_fingerprint)
 
 
 def read_bounded_regular_excluding_siblings(
@@ -353,7 +552,15 @@ def _unlink_if_owned(parent_fd: int, name: str, owner_descriptor: int) -> None:
         pass
 
 
-def _posix_publish(destination: Path, payload: bytes) -> None:
+def _require_owner_private_file(info: os.stat_result) -> None:
+    """Require a direct, current-user-owned, exact-``0600``, single-linked file."""
+    if (not stat.S_ISREG(info.st_mode)
+            or stat.S_IMODE(info.st_mode) != OWNER_PRIVATE_FILE_MODE
+            or int(info.st_uid) != os.geteuid() or int(info.st_nlink) != 1):
+        raise _fail()
+
+
+def _posix_publish(destination: Path, payload: bytes, owner_private: bool = False) -> None:
     parent_fd, directories = _posix_open_directory(destination.parent)
     temp_name = _temp_name()
     descriptor = -1
@@ -367,6 +574,15 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
         _posix_revalidate_chain(destination.parent, directories)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _optional_flag("O_CLOEXEC") | _optional_flag("O_BINARY")
         descriptor = os.open(temp_name, flags, 0o600, dir_fd=parent_fd)
+        if owner_private:
+            # Immediately harden and re-verify through the retained handle, so a
+            # hostile umask cannot leave a group- or world-readable artifact.
+            os.fchmod(descriptor, OWNER_PRIVATE_FILE_MODE)
+            hardened = os.fstat(descriptor)
+            if (not stat.S_ISREG(hardened.st_mode)
+                    or stat.S_IMODE(hardened.st_mode) != OWNER_PRIVATE_FILE_MODE
+                    or int(hardened.st_uid) != os.geteuid()):
+                raise _fail()
         created_info = os.fstat(descriptor)
         # Capture ownership before the first payload syscall.  The fingerprint
         # is refreshed after the durable write for the pre-link check, while
@@ -425,6 +641,9 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
         destination_after = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
         if _identity(destination_after) != temp_identity:
             raise _fail()
+        if owner_private:
+            _require_owner_private_file(os.fstat(control_descriptor))
+            _require_owner_private_file(destination_after)
         temp_identity = None
         _posix_revalidate_chain(destination.parent, directories)
         published_identity = None
@@ -452,7 +671,7 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
         raise _fail()
 
 
-def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no cover - native Windows
+def _windows_publish(destination: Path, payload: bytes, owner_private: bool = False) -> None:  # pragma: no cover - native Windows
     winio = _windows_module()
     parent_anchor = parent = payload_handle = pin = verifier = control = 0
     pin_verified = False
@@ -461,7 +680,14 @@ def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no c
     temp_name = _temp_name()
     try:
         parent_anchor, parent, _name = winio.pin_directory(destination.parent, writable_final=True)
-        payload_handle = winio.create_file(parent, temp_name)
+        if owner_private:
+            creator = getattr(winio, "create_owner_private_file", None)
+            if creator is None:
+                # Missing native owner-private support is a controlled refusal.
+                raise _fail()
+            payload_handle = creator(parent, temp_name)
+        else:
+            payload_handle = winio.create_file(parent, temp_name)
         view = memoryview(payload)
         while view:
             written = winio.write(payload_handle, view[:_CHUNK])
@@ -524,6 +750,11 @@ def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no c
             if (winio.require_direct(control, "file").identity[:2] != original_identity[:2]
                     or winio.require_direct(published, "file").identity[:2] != original_identity[:2]):
                 raise _fail()
+            if owner_private:
+                verifier_helper = getattr(winio, "require_owner_private", None)
+                if verifier_helper is None:
+                    raise _fail()
+                verifier_helper(published, "file")
         finally:
             winio.close(published)
         winio.close(control)
@@ -550,20 +781,36 @@ def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no c
                     pass
 
 
-def publish_create_new(destination: os.PathLike[str] | str, payload: bytes) -> None:
-    """Atomically publish bytes without replacing an intervening winner."""
-    if not isinstance(payload, bytes):
+def publish_create_new(
+    destination: os.PathLike[str] | str,
+    payload: bytes,
+    *,
+    privacy_policy: str = LEGACY_SHINGLE_POLICY,
+) -> None:
+    """Atomically publish bytes without replacing an intervening winner.
+
+    ``privacy_policy`` selects the filesystem privacy contract.
+    ``legacy_shingle_v1`` is the historical behaviour, byte for byte.
+    ``owner_private_v1`` additionally requires the published artifact to be a
+    direct, current-user-owned, exact-``0600``, single-linked regular file on
+    POSIX (verified through the retained handle after publication), or an
+    explicit protected single-ACE owner DACL on native Windows.  Parent
+    permissions are never treated as proof and are never changed.
+    """
+    if not isinstance(payload, bytes) or privacy_policy not in PRIVACY_POLICIES:
         raise _fail()
+    owner_private = privacy_policy == OWNER_PRIVATE_POLICY
     target = _absolute(destination)
     _component(target.name)
     if os.name == "nt":
-        _windows_publish(target, payload)
+        _windows_publish(target, payload, owner_private)
     else:
-        _posix_publish(target, payload)
+        _posix_publish(target, payload, owner_private)
 
 
 __all__ = [
     "SecureIOError",
+    "bind_regular",
     "publish_create_new",
     "read_bounded_regular",
     "read_bounded_regular_excluding_siblings",
