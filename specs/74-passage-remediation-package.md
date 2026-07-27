@@ -6,7 +6,8 @@
 > decisions. It does not read corpus prose, rerun detection, activate a corpus,
 > or make Stage-B span decisions.
 
-- **Status:** Independent six-lens review clear after rework; Increment 1 in build
+- **Status:** Independent six-lens spec review and implementation review clear;
+  Increment 1 built and locally verified
 - **Tier:** core / stdlib / CPU-only
 - **Repository:** `setec-voiceprint`
 - **Capability id:** `passage_remediation`
@@ -189,30 +190,29 @@ The descriptor, inventory, and projection receipt are read before any output
 creation. The output path must differ from every input under exact and portable
 case-fold comparison. Publication is the only mutation [H1, IO]:
 
-- POSIX creates a random `0600` staging file relative to the retained root with
-  `O_CREAT|O_EXCL|O_NOFOLLOW`, writes/fsyncs and identity-verifies it, then
-  links its verified name to the one-component final name with
-  descriptor-relative no-replace semantics, fsyncs the root, reopens and
-  verifies exact bytes/identity, and removes only a staging name still bound to
-  the held staging descriptor;
-- native Windows creates an owner-private staging file relative to the retained
-  root, writes/flushes it, calls
+- POSIX atomically creates the one-component final name relative to the retained
+  root with `O_CREAT|O_EXCL|O_NOFOLLOW` and mode `0600`, then writes/fsyncs,
+  reopens, and verifies exact bytes, mode, single-link count, held-descriptor
+  identity, and final-name rebound identity. There is no staging name and no
+  name-based rollback;
+- native Windows creates a non-share-write/non-share-delete owner-private
+  staging file relative to the retained root, writes/flushes it, calls
   `windows_descriptor_io.rename(handle, retained_root, output,
   replace=False)`, then reopens and verifies the same file id and bytes. Windows
   directory-entry durability is not claimed: the shipped backend exposes
   `FlushFileBuffers` for files, not a proven parent-directory durability
   primitive;
 - an existing final name preserves its bytes and selects
-  `output_exists_refused`; any other create/write/flush/link/rename/reopen/
-  verification failure before the link/rename commit point selects
-  `output_publication_refused`; any failure after that commit point selects
-  an identity-proven rollback. POSIX unlinks the final name only when its
-  no-follow identity still equals the held staging descriptor; Windows calls
-  `delete()` on the held renamed handle. If rollback and rebound absence both
-  succeed, the code selects `output_publication_refused`; if identity proof,
-  rollback, absence proof, or its durability check fails, it selects
-  `output_recovery_required`, because a create-new final may exist and must not
-  be retried blindly.
+  `output_exists_refused`; a POSIX failure proven to precede final-name creation
+  selects `output_publication_refused`, while every failure after a successful
+  or ambiguous final-name create selects `output_recovery_required` and leaves
+  the name untouched for inspection. This deliberately avoids the
+  check-then-unlink race inherent in name-based POSIX rollback. On Windows,
+  failure before rename selects `output_publication_refused`; after rename, the
+  retained non-share control handle provides identity-bound `delete()`
+  rollback. Proven rollback and rebound absence select
+  `output_publication_refused`; otherwise the code selects
+  `output_recovery_required`.
 
 The operational ceilings selected for bounded Increment-1 execution are [H1]:
 
@@ -524,13 +524,14 @@ argument syntax has parsed. The complete first-wins order is [H1, F]:
 | 8 | inventory and descriptor count/set identities | `inventory_conservation_refused` |
 | 9 | decision row/count/scope truth table | `decision_invariant_refused` |
 | 10 | final name already exists or publication loses `EEXIST` race | `output_exists_refused` |
-| 11 | create/write/flush/link/rename failure before commit | `output_publication_refused` |
-| 12 | post-commit failure with identity-proven rollback and rebound absence | `output_publication_refused` |
-| 13 | post-commit failure whose owned-final rollback/absence cannot be proved | `output_recovery_required` |
+| 11 | POSIX failure proven before final create, or Windows failure before rename | `output_publication_refused` |
+| 12 | Windows post-rename failure with handle-bound rollback and rebound absence | `output_publication_refused` |
+| 13 | POSIX successful/ambiguous final create followed by any failure, or Windows post-rename rollback/absence uncertainty | `output_recovery_required` |
 
-Orders 1–9 govern only before the link/rename commit point. A root
+Orders 1–9 govern only before the create/rename commit point. A root
 identity/mode/DACL drift detected after commit is a post-commit publication
-failure: it follows order 12 if identity-proven rollback and rebound absence
+failure: POSIX follows order 13 without attempting destructive name-based
+rollback; Windows follows order 12 if handle-bound rollback and rebound absence
 succeed, otherwise order 13. It never reports `private_root_refused` while
 leaving a committed final unexplained.
 
@@ -629,8 +630,9 @@ Required focused tests [H1, S36, IO]:
 7. symlink/reparse input, private-root policy failure, root path replacement
    after the retained capability opens, output/input alias, existing output,
    and publication race fail without redirecting access or replacing a winner;
-   fault injection after staging write, link/rename, flush, reopen, and byte/
-   identity verification pins the commit point, identity-proven rollback, and
+   fault injection before create and after create/rename, flush, reopen, and
+   byte/identity verification pins the commit point, the POSIX no-destructive-
+   rollback rule, Windows handle-bound rollback, and
    `output_recovery_required` path;
 8. two fresh builds from identical synthetic bytes produce byte-identical
    output and receipt hashes;
@@ -669,7 +671,10 @@ The builder appends one numbered row per implemented divergence. Each row names
 the spec requirement, the built behavior, the reason, and the tests that pin
 the built behavior [H1]. A blanket “code governs” clause is forbidden.
 
-At rework freeze: no divergences recorded.
+| # | Spec requirement | Built behavior | Reason | Verification |
+|---:|---|---|---|---|
+| 1 | The handoff's registry instruction says the capability fragment, per-id golden, and changelog are the only additions and says “no shared-file edits.” | Those three drop-ins remain the only registry sources edited, but the generated `references/calibration-readiness.md` also gains the mechanically derived `passage_remediation` row. No shared registry manifest or golden count is edited. | The repository's mandatory readiness and docs-freshness checks derive one row for every curated non-`todo` capability; omitting the generated row makes both checks fail. The row is generated, aggregate-only metadata and contains no private data. | `python3 tools/gen_calibration_readiness.py --check`; `python3 tools/check_docs_freshness.py`; `python3 tools/check_capabilities_drift.py` |
+| 2 | The reworked design specified POSIX staging-plus-hard-link publication with identity-checked name-based rollback after commit. | POSIX atomically creates the final name with `O_CREAT|O_EXCL`; any successful or ambiguous create followed by failure returns `output_recovery_required` and never unlinks the final. Windows retains staging/rename but creates the control handle with both write and delete sharing disabled. | POSIX exposes no descriptor-based unlink. A stat-then-unlink rollback has an unavoidable same-name replacement window and can delete an intervening winner. Direct create-new plus conservative recovery preserves the no-replace boundary. Native Windows does provide handle-bound delete, and disabling sharing freezes concurrent writers through verification. | `test_precreate_publication_fault_publishes_nothing`; `test_ambiguous_create_success_then_raise_requires_recovery`; `test_postcreate_fault_requires_recovery`; `test_postcleanup_name_replacement_cannot_yield_success`; `test_windows_publication_uses_stable_file_identity_and_handles_ambiguity` |
 
 ## 11. Stop conditions
 

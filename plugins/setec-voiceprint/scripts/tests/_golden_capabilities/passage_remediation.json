@@ -1,0 +1,48 @@
+{
+  "id": "passage_remediation",
+  "script_path": "plugins/setec-voiceprint/scripts/passage_remediation.py",
+  "surface": "voice_coherence_acquisition",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "acquisition",
+  "purpose": "Apply the frozen spec-74 Increment-1 truth table to every itemized member of a bound spec-36 Stage-A passage cluster, preserving exactly one producer-selected representative while marking every nonrepresentative for complete Stage-A target masking and exclusion from Stage-A loss and pairing. The tool is deterministic, private-root confined, and operationally uncalibrated.",
+  "use_when": [
+    "You have a private descriptor that binds an exact spec-36 passage inventory and its projection receipt under one retained owner-private root.",
+    "You need a deterministic, create-new Stage-A decision artifact for all and only the itemized passage-cluster members."
+  ],
+  "do_not_use_when": [
+    "You need to validate or populate spec 75's passage_remediation_receipt_sha256 attestation; this receipt is not that attestation and requires a separately reviewed adapter and owner binding.",
+    "You need to authorize a training snapshot, establish consumer eligibility, resolve Stage-B spans or below-floor repetition, or assess passages outside the itemized Stage-A clusters.",
+    "You need a clean-corpus, deduplicated-corpus, memorization-safe, training-safe, quality, identity, authorship, register, or AI/human claim."
+  ],
+  "inputs": {
+    "target": "One closed private descriptor resolving an exact-hash-bound, manifest-derived spec-36 passage inventory and projection receipt under the same retained private root.",
+    "required": [
+      "--private-root owner-private root containing every bound member.",
+      "--descriptor private descriptor for a spec-36 passage inventory and projection receipt."
+    ]
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "A private create-new setec-passage-remediation-decisions/1 artifact.",
+      "A canonical aggregate-only setec-passage-remediation-receipt/1 stdout object."
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "Stdlib-only deterministic validation and decision derivation on CPU.",
+    "length_floor_words": null
+  },
+  "registers": [],
+  "dependencies": {
+    "python": []
+  },
+  "examples": [
+    "python3 scripts/passage_remediation.py --private-root PRIVATE_ROOT --descriptor descriptor.json --output decisions.json --json"
+  ],
+  "references": [
+    "specs/74-passage-remediation-package.md"
+  ]
+}
