@@ -7,7 +7,7 @@
 > and receipt contracts spec 78 reuses.
 
 - **Status:** **AS-BUILT (M1)** — implemented 2026-07-27 on
-  `feat/spec77-longform-m1` (branch name predates the renumber) (commit `858352c`; 11 files, 98 module tests,
+  `feat/spec77-longform-m1` (branch name predates the renumber) (commit `858352c`; 11 files, 100 module tests,
   full plugin suite 8,752 green). **Where this document and the code
   disagree, the code and its tests govern**; §"As built" records every
   divergence. M2 (receipts, thresholds, licensing) remains unbuilt.

@@ -1,5 +1,9 @@
 # 78-storyscope-polarity-extension
 
+> **Review 2026-07-27:** v2 NEEDS-REWORK (six-lens swarm, 10 P1 / 10 P2; verdict
+> recorded in fleet-coordination `specs/voiceprint-78-storyscope-polarity-REVIEW-2026-07-27.md`).
+> Do not build from v2; v3 fold pending owner rulings.
+
 > Establish whether the 33 narrative-decision signals keep their paper-anchored
 > polarity and their computability (a) on segments drawn from over-ceiling works
 > and (b) below the 2,000-word floor. The polarity half of the Dickens umbrella's
