@@ -235,3 +235,64 @@ def test_manifest_validator_accepts_voice_validation_use() -> None:
     issues = result.get("issues") or []
     errors = [i for i in issues if i.get("severity") == "error"]
     assert not errors, f"manifest has errors: {errors}"
+
+
+# --- register-tier isolation: this surface is deliberately EXEMPT ----------
+#
+# Pinned as a negative control for `tests/test_register_isolation_coverage.py`.
+# Every other clean-room consumer of `select_feature_names` / `vector_stats`
+# builds a pooled author reference and must refuse a private-dyadic mixture.
+# This one does not: it scores PAIRS drawn from a labelled MULTI-AUTHOR slice
+# and ranks them by `same_author`. The shared feature space is a z-scoring
+# normaliser over that slice, not a writer stand-in, and no voiceprint is
+# emitted from it. `register_a` / `register_b` are recorded per pair precisely
+# because cross-register pairing is the OBJECT OF STUDY — register mismatch is
+# the confounder this harness exists to quantify. Firing the guard here would
+# refuse any slice holding a private-dyadic document alongside anything else,
+# i.e. it would remove the only way to measure whether the tier separation is
+# empirically justified at all.
+
+
+def _slice_entries() -> list[dict[str, object]]:
+    return [
+        {"id": "dm_1", "author": "A", "register": "message.imessage",
+         "text": "we should probably just meet at the usual place around seven"},
+        {"id": "essay_1", "author": "A", "register": "blog_essay",
+         "text": "The discipline of attention is older than the disciplines "
+                 "that depend upon it for their standing."},
+        {"id": "essay_2", "author": "B", "register": "blog_essay",
+         "text": "Public reason is a contract a society makes with itself, "
+                 "and the contract has provisions and exceptions."},
+    ]
+
+
+def test_cross_register_pairs_are_built_not_refused() -> None:
+    """The exemption, stated behaviourally: a slice mixing a private-dyadic
+    document with public ones must still produce pairs. If this ever starts
+    raising, the guard has crept onto a surface whose purpose it destroys."""
+    entries = _slice_entries()
+    items = [
+        {"id": e["id"], "features": {"function_words": {
+            "the": float(str(e["text"]).count("the")),
+            "a": float(str(e["text"]).count(" a ")),
+        }}}
+        for e in entries
+    ]
+    selected = {"function_words": ["the", "a"]}
+
+    pairs = vvh.build_pairs(entries, items, selected, "author")
+
+    assert len(pairs) == 3
+    registers = {(p["register_a"], p["register_b"]) for p in pairs}
+    assert ("message.imessage", "blog_essay") in registers, (
+        "the cross-tier pair is the case this harness exists to measure"
+    )
+    assert any(p["same_author"] for p in pairs)
+    assert any(not p["same_author"] for p in pairs)
+
+
+def test_harness_does_not_import_the_isolation_guard() -> None:
+    """The inverse obligation `test_register_isolation_coverage.py` enforces on
+    every EXEMPT entry, pinned here too so the reason travels with the code."""
+    src = Path(vvh.__file__).read_text(encoding="utf-8")
+    assert "assert_personal_register_isolated" not in src

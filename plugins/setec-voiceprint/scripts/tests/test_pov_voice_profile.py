@@ -606,3 +606,69 @@ def test_pov_burrows_delta_varies_with_voice_distinctness() -> None:
         f"Voice-distinct POVs Burrows-Delta {distinct_delta!r} "
         f"should exceed voice-collapsed {collapsed_delta!r}."
     )
+
+
+# --- register-tier isolation (#369 private-dyadic policy) ------------------
+#
+# Per-POV centroids are pooled author references — this script's own docstring
+# calls them voice-cloning input — and `build_pov_profiles` selects the feature
+# names ONCE over the union of every POV, so a single private-dyadic document
+# moves the coordinates of every other POV. The surface groups solely on `pov`
+# and never reads `register`, so nothing downstream would notice the mixture.
+
+
+def _pov_entry(pov: str, register: object, *, entry_id: str) -> "pvp.POVEntry":
+    return pvp.POVEntry(
+        id=entry_id,
+        # Deliberately nonexistent: the guard must refuse BEFORE any file read,
+        # so a missing-file error here would mean the guard ran too late.
+        path=Path("/nonexistent") / f"{entry_id}.txt",
+        pov=pov,
+        extra={"register": register},
+    )
+
+
+def test_pov_profiles_refuse_a_register_tier_mixture_before_reading_files():
+    grouped = {
+        "ada": [_pov_entry("ada", "message.imessage", entry_id="a1"),
+                _pov_entry("ada", "message.imessage", entry_id="a2")],
+        "bo": [_pov_entry("bo", "blog_essay", entry_id="b1"),
+               _pov_entry("bo", "blog_essay", entry_id="b2")],
+    }
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        pvp.build_pov_profiles(grouped)
+
+
+def test_pov_profiles_refuse_a_mixture_inside_a_single_pov_group():
+    """The shared feature space spans every POV, but a mixture inside one group
+    is the more direct contamination: that POV's own centroid would be built
+    from private DMs and public essays together."""
+    grouped = {
+        "ada": [_pov_entry("ada", "message.facebook_messenger", entry_id="a1"),
+                _pov_entry("ada", "blog_essay", entry_id="a2")],
+    }
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        pvp.build_pov_profiles(grouped)
+
+
+def test_pov_profiles_refuse_a_dyadic_entry_pooled_with_a_registerless_one():
+    """A MISSING register is refused alongside a private-dyadic one too — an
+    unlabelled document cannot be shown to be same-tier, so it fails closed."""
+    grouped = {
+        "ada": [_pov_entry("ada", "message.imessage", entry_id="a1")],
+        "bo": [_pov_entry("bo", None, entry_id="b1")],
+    }
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        pvp.build_pov_profiles(grouped)
+
+
+def test_pov_profiles_do_not_refuse_an_ordinary_fiction_corpus():
+    """Negative control, and the reason guarding this surface does not break its
+    purpose: a multi-POV novel's chapters share one register, so the guard is
+    inert on the corpus the script actually exists for."""
+    grouped = {
+        "ada": [_pov_entry("ada", "literary_fiction", entry_id="a1")],
+        "bo": [_pov_entry("bo", "literary_fiction", entry_id="b1")],
+    }
+    with pytest.raises(FileNotFoundError):
+        pvp.build_pov_profiles(grouped)
