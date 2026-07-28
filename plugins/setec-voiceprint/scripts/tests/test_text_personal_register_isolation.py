@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 import stylometry_core as sc  # type: ignore
 import voice_distance as vd  # type: ignore
 import voice_drift_tracker as drift  # type: ignore
+from register_taxonomy import REGISTER_TIERS  # type: ignore
 
 
 def _entry(register: object, *, entry_id: str = "fixture") -> dict:
@@ -212,6 +213,74 @@ def test_top_level_only_register_survives_into_tier_receipt(
     summary = sc.summarize_entries(features)
     assert summary["register_tier_counts"]["public_composed"] == 1
     assert summary["unresolved_register_count"] == 0
+
+
+def test_unresolved_registers_are_counted_not_silently_dropped():
+    """Pin a NON-ZERO unresolved count.
+
+    ``unresolved_register_count`` is the only receipt telling a consumer
+    that a pooled reference holds entries whose privacy tier could not be
+    resolved — a fail-open indicator. Every other assertion on the field
+    in this repo is ``== 0``, which a counter that never increments would
+    satisfy forever. The field deliberately conflates two cases (no
+    register declared at all; a register declared but absent from the
+    closed registry), so both are exercised here.
+    """
+    summary = sc.summarize_entries([
+        {"id": "a", "path": "a.txt", "summary": {"n_words": 10},
+         "metadata": {}},
+        {"id": "b", "path": "b.txt", "summary": {"n_words": 10},
+         "metadata": {"register": "not.registered"}},
+        {"id": "c", "path": "c.txt", "summary": {"n_words": 10},
+         "metadata": {"register": "blog_essay"}},
+    ])
+    assert summary["unresolved_register_count"] == 2
+    assert summary["register_tier_counts"]["public_composed"] == 1
+    assert sum(summary["register_tier_counts"].values()) == 1
+    # Every entry lands in exactly one bucket: tiered or unresolved.
+    assert (
+        sum(summary["register_tier_counts"].values())
+        + summary["unresolved_register_count"]
+        == summary["n_files"]
+    )
+
+
+def test_directory_mode_baseline_reports_every_file_unresolved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+):
+    """Pin the documented directory-mode behavior.
+
+    ``load_entries_from_dir`` attaches only ``{"source": "directory"}``,
+    so a directory-mode baseline declares no register anywhere. The
+    released changelog states such a baseline reports zero tier counts
+    and an ``unresolved_register_count`` equal to ``n_files``; that
+    claim had no test.
+    """
+    (tmp_path / "first.txt").write_text("first fixture body", encoding="utf-8")
+    (tmp_path / "second.md").write_text("second fixture body", encoding="utf-8")
+
+    entries = sc.load_entries_from_dir(tmp_path)
+    assert [entry["metadata"] for entry in entries] == [
+        {"source": "directory"}, {"source": "directory"},
+    ]
+
+    monkeypatch.setattr(
+        sc,
+        "extract_features",
+        lambda *args, **kwargs: {
+            "summary": {"n_words": 3},
+            "features": {},
+            "preprocessing": {},
+        },
+    )
+    summary = sc.summarize_entries(
+        sc.extract_entry_features(entries, include_spacy=False)
+    )
+    assert summary["n_files"] == 2
+    assert summary["unresolved_register_count"] == summary["n_files"]
+    assert summary["register_tier_counts"] == {
+        tier: 0 for tier in REGISTER_TIERS
+    }
 
 
 @pytest.mark.parametrize(
