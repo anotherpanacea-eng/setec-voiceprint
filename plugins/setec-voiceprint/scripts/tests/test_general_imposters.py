@@ -777,6 +777,131 @@ def test_pool_guard_does_not_creep_onto_the_impostor_pool(tmp_path):
     assert "pool_guard" not in Path(gi.__file__).read_text(encoding="utf-8")
 
 
+# --- register-tier isolation (#369 private-dyadic policy) ------------------
+#
+# `message.imessage` / `message.facebook_messenger` are `private_dyadic` leaves
+# holding real private conversational material, and the taxonomy rules them
+# profile-only: a stylometric reference builder must refuse to mix them with a
+# non-private-dyadic or missing register. This harness is a pooled author
+# reference in two ways at once — the candidate identity-baseline pool IS the
+# reference, and `run_gi` derives ONE shared feature vocabulary from
+# candidate_docs + impostor_docs, so a private-dyadic doc in EITHER pool
+# contaminates the shared space.
+
+
+def test_run_gi_refuses_a_pooled_feature_space_that_mixes_register_tiers():
+    """The choke point: `run_gi` builds the shared vocab from both pools, so the
+    guard sits there rather than on the CLI's selectors — a programmatic caller
+    that assembles the pools by hand cannot route around it."""
+    candidate = _candidate_docs()
+    impostors = _impostor_docs()
+    impostors[0].register = "message.imessage"
+
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        gi.run_gi(
+            target_text=candidate[0].text, target_id="t",
+            candidate_docs=candidate, impostor_docs=impostors,
+            iterations=5, seed=1,
+        )
+
+
+def test_run_gi_refuses_a_private_dyadic_candidate_against_public_impostors():
+    candidate = _candidate_docs()
+    for doc in candidate:
+        doc.register = "message.facebook_messenger"
+
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        gi.run_gi(
+            target_text=candidate[0].text, target_id="t",
+            candidate_docs=candidate, impostor_docs=_impostor_docs(),
+            iterations=5, seed=1,
+        )
+
+
+def test_a_same_tier_messaging_pool_is_not_refused():
+    """Negative control. The taxonomy allows a reference composed only of
+    private-dyadic leaves, and both messaging leaves may appear together — the
+    rule is no MIXTURE, not no messaging."""
+    candidate = _candidate_docs()
+    for doc in candidate:
+        doc.register = "message.imessage"
+    impostors = _impostor_docs()
+    for i, doc in enumerate(impostors):
+        doc.register = "message.facebook_messenger" if i % 2 else "message.imessage"
+
+    result = gi.run_gi(
+        target_text=candidate[0].text, target_id="t",
+        candidate_docs=candidate, impostor_docs=impostors,
+        iterations=5, seed=1,
+    )
+    assert result.refused is False
+
+
+def test_register_selection_fails_closed_when_no_register_can_be_inferred():
+    """The fail-open path. `_infer_candidate_register` returns "" when no
+    identity-baseline row for the persona carries a register; the selectors used
+    to read that as "match every register", which silently unioned private-dyadic
+    impostor rows into the pooled feature space. "" now means the register-LESS
+    slice, exactly."""
+    entries = [
+        _make_entry(id="alice_1", text="A. " * 60, persona="alice", register=""),
+        _make_entry(id="alice_2", text="B. " * 60, persona="alice", register=""),
+        _make_entry(
+            id="dm_imp", text="C. " * 60, persona="imp_dm",
+            corpus_role="impostor", register="message.imessage",
+            impostor_for=["alice"],
+        ),
+        _make_entry(
+            id="blog_imp", text="D. " * 60, persona="imp_blog",
+            corpus_role="impostor", register="blog_essay",
+            impostor_for=["alice"],
+        ),
+    ]
+
+    register = gi._infer_candidate_register(entries, "alice")
+    assert register == ""
+
+    candidates = gi._select_candidate_docs(
+        entries, candidate_persona="alice", register=register,
+    )
+    impostors = gi._select_impostor_docs(
+        entries, candidate_persona="alice", register=register,
+    )
+    assert {c.id for c in candidates} == {"alice_1", "alice_2"}
+    assert impostors == [], (
+        "an un-inferable register must select the register-less slice only, not "
+        "every register in the manifest"
+    )
+
+
+def test_the_guard_does_not_drag_in_the_heavy_stylometry_stack():
+    """Why the guard lives in `register_taxonomy` and not `stylometry_core`:
+    importing stylometry_core pulls spaCy + nltk and costs seconds, and this
+    harness deliberately ships its own lightweight featurizer for that reason
+    (see `_tokens`). Routing the guard through the stdlib-only taxonomy module is
+    what made the fix possible without a dependency regression.
+
+    Checked structurally rather than by substring, so the prose explaining the
+    choice cannot trip the check that enforces it."""
+    import ast
+
+    tree = ast.parse(Path(gi.__file__).read_text(encoding="utf-8"))
+    sources = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    } | {
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    assert "register_taxonomy" in sources
+    assert "stylometry_core" not in sources
+    for heavy in ("spacy", "nltk", "numpy", "scipy", "torch", "sklearn"):
+        assert heavy not in sources, f"{heavy} would tax this stdlib-light harness"
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

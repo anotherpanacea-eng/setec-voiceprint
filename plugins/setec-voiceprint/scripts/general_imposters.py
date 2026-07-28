@@ -93,6 +93,11 @@ from claim_license import (  # noqa: E402
     from_legacy,
     with_state_caveats,
 )
+# Imported from `register_taxonomy` and NOT from `stylometry_core`: this harness
+# ships its own lightweight featurizer (see `_tokens`) specifically to avoid
+# stylometry_core's spaCy/NLTK import cost, and the taxonomy module is
+# stdlib-only. `stylometry_core` re-exports the same function.
+from register_taxonomy import assert_personal_register_isolated  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "general_imposters"
@@ -524,6 +529,17 @@ def run_gi(
     The proportion of wins across iterations is the GI score. Wilson
     CI on the proportion is reported.
     """
+    # Register-tier isolation (#369). The guard sits HERE rather than on the
+    # CLI's selectors because this is the choke point: step 1 below derives ONE
+    # shared feature vocabulary from candidate_docs + impostor_docs, so a
+    # private-dyadic document in EITHER pool contaminates the space both are
+    # measured in. Guarding the selectors would leave a programmatic caller that
+    # assembles the pools by hand — tests, other modules — completely uncovered.
+    # Raised, not returned as a `refused` GIResult: a refusal envelope is a
+    # result the caller may ignore, and this is a privacy invariant.
+    assert_personal_register_isolated(
+        [{"register": d.register} for d in candidate_docs + impostor_docs]
+    )
     candidate_persona = (
         candidate_docs[0].persona if candidate_docs else "unknown"
     )
@@ -658,12 +674,16 @@ def _select_candidate_docs(
     candidate_persona: str,
     register: str,
 ) -> list[CorpusEntry]:
-    """Identity-baseline docs for the candidate persona in matched register."""
+    """Identity-baseline docs for the candidate persona in matched register.
+
+    ``register=""`` means the register-LESS slice, exactly — see
+    ``_select_impostor_docs`` for why it is not a wildcard.
+    """
     return [
         e for e in entries
         if e.corpus_role == "identity_baseline"
         and e.persona == candidate_persona
-        and (not register or e.register == register)
+        and e.register == register
     ]
 
 
@@ -674,12 +694,25 @@ def _select_impostor_docs(
     register: str,
 ) -> list[CorpusEntry]:
     """Impostor-pool docs whose impostor_for names the candidate
-    AND whose register matches."""
+    AND whose register matches.
+
+    Register matching is EXACT, including when ``register`` is ``""``. It used
+    to short-circuit — ``not register or e.register == register`` — so an
+    un-inferable register silently selected every register in the manifest.
+    That fails open in the one direction that matters: the candidate selector
+    and ``_infer_candidate_register`` filter on the identical predicate, so an
+    empty inference implies every candidate doc is register-less, but the
+    impostor pool is never scanned by the inference and so admitted rows of ANY
+    register — private-dyadic ones included — into the shared feature
+    vocabulary `run_gi` derives from both pools. Matching ``""`` as the
+    register-less slice fails closed and leaves the genuinely register-free
+    manifest (no row anywhere declares one) behaving exactly as before.
+    """
     return [
         e for e in entries
         if e.corpus_role == "impostor"
         and candidate_persona in (e.impostor_for or [])
-        and (not register or e.register == register)
+        and e.register == register
     ]
 
 
@@ -927,14 +960,29 @@ def run(args: argparse.Namespace) -> int:
         f"impostor pool {len(impostor_docs)} docs across "
         f"{len({d.persona for d in impostor_docs})} personas.\n"
     )
+    if not register:
+        sys.stderr.write(
+            "  no register could be inferred for this candidate persona "
+            "(none of its identity_baseline rows declares one); selecting the "
+            "register-LESS slice only. Pass --register to name one explicitly.\n"
+        )
 
-    result = run_gi(
-        target_text, target_id, candidate_docs, impostor_docs,
-        iterations=args.iterations,
-        feature_fraction=args.feature_fraction,
-        top_n_features=args.top_n_features,
-        seed=args.seed,
-    )
+    try:
+        result = run_gi(
+            target_text, target_id, candidate_docs, impostor_docs,
+            iterations=args.iterations,
+            feature_fraction=args.feature_fraction,
+            top_n_features=args.top_n_features,
+            seed=args.seed,
+        )
+    except ValueError as exc:
+        # In practice this is the register-tier isolation guard, which refuses
+        # rather than returning a `refused` GIResult because a refusal envelope
+        # is a result the caller may ignore. Worded neutrally so an unexpected
+        # ValueError from elsewhere in run_gi is not mislabelled as a privacy
+        # refusal; either way the pools must be re-filtered, not retried.
+        sys.stderr.write(f"general_imposters refused: {exc}\n")
+        return 2
     # B.3: surface --ai-status into the GIResult so the rendered
     # claim-license block and JSON payload both pick it up. We use
     # getattr() so callers that build the Namespace manually (older
@@ -977,7 +1025,12 @@ def _infer_candidate_register(
     entries: list[CorpusEntry], candidate_persona: str,
 ) -> str:
     """If the user didn't pass --register, pick the first register
-    we see for the candidate persona's identity_baseline entries."""
+    we see for the candidate persona's identity_baseline entries.
+
+    Returns ``""`` when none of them declares one. That is a real register
+    value — the register-less slice — and NOT a wildcard; the selectors match
+    it exactly.
+    """
     for e in entries:
         if (
             e.corpus_role == "identity_baseline"

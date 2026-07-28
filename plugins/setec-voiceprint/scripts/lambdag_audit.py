@@ -52,6 +52,9 @@ from output_schema import (  # noqa: E402
     build_output,
 )
 from claim_license import from_legacy  # noqa: E402
+from register_taxonomy import (  # noqa: E402
+    assert_personal_register_isolated,
+)
 from stylometry_core import (  # noqa: E402
     load_entries_from_dir,
     load_entries_from_manifest,
@@ -391,6 +394,20 @@ def _load_corpus(
         )
     if not entries:
         raise CorpusError(f"{label} corpus is empty (no entries matched the filters)")
+    # Register-tier isolation (#369). `_entries_to_sentences` concatenates the
+    # POS streams of every document in this corpus into ONE grammar LM the query
+    # is scored against — a pooled author reference in a different feature
+    # alphabet, not a different kind of object. Applied per corpus (the caller
+    # invokes this once for the reference and once for the background) because
+    # the background LM is equally a pooled reference, for whoever wrote it.
+    # `load_entries_from_*` are bare loaders with no guard of their own.
+    # Re-raised as CorpusError (itself a ValueError) so the refusal reaches the
+    # operator through this surface's own `bad_input` envelope, naming which of
+    # the two corpora is at fault, instead of as a traceback.
+    try:
+        assert_personal_register_isolated(entries)
+    except ValueError as exc:
+        raise CorpusError(f"{label} corpus: {exc}") from exc
     return entries
 
 
