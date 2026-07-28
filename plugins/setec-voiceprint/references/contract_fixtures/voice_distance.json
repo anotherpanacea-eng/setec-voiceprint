@@ -15,9 +15,16 @@
     "n_files": 6,
     "personas": [],
     "privacy_values": [],
+    "register_tier_counts": {
+      "private_composed": 6,
+      "private_dyadic": 0,
+      "public_composed": 0,
+      "public_responsive": 0
+    },
     "registers": [
       "personal"
     ],
+    "unresolved_register_count": 0,
     "words": 48000
   },
   "claim_license": {

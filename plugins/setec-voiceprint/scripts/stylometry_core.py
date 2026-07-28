@@ -19,6 +19,11 @@ from pathlib import Path
 from typing import Any
 
 from preprocessing import aggregate_preprocessing_metadata, strip_non_prose
+from register_taxonomy import (
+    PRIVATE_DYADIC_TIER,
+    REGISTER_TIERS,
+    resolve_register_tier,
+)
 
 from variance_audit import (  # type: ignore
     FUNCTION_WORDS,
@@ -488,28 +493,33 @@ def _matches_filter(value: Any, expected: str | None) -> bool:
     return str(value) == expected
 
 
-PROFILE_ONLY_PERSONAL_REGISTER = "message.imessage"
+def _entry_register(entry: dict[str, Any]) -> str | None:
+    """Resolve the two supported register locations and reject conflicts."""
+    metadata = entry.get("metadata")
+    nested_present = isinstance(metadata, dict) and "register" in metadata
+    top_present = "register" in entry
+    nested = metadata.get("register") if nested_present else None
+    top = entry.get("register") if top_present else None
+    if nested_present and top_present and nested != top:
+        raise ValueError(
+            "conflicting top-level and metadata register declarations"
+        )
+    value = nested if nested_present else top
+    return value if isinstance(value, str) and value else None
 
 
 def assert_personal_register_isolated(
     baseline_entries: list[dict[str, Any]],
 ) -> None:
-    """Refuse a message/essay reference mixture before prose processing."""
-    registers: list[str | None] = []
-    for entry in baseline_entries:
-        metadata = entry.get("metadata")
-        value = (
-            metadata.get("register")
-            if isinstance(metadata, dict) and "register" in metadata
-            else entry.get("register")
-        )
-        registers.append(value if isinstance(value, str) and value else None)
-    if PROFILE_ONLY_PERSONAL_REGISTER in registers and any(
-        value != PROFILE_ONLY_PERSONAL_REGISTER for value in registers
+    """Refuse a private-dyadic/non-dyadic mixture before prose processing."""
+    registers = [_entry_register(entry) for entry in baseline_entries]
+    tiers = [resolve_register_tier(value) for value in registers]
+    if PRIVATE_DYADIC_TIER in tiers and any(
+        tier != PRIVATE_DYADIC_TIER for tier in tiers
     ):
         raise ValueError(
-            "message.imessage is a profile-only conversational register and "
-            "cannot be pooled with another or missing register"
+            "private-dyadic registers are profile-only and cannot be pooled "
+            "with a non-private-dyadic or missing register"
         )
 
 
@@ -604,6 +614,14 @@ def extract_entry_features(
 ) -> list[dict[str, Any]]:
     out = []
     for entry in entries:
+        metadata = (
+            dict(entry["metadata"])
+            if isinstance(entry.get("metadata"), dict)
+            else {}
+        )
+        register = _entry_register(entry)
+        if register is not None:
+            metadata["register"] = register
         # Per-entry precomputed biber_vector (offline/cached path, §4.3):
         # if the entry carries "biber_vector" and include_biber is True,
         # pass it as biber_vector= so tagging is skipped for this entry.
@@ -623,7 +641,7 @@ def extract_entry_features(
         out.append({
             "id": entry["id"],
             "path": entry["path"],
-            "metadata": entry.get("metadata", {}),
+            "metadata": metadata,
             "summary": feat["summary"],
             "features": feat["features"],
             "preprocessing": feat.get("preprocessing", {}),
@@ -951,6 +969,14 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
     registers = sorted({m.get("register") for m in metadata if m.get("register")})
     personas = sorted({m.get("persona") for m in metadata if m.get("persona")})
     privacy_values = sorted({m.get("privacy") for m in metadata if m.get("privacy")})
+    tier_counts = {tier: 0 for tier in sorted(REGISTER_TIERS)}
+    unresolved_register_count = 0
+    for item in metadata:
+        tier = resolve_register_tier(item.get("register"))
+        if tier is None:
+            unresolved_register_count += 1
+        else:
+            tier_counts[tier] += 1
     return {
         "n_files": len(entries),
         "total_words": sum(word_counts),
@@ -958,6 +984,8 @@ def summarize_entries(entries: list[dict[str, Any]]) -> dict[str, Any]:
         "min_words": min(word_counts) if word_counts else 0,
         "max_words": max(word_counts) if word_counts else 0,
         "registers": registers,
+        "register_tier_counts": tier_counts,
+        "unresolved_register_count": unresolved_register_count,
         "personas": personas,
         "privacy_values": privacy_values,
         "files": [{"id": e["id"], "path": e["path"], "n_words": e["summary"]["n_words"]} for e in entries],
