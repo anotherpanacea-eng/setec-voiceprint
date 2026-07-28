@@ -1105,6 +1105,36 @@ def test_register_cli_happy_path(tmp_path):
     assert registration["schema"] == "narrative-longform-registration/1"
 
 
+@pytest.mark.parametrize("protected", ["thresholds", "manifest"])
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+def test_register_output_cannot_alias_an_input(
+    tmp_path, protected, alias_kind
+):
+    t = tmp_path / "thresholds.json"
+    d = tmp_path / "design.jsonl"
+    write_json(t, LICENSED_THRESHOLDS)
+    write_jsonl(d, [{"work_id": "w1"}, {"work_id": "w2"}])
+    protected_path = {"thresholds": t, "manifest": d}[protected]
+    original = protected_path.read_bytes()
+    out = protected_path
+    if alias_kind == "symlink":
+        out = tmp_path / f"{protected}-link"
+        out.symlink_to(protected_path)
+    proc = run_cli([
+        "--register", "--manifest", str(d), "--thresholds", str(t),
+        "--out", str(out), "--date", DATE,
+        "--segmenter-version", SEGMENTER["version"],
+        "--segmenter-params-sha256", SEGMENTER["params_sha256"],
+        "--segment-target-words", str(SEGMENTER["segment_target_words"]),
+        "--judge-kind", JUDGE["kind"],
+        "--judge-model", JUDGE["model"],
+        "--judge-model-revision", JUDGE["model_revision"],
+        "--judge-prompt-version", JUDGE["prompt_version"],
+    ])
+    assert proc.returncode == 2
+    assert protected_path.read_bytes() == original
+
+
 # ---------- registration matching at evaluate ---------------------------
 
 def test_evaluate_refuses_post_hoc_thresholds(tmp_path):
@@ -1136,6 +1166,30 @@ def test_evaluate_refuses_work_id_drift(tmp_path):
             registration_path=paths["registration"],
             manifest_path=paths["manifest"],
         )
+
+
+@pytest.mark.parametrize(
+    "protected", ["thresholds", "registration", "manifest"],
+)
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+def test_evaluate_output_cannot_alias_an_input(
+    tmp_path, protected, alias_kind
+):
+    _, paths = pipeline(tmp_path, make_rows())
+    protected_path = paths[protected]
+    original = protected_path.read_bytes()
+    out = protected_path
+    if alias_kind == "symlink":
+        out = tmp_path / f"{protected}-link"
+        out.symlink_to(protected_path)
+    proc = run_cli([
+        "--evaluate", "--manifest", str(paths["manifest"]),
+        "--thresholds", str(paths["thresholds"]),
+        "--registration", str(paths["registration"]),
+        "--out", str(out), "--date", DATE,
+    ])
+    assert proc.returncode == 2
+    assert protected_path.read_bytes() == original
 
 
 def test_evaluate_cli_requires_registration_and_date(tmp_path):

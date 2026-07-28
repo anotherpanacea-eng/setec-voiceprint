@@ -1377,8 +1377,11 @@ def _emit_refusal(
         target_path=target_path,
         target_words=target_words,
     )
-    if args.out is not None and (
-        target_path is None or not _paths_alias(args.out, target_path)
+    protected_inputs = tuple(
+        path for path in (target_path, args.judge_manifest) if path is not None
+    )
+    if args.out is not None and not any(
+        _paths_alias(args.out, path) for path in protected_inputs
     ):
         args.out.write_text(
             json.dumps(envelope, indent=2, default=str), encoding="utf-8"
@@ -1397,18 +1400,30 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     target_path = Path(args.target)
+    out_path = (
+        args.out
+        if args.out is not None
+        else target_path.with_suffix(
+            target_path.suffix + ".narrative_long_form.json"
+        )
+    )
     target_words = 0
     try:
         if not target_path.exists():
             raise _Refusal(
                 "bad_input", f"target file not found at {target_path}"
             )
-        if args.out is not None and _paths_alias(args.out, target_path):
-            raise _Refusal(
-                "bad_input",
-                f"output path {args.out} aliases the target {target_path}; "
-                f"refusing to overwrite source text with the JSON envelope",
-            )
+        protected_inputs = [("target", target_path)]
+        if args.judge_manifest is not None:
+            protected_inputs.append(("judge manifest", args.judge_manifest))
+        for label, input_path in protected_inputs:
+            if _paths_alias(out_path, input_path):
+                raise _Refusal(
+                    "bad_input",
+                    f"output path {out_path} aliases the {label} "
+                    f"{input_path}; refusing to overwrite an input artifact "
+                    f"with the JSON envelope",
+                )
         try:
             text = target_path.read_text(encoding="utf-8")
         except UnicodeDecodeError as exc:
@@ -1426,13 +1441,6 @@ def main(argv: list[str] | None = None) -> int:
     except _Refusal as refusal:
         return _emit_refusal(args, refusal, target_path, target_words)
 
-    out_path = (
-        args.out
-        if args.out is not None
-        else target_path.with_suffix(
-            target_path.suffix + ".narrative_long_form.json"
-        )
-    )
     out_path.write_text(
         json.dumps(envelope, indent=2, default=str), encoding="utf-8"
     )

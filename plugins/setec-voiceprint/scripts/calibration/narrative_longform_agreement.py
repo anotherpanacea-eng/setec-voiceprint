@@ -288,6 +288,7 @@ import datetime as _datetime
 import hashlib
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -1771,6 +1772,31 @@ def _write_json(path: Path, obj: dict[str, Any]) -> None:
     )
 
 
+def _paths_alias(left: Path, right: Path) -> bool:
+    """True when two paths resolve to the same file, including hard links."""
+    try:
+        if left.resolve() == right.resolve():
+            return True
+    except OSError:
+        pass
+    try:
+        return left.exists() and right.exists() and os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
+def _refuse_output_alias(
+    out: Path,
+    protected_inputs: tuple[tuple[str, Path], ...],
+) -> None:
+    for label, input_path in protected_inputs:
+        if _paths_alias(out, input_path):
+            raise CalibrationRefusal(
+                f"output path {out} aliases the {label} {input_path}; "
+                f"refusing to overwrite an input artifact"
+            )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -1814,6 +1840,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.register:
             if args.date is None:
                 raise CalibrationRefusal("--register requires --date")
+            _refuse_output_alias(args.out, (
+                ("thresholds", args.thresholds),
+                ("design manifest", args.manifest),
+            ))
             identity_flags = {
                 "--segmenter-version": args.segmenter_version,
                 "--segmenter-params-sha256": args.segmenter_params_sha256,
@@ -1856,6 +1886,11 @@ def main(argv: list[str] | None = None) -> int:
                 raise CalibrationRefusal(
                     "--evaluate requires --registration"
                 )
+            _refuse_output_alias(args.out, (
+                ("thresholds", args.thresholds),
+                ("registration", args.registration),
+                ("evaluation manifest", args.manifest),
+            ))
             receipt = build_receipt(
                 date=args.date,
                 thresholds_path=args.thresholds,

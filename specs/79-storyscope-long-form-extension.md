@@ -758,6 +758,17 @@ non-empty string or null, and anything else is a closed `bad_input` refusal.
 **N. Spec renumbering.** The emitted claim license said "spec 77" and cited a
 nonexistent `specs/77-storyscope-long-form-extension.md`; all three modules
 now say 79.
+
+**O. Output writers cannot alias input evidence.** The first alias guard
+protected only the target manuscript, leaving `--out` able to replace a keyed
+judge manifest with an envelope. The calibration CLI likewise allowed
+registration output to replace thresholds or its design manifest, and
+evaluation output to replace thresholds, registration, or the judged
+manifest. Both CLIs now compare resolved paths and existing-file identity
+before work begins and refuse every operation-specific output/input alias,
+including symlinks and hard links. Verify mode is unchanged: there, `--out`
+intentionally names the existing receipt to read.
+
 ## Amendment record
 
 Amendments to this spec's claim licenses are listed here, each with its id, its

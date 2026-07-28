@@ -699,6 +699,25 @@ def test_output_cannot_alias_the_source_text(tmp_path, alias_kind):
     assert target.read_bytes() == original
 
 
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+def test_output_cannot_alias_the_judge_manifest(
+    long_case, tmp_path, alias_kind
+):
+    manifest = tmp_path / "judge.json"
+    original = long_case["manifest"].read_bytes()
+    manifest.write_bytes(original)
+    out = manifest
+    if alias_kind == "symlink":
+        out = tmp_path / "judge-link.json"
+        out.symlink_to(manifest)
+    rc = ndlf.main([
+        str(long_case["target"]), "--judge", "manifest",
+        "--judge-manifest", str(manifest), "--out", str(out),
+    ])
+    assert rc == 1
+    assert manifest.read_bytes() == original
+
+
 def test_calibration_mock_long_text_exempt_from_tripwire(
     long_case, tmp_path
 ):
