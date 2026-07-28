@@ -4,7 +4,11 @@ entries:
   surface: validation
   status: todo
   handoff: none
-  consumers: []
+  # consumers: also surfaced by skill: validation.
+  consumers:
+  - restoration_packet
+  - task_surfaces
+  - validation_harness
   family: TODO
   purpose: check_corpus.py
   use_when:

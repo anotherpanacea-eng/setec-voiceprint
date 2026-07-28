@@ -4,7 +4,9 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - aesthetic_authority_audit
+  - variance_audit
   family: TODO
   purpose: AIC-9 (Closure Inflation) detector.
   use_when:

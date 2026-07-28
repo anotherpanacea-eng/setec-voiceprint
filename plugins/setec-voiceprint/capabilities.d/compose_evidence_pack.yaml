@@ -4,7 +4,9 @@ entries:
   surface: external_mirror_discrimination
   status: todo
   handoff: none
-  consumers: []
+  # consumers: external_mirror/workflow.py; also surfaced by skill: setup.
+  consumers:
+  - workflow
   family: TODO
   purpose: 'Phase B step 3: compose evidence pack.'
   use_when:

@@ -4,7 +4,9 @@
   "surface": "smoothing_diagnosis",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "confounder_audit"
+  ],
   "family": "discourse-relation-profile",
   "purpose": "Typed discourse-marker typology + move-sequence bigrams (what KIND of scaffolding the writer uses, not just how much), PLUS \u2014 additive \u2014 the writer's EXPLICIT PDTB top-level discourse-relation mix (Comparison / Contingency / Expansion / Temporal) as a descriptive distribution: per-1k densities, fractions, and relation entropy. The relation layer is an explicit-connective PROXY (arXiv:2307.03378): it maps only explicitly-signalled connectives to their PDTB majority top-level class via a static, corpus-independent lexicon; it does not extract argument spans, does not disambiguate polysemous connectives per-occurrence (ambiguous_connective_fraction reports their share), and does not see the implicit-relation layer the trained classifier of arXiv:2307.03378 targets (that is the gated model-CPU M2 seam). NO VERDICT: every leaf is a VALUE (count / density / fraction / entropy); the relation distribution ships uncalibrated (calibration_status: uncalibrated) with no band. Consumed by confounder_audit.py as differentiating evidence; the differential diagnosis of cause is that audit's job, never this layer's.\n",
   "use_when": [

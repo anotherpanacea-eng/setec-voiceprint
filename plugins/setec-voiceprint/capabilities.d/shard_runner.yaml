@@ -4,7 +4,10 @@ entries:
   surface: calibration
   status: todo
   handoff: none
-  consumers: []
+  # consumers: also surfaced by skill: validation.
+  consumers:
+  - setup_launchd
+  - task_surfaces
   family: TODO
   purpose: sharded calibration orchestrator.
   use_when:

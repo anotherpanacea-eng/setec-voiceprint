@@ -4,6 +4,7 @@ entries:
   surface: voice_coherence_acquisition
   status: todo
   handoff: none
+  # consumers: no code importer — it IS the template skill: corpus-acquisition teaches.
   consumers: []
   family: TODO
   purpose: scaffold for a new acquisition script.

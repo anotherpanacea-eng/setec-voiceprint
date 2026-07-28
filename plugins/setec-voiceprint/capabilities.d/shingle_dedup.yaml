@@ -4,7 +4,10 @@ entries:
   surface: voice_coherence_acquisition
   status: heuristic
   handoff: none
-  consumers: []
+  # consumers: both bind to this entry's TOOL name and checkpoint artifact schema.
+  consumers:
+  - shingle_dedup_checkpoint
+  - shingle_dedup_validate
   family: acquisition
   purpose: >-
     Deterministic, exact 8-token shingle-overlap measurement for locally staged

@@ -4,7 +4,9 @@
   "surface": "set_level_diversity",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "cross_doc_argument_consistency"
+  ],
   "family": "set-level-diversity",
   "purpose": "Per-feature cross-document novelty PROFILE (GENIE axis, arXiv:2606.12790): for ONE target document against a supplied reference POOL, reports \u2014 per reused stdlib stylometry feature \u2014 the target's z-position relative to the pool's distribution of that feature, plus the per-feature mean/SD/n and a per-family |z| distribution summary. The per-feature distribution + per-feature position table ARE the read \u2014 NEVER a single \"novelty score\", NEVER a verdict, NEVER a band. Clean-room of GENIE's per-feature-vs-population position idea, using the fixed stdlib feature families (function_words / punctuation / paragraph_dialogue / pronoun_modal_negation / char_ngrams_3/4/5) from extract_features(include_spacy=False) as the named feature set. M1 is model-free (mean/SD z, stdlib, no torch/spaCy), deterministic, and CI-runnable. The FEATURE-WISE COMPLEMENT to the cluster-wise distinct_diversity_audit (that one partitions a SET into near-dup equivalence classes; this one asks, for ONE target vs a pool, which named stylometric features make it atypical). Neither subsumes the other \u2014 they are orthogonal reads. Robust median/MAD z is an explicitly DEFERRED M2 seam. NOT an AI/human call; NOT a plagiarism/derivative determination; NOT a selection/ranking signal; NO absolute band; thresholds are operator-side / PROVISIONAL.\n",
   "use_when": [

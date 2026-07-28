@@ -5,7 +5,9 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "mimicry_cosplay_audit"
+  ],
   "dependencies": {
     "python": []
   },

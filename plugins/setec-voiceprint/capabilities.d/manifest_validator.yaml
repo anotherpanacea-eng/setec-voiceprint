@@ -4,7 +4,20 @@ entries:
   surface: validation
   status: empirically_oriented
   handoff: internal
-  consumers: []
+  # consumers: also surfaced by skills: corpus-acquisition, setec, validation,
+  # voice-coherence.
+  consumers:
+  - apply_owner_corrections
+  - calibrate_thresholds
+  - check_corpus
+  - editlens_to_manifest
+  - idiolect_detector
+  - near_dup_dedup
+  - pov_voice_profile
+  - register_composition_sweep
+  - validation_harness
+  - voice_drift_tracker
+  - voice_validation_harness
   family: corpus-validation
   purpose: 'Schema and integrity checks for `corpus_manifest.jsonl`. Enforces the
     manifest enum vocabulary (label, ai_status, language_status, use), checks required

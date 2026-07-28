@@ -5,7 +5,10 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "variance_audit",
+    "voice_distance"
+  ],
   "dependencies": {
     "python": [
       "numpy",

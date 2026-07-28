@@ -4,7 +4,8 @@ entries:
   surface: smoothing_diagnosis
   status: heuristic
   handoff: none
-  consumers: []
+  consumers:
+  - confounder_audit
   family: discourse-relation-profile
   purpose: 'Typed discourse-marker typology + move-sequence bigrams (what KIND of
     scaffolding the writer uses, not just how much), PLUS — additive — the writer''s

@@ -5,7 +5,9 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "argmove_profile"
+  ],
   "dependencies": {
     "python": []
   },

@@ -4,7 +4,10 @@ entries:
   surface: validation
   status: todo
   handoff: none
-  consumers: []
+  # consumers: named in the SHIPPED mimicry_cosplay_audit claim_license contract
+  # fixture.
+  consumers:
+  - mimicry_cosplay_audit
   family: TODO
   purpose: Layer D differential diagnosis.
   use_when:

@@ -4,7 +4,11 @@ entries:
   surface: set_level_diversity
   status: heuristic
   handoff: none
-  consumers: []
+  consumers:
+  - aitdna_benchmark
+  - corpus_novelty_audit
+  - reconstructibility_probe_set
+  - skeleton_overlap_audit
   family: set-level-diversity
   purpose: 'DJ-Search reconstructibility of a target against a reference pool (the operator''s
     impostor pool by default) — the fraction of the target covered by long verbatim

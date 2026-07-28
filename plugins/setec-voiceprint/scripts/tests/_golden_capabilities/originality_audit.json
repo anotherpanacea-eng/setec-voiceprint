@@ -4,7 +4,12 @@
   "surface": "set_level_diversity",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "aitdna_benchmark",
+    "corpus_novelty_audit",
+    "reconstructibility_probe_set",
+    "skeleton_overlap_audit"
+  ],
   "family": "set-level-diversity",
   "purpose": "DJ-Search reconstructibility of a target against a reference pool (the operator's impostor pool by default) \u2014 the fraction of the target covered by long verbatim token spans (>= min_ngram, default 8) that appear anywhere in the reference corpus. Reports `coverage` (= reconstructibility) and `originality = 1 - coverage`, oriented gt = LESS reconstructible from that pool. A new set-level axis (target-vs-pool, not doc-vs-baseline). NOT an AI/human or plagiarism determination: clean-room DJ Search (Creativity Index, arXiv:2410.04265); measurements only, no band/verdict; the claim-license refuses provenance / plagiarism / quality inference.\n",
   "use_when": [

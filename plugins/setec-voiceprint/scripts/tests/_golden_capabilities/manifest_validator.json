@@ -4,7 +4,19 @@
   "surface": "validation",
   "status": "empirically_oriented",
   "handoff": "internal",
-  "consumers": [],
+  "consumers": [
+    "apply_owner_corrections",
+    "calibrate_thresholds",
+    "check_corpus",
+    "editlens_to_manifest",
+    "idiolect_detector",
+    "near_dup_dedup",
+    "pov_voice_profile",
+    "register_composition_sweep",
+    "validation_harness",
+    "voice_drift_tracker",
+    "voice_validation_harness"
+  ],
   "family": "corpus-validation",
   "purpose": "Schema and integrity checks for `corpus_manifest.jsonl`. Enforces the manifest enum vocabulary (label, ai_status, language_status, use), checks required fields, and warns when ESL-labeled entries land in `use: baseline` for voice-coherence work (the language-status ratchet). Its opt-in conflict-copy preflight refuses sync-forked corpus trees before manifest parsing.\n",
   "use_when": [
