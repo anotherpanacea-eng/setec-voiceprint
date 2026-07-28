@@ -74,6 +74,10 @@ from narrative_judge import (  # type: ignore
     validate_values,
 )
 from output_schema import build_output  # type: ignore
+from storyscope_polarity_contract import (  # type: ignore
+    count_source_words,
+    source_work_sha256,
+)
 
 TASK_SURFACE = "narrative_decision_audit"
 TOOL_NAME = "narrative_decision_audit"
@@ -81,6 +85,17 @@ SCRIPT_VERSION = "0.1.0"
 
 MIN_FICTION_WORDS = 2000
 PAPER_CORPUS_MEAN_WORDS = 4753
+REG_AUDIT_B1 = "REG-AUDIT-B1"
+BRIDGE_CONTROL_MAX_WORDS = 200_000
+BRIDGE_CONTROL_LENGTH_RANGE_WORDS = (25_001, BRIDGE_CONTROL_MAX_WORDS)
+BRIDGE_CONTROL_EXTENSION_SENTENCE = (
+    "Register extension REG-AUDIT-B1. This run scored a work above the audit's "
+    "declared 25,000-word register under --bridge-control. Its output is licensed "
+    "only as spec-78 Arm A bridge-control input under amendment CLA-79-A2: "
+    "per-signal whole-work raw responses, consumed to estimate a whole-versus-"
+    "segment shift. The audit's ordinary claim license does not extend above 25,000 "
+    "words, and this output licenses no reading of the work."
+)
 
 DEFAULT_LICENSES = (
     "Reports per-feature deviations from the human / AI group means "
@@ -408,6 +423,7 @@ def compose_envelope(
     results: dict[str, Any],
     licenses_text: str,
     does_not_license_text: str,
+    bridge_control: bool = False,
 ) -> dict[str, Any]:
     caveats = []
     if results["target"].get("register_warnings"):
@@ -436,6 +452,10 @@ def compose_envelope(
             "on a different register or judge model do not transfer."
         )
 
+    if bridge_control:
+        does_not_license_text = (
+            does_not_license_text.rstrip() + " " + BRIDGE_CONTROL_EXTENSION_SENTENCE
+        )
     license_block = ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=licenses_text,
@@ -455,7 +475,10 @@ def compose_envelope(
             "judge_host": results["judge"]["judge_identity"].get("host"),
             "prompt_fingerprint_sha256": results["prompt_fingerprint_sha256"],
         },
-        length_range_words=(MIN_FICTION_WORDS, 25_000),
+        length_range_words=(
+            BRIDGE_CONTROL_LENGTH_RANGE_WORDS
+            if bridge_control else (MIN_FICTION_WORDS, 25_000)
+        ),
         register_match=["long_form_fiction"],
         additional_caveats=caveats,
         references=[
@@ -686,6 +709,15 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_DOES_NOT_LICENSE,
         help="Override the claim_license.does_not_license text.",
     )
+    parser.add_argument(
+        "--bridge-control",
+        action="store_true",
+        help=(
+            "Emit the REG-AUDIT-B1 over-ceiling whole-work bridge control. "
+            "Requires --judge manifest and a canonical source length from "
+            "25,001 through 200,000 words."
+        ),
+    )
     args = parser.parse_args(argv)
 
     # Threshold-pair validation. The verdict-band logic checks
@@ -732,6 +764,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     target_words = count_words(text)
+    if args.bridge_control:
+        if args.judge != "manifest":
+            parser.error("--bridge-control requires --judge manifest")
+        target_words = count_source_words(text)
+        if not (BRIDGE_CONTROL_LENGTH_RANGE_WORDS[0] <= target_words <= BRIDGE_CONTROL_MAX_WORDS):
+            print(
+                f"error: --bridge-control requires {BRIDGE_CONTROL_LENGTH_RANGE_WORDS[0]:,} "
+                f"through {BRIDGE_CONTROL_MAX_WORDS:,} canonical source words; got {target_words:,}.",
+                file=sys.stderr,
+            )
+            return 1
 
     try:
         judge = build_judge(
@@ -773,13 +816,34 @@ def main(argv: list[str] | None = None) -> int:
         threshold_high=args.threshold_high,
         register_warnings=reg_warnings,
     )
+    if args.bridge_control:
+        identity = judge_result_obj.judge_identity
+        quad = {
+            key: identity.get(key)
+            for key in ("kind", "model", "model_revision", "prompt_version")
+        }
+        if (
+            quad["kind"] != "manifest"
+            or not all(isinstance(value, str) and value for value in quad.values())
+        ):
+            print(
+                "error: --bridge-control manifest judge requires non-empty string "
+                "kind, model, model_revision, and prompt_version identity fields.",
+                file=sys.stderr,
+            )
+            return 1
+        results["register_extension"] = REG_AUDIT_B1
+        results["bridge_judge"] = quad
     envelope = compose_envelope(
         target_path=target_path,
         target_words=target_words,
         results=results,
         licenses_text=args.licenses,
         does_not_license_text=args.does_not_license,
+        bridge_control=args.bridge_control,
     )
+    if args.bridge_control:
+        envelope["target"]["source_content_sha256"] = source_work_sha256(text)
 
     out_json_path = (
         args.out
