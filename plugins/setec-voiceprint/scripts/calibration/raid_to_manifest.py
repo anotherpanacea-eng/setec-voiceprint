@@ -45,12 +45,15 @@ Manifest mapping (aligned with
   - `register`        validator-vocabulary mapping per RAID
                       domain (news → blog_essay, books →
                       literary_fiction, abstracts →
-                      academic_philosophy, reviews/reddit/recipes
-                      → personal, wikipedia → blog_essay, poetry
-                      → literary_fiction). Domains without a
-                      clean fit (code, czech, german) OMIT the
-                      register field; the raw domain is always
-                      preserved in `notes.domain`.
+                      academic_philosophy, reviews/reddit →
+                      forum_metafilter, wikipedia → blog_essay,
+                      poetry → literary_fiction). Every mapped
+                      leaf sits in a public tier: RAID is
+                      third-party public web text. Domains
+                      without a clean fit (recipes, code, czech,
+                      german) OMIT the register field; the raw
+                      domain is always preserved in
+                      `notes.domain`.
   - `language_status` "native" for English domains;
                       "non_native_advanced" for the extra
                       subset's Czech/German (MT outputs);
@@ -264,18 +267,28 @@ def _language_status_for_row(row: dict[str, Any]) -> str:
 
 
 # RAID's 8 English domains → manifest_validator.ALLOWED_REGISTER.
-# The validator's vocabulary is fiction/blog/academic/testimony/
-# personal/policy + literary_horror. RAID's domains don't match
-# one-to-one; we pick the closest fit per domain. The original
-# domain is preserved in `notes.domain` for finer-grained
-# slicing at calibration time.
+# The leaf vocabulary is the closed registry under `register_tiers.d/`;
+# see `register_taxonomy.py` for the authoritative list and each leaf's
+# audience/composition tier. RAID's domains don't match one-to-one; we
+# pick the closest fit per domain. The original domain is preserved in
+# `notes.domain` for finer-grained slicing at calibration time.
+#
+# Hard constraint: RAID is third-party public web text, so no domain may
+# map to a `private_*` tier. `personal` is `private_composed`, so the
+# former `reviews`/`reddit`/`recipes` → `personal` mappings both
+# misdescribed public prose as private authorship and poisoned
+# `register_tier_counts` on every RAID-derived calibration manifest.
 _DOMAIN_TO_REGISTER = {
     "news": "blog_essay",
     "books": "literary_fiction",
     "abstracts": "academic_philosophy",
-    "reviews": "personal",
-    "reddit": "personal",
-    "recipes": "personal",
+    # Third-party public responsive commentary, the same shape as a
+    # MetaFilter thread comment.
+    "reviews": "forum_metafilter",
+    "reddit": "forum_metafilter",
+    # Public instructional web prose. No leaf honestly names it, and
+    # asserting a wrong leaf is worse than omitting the field.
+    "recipes": None,
     "wikipedia": "blog_essay",
     "poetry": "literary_fiction",
     # `extra` subset:

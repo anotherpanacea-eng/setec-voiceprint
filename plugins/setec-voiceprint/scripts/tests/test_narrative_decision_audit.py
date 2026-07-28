@@ -13,6 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -336,6 +337,53 @@ def test_register_warning_fires_below_floor():
         assert any(
             "long-form fiction" in w for w in warnings
         ), f"expected register warning; got {warnings}"
+
+
+def _manifest_values() -> dict[str, object]:
+    return {
+        feature.key: ([] if feature.feature_type == "multi"
+                      else feature.response_options[0])
+        for feature in nfs.CORE_FEATURES
+    }
+
+
+def test_bridge_control_requires_manifest_judge(tmp_path):
+    target = tmp_path / "over.txt"
+    target.write_text("word " * 25_001, encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        nda.main([str(target), "--judge", "mock", "--bridge-control"])
+    assert exc.value.code == 2
+
+
+def test_bridge_control_stamps_register_extension_and_source_digest(tmp_path):
+    target = tmp_path / "over.txt"
+    text = "word " * 25_001
+    target.write_text(text, encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps({
+        "values": _manifest_values(),
+        "judge_identity": {
+            "model": "test-judge", "model_revision": "r1",
+            "prompt_version": "pv1",
+        },
+    }), encoding="utf-8")
+    out = tmp_path / "out.json"
+    md = tmp_path / "out.md"
+    rc = nda.main([
+        str(target), "--judge", "manifest", "--judge-manifest", str(manifest),
+        "--bridge-control", "--out", str(out), "--out-md", str(md),
+    ])
+    assert rc == 0
+    envelope = json.loads(out.read_text(encoding="utf-8"))
+    assert envelope["results"]["register_extension"] == nda.REG_AUDIT_B1
+    assert envelope["results"]["bridge_judge"] == {
+        "kind": "manifest", "model": "test-judge", "model_revision": "r1",
+        "prompt_version": "pv1",
+    }
+    assert envelope["target"]["words"] == 25_001
+    assert envelope["target"]["source_content_sha256"].startswith("sha256:")
+    assert envelope["claim_license"]["length_range_words"] == [25_001, 200_000]
+    assert nda.BRIDGE_CONTROL_EXTENSION_SENTENCE in envelope["claim_license"]["does_not_license"]
 
 
 # ---------- judge interface ---------------------------------------

@@ -772,12 +772,12 @@ intentionally names the existing receipt to read.
 ## Amendment record
 
 Amendments to this spec's claim licenses are listed here, each with its id, its
-carrier, and the increment that lands it. **None is landed yet.**
+carrier, and the increment that lands it. **Both are landed by spec 78 M1.**
 
 | Id | Amends | Status | Landed by |
 |---|---|---|---|
-| `CLA-79-A1` | the `calibration_only` claim license (`CALIBRATION_DOES_NOT_LICENSE` in the M1 orchestrator) — a narrow permission for spec 78's Arm A to consume `--calibration-emit-segments` segment rows as polarity-audit manifest input, permitting an internal never-emitted per-work reduction and refusing any reported work-level value | **pending** | spec 78 M1 |
-| `CLA-79-A2` | the same license surface — a narrow permission for **per-signal whole-work raw judge responses of an over-ceiling work**, obtained under base-audit register extension `REG-AUDIT-B1`, to be consumed **as spec-78 Arm A bridge-control rows only** | **pending** | spec 78 M1 |
+| `CLA-79-A1` | the `calibration_only` claim license (`CALIBRATION_DOES_NOT_LICENSE` in the M1 orchestrator) — a narrow permission for spec 78's Arm A to consume `--calibration-emit-segments` segment rows as polarity-audit manifest input, permitting an internal never-emitted per-work reduction and refusing any reported work-level value | **landed** | spec 78 M1 |
+| `CLA-79-A2` | the same license surface — a narrow permission for **per-signal whole-work raw judge responses of an over-ceiling work**, obtained under base-audit register extension `REG-AUDIT-B1`, to be consumed **as spec-78 Arm A bridge-control rows only** | **landed** | spec 78 M1 |
 
 Exact wording, home, emission point, and the scoping tests for both amendments
 are specified in [spec 78](78-storyscope-polarity-extension.md) §"Claim
@@ -787,8 +787,8 @@ lands `REG-AUDIT-B1`, a bridge-scoped extension to the **base audit's** declared
 "the tuple is byte-unchanged" to "the tuple is byte-unchanged without
 `--bridge-control`", plus a new pin for the bridge tuple.
 
-Until these land, `CALIBRATION_DOES_NOT_LICENSE` refuses all evidentiary
-use of `calibration_only` output without exception, exactly as built.
+Outside the two named amendments, `CALIBRATION_DOES_NOT_LICENSE` continues to
+refuse evidentiary use of `calibration_only` output.
 
 **Cross-spec precedence between the two fragment-vs-whole controls.** This
 spec's M1 agreement arm and spec 78's Arm A bridge measure the same evidence

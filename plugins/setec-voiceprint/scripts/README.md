@@ -1290,7 +1290,7 @@ new-attestation workflow, which this tool does not create.
 `acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs and explicitly
 attested local author-document manifests to voicewright's
 `voicewright-author-corpus/1` package. It requires source-kind-qualified register
-maps, for example `imessage_sent:personal=text.personal` and
+maps, for example `imessage_sent:message.imessage=text.personal` and
 `gmail_sent:personal=email.personal`, plus an owner-only HMAC key and a destination
 under `ai-prose-baselines-private/`. The SETEC JSON envelope contains only
 `results.producer_receipt`; prose, paths, raw contacts, message ids, and HMAC
