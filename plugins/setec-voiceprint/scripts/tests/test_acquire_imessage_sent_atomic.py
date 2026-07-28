@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 import acquire_imessage_sent_atomic as A  # noqa: E402
 import author_corpus_export as E  # noqa: E402
+import register_taxonomy as rt  # noqa: E402
 
 
 KEY = bytes(range(32))
@@ -983,7 +984,7 @@ def _offline_approved_case(
         run_id='approved-smoke',
         persona='joshua',
         author='Joshua Miller',
-        register='personal',
+        register='message.imessage',
         since=None,
         until=None,
         include_group_chats=False,
@@ -1031,7 +1032,7 @@ def _offline_approved_case(
         run_id='offline-full',
         persona='joshua',
         author='Joshua Miller',
-        register='personal',
+        register='message.imessage',
         since=None,
         until=None,
         include_group_chats=False,
@@ -7134,12 +7135,87 @@ def test_main_refuses_live_acquisition_off_macos_before_source_read(
         "--source-db", str(tmp_path / "must-not-be-read.db"),
         "--output-root", str(tmp_path / "output"),
         "--run-id", "run-1", "--persona", "joshua",
-        "--author", "Joshua Miller", "--register", "personal",
+        "--author", "Joshua Miller", "--register", "message.imessage",
         "--max-retained", "1",
     ]
     with pytest.raises(A.AtomicAcquisitionError, match="only on the macOS host"):
         A.main(argv)
     assert not (tmp_path / "must-not-be-read.db").exists()
+
+
+def _register_output_root(tmp_path: Path) -> Path:
+    # A private-root-shaped output path, so the bootstrap's own private-root
+    # refusal cannot stand in for the register gate under test.
+    return tmp_path / A.PRIVATE_ROOT_COMPONENT / "output"
+
+
+def _register_cli(tmp_path: Path, register: str) -> list[str]:
+    return _required_cli("--exclude-group-chats") + [
+        "--source-db", str(tmp_path / "must-not-be-read.db"),
+        "--output-root", str(_register_output_root(tmp_path)),
+        "--run-id", "run-1", "--persona", "joshua",
+        "--author", "Joshua Miller", "--register", register,
+        "--max-retained", "1",
+    ]
+
+
+@pytest.mark.parametrize(
+    "register",
+    ["blog_essay", "personal", "message.facebook_messenger", "no_such_leaf"],
+)
+def test_main_refuses_a_non_imessage_register_before_sealing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, register: str,
+) -> None:
+    """An iMessage run must not be sealable under another source's register.
+
+    ``--register`` is copied verbatim into every emitted row and bound into
+    the run's source-config fingerprint, and completed-run bindings are
+    immutable. The refusal therefore has to land at option-parse time, before
+    the HMAC key is loaded or any output root exists, so a mislabel can never
+    be frozen into a sealed run.
+    """
+    loaded: list[Path] = []
+    monkeypatch.setattr(
+        A, "load_hmac_key", lambda path: loaded.append(path) or KEY
+    )
+    with pytest.raises(SystemExit) as caught:
+        A.main(_register_cli(tmp_path, register))
+    message = str(caught.value)
+    assert "--register" in message
+    assert A.IMESSAGE_REGISTER in message
+    assert rt.PRIVATE_DYADIC_TIER in message
+    assert loaded == []
+    assert not _register_output_root(tmp_path).exists()
+
+
+def test_sealed_run_fingerprint_surface_is_unaffected_by_the_cli_gate() -> None:
+    """The register gate is CLI-only; sealed-run bindings stay untouched.
+
+    ``semantic_options_payload`` still accepts and preserves any well-formed
+    leaf, so a run sealed before the gate existed keeps its exact fingerprint
+    and still revalidates. The gate implies no restamp of any published row.
+    """
+    payload = A.semantic_options_payload(
+        since=None, until=None, include_group_chats=False,
+        apple_date_unit="nanoseconds", timezone_name="UTC",
+        preprocessing_version="legacy-preprocess/1",
+        preprocessing_rules_id="imessage-atomic-rules/1",
+        persona="joshua", author="Joshua Miller", register="personal",
+    )
+    assert payload["register"] == "personal"
+    assert A._validated_semantic_options(payload) == payload
+    with pytest.raises(SystemExit):
+        A.validated_cli_register("personal")
+
+
+def test_main_accepts_the_exact_imessage_register(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """The option gate passes the iMessage leaf through to acquisition."""
+    monkeypatch.setattr(A, "load_hmac_key", lambda _path: KEY)
+    monkeypatch.setattr(A.sys, "platform", "win32")
+    with pytest.raises(A.AtomicAcquisitionError, match="only on the macOS host"):
+        A.main(_register_cli(tmp_path, A.IMESSAGE_REGISTER))
 
 
 def test_sqlite_backup_includes_committed_wal_state(tmp_path: Path) -> None:

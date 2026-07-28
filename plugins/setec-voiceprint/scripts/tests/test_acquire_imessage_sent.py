@@ -23,6 +23,8 @@ if str(ROOT) not in sys.path:
 
 import acquire_imessage_sent as A  # type: ignore  # noqa: E402
 import manifest_validator as mv  # type: ignore  # noqa: E402
+import register_taxonomy as rt  # type: ignore  # noqa: E402
+import stylometry_core as sc  # type: ignore  # noqa: E402
 from test_data.acquisition_imessage_fixture import build_fixture as bf  # type: ignore  # noqa: E402
 
 FIXTURE_DB = (
@@ -249,7 +251,7 @@ def test_manifest_identity_fields_ai_status_and_validator_clean(tmp_path):
         assert entry["corpus_role"] == "identity_baseline"
         assert entry["use"] == ["voice_profile"]
         assert entry["consent_status"] == "author_consent"
-        assert entry["register"] == "personal"
+        assert entry["register"] == "message.imessage"
         assert entry["source"] == "imessage_local"
         assert entry["acquired_via"].startswith("acquire_imessage_sent_")
         assert entry["era"] in {
@@ -723,6 +725,52 @@ def test_full_disk_access_error_is_clear_and_nonzero(tmp_path, monkeypatch, caps
     assert "Full Disk Access" in stderr
     assert sys.executable in stderr
     assert "No AppleScript" in stderr
+
+
+def test_acquired_rows_carry_a_private_dyadic_register(tmp_path):
+    """Freshly acquired rows must land in the profile-only tier.
+
+    Every profile-only guard keys on tier ``private_dyadic``: the validator's
+    ``baseline``-use rejection and
+    ``stylometry_core.assert_personal_register_isolated``. ``personal`` is
+    ``private_composed``, so a row stamped with it is silently poolable with
+    essay registers and may carry ``use: baseline``.
+    """
+    output = private_output(tmp_path)
+    assert run_windowed(FIXTURE_DB, output) == 0
+    manifest_entries = entries(output)
+    assert manifest_entries
+    for entry in manifest_entries:
+        assert entry["register"] == "message.imessage"
+        assert (
+            rt.resolve_register_tier(entry["register"])
+            == rt.PRIVATE_DYADIC_TIER
+        )
+        assert entry["register"] in rt.PROFILE_ONLY_REGISTERS
+
+
+def test_acquired_rows_cannot_be_pooled_with_an_essay_register(tmp_path):
+    """The pooled-reference guard must fire on a freshly acquired row."""
+    output = private_output(tmp_path)
+    assert run_windowed(FIXTURE_DB, output) == 0
+    manifest_entries = entries(output)
+    assert manifest_entries
+    # A dyadic-only reference stays legal.
+    sc.assert_personal_register_isolated(manifest_entries)
+    with pytest.raises(ValueError, match="profile-only"):
+        sc.assert_personal_register_isolated(
+            [*manifest_entries, {"register": "blog_essay"}]
+        )
+
+
+def test_register_flag_only_offers_the_private_dyadic_leaf():
+    """``--register`` cannot select a leaf outside the profile-only tier."""
+    parser = A.build_arg_parser()
+    assert parser.parse_args([]).register == "message.imessage"
+    for rejected in ("personal", "blog_essay"):
+        with pytest.raises(SystemExit) as caught:
+            parser.parse_args(["--register", rejected])
+        assert caught.value.code == 2
 
 
 if __name__ == "__main__":

@@ -33,7 +33,7 @@ entries:
       network; best-effort attributedBody byte-scan with fail-closed reply drop
     length_floor_words: 150
   registers:
-  - personal
+  - message.imessage
   dependencies:
     python: []
   examples: []
