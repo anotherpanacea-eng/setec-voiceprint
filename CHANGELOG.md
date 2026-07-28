@@ -7,6 +7,690 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.127.0] - 2026-07-28
+
+### Added
+
+**`manifest_validator` conflict-copy preflight.** The opt-in
+`--check-conflict-copies` mode refuses multi-device sync forks before manifest parsing,
+lists only deterministic manifest-parent-relative names, does not follow directory
+symlinks or Windows junctions, and fails closed when traversal is incomplete. Its
+synthetic regression module also runs in the native-Windows CI lane; the default
+validator path remains unchanged.
+
+**`nonprose_sweep` — bounded deterministic transcript/non-prose corpus-hygiene screen.**
+Screen an explicit B2 descriptor for fixed VTT, speaker-label-density,
+closed-lexicon disfluency-density, and short-line-density indicators, while
+reporting an exact authored-residual/transcript word partition. The create-new
+private report is manifest/source sealed and stdout is aggregate-only. The
+stdlib capability is default-preserving, runs in focused native-Windows CI, and
+does not rewrite or disposition sources or make authorship, provenance,
+quality, genre, or AI/human claims.
+
+**`apply_owner_corrections.py` — deterministic owner-reviewed manifest metadata corrections.** Apply a closed, hash-bound JSONL sidecar to explicit corrected-manifest output before registration, with exact matching, validator-approved `register`/`era` rewrites, aggregate-only receipts, and a focused Python 3.12 Windows gate. Source manifests, default registration behavior, and document-local attestations remain unchanged.
+
+**`near_dup_dedup` passage/span mode — sub-document repetition hygiene (spec 36 M1).**
+Both existing hygiene axes are document-grained: exact SHA-256 dedup
+(`acquisition_core.content_hash_already_present`) and `near_dup_dedup`'s document
+mode both operate on whole documents, so a passage repeated *inside* or *across*
+otherwise-distinct documents is invisible to both. The new `--passages` mode adds
+that lens in two stages, because no single passage-unit similarity threshold can
+see both classes.
+
+- **Stage A — near-duplicate passage units.** Documents split into raw paragraphs
+  (never coalesced, never split); sub-floor paragraphs grouped by exact
+  normalized-token equality instead of being fed to MinHash (which closes the
+  sub-`k` shingle-fallback false-merge class; token-empty passages use exact raw
+  text); a complete frequency-ordered Jaccard prefix index proposes candidates
+  and confirms them against the **true shingle sets**. No probabilistic estimate
+  participates in recall or acceptance; length/positional overlap bounds reject
+  infeasible common-boilerplate posting buckets before exact comparison. Exact
+  rational/integer threshold arithmetic preserves `J == threshold` boundaries.
+- **Stage B — exact shared-span scan.** A stdlib inverted 8-shingle index reports
+  every contiguous verbatim span repeated at ≥ 2 locations, with an arithmetic
+  detection guarantee (`L − k + 1` consecutive shared shingles ⇒ every verbatim
+  span of at least `max(k, min_span_words)` tokens is reported), regardless of
+  what surrounds it. Word-granularity analogue of the exact-substring dedup pass
+  in **Deduplicating Training Data Makes Language Models Better**
+  ([arXiv:2107.06499](https://arxiv.org/abs/2107.06499)); repeated spans being
+  memorized disproportionately fast is the mechanism in **Quantifying
+  Memorization Across Neural Language Models**
+  ([arXiv:2202.07646](https://arxiv.org/abs/2202.07646)).
+
+Report-first and no-verdict: spans are reported for consumer-side loss masking or
+chunk-stream filtering, never excised, and the report carries a mandatory
+`assumptions` params-and-limits block plus a real `ClaimLicense` that refuses any
+"memorization-safe" / "clean corpus" determination, any AI/human verdict, any
+claim that a reported repetition is illegitimate, and any absolute memorization
+rate. Passage mode never rewrites the input manifest. Ships heuristic /
+uncalibrated — no bands, no thresholds promoted.
+
+The optional `--out MANIFEST --passage-dir DIR` export writes a
+`manifest_validator`-clean passage-unit corpus: one text file per kept passage,
+rows carrying a resolvable `path` and **every inheritable source field copied
+verbatim** (including `ai_status`, `privacy`, `consent_status`). It **refuses
+entirely** — no partial write, no bypass flag — when a source row lacks a field,
+was skipped/unreadable, or would collide under supported filesystem semantics.
+Sidecars stage privately and the manifest publishes last, so a visible manifest
+never indexes partial sidecars. Nested `--out`/`--passage-dir` layouts in either
+direction are refused before analysis; use sibling targets.
+
+Passage mode emits flushed progress and transactionally checkpoints Stage-A
+passage/pair shards and Stage-B per-document token/key/region/span shards by
+default; `--resume` restores only an exact input/config binding and loses at most
+the interrupted shard. Corpus-derived recovery data is held in a dedicated
+mode-0700 directory and mode-0600 SQLite file; unsafe path types refuse.
+The private directory is tool-owned; a user-selected checkpoint parent is never
+chmodded, and corrupt databases/payloads or invalid checkpoint paths fail through
+the typed refusal path.
+
+**New `pool_guard` — duplicate-dependent pools refuse a passage-deduped manifest.**
+`corpus_novelty_audit`, `homogeneity_audit`, `distinct_diversity_audit`,
+`skeleton_overlap_audit` and `cross_doc_novelty_profile` measure signals that live
+*in* retained duplicates (collapse / homogeneity / template reuse / leave-one-out
+novelty), so consuming a passage-deduped pool destroys the measured object — the
+repo's recurring #306/#307 bug class. Each now scans its manifest path for the
+export's `passage_dedup` marker and abstains with `available:false` /
+`reason_category: bad_input` / rc 3, naming the invariant and the guard's own
+limit (it is a manifest-path check; directory inputs carry no row metadata). The
+mechanism is a file-level scan called per surface rather than a shared-loader
+kwarg, because the pool-loader class contains clean-room copies a shared signature
+cannot reach and every loader discards the row dict the marker lives in.
+`originality_audit`, `cross_doc_argument_consistency`, `general_imposters` and
+`binoculars_calibrate` are pinned **exempt with rationale** — dedup of a
+comparison or calibration pool is legitimate, and firing there would be the exact
+inversion the guard forbids. A coverage drift test embeds the complete
+nine-module classification map with mandatory rationale strings and three closure
+sweeps, so a new axis surface, a new pool loader, or a new clean-room copy fails
+until it is classified.
+
+- Add the spec-74 Increment-1 `passage_remediation` capability: a deterministic,
+  private-root-confined Stage-A policy applicator for itemized spec-36 passage
+  clusters, with closed-schema validation, exact input binding, create-new
+  publication, stable aggregate refusals, and synthetic contract coverage.
+
+**`reconstructibility_probe_set.py` — private, model-free targeted probe-set
+builder.** Adds a deterministic Darwin-only M1 workflow that ranks an
+owner-attested training snapshot by leave-one-document-out DJ-Search coverage
+and publishes create-new qualification and sealed-confirmation probe packages.
+The receipt records aggregate selection custody only; it is not a memorization
+result and authorizes no model run, training action, corpus activation, or
+checkpoint decision.
+
+- Add `register_classifier`'s required nullable machine-readable
+  `refusal_reason`: `short_text`, `all_weak`, or `exact_top_tie` on its existing
+  abstaining branches, and null for a scorer-backed family. Thresholds, scoring,
+  warnings, and the no-verdict posture are unchanged.
+
+**`register_composition_sweep` (`register_sweep.py`) — Spec 73 / H2 aggregate
+register-composition hygiene inventory.** Runs the landed H1 register-family
+classifier over an explicitly scoped private manifest slice and emits a
+deterministic aggregate count inventory: zero-filled declared-family,
+classified-family, declared-by-classified crosstab, refusal, and
+same/different/unresolved match buckets, plus the closed count block they must
+conserve. The inventory answers one hygiene question only — is this corpus
+obviously register-mixed enough to warrant a human check? — and it does not
+answer that question. There is no score, percentage, rate, share, entropy,
+threshold, band, rank, dominant-family label, mixture flag, or verdict anywhere
+in the report, the stdout envelope, or the checkpoint, and a mechanical
+recursive guard walks every key and string leaf of both artifacts to keep it
+that way. The manifest fields `source`, `source_id`, and `source_family` are
+outside the contract and are never read, normalized, hashed, inferred from,
+grouped by, checkpointed, or emitted.
+
+**Canonical encoders and H1 binding.** Twelve frozen framed digest domains, the
+canonical JSON and `framed_sha256` encoders, and a payload builder per binding
+(projected row/manifest, scope, scoped rows, target path, POSIX and
+native-Windows file fingerprints, document plan, checkpoint binding, checkpoint
+row, aggregate delta, logical shard). Every normative golden vector in the
+spec's digest table is pinned by constructing its preimage from spec literals
+and public H1 values, asserting the canonical bytes and length where the spec
+states them, and only then asserting the digest. Every canonical payload is
+walked against the closed JSON domain before it is encoded — NFC string keys and
+values, JSON null/Boolean, signed-64-bit non-Boolean integers, arrays and
+objects, and no floats anywhere.
+
+The classifier is bound to the landed H1 closeout receipt: the pinned raw
+receipt SHA-256 `626e3265…` is read strictly (bounded, non-symlink, canonical
+byte equality) and the full `setec-h1-landing-receipt/2` schema is validated,
+including equality pins on `classifier_sha256`, `mapping_sha256`, and
+`refusal_contract_sha256` matching the CI-side gate, so a receipt that agrees
+only with itself refuses. The receipt's raw `classifier_sha256` is then the sole
+gate on execution: the exact classifier source bytes reach `compile`/`exec` in a
+private module namespace only after their raw digest matches. The public
+`mapping_sha256` and `refusal_contract_sha256` are *derived from* that executed
+namespace and checked against the receipt immediately after execution and before
+any classifier call. H2 consumes only the receipt-bound public symbols and
+validates the complete closed eight-key classification result including the
+`primary == "unknown"` ⇔ `refusal_reason` biconditional, both evidence shapes,
+and the score-domain/`min_words` correspondence.
+
+**Closed manifest projection.**
+`manifest_validator.project_register_sweep_manifest_bytes` consumes the runner's
+one bounded-read byte string, reads exactly the seven owned row fields by direct
+subscript, and refuses the complete projection on any owned-field violation — no
+partial plan and no warnings. Values the general validator accepts with an
+unknown-enum warning are not H2-admissible.
+`check_document_plan_collisions` refuses two scoped rows that select the same
+normalized absolute path or the same retained file identity before any body is
+read.
+
+**Immutable shard checkpoint, owner-private policy, and topology.** The
+`--checkpoint-dir` chain is create-new `register-NNNNNNNN.sqlite` shards of
+exactly 250 contiguous rows (final shard 1–250) under a hash chain bound to the
+run's inputs; interruption loses at most the current unpublished shard and never
+seals a short non-final one, so fresh and resumed reports are byte-identical.
+Directories and files are owner-private (POSIX `0700`/`0600`, single-linked,
+verified through retained handles even under a hostile umask; explicit
+single-ACE protected DACL on native Windows). One joint topology preflight
+proves the report file and checkpoint directory are disjoint under native
+identity and portable component comparison before either is created, and
+revalidates after checkpoint open and immediately before publication; on native
+Windows that preflight dispatches to the `windows_descriptor_io` backend —
+retained native directory handles and `(volume_serial, file_id)` identity in
+place of the POSIX `dir_fd` chain, with a backend missing a required seam
+refusing rather than falling back — and the shared candidate-path presence probe
+advances only on a confirmed absence (`ENOENT`/`ENOTDIR`), so an unreadable
+higher-priority candidate refuses instead of silently binding a lower-priority
+document.
+
+**CLI and runner.** `--manifest`, `--report-out`, and `--checkpoint-dir` are
+required; `--resume`, `--use`, `--split`, `--persona`, `--ai-status`, and
+`--min-words` are optional and may each occur at most once. A custom parser
+rejects every unknown, repeated, or malformed option — including every former
+grouping spelling — before any output is created, with no usage text and no echo
+of the rejected token. The raw `--persona` value never enters stdout, the
+report, the checkpoint, an exception, or a log; only the private scope digest
+binds it, and the report records the Boolean `persona_selected`. Report
+publication through the retained parent handle is the terminal commit point:
+after it the run may not reopen, rehash, revalidate, mutate, or delete the
+report, inspect the checkpoint, emit stderr, or map any later condition to a
+failure — a closed stdout loses only the convenience envelope and still exits 0.
+
+Registered as a drop-in capability fragment plus per-id golden, `consumers: []`,
+task surface `validation`, status `heuristic`. Stdlib only; reads no corpus in
+CI (all fixtures are generated synthetic data), makes no network call, and emits
+no score, threshold, band, flag, or verdict.
+
+**`shingle_dedup.py` — deterministic staged shingle-overlap measurement.** Build a
+sealed exact 8-token inverted index, query one document, or write a deterministic
+same-draft cross-stage candidate report with 0.35/0.60 operational containment
+tiers. The stdlib, CPU-only tool is bounded, default-preserving, and emits
+aggregate-only console receipts; it makes no duplicate, provenance, authorship,
+quality, or AI/human verdict and does not mutate source manifests.
+
+- Add the optional closed `source_family` manifest field for coarse corpus
+  analysis. It accepts only `facebook`, `metafilter`, `wordpress`, or
+  `unclassified`, remains independent of `source_id` and `register`, and
+  rejects malformed or unknown values without exposing corpus paths.
+
+- Add the stdlib-only v3 internal mirror-production gate with closed aggregate
+  diagnostics, SHA-bound quote-region annotations, quote-exempt exact-copy
+  coverage, and conservative entity-preservation checks. This is operational
+  hardening, not a calibration or public-capability claim.
+
+- Add `narrative_decision_long_form` (spec 79 M1): deterministic segmentation
+  of works above the narrative-decision audit's 25,000-word ceiling
+  (chapter/scene/blank-line/paragraph tiers, greedy packing, CRLF-tolerant,
+  fewest-excluded-words tier selection) plus per-segment scoring through the
+  unchanged base audit, with a composite judge-identity cache key and a
+  no-reduction emit guard. Every work-level aggregate ships suppressed
+  (`provisional_unvalidated`) until a spec 79 M2 validation receipt exists;
+  the judge-free agreement/verdict-derivation calibration script
+  (`narrative_longform_agreement.py`) that will produce such receipts ships
+  alongside, with tamper-refusing receipt verification. Anchored to Russell
+  et al. 2026 (StoryScope, arXiv:2604.03136v4).
+
+- Add the judge-free StoryScope polarity M1 calibration surface for registered
+  segment-regime and sub-floor studies, including framed artifact identities,
+  deterministic receipt verification, control-confound suppression, and
+  model-free synthetic tests. No empirical corpus or verdict ships in M1.
+
+**`tests/test_register_isolation_coverage.py` — closure map for the isolation
+guard.** Modelled on `tests/test_pool_guard_coverage.py`: five structural closure
+sweeps (guard callers, clean-room pooling primitives, pooled-baseline
+entrypoints, and pool-loader definers/importers reusing `pool_guard`'s exact name
+family) pin the complete classification of all eighteen surfaces, each GUARDED
+or EXEMPT **with a written rationale**. Transitive guarding is verified at both
+ends — the surface imports the named entrypoint, and that entrypoint's own body
+calls the guard — and the diversity family's exemption rests on a falsifiable
+shape claim (their loaders return `(id, text[, path])` tuples and discard the row
+dict, so `register` never reaches the pool). `voice_validation_harness` is
+classified EXEMPT on purpose: it scores pairs from a labelled multi-author slice
+and records `register_a`/`register_b` because cross-register pairing is the
+object of study, so guarding it would refuse the very comparisons that let the
+tier separation be measured.
+
+### Changed
+
+**`manifest_validator` registers the `passage_dedup` marker (spec 36 M1).** The
+marker every row of a `near_dup_dedup --passages --out` export carries is now a
+recognized field: added to `KNOWN_FIELDS`, so it does not read as an unknown
+stray on an otherwise-clean export, and to `TRIPWIRE_KNOWN_NESTED_FIELDS`, so the
+Issue #6 "unfamiliar nested per-entry object" migration trigger stays meaningful
+instead of firing on every passage export. Registration only — the validator
+asserts nothing about the marker's contents and gains no new validation logic.
+The marker is load-bearing for `pool_guard`'s refusal at the duplicate-dependent
+set-level-diversity pools.
+
+**Registry `consumers:` truth — 49 fragments corrected (roadmap FM-1 + FM-4).**
+Forty-eight capability fragments carried `consumers: []` while being actively
+imported, invoked, or artifact-bound by other surfaces; the field is not
+documentation but the cross-repo discovery filter
+(`apodictic/scripts/sync_setec.py` vendors an entry iff `"apodictic"` appears in
+its `consumers`), so an empty list makes a live surface structurally invisible.
+The corrected values are recorded per fragment, verified against the import /
+CLI-reference / artifact-schema graph on `main` rather than transcribed.
+Load-bearing examples: `acquisition_core` (22 in-repo importers, including the
+contract-pinned `author_corpus_export`), `manifest_validator` (11), and the
+eight surfaces imported directly by contract-pinned capabilities
+(`biber_features`, `length_bootstrap`, `kicker_density`, `prestige_metaphor`,
+`surprisal_audit`, `check_corpus`, `argmove_profile`,
+`semantic_trajectory_audit`).
+
+Skill names are deliberately **not** written into `consumers:` — that field
+feeds a repo/capability-name filter, and a skill name there would corrupt it.
+Rows whose only reader is a skill or a reference doc keep `consumers: []` and
+carry a YAML comment naming the surfacing skill. `setec_run_set` keeps
+`consumers: []` by design (`handoff: none` is what holds it out of
+`setec_run.py --list`), now with a comment saying so rather than reading as
+neglect.
+
+**`evidentiary_conditions_gate` records the pairing the shipped fixture already
+names.** The released `mimicry_cosplay_audit` claim_license tells the reader to
+"pair this audit with the confounder audit and the evidentiary-conditions gate,"
+and names `before_after_restoration`, `surface_disagreement_resolver`, and
+`semantic_preservation_check` in its caveats — five contract statements vendored
+into two consumer repos with nothing pinning them to the registry.
+`test_contract_fixtures.py::test_mimicry_fixture_pairings_are_registered` now
+asserts both directions: the fixture prose still names each pairing, and each
+named capability records `mimicry_cosplay_audit` in its `consumers`. Retiring
+one of the five fails here instead of leaving the shipped fixture pointing at a
+capability that no longer exists.
+
+**CI gates spec-anchor drift on changed specs.** `tools/spec_anchor_lint.py`
+existed and worked but was never wired into CI, so nothing ran it — a spec could
+assert a symbol, `file:line`, sibling spec, or env var that does not exist and
+merge clean. The `tests` workflow now lints every spec **changed in a pull
+request** and fails on HIGH-confidence absences; MEDIUM-confidence hits stay
+advisory. NUL-delimited change discovery safely handles every UTF-8 Git path,
+and deletions/renames fail if a surviving spec retains the removed path or spec
+number. The gate is diff-scoped rather than repo-wide because 19 of the 51 specs
+on `main` currently gate, and those are overwhelmingly shorthand-path false
+positives rather than real phantoms — a repo-wide gate would fail on day one
+and train everyone to ignore it.
+
+**`register_composition_sweep` declares its real required inputs.** The
+capability fragment carried only `inputs.target`, so
+`tools/gen_calibration_readiness.py` fell back to its canned
+"labeled human/AI corpus" phrasing and the generated readiness matrix claimed
+H2 needs labels. It does not: the sweep's own posture is that its
+same/different/unresolved buckets are counts, "not truth labels". The fragment
+now lists the three things an operator actually supplies — an explicitly scoped
+corpus JSONL with no truth labels, the committed H1 closeout receipt, and the
+receipt-bound classifier source — and `references/calibration-readiness.md` was
+regenerated from it. Metadata correction only: no behavior, schema, output, or
+CLI change, and the generator is untouched (its canned string is still correct
+for `validation_harness`). Recorded alongside the spec-73 status/amendment
+reconciliation for the landed H2 implementation (PR #361).
+
+**Closed register-tier registry.** A drop-in `register_tiers.d/` artifact maps
+every allowed leaf to exactly one of `public_composed`, `public_responsive`,
+`private_composed`, or `private_dyadic`, with no fallback cell. Five
+owner-approved leaves cover Twitter, MetaFilter, Messenger, Facebook posts,
+and Facebook comments. Runtime closure checks prevent a leaf or fragment from
+being added alone.
+
+**Private-dyadic policy is tier-driven.** Both iMessage and Messenger reject
+`baseline` use and cannot be pooled with a non-private-dyadic or missing
+register. Same-tier messaging references remain allowed. The receipt-frozen
+`register_families/v2` classifier is unchanged; the new leaves retain its
+declared-unknown behavior.
+
+**Tier composition is emitted on two consumed surfaces (additive).**
+`voice_distance` gains `baseline.register_tier_counts` and
+`baseline.unresolved_register_count`; `voice_profile` gains the same two keys
+under `results.baseline_summary`. `register_tier_counts` carries one integer
+per tier (all four keys always present); `unresolved_register_count` counts
+baseline entries whose register is absent or outside the registry. Both are
+additions to existing blocks, so `schema_version` stays `1.0` under the
+additive-only rule and no `min_setec_version` floor moves. Directory-mode
+baselines declare no register, so they report zero counts and an
+`unresolved_register_count` equal to `n_files`.
+
+**The transitional `social_media_facebook` umbrella is retired before
+release.** Use the audience/composition-specific
+`social_media_facebook_posts` or `social_media_facebook_comments` leaf. The
+retired name is a hard validator **error**, not the warning an unrecognized
+register would draw, so an existing row cannot silently keep conflating
+public composed posts with public responsive comments; the register
+composition sweep refuses such a manifest outright. Restamp before the next
+sweep.
+
+- Enforce the owner-approved `message.imessage` conversational register as
+  profile-only: reject pooled message/essay references and reject `baseline`
+  use in corpus manifests.
+
+- Add claim-license amendments `CLA-79-A1` and `CLA-79-A2` plus bridge register
+  extension `REG-AUDIT-B1`, narrowly licensing spec-78 calibration consumption
+  while preserving the ordinary audit and scoring contracts when the new modes
+  are not selected.
+
+**Register-tier receipts are pinned against a stuck counter (test hardening; no
+behavior change).** A mutation audit found `register_tier_counts` and
+`unresolved_register_count` entirely unpinned on the way out of
+`stylometry_core.summarize_entries`. Every assertion on
+`unresolved_register_count` in the repo was `== 0`, and `gen_contract_fixtures`
+typed both values as literals, so a counter that never incremented survived the
+whole suite and both golden envelopes. Four tests now pin a **non-zero**
+unresolved count: at the emitter (both conflated cases — no register declared,
+and a register declared but outside the closed registry), on
+`voice_distance.baseline`, and on `voice_profile.results.baseline_summary`. The
+documented directory-mode behavior (`load_entries_from_dir` attaches only
+`{"source": "directory"}`, so tier counts are zero and
+`unresolved_register_count` equals `n_files`) is pinned for the first time.
+
+**`gen_contract_fixtures` derives the register-tier receipts instead of typing
+them.** The `voice_distance` and `voice_profile` builders now take
+`register_tier_counts` / `unresolved_register_count` from a real
+`stylometry_core.summarize_entries` call, per the module's faithfulness
+contract, so the contract-fixture drift gate covers stylometry_core's tier
+accounting rather than a hand-copied pair of literals. **No fixture value
+changed** — `references/contract_fixtures/voice_distance.json` and
+`voice_profile.json` are byte-identical, so vendored consumer copies need no
+re-pin. The remaining `baseline_summary` fields stay representative literals.
+
+The two register-tier envelope assertions in the schema tests were previously
+tautological — `build_audit_payload` copies `baseline_summary` wholesale, and
+the test fixtures inserted the keys themselves, so deleting both keys from
+`summarize_entries` failed neither test. Their fixtures now build
+`baseline_summary` from a real `summarize_entries` call (word counts chosen to
+reproduce the previous `n_files` / `total_words` / mean / min / max exactly), so
+the same assertions transitively pin real emission. No assertion was weakened
+or removed.
+
+### Fixed
+
+**Gmail-sent acquisition adopts the shared owner-mode atomic write.** The
+sent-Gmail acquirer's control-plane writes (approval receipt, resume thread
+index, smoke descriptor, and manifest tail-repair rewrite) now route through the
+shared `atomic_publish.atomic_write_private` helper instead of a local
+umask-dependent, non-fsync'd `_atomic_write_text`. This closes the last
+private-data publisher left unmigrated by the #346 consolidation, so
+sent-Gmail data gets the same `0600`/atomic/flush-and-fsync/fail-closed
+guarantees as the other four publishers.
+
+**Producer-side register stamping — iMessage acquisition now lands in the
+profile-only tier it is supposed to be guarded by.** PR #369's closed
+register-tier taxonomy made tier `private_dyadic` the key for every
+profile-only guard: `manifest_validator`'s rejection of `baseline` use and
+`stylometry_core.assert_personal_register_isolated`'s refusal of pooled
+references. Both iMessage producers sat outside that key.
+
+`acquire_imessage_sent.py` hard-coded `register="personal"` on every emitted
+row and offered `--register` with `choices=["personal"]`. `personal` is
+`private_composed`, not `private_dyadic`, so no tier-driven guard fired for a
+freshly acquired row: private conversational material could be pooled with
+`blog_essay` references and could carry `use: baseline`, silently. It now
+stamps `message.imessage`, and `--register` offers only that leaf.
+
+`acquire_imessage_sent_atomic.py` declared `--register` with no `choices`, no
+default, and no reference to any register vocabulary. The value is copied
+verbatim into every emitted row and bound into the sealed run's source-config
+fingerprint, and completed-run bindings are immutable — so an operator could
+seal an iMessage run as `--register blog_essay` and freeze the mislabel. The
+validator only warns on an *unknown* value and said nothing about a
+valid-but-wrong leaf. `main()` now refuses, at option-parse time, any
+`--register` other than the exact `message.imessage` leaf, before the HMAC key
+is loaded and before any run state is written. A tier-only gate is insufficient:
+`message.facebook_messenger` is also `private_dyadic`, but would falsely stamp
+iMessage source material as Messenger provenance. The gate is deliberately
+CLI-only: `semantic_options_payload` is untouched, so every already-sealed run
+keeps its exact fingerprint and still revalidates.
+
+**Migration — draft manifests produced by `acquire_imessage_sent.py` before
+this change.** Any `draft_manifest.jsonl` (and its `.meta.json` sidecars)
+emitted by that acquirer carries `register: "personal"` on rows that are in
+fact private dyadic conversation. Those rows must be restamped to
+`message.imessage` before they are used to build any profile, or they will
+continue to evade the profile-only guards. This is a *draft* artifact
+migration only: the registered private corpus is unaffected. Its rows were
+composed by the one-off contiguous-turn proposal path
+(`specs/imessage-contiguous-turn-proposal.md`) and were already set to
+`message.imessage` at registration per `specs/77-imessage-register-isolation.md`
+§"Registration procedure", so no published row needs restamping. Sealed
+`acquire_imessage_sent_atomic` runs are likewise untouched — the new gate
+refuses future mislabels and never rewrites an existing binding.
+
+**RAID calibration manifests no longer claim a private tier for public web
+text.** `calibration/raid_to_manifest.py` carried a stale six-leaf comment and
+mapped `reviews`, `reddit`, and `recipes` to `personal` (`private_composed`),
+putting third-party public prose in a private tier and poisoning
+`register_tier_counts` on every RAID-derived calibration manifest. `reviews`
+and `reddit` now map to `forum_metafilter` (`public_responsive`); `recipes` has
+no honest leaf and now omits the field, as `code`/`czech`/`german` already did.
+A regression test asserts that no RAID domain may map to a `private_*` tier and
+that every mapped leaf exists in the closed registry.
+
+**`manifest_validator` — expose long-run progress.** Emit flushed, aggregate-only stderr
+heartbeats while scanning large manifests and document unbuffered `python -u` launch usage, so
+multi-hour validation no longer appears hung while preserving stdout and JSON contracts. The
+completion heartbeat is truly unconditional: the nonexistent-manifest and unreadable-file
+early returns now also emit a `phase=complete` record (rows=0, one error) before bailing out.
+
+**The manifest validator no longer aborts on a non-string `register` or `use`
+tag.** Membership tests hash their left operand, so a structurally invalid
+field reached a `hash()` and raised `TypeError` out of `validate_manifest` —
+one malformed row in a manifest ended the whole run with a traceback and lost
+every other row's issues, on exactly the input class the validator exists to
+report. Three sites were affected: the private-dyadic profile-only check
+(`register in PROFILE_ONLY_REGISTERS`, a regression from the register-tier
+work, whose predecessor compared with `==` and was total over all types), and
+the pre-existing `voice_profile`/`idiolect` privacy-ratchet intersection and
+impostor-relevance set build, both of which hash `use` elements.
+
+A present-but-non-string `register`, and any non-string `use` tag, are now
+reported as errors rather than passing silently, and non-string tags are
+dropped before any set operation. Both fields previously slipped through every
+type-gated check without producing an issue at all.
+
+**`near_dup_dedup` Windows human summaries.** Operator-facing document and
+passage summaries now escape valid Unicode identifiers and output paths when
+the inherited console cannot encode them. A completed run no longer reports a
+false failure after its durable report, checkpoint, manifest, or passage export
+has already been published. Machine JSON and all durable artifact bytes remain
+unchanged.
+
+**`manifest_validator` — recognize professional-letter and teaching registers.** Treat
+`professional_letter` and `teaching` as known registers so correctly classified corpus entries no
+longer emit an unknown-register warning.
+
+- Repair `register_classifier` around the versioned `register_families/v2`
+  vocabulary, with total canonical and legacy mappings, scorer-complete family
+  outputs, exact-tie refusal, family-collapse disclosure, and live
+  `voice_distance` taxonomy and claim-license propagation. This remains a
+  heuristic compatibility guard, not a calibrated document-type or authorship
+  verdict.
+
+**Private-dyadic register isolation reached four unguarded pooled author
+references.** `assert_personal_register_isolated` shipped with its call sites
+chosen ad hoc, so surfaces that build a pooled author reference without going
+through `build_profile` were never covered. `general_imposters` was the worst
+case (P1): it derives ONE shared feature vocabulary from `candidate_docs +
+impostor_docs` and had no guard at all, and its impostor selector's register
+filter short-circuited on an empty register (`not register or ...`), so an
+un-inferable candidate register silently admitted rows of *every* register —
+private-dyadic ones included — into that shared space. Register matching in both
+selectors is now exact: `""` means the register-less slice, not a wildcard, which
+leaves a genuinely register-free manifest behaving as before while failing closed
+otherwise. `pov_voice_profile` (per-POV centroids, with `select_feature_names`
+run over the union of all POVs), `controls_audit` (pooled function-word baseline
+mean) and `lambdag_audit` (pooled reference/background grammar LMs) are guarded
+too.
+
+**The guard moved to `register_taxonomy`.** It lived in `stylometry_core`, whose
+import pulls spaCy and NLTK — so the pooling surfaces that ship their own
+lightweight featurizers precisely to avoid that cost structurally could not reach
+it, which is how the gap opened. `register_taxonomy` is stdlib-only and
+`stylometry_core` re-exports the guard, so every existing import path is
+unchanged. Refusal message, semantics, and the allowance for a same-tier
+messaging reference are all unchanged.
+
+**`register_taxonomy` — the register-tier registry now fails closed on every
+import path.** The drop-in registry is a privacy control (the `private_dyadic`
+tier is what keeps iMessage and Messenger material out of pooled author
+references), but a *short* or *retiered* registry loaded silently. Four
+hardening fixes.
+
+(1) **Self-validating registry.** `load_register_tiers` refused an empty
+directory but happily returned 20 of 21 leaves. A leaf lost to a deleted
+fragment — or to a case rename, since `pathlib.glob("*.json")` is
+case-sensitive on POSIX while APFS is not — then resolved to `None`, dropped
+out of `PROFILE_ONLY_REGISTERS`, and `stylometry_core`'s
+`assert_personal_register_isolated` read that `None` as benign, pooling
+private-dyadic material with `blog_essay` without raising. The only tripwire
+was `validate_registry_closure(ALLOWED_REGISTER)`, an import-time side effect
+of `manifest_validator` — a module that `voice_distance`, `voice_profile`,
+`general_imposters` and 20 of the 27 other `stylometry_core` consumers never
+import. The module now checks the loaded mapping against two pins
+(`EXPECTED_REGISTER_LEAVES` and `EXPECTED_REGISTRY_DIGEST`) immediately after
+the load, so a bare `import register_taxonomy` refuses. `load_register_tiers`
+itself stays pure and unpinned for drop-in callers and tests.
+
+(2) **Tier *values* are covered, not just key sets.** `validate_registry_closure`
+compares key sets, so editing `message.imessage.json` to
+`"tier": "public_composed"` kept the key set identical, passed closure,
+silently emptied that leaf out of `PROFILE_ONLY_REGISTERS`, and disabled both
+the pooled-reference guard and the `use: baseline` rejection — caught only by
+a CI test, never by a deployed install. `EXPECTED_REGISTRY_DIGEST` pins the
+sha256 of the canonical (sorted, compact) bytes of the whole leaf-to-tier
+mapping, so a retiering fails at import. `validate_registry_closure` is
+unchanged and still cross-checks the registry against `manifest_validator`'s
+vocabulary.
+
+(3) **A FIFO in the registry directory no longer hangs every import.**
+`_read_fragment` checks `S_ISREG` *after* `os.open`, and a blocking
+`O_RDONLY` open on a FIFO waits for a writer indefinitely. The open now sets
+`O_NONBLOCK` (a no-op for regular files), so it returns and the existing
+regular-file check rejects the FIFO immediately instead of blocking forever.
+
+(4) **Seam agreement on `str` subclasses.** `stylometry_core._entry_register`
+admits a register via `isinstance`, while `resolve_register_tier` rejected it
+via `type(...) is not str` — so a `str` subclass resolved to `None` and failed
+open at the guard. `resolve_register_tier` now admits any `str` and resolves
+it through the base `str` payload, which is the only option that returns the
+real leaf: a bare `isinstance` lookup would let an overridden
+`__hash__`/`__eq__` choose the tier instead. Not reachable today (registers
+arrive from `json.loads`); fixed so the two seams cannot drift apart.
+
+Both pins must be updated in the same commit as any legitimate registry
+change. That maintenance cost is deliberate — retiering a leaf out of
+`private_dyadic` turns off a privacy guard and should not be possible by
+editing one JSON file — and there is no bypass flag, since a bypass would
+reintroduce the fail-open. The raised `ValueError` reports the offending
+leaves, the surviving `private_dyadic` set, and a paste-ready replacement
+digest, so updating a pin needs no separate tool.
+
+**Mutation-tested guards.** A mutation audit of the taxonomy found two
+behaviours that nothing in the 8,940-test suite pinned; both are now covered.
+(a) `MAX_FRAGMENT_BYTES` was pinned only by its *existence*. Every size test
+sized its fixture as `MAX_FRAGMENT_BYTES + 1`, so raising the cap 1024x to
+1 MiB raised the fixtures with it and the suite stayed green. The value is now
+asserted literally, and a second fixture uses an absolute 2 KiB body that does
+not track the constant — and, unlike the 1025-spaces fixture (not valid JSON,
+so it still raised from the parser with size enforcement deleted, making that
+kill message-coupled), it is well-formed, correctly named, correctly tiered
+JSON that loads silently once the cap is gone. (b) `REGISTER_TO_TIER`'s
+`MappingProxyType` wrapper could be replaced with the bare `dict` without
+failing anything, because the existing assertions read through
+`dict(...)`/`set(...)`, which is blind to container type. The registry is a
+process-wide singleton feeding the pooling guard, so any importer could have
+run `REGISTER_TO_TIER["message.imessage"] = "public_composed"` and disarmed
+that guard for the rest of the process with both import-time pins already
+satisfied and nothing left to re-check. Immutability of the module singleton,
+of `load_register_tiers`' return value, and of `PROFILE_ONLY_REGISTERS` (a
+real `frozenset` — also unpinned) is now asserted directly. Two narrower gaps
+closed alongside: the duplicate-JSON-key test only duplicated `register`,
+which the filename-stem check catches independently, so the case with no
+second line of defence went untested — a duplicate `tier` resolves under
+last-wins parsing to `public_composed` on a correctly named
+`message.demo.json`, stripping the privacy tier with every other check
+passing; and `resolve_register_tier`'s happy path had no direct positive
+assertion.
+
+Also: `.gitignore`'s `*private*` privacy glob would have silently swallowed a
+future fragment named like `message.private_dm.json`. No shipped fragment
+matched, but `register_tiers.d/` is the one drop-in directory whose whole
+subject is privacy. Added the re-include exception alongside the two the repo
+already carries for `contract_fixtures/` and `_golden_capabilities/`.
+
+**Private atomic writes and create-new package publication.** The sent-iMessage,
+author-registry, and author-document writers now share one same-directory,
+owner-mode, flush-and-fsync replacement helper instead of maintaining separate
+temporary-file implementations and Windows guards. The author-corpus exporter
+now publishes its staged directory with the platform's atomic no-replace rename,
+so an intervening empty directory, file, or symlink is refused rather than
+silently replaced on POSIX.
+
+**`shingle_dedup` — bounded build-shard memory and stronger POSIX publish
+verification.** Two hardening fixes to the B3 staged shingle-overlap tool before
+release. (1) Memory: `_materialize_descriptors` now enforces the global
+`MAX_TOTAL_DOCUMENT_BYTES` / `MAX_TOTAL_TOKENS` ceilings *incrementally* while it
+reads a shard — the refusal fires the moment the running total crosses a ceiling,
+before the offending document's shingle set is built and before the next document
+is read. Previously a 250-document shard materialized every per-document shingle
+set (up to 250 x `MAX_SHINGLES_PER_DOCUMENT`) before the ceiling was consulted, so
+peak memory could reach ~25x the ceiling; it is now bounded near the ceiling. The
+aggregate refusal decision is unchanged (the cumulative totals are monotonic).
+(2) POSIX publish (`shingle_dedup_io.py` and the checkpoint store in
+`shingle_dedup_checkpoint.py`): after the create-new hard link, the durable
+content is now re-read exact-byte through the retained identity-control handle
+(not inode identity alone), catching a same-inode in-place mutation between the
+pre-link fingerprint check and the publish; and the failure-path cleanup is
+routed through a single fd-ownership-gated helper that never removes a
+temporary/final by name unless a live owner handle proves the leaf still resolves
+to the exact inode we created. The confirmed-correct native-Windows publish path
+(durable `identity[:2]` plus pre-rename byte/size verification) is unchanged, as
+are determinism and the 0.35/0.60 containment thresholds.
+
+**Native-Windows crash in the private-corpus writers' mode hardening.**
+`normalize_author_registry.py` and `prepare_author_document_adapter.py` hardened
+file modes with POSIX-only `os.fchmod`, which does not exist on native Windows,
+so an unguarded call raised `AttributeError` on every atomic private write —
+both writers' `atomic()`/`_write_atomic()` paths are Windows-reachable and were
+exercised (crashing) by their own test suites. The Linux/macOS CI lanes never
+see it and the focused Windows lanes only ran their own files, so it went
+uncaught. Following the spec-70 CLI-publication rule, `os.fchmod` is now guarded
+with `hasattr(os, "fchmod")` and the POSIX-only `os.chmod` mode-hardening with
+`os.name == "posix"`, so mode hardening is a clean no-op on Windows and
+unchanged on POSIX.
+
+`compose_imessage_review_bursts.py` received the same `hasattr(os, "fchmod")`
+guard at its two fchmod sites, but this is **defensive dead-code hardening for
+consistency, not a crash fix**: the production entry point
+(`compose_review_bursts`) raises `ReviewBurstError("...requires macOS")` before
+either fchmod site is reachable, so neither ever executes on Windows.
+`acquire_imessage_sent_atomic.py` was left untouched — its one Windows-reachable
+fchmod (`_write_new_file`) is already guarded with `if os.name != "nt"`, and its
+remaining fchmod sites live in POSIX-only `dir_fd`/`getuid` durable-tree
+machinery that the Windows handle-relative backend supersedes. (It does retain
+reachable `os.chmod` calls, e.g. in snapshot staging, but those are harmless on
+Windows because `os.chmod` exists there.)
+
+Separately, the atomic-iMessage export-seam test fixture is now pinned to LF via
+`.gitattributes` so `core.autocrlf=true` no longer rewrites its hash-pinned
+bytes on Windows checkouts (which made `author_corpus_export`'s seam tests fail
+with "source content hash mismatch" — an unrelated line-ending bug, not fchmod).
+
+A new `windows-private-writer-guards` CI lane runs the normalize, prepare, and
+author_corpus_export test files on native Windows to catch a regression of the
+fchmod guard and the fixture line-ending pin. Caveat: the `os.name == "posix"`
+chmod guards are **not** regression-covered by that lane — `os.chmod` exists on
+Windows and silently succeeds, so a regressed chmod guard would still pass; the
+lane catches the `os.fchmod` `AttributeError` class only. (The lane deselects
+one pre-existing, unrelated Windows path-syntax failure in the prepare suite,
+tracked as a separate follow-up.)
+
 ## [1.126.1] - 2026-07-20
 
 ### Changed
