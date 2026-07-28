@@ -1,5 +1,11 @@
 # 78-storyscope-polarity-extension
 
+> **▶ UNPARKED 2026-07-27 (issue #368):** revisit trigger 1 fired when spec
+> 79 M1 merged in PR #366. The round-5 prioritized fix list was executed as
+> one surgical pass against post-#366 `origin/main` at `4bebd71`; this revision
+> is the build contract for M1. Earlier parked/review banners remain below as
+> provenance.
+
 > **⏸ PARKED 2026-07-27 (owner ruling, terminal round 5):** five review rounds
 > (v1–v5) each returned NEEDS-REWORK; under the pre-agreed terminal-round rule
 > this spec is parked at v5. Verdicts + revisit triggers:
@@ -41,9 +47,9 @@
 > and (b) below the 2,000-word floor. The polarity half of the Dickens umbrella's
 > StoryScope acceptance item, commissioned as a successor arm to spec 79.
 
-- **Status:** Draft v5 — **final fold** (round-4 NEEDS-REWORK folded 2026-07-27
-  under owner rulings R7–R8, on top of the v4 fold of R5–R6 and the v3 fold of
-  R1–R4; see fold record). Round 5 is terminal by owner ruling R7.
+- **Status:** Draft v6 — **unparked for M1 build by issue #368** (round-5
+  prioritized fixes folded in one pass on 2026-07-27; owner rulings R1–R8
+  remain binding; see the v5 → v6 surgery record).
 - **Tier:** near-term — jointly with [spec 79](79-storyscope-long-form-extension.md)
   discharges umbrella acceptance item 16
 - **GPU required:** no (judge-cost-external; every judged run under this child —
@@ -58,14 +64,13 @@
   neither" foreclosure and v3's base-audit no-change clause are both deleted;
   §"Contract surfaces this child adds" enumerates exactly what is touched.
 
-**Citation convention.** Modules that exist at `origin/main` are cited as
-backticked filenames with line numbers. The three spec-79 M1 modules
-(`narrative_longform_segment`, `narrative_decision_long_form`,
-`narrative_longform_agreement`) and their two test modules are **unmerged** —
-they live only on `feat/spec77-longform-m1` — so they are cited as module
-symbols with line numbers in prose, never as repo paths. This child's own two
-deliverables are cited as `narrative_polarity_extension` (planned) and
-`test_narrative_polarity_extension` (planned).
+**Citation convention.** Consumed modules now exist at post-#366
+`origin/main` (`4bebd71022ed8beb9c97db8e0e6300ef6150c897`). Existing Python
+files are cited as bare backticked basenames with line numbers or exact
+repo-relative paths, matching anchor lint. This child's code deliverables are
+cited as `storyscope_polarity_contract` (planned),
+`narrative_polarity_extension` (planned), and
+`test_narrative_polarity_extension` (planned), never as fictional `.py` paths.
 
 ## Owner rulings folded
 
@@ -76,7 +81,7 @@ deliverables are cited as `narrative_polarity_extension` (planned) and
 - **R2 — the claim-license conflict is resolved by a narrow amendment to spec
   79**, not by foreclosure.
 - **R3 — Arm B keeps its computability claim and gains the truncation
-  control**, with a registered shift floor producing
+  control**, with a registered shift ceiling producing
   `subfloor_artifact_confounded`.
 - **R4 — landing order.** The spec pair publishes first; the 78 build sequences
   after spec 79's M1 merges.
@@ -115,7 +120,7 @@ deliverables are cited as `narrative_polarity_extension` (planned) and
   accepted in M1** and the others refusing; a registration-time check of the
   bridge corpus against a **declared judge context bound**; `bridge_read_mode`
   propagated into the receipt; and an **interval-based** control gate —
-  one-sided equivalence against `fragment_shift_max`, with a
+  one-sided equivalence against `fragment_shift_ceiling`, with a
   **`bridge_inconclusive`** state that blocks `polarity_matches` and
   `polarity_inverted` exactly as `insufficient_support` does, so that a
   scarcity-pass is **distinguishable** from an evidence-pass. The v4 change of
@@ -124,49 +129,47 @@ deliverables are cited as `narrative_polarity_extension` (planned) and
 
 ## Verified repo facts this spec depends on
 
-Re-checked on `feat/spec77-longform-m1` @ `a33ad8b` (spec 79 M1, post-freshen),
-which is where the consumed code actually lives. Rows added in v4 are marked
-**(v4)**.
+Re-checked on post-#366 `origin/main` at
+`4bebd71022ed8beb9c97db8e0e6300ef6150c897`. This table supersedes every
+pre-merge line anchor below in the historical fold records.
 
-| Fact | Value | Where (verified `a33ad8b`) |
+| Fact | Value | Where (verified `4bebd71`) |
 |---|---|---|
-| Segmenter module | `narrative_longform_segment`, `SEGMENTER_VERSION` = `"narrative-longform-segmenter/1"` (line 35) | unmerged |
-| Segmenter length constants **(v4)** | `FLOOR_WORDS` = 2000 (line 38), `CEILING_WORDS` = 25000 (line 39) | unmerged |
+| Segmenter module | `narrative_longform_segment`, `SEGMENTER_VERSION` = `"narrative-longform-segmenter/1"` | `narrative_longform_segment.py:39` |
+| Segmenter length constants | `FLOOR_WORDS` = 2000, `CEILING_WORDS` = 25000 | `narrative_longform_segment.py:52` |
 | Boundary tiers, closed | `chapter_heading`, `scene_break`, `blank_line_run`, `paragraph`, `whole_text` | tier table + the `whole_text` fallback |
-| Segment content hash **(v4)** | SHA-256 over the segment slice's UTF-8 bytes, `sha256:`-prefixed | `segment_text` in the segmenter |
-| **`signal_id_for` location** | `narrative_decision_long_form` line 117, **not** `narrative_feature_schema.py` | the schema module is byte-frozen in 79 M1 |
-| Orchestrator module | `narrative_decision_long_form` | unmerged |
-| Orchestrator exports **(v4)** | `__all__` = `TASK_SURFACE`, `SCRIPT_VERSION`, `signal_id_for`, `all_signal_ids`, `OPERATOR_TABLE`, `OPERATOR_MEAN`, `OPERATOR_PREVALENCE`, `OPERATOR_NOT_AGGREGATABLE`, `WorkLevelReductionError`, `assert_no_work_level_reduction`, `main` | lines 86–98 |
-| Emit guard | `assert_no_work_level_reduction`; floats banned everywhere; ints only under `n_*`, `index`, `segment_target_words`, `start`, `end`; forbidden key substrings `verdict` and `composite` | lines 220–271; `ALLOWED_INT_KEYS` line 209 |
-| Degenerate-vector constant | `DEGENERATE_VECTOR_MIN` = 3, **scoring runs only** | line 110; gate at line 771 (`if not calibration and payloads`) |
-| `mock` on the calibration path | **allowed** under `--calibration-emit-segments` | lines 729–739 |
-| Calibration length routing | `--calibration-emit-segments` segments works of **any** length | line 683 |
-| Calibration license constants | `CALIBRATION_LICENSES`, `CALIBRATION_DOES_NOT_LICENSE` ("Refuses ALL evidentiary use") | lines 652–667, wired at lines 854–855 |
-| **Base audit declared range (v4)** | `length_range_words=(MIN_FICTION_WORDS, 25_000)` — a **hardcoded literal** in the `ClaimLicense` construction; `MIN_FICTION_WORDS` = 2000 (`narrative_decision_audit.py:82`) | `narrative_decision_audit.py:458` |
-| **Base audit license text is operator-overridable (v4)** | `--does-not-license` overrides `DEFAULT_DOES_NOT_LICENSE` (`narrative_decision_audit.py:98`) wholesale | `narrative_decision_audit.py:686`, applied at `narrative_decision_audit.py:781` |
-| **Base audit has no hard length gate, and no over-ceiling caveat (v5, corrected)** | over-ceiling targets run **with no warning and no caveat**: `register_warnings_for` branches only on `target_words` below `MIN_FICTION_WORDS` and on a missing-dialogue check. The 25,000 is license metadata — not a refusal, not a warning. **v4 asserted a caveat that does not exist.** | `narrative_decision_audit.py:559` |
-| Calibration script | `narrative_longform_agreement` | unmerged |
-| Verdict rule | `derive_verdict`, one pure function, six numbered ordered steps | lines 991–1047 |
-| Receipt builder / verifier | `build_receipt` (line 1289), `verify_receipt` (line 1357) — re-derives every field, exempts only `date`, `registration_path`, `manifest_path` | same module |
-| **Sibling derivation preimage (v4)** | `[registration_sha256, manifest_sha256, supports, stats_rows, segmenter-triple, judge-quad]` — **excludes** floors, CI, bands, and `class_counts` | `_derivation_sha256`, lines 1221–1262 |
-| Four tamper tests | hand-edited verdict, tampered statistic, tampered `derivation_sha256`, swapped manifest | `test_narrative_longform_agreement` line 858; CLI exit-2 variant line 941 |
-| Response→value encoders | `convert_mean_response` (line 584), `option_present` (line 608) | `narrative_longform_agreement` |
-| **Sibling private helpers (v4)** | `_require_keys` (line 643), `_validate_date` (line 1415), `_write_json` (line 1431) — underscore-prefixed, no contract | same module |
-| Sibling CLI mode flags | `--register` \| `--evaluate` \| `--verify` plus `--registration` PATH; refusal → exit 2 | lines 1446–1552 |
-| Sibling refusal type | `CalibrationRefusal` (line 329); **no `REASON_CATEGORIES`** | lines 1550–1552 |
-| Sibling illegal-response behaviour **(v4)** | the encoders **raise** on an illegal value ("a broken upstream pipeline, not something to average over") | lines 594, 634 |
+| Segment content hash | ordinary SHA-256 over the segment slice's UTF-8 bytes, `sha256:`-prefixed | `narrative_longform_segment.py:150` |
+| **Post-merge digest reality** | spec 79 currently uses ordinary SHA-256 for segment content, parameters, file bytes, canonical JSON, identifier sets, and derivation preimages. The framed/domain-separated experiment was removed by `7ec1b30` before #366 merged. Spec 78 therefore does **not** import these raw digest helpers for its own artifacts; it defines fresh framed domains. | `narrative_longform_segment.py:41`, `narrative_longform_agreement.py:572` |
+| **`signal_id_for` location** | `narrative_decision_long_form`, not `narrative_feature_schema.py` | `narrative_decision_long_form.py:129` |
+| Orchestrator exports | `__all__` omits `DEGENERATE_VECTOR_MIN` and the private `_signals_map`; both require public promotions for 78 | `narrative_decision_long_form.py:98`, `narrative_decision_long_form.py:569` |
+| Emit guard | `assert_no_work_level_reduction`; scoring envelopes ban float reductions and verdict/composite keys | `narrative_decision_long_form.py:220` |
+| Degenerate-vector constant | `DEGENERATE_VECTOR_MIN` = 3; the orchestrator applies its tripwire only on scoring runs | `narrative_decision_long_form.py:122`, `narrative_decision_long_form.py:1104` |
+| `mock` on the calibration path | allowed under `--calibration-emit-segments`; the consumer must refuse it | `narrative_decision_long_form.py:1009`, `narrative_decision_long_form.py:1176` |
+| Calibration length routing | `--calibration-emit-segments` bypasses the in-range refusal and segments works of any length | `narrative_decision_long_form.py:1009` |
+| Calibration license constants | `CALIBRATION_LICENSES`, `CALIBRATION_DOES_NOT_LICENSE`; no amendment carrier exists yet | `narrative_decision_long_form.py:978` |
+| Base audit declared range | `length_range_words=(MIN_FICTION_WORDS, 25_000)` is a hardcoded `ClaimLicense` literal; `MIN_FICTION_WORDS` = 2000 | `narrative_decision_audit.py:82`, `narrative_decision_audit.py:458` |
+| Base audit license override | `--does-not-license` replaces `DEFAULT_DOES_NOT_LICENSE` wholesale | `narrative_decision_audit.py:98`, `narrative_decision_audit.py:685`, `narrative_decision_audit.py:781` |
+| Base audit length behavior | over-ceiling targets run with no warning or hard refusal; below-floor targets receive a warning | `narrative_decision_audit.py:559` |
+| Agreement floors | registration and evaluation enforce hard minimums 24 works / 18 per-signal support / 6 per-class support, plus 3 segments per work | `narrative_longform_agreement.py:382` |
+| Agreement judge provenance | the receipt judge is derived from exact-typed homogeneous manifest identities and matched to registration | `narrative_longform_agreement.py:885`, `narrative_longform_agreement.py:1217`, `narrative_longform_agreement.py:1630` |
+| Agreement output aliases | register/evaluate refuse resolved-path, symlink, and hard-link aliases between output and inputs | `narrative_longform_agreement.py:1775`, `narrative_longform_agreement.py:1843` |
+| Receipt builder / verifier | `build_receipt` and `verify_receipt`; verification re-derives every key from asserted date plus live artifacts and exempts nothing | `narrative_longform_agreement.py:1594`, `narrative_longform_agreement.py:1686` |
+| Sibling derivation preimage | date, artifact hashes and basenames, supports, statistics, segmenter, judge, and achieved bands; it does not bind this child's new receipt shape | `narrative_longform_agreement.py:1512` |
+| Response→value encoders | `convert_mean_response`, `option_present`; both raise on illegal values | `narrative_longform_agreement.py:673`, `narrative_longform_agreement.py:697` |
+| Signal cells | sibling cells are `{value, available}` and missing signal ids are currently legal there; 78 deliberately tightens this to an exact 33-id map | `narrative_longform_agreement.py:952` |
 | Polarity precedent | `auc_mannwhitney` (`narrative_polarity_audit.py:162`), `hanley_mcneil_se` (`narrative_polarity_audit.py:183`), `direction_aware_auc` (`narrative_polarity_audit.py:205`), `polarity_verdict` (`narrative_polarity_audit.py:225`), `per_signal_polarity` with `min_class_n` = 20 (`narrative_polarity_audit.py:286`) | byte-identical to `origin/main` (empty `git diff --stat`) |
 | **Precedent exports (v4)** | `__all__` = `Row`, `load_manifest`, `auc_mannwhitney`, `hanley_mcneil_se`, `polarity_verdict`, `build_report` — **`direction_aware_auc` is absent** | `narrative_polarity_audit.py:97` |
 | Precedent verdict domain | `matches` \| `inverted` \| `chance` \| `unavailable` | `narrative_polarity_audit.py:337` |
 | Precedent's positive class | `pos_scores` = the **ai** rows | `narrative_polarity_audit.py:308` |
-| Signal identity split | 33 signals: **19** with no option, **14** option-bearing | `CORE_FEATURES`, iterated |
-| Response-type partition (the routing key) | no option → `scale` 14 + `ordinal` 5 = **19**; option-bearing → `categorical` 10 + `multi` 3 + `binary` 1 = **14** | iterated at `a33ad8b` |
+| Signal identity split | 33 signals: **19** with no option, **14** option-bearing | `narrative_feature_schema.py:1040` |
+| Response-type partition (the routing key) | no option → `scale` 14 + `ordinal` 5 = **19**; option-bearing → `categorical` 10 + `multi` 3 + `binary` 1 = **14** | live schema iteration |
 | `leaning` / `gap` | `Leaning` is `"ai"` \| `"human"` (`narrative_feature_schema.py:76`, field at `narrative_feature_schema.py:127`); `gap` = human_mean − ai_mean (`narrative_feature_schema.py:132`) | |
+| Non-concrete judge ids | `NON_CONCRETE_JUDGE_MODELS` is public and includes `host-resolved`, `(unspecified)`, `unknown`, and empty | `judge_backends.py:29`, `judge_backends.py:49` |
 | Ship-surface precedent | `narrative_polarity_audit.py` registers **no** capability fragment and **no** `claim_license_surfaces` drop-in | directory listings |
 
-**Consequence, stated once:** the three modules Arm A consumes do not exist on
-`origin/main`. Per R4, **the 78 M1 build starts only after spec 79's M1
-merges.**
+**Consequence, stated once:** R4's landing-order gate is satisfied. Spec 79 M1
+and its fix train are on `origin/main` via PR #366, so issue #368 authorizes the
+78 M1 build after this spec clears independent review.
 
 ## Contract surfaces this child adds
 
@@ -180,7 +183,8 @@ exactly three named contract objects.
 | `CLA-79-A2` | amendment to spec 79's licenses, permitting over-ceiling whole-work bridge values | same registry | 78 M1 |
 | `REG-AUDIT-B1` | bridge-scoped register extension to the base audit's declared `length_range_words` | `narrative_decision_audit.py` | 78 M1 |
 
-Files touched outside this child's own script and test module — v4's list was
+Files touched outside this child's scripts, test module, findings document, and
+two named changelog fragments — v4's list was
 incomplete, omitting the `__all__` promotion its own import table mandates
 (fix 13):
 `narrative_decision_long_form` (amendment registry, one sentence in
@@ -190,7 +194,9 @@ flag, a conditional at `narrative_decision_audit.py:458`, one non-overridable
 results key, one appended-after-override license sentence), their two test
 modules, **`narrative_polarity_audit.py` and `test_narrative_polarity_audit.py`**
 (the one-line `direction_aware_auc` `__all__` promotion and its pin), **the
-`DEGENERATE_VECTOR_MIN` promotion in `narrative_decision_long_form`'s `__all__`**,
+`DEGENERATE_VECTOR_MIN` promotion plus public `signals_map` in
+`narrative_decision_long_form`**,
+the new shared `storyscope_polarity_contract` (planned) module,
 spec 79's document (amendment record), and two `changelog.d` fragments.
 **Nothing else** — not the segmenter, not the sibling calibration script, not
 the 33-signal schema, not the capability fragment or its golden.
@@ -210,34 +216,34 @@ feasibility risk rather than assuming it away.
 This child imports spec 79's §"Shared contracts (spec 78 reuses these
 verbatim)". Each adoption names the 79 section **and** the as-built code.
 
-- **S1 — `signal_id` and `signal_id_set_sha256`.** Adopted, including the test
-  pin. Implementation: `signal_id_for` / `all_signal_ids` in
-  `narrative_decision_long_form`, both in its `__all__` (lines 86–98), so 78
-  imports declared names.
-- **S2 — judge provenance.** Adopted **and extended**, with its claim narrowed
-  to what it mechanically does. As built, S2's refusals bind the *registered*
-  identity block only; the manifest carries no per-row identity, so the
-  receipt's `judge` block is an operator assertion that gets hashed and
-  attested. v4 therefore adds **per-row judge provenance and three mechanical
-  refusals** (§"Anti-fabrication defenses"). What S2 plus those refusals
-  establish: every row declares a concrete, non-`mock` identity; all rows
-  declare the *same* identity; that identity equals the registered one; and
-  each row declares a source-envelope digest bound into the receipt's
-  derivation. What they still do **not** establish: that any envelope exists or
-  matches its declared digest (M1 opens none), or that a model or human read any
-  text. That residue is
-  custody, not mechanism, and is stated in the findings document.
-- **S2a — hashing convention.** Adopted: no domain separation, exactly as 79
-  built it. 78 additionally **publishes the classification** so a reader never
-  has to infer which kind a field is — see §"Hash classification". Publishing a
-  classification table is not the same as adopting domain separation; S2a's
-  "no domain table, deliberately" decision is unchanged.
+- **S1 — signal identity.** `signal_id_for` / `all_signal_ids` are adopted
+  exactly from `narrative_decision_long_form.py:129` and exported there. The
+  33-id set is identical; 78's `signal_id_set_sha256` intentionally differs
+  because it frames the canonical-JSON payload under the spec-78 signal-set
+  domain rather than importing spec 79's raw digest.
+- **S2 — judge provenance.** Adopted **and extended**. Post-#366 spec 79
+  already exact-types every manifest identity, derives one homogeneous corpus
+  judge, refuses mock/non-concrete identities, and matches it to registration.
+  78 mirrors that pattern per row and adds source-envelope digests. Every row
+  carries a path whose producer envelope is reopened and checked for digest,
+  judge quad, target bytes/counts, and 33-signal transcription; Arm A adds its
+  calibration/extension checks, while Arm B adds exact truncation derivation.
+  None of this proves a model or human actually read a text; that
+  custody residue is stated in the findings document.
+- **S2a — hashing convention is not inherited.** Post-#366 main uses ordinary
+  SHA-256 across multiple payload schemas. Issue #368's house invariant is
+  stricter for new work: every spec-78 digest uses a framed preimage and a
+  fresh frozen domain per payload schema. See §"Hash classification". This
+  changes no spec-79 digest and treats every imported `sha256:` value as an
+  opaque producer field unless 78 explicitly recomputes it from the named
+  source bytes.
 - **S3 — receipt shape.** Adopted in kind, not in key set: 78 emits
   `narrative_polarity_extension_receipt/1`. S3's stated limit is adopted word
   for word.
 - **S4 — two-step pre-registration.** Adopted, including the values-free
   registration manifest and post-hoc-threshold refusal (`build_registration`
-  line 1265; the thresholds-and-work-ids match check at lines 1308–1318). 78
+  at `narrative_longform_agreement.py:1570`; live-input hash checks at
+  `narrative_longform_agreement.py:1616`). 78
   defines "values-free" and its work-id hash preimage explicitly rather than by
   reference — see §"Artifacts".
 
@@ -245,7 +251,8 @@ verbatim)". Each adoption names the 79 section **and** the as-built code.
 `assert_no_work_level_reduction`. That guard bans every float leaf and every
 key containing `verdict`; 78's receipt is float-dense and verdict-keyed by
 design. It governs `build_output` envelopes; **79's own receipt is not passed
-through it either** (`build_receipt` writes via `_write_json`, line 1431). 78
+through it either** (`build_receipt` writes through the calibration CLI's
+private JSON writer at `narrative_longform_agreement.py:1768`). 78
 defines its own guard; see §"Receipt guards".
 
 **Import-vs-copy, decided per helper (P2).** 78 **imports public names and
@@ -253,34 +260,39 @@ copies nothing**:
 
 | Helper | Source | Decision |
 |---|---|---|
-| `signal_id_for`, `all_signal_ids` | `narrative_decision_long_form` | import (declared in `__all__`, lines 86–98) |
-| `convert_mean_response`, `option_present`, `canonical_json_bytes`, `canonical_json_sha256`, `file_sha256`, `signal_id_set_sha256`, `average_ranks`, `SIGNALS`, `SIGNAL_IDS` | `narrative_longform_agreement` | import — all are in that module's `__all__` (line 251). **`SignalSpec` is dropped from v4's list** (fix 13): it is *not* declared there, and 78 never needs the class — `SIGNALS` yields the instances. |
+| `signal_id_for`, `all_signal_ids` | `narrative_decision_long_form` | import (declared in `__all__` at `narrative_decision_long_form.py:98`) |
+| `convert_mean_response`, `option_present`, `canonical_json_bytes`, `average_ranks`, `SIGNALS`, `SIGNAL_IDS` | `narrative_longform_agreement` | import — all are declared in `__all__`. Raw sibling digest helpers are deliberately not imported: 78 uses fresh framed domains. `SignalSpec` is unnecessary because `SIGNALS` yields the instances. |
 | `auc_mannwhitney`, `hanley_mcneil_se`, `polarity_verdict` | `narrative_polarity_audit.py` | import (in `__all__`) |
 | `direction_aware_auc` | `narrative_polarity_audit.py` | **promote + pin**: public-named but absent from `__all__`, so the 78 build adds it there — a one-line additive change, pinned by `test_direction_aware_auc_is_exported`. |
 | `DEGENERATE_VECTOR_MIN` | `narrative_decision_long_form` | **promote + pin, symmetrically** (fix 13): also absent from its module's `__all__`, and v4 imported it anyway while claiming to import only declared names. The 78 build adds it there — that module is already touched for the amendment registry — preserving the no-drift property that motivated importing it by name. Pinned by `test_degenerate_vector_min_is_exported`. |
+| `signals_map` | `narrative_decision_long_form` | **promote + pin**: rename the existing private `_signals_map` to a public function, export it, and give it keyword `value_key` over closed domain `response` \| `value` (default `response`, preserving existing envelopes). It is the sole 30-feature → 33-signal transcription; spec 78 bridge/manifests request `value`. |
+| `CORE_FEATURES`, `iter_signals` | `narrative_feature_schema.py` | import; the signal-id-level leaning join iterates `(feature, index, signal)` and keys by `signal_id_for(feature, signal)`, never by `feature.key`. |
+| `NON_CONCRETE_JUDGE_MODELS` | `judge_backends.py` | import; public in `__all__`, and used for the exact refusal domain rather than transcribing one sentinel. |
 | `CEILING_WORDS`, `FLOOR_WORDS`, `SEGMENTER_VERSION` | `narrative_longform_segment` | import (public constants) |
+| framing registry/helper and canonical source-work counter | `storyscope_polarity_contract` (planned) | new stdlib-only shared contract imported by both producers and the child; it delegates source-work counting to `narrative_longform_segment.count_words`, so bridge and segment producers cannot disagree |
 | `_require_keys`, `_validate_date`, `_write_json` | `narrative_longform_agreement` | **neither import nor copy** — 78 defines its own equivalents. An underscore name is not a contract; importing it would couple 78 to a refactor silently. |
 
-**The rule, restated as what it actually is** (fix 13 — v4 said "public names"
-and then applied it inconsistently): *78 may import a name from a sibling module
-only if that module declares no `__all__`, or the name appears in it; and never a
-name beginning with an underscore.* All three sibling modules **do** declare an
-`__all__`, so every imported name must be declared — which is why the two
-undeclared names above are resolved by dropping one and promoting the other,
-rather than by exception.
+**The rule, restated as what it actually is:** 78 may import a name from a
+sibling module only if that module declares no `__all__`, or the name appears
+in it; it never imports a name beginning with an underscore.
+`narrative_longform_segment.py` declares no `__all__`; the other imported
+siblings do. The AST pin treats a module without `__all__` as allowing
+non-underscore names and treats a module with `__all__` as closed.
 Pinned by `test_no_undeclared_or_underscore_imports_from_sibling_modules`: an AST
 scan of 78's imports that resolves each source module's `__all__` and asserts
-every imported name is a member and none begins with an underscore. v4's pin
-checked only the underscore half and would have passed `SignalSpec`.
+every imported name satisfies that rule and none begins with an underscore.
 
-**Ownership boundary against the in-range precedent.** `narrative_polarity_audit.py`
-owns the **in-range, per-text** polarity study: its `Row`, its `load_manifest`
-and manifest format, its `per_signal_polarity`, and its `build_report` /
-`render_markdown` output. This child owns the **segment-regime and sub-floor,
-per-source-work** study, with its own manifest, registration, receipt, verdict
-domain, and guards. 78 imports the precedent's four *statistical primitives* and
-nothing else: it does not extend `Row`, does not reuse `load_manifest`, does not
-emit the precedent's markdown report, and does not write to any file the
+**Ownership boundary against the legacy precedent.**
+`narrative_polarity_audit.py` is an exploratory, unregistered per-text sidecar:
+it has no length gate or length field and therefore is not mechanically
+in-range-only, despite its license metadata. This child is the **authoritative
+registered surface** for both segment-regime and sub-floor polarity, with its
+own manifest, registration, receipt, verdict domain, and guards. Results from
+the legacy sidecar are documentary only: they cannot discharge umbrella
+acceptance item 16, cannot override or supplement a spec-78 receipt, and cannot
+license either below-floor or over-ceiling claims. 78 imports only the
+precedent's four *statistical primitives*: it does not extend `Row`, reuse
+`load_manifest`, emit the precedent's markdown report, or write to any file the
 precedent writes. `narrative_polarity_audit.py` stays byte-identical except the
 one-line `__all__` addition above.
 
@@ -293,8 +305,14 @@ one-line `__all__` addition above.
 3. **Arm A's class composition manufactured the artifact it exists to detect.**
    Segment-versus-segment is the primary contrast; the whole-versus-segment
    bridge is a control, never pooled.
-4. **Sub-floor is not currently unlicensed.** The base audit scores sub-floor
-   text with a warning, not a refusal.
+4. **Below-floor and above-ceiling differ at the producer license.** The base
+   audit's ordinary declared range begins at 2,000 words but its existing
+   below-floor warning explicitly routes those results to an operator-side
+   polarity check; Arm B is that check and needs no amendment. Above 25,000
+   words the ordinary license has no such child-consumption path, so Arm A's
+   bridge requires `CLA-79-A2` plus `REG-AUDIT-B1`. This is an explicit
+   producer-license distinction, not an inference from the absence of a hard
+   scoring refusal.
 5. **Availability is not computability, and neither is sign stability in M1**
    (R1); R3's truncation control supplies the real axis.
 6. **New in v4 — a length band is a corpus definition, not a hygiene filter.**
@@ -363,7 +381,7 @@ identical spec-79 segmenter, one `params_sha256` across every primary row.
 
 - **Human side:** segments from over-ceiling public-domain works via spec 79's
   `--calibration-emit-segments` (verified to segment works of any length,
-  `narrative_decision_long_form` line 683). Those envelopes are stamped
+  `narrative_decision_long_form.py:1009`). Those envelopes are stamped
   `calibration_only`; their consumption here is licensed only by `CLA-79-A1`.
 - **AI side:** segments from AI-generated over-ceiling long-form fiction under
   recorded generation provenance, same emitter, same params hash.
@@ -450,8 +468,8 @@ receipt's `segmenter` and `covered_source_work_range` are null
 actually establishes:
 
 > For a signal not marked `subfloor_artifact_confounded`, the values it
-> produces below the floor are **invariant to truncation** at the registered
-> shift floor, and the class contrast on those values has the recorded
+> produces below the floor are **invariant to truncation** under the registered
+> shift ceiling, and the class contrast on those values has the recorded
 > direction inside `covered_length_range`.
 
 **The shortness residue, named rather than elided.** Truncation-invariance is
@@ -469,7 +487,9 @@ distribution. Both are `role` = `bridge` rows distinguished by
 
 - The shift statistic is the same paired construction as Arm A's bridge, per
   class, reported as the max over classes.
-- Exceeding `subfloor_shift_max` → `subfloor_artifact_confounded`.
+- A paired-shift interval at or above `subfloor_shift_ceiling` →
+  `subfloor_artifact_confounded` or `bridge_inconclusive` under the exact step-3
+  inequality.
 - Each class's control population must meet `min_bridge_works`, or the arm is
   `insufficient_support` wholesale.
 - **Both control sides are exempt from the primary sub-floor band** (fix 1):
@@ -517,9 +537,16 @@ Registration-time consistency checks, all refusing `band_table_inconsistent`:
 4. `bridge_truncated` equals `primary` exactly — a truncation that lands
    outside the primary regime controls nothing.
 5. every cell's minimum does not exceed its maximum.
-6. **(v5, R8)** the `segment_regime` bridge band's maximum does not exceed the
-   registration's declared `judge.context_bound_words` — a bridge corpus that
-   could not have been read in a single pass cannot be registered.
+6. the `segment_regime` bridge band's maximum does not exceed
+   `min(BRIDGE_CONTROL_MAX_WORDS, judge.context_bound_words)`.
+   `BRIDGE_CONTROL_MAX_WORDS` is fixed at **200,000** in
+   `narrative_decision_audit.py`; the same constant caps REG-AUDIT-B1's license
+   tuple. A bridge corpus outside either the producer register or the declared
+   single-pass context cannot be registered.
+
+`BAND_CONSISTENCY_RULES` is a six-member constant keyed `rule_1` through
+`rule_6`; the closure test derives the count from this list rather than
+transcribing "six".
 
 **The two named exemption tests** (round-3 fix 1):
 
@@ -533,14 +560,33 @@ Plus `test_band_table_consistency_checks_refuse` (one fixture per rule) and
 
 ## Hash classification
 
-S2a's "no domain separation" decision is unchanged; what v4 adds is the
-**classification table**, so no reader has to infer which kind a field is (P2).
+Every digest owned by 78 uses:
 
-| Kind | Construction | Fields |
+```
+"sha256:" + SHA256(domain_ascii + b"\n" + uint64_be(len(payload)) + payload).hexdigest()
+```
+
+The domain registry is frozen and exact; a domain is used for one payload
+schema only. Unknown domains refuse at the helper boundary.
+
+| Domain | Payload | Fields |
 |---|---|---|
-| Plain file hash | `file_sha256` — chunked SHA-256 over exact file bytes, `sha256:`-prefixed (`narrative_longform_agreement` line 495) | `thresholds_sha256`, `registration_sha256`, `manifest_sha256`, `source_envelope_sha256`, `prompt_sha256` |
-| Canonical-JSON hash | `canonical_json_sha256` — sorted keys, no whitespace, raw unicode (line 491) | `derivation_sha256`, `signal_id_set_sha256`, `work_ids_sha256`, `source_envelopes_sha256` |
-| Content hash | plain SHA-256 over the exact UTF-8 bytes of **the text as judged**, `sha256:`-prefixed | `content_sha256` |
+| `setec.voiceprint.spec78.thresholds-file.v1` | exact thresholds file bytes | `thresholds_sha256` |
+| `setec.voiceprint.spec78.registration-file.v1` | exact registration file bytes | `registration_sha256` |
+| `setec.voiceprint.spec78.manifest-file.v1` | exact evaluation manifest bytes | `manifest_sha256` |
+| `setec.voiceprint.spec78.source-envelope-file.v1` | exact producer-envelope file bytes | row `source_envelope_sha256`, `source_envelopes_sha256` set members |
+| `setec.voiceprint.spec78.prompt-file.v1` | exact registered prompt file bytes | `prompt_sha256` |
+| `setec.voiceprint.spec78.content-text.v1` | exact UTF-8 bytes of the text as judged | `content_sha256` |
+| `setec.voiceprint.spec78.derivation-json.v1` | canonical JSON of the receipt preimage | `derivation_sha256` |
+| `setec.voiceprint.spec78.signal-id-set-json.v1` | canonical JSON of the sorted 33 ids | `signal_id_set_sha256` |
+| `setec.voiceprint.spec78.work-id-set-json.v1` | canonical JSON of sorted distinct source-work ids | `work_ids_sha256` |
+| `setec.voiceprint.spec78.design-projection-json.v1` | canonical JSON of the sorted values-free eight-key identity/content/side design rows | `design_sha256` |
+| `setec.voiceprint.spec78.source-envelope-set-json.v1` | canonical JSON of sorted distinct verified/declared envelope digests | `source_envelopes_sha256` |
+| `setec.voiceprint.spec78.source-work-content.v1` | exact UTF-8 bytes of the full source work | `source_work_sha256`, producer `target.source_content_sha256` |
+
+Tests freeze every domain byte string, prove cross-domain inequality for one
+payload, and prove the framing collision `domain || len || payload` cannot be
+reinterpreted by moving bytes across the fields.
 
 **`content_sha256` is defined for every row kind** (P2 — v3 defined it only for
 segments):
@@ -567,20 +613,36 @@ refuses, mirroring the sibling's strict `_require_keys` discipline.
 | `role` | str | closed 2: `primary` \| `bridge` | selects the band and the statistic |
 | `source_kind` | str | closed 2: `segment` \| `whole_work` | |
 | `source_work_id` | str | non-empty | the unit of analysis |
-| `source_work_words` | int \| null | ≥ 1; **non-null iff the arm is `segment_regime`** | over-ceiling gate **(v4)** |
+| `source_work_words` | int \| null | ≥ 1; **non-null iff the arm is `segment_regime`** | canonical `\S+` source-work counter |
+| `source_work_sha256` | str \| null | framed exact whole-source UTF-8 digest; non-null for every Arm A row and Arm B bridge row; null for Arm B primary | same-work / truncation-pair binding |
 | `n_words` | int | ≥ 1 | band gate, `covered_length_range` |
 | `content_sha256` | str | `sha256:` + 64 hex | per §"Hash classification"; never emitted |
 | `subfloor_bridge_side` | str \| null | closed 2 + null | non-null iff the arm is `subfloor` and the role is `bridge` |
 | `provenance` | object | class-scoped, below | |
 | `segmenter` | object \| null | non-null **iff** `source_kind` is `segment` | |
 | `read_mode` | str \| null | closed 3, below; **non-null iff the role is `bridge` and the arm is `segment_regime`** | **(v5, R8)** the bridge's mechanical carrier |
-| `judge` | object | below — **per-row identity (v4)** | firewall |
-| `signals` | object | signal id → `{value, available}` | |
+| `judge` | object | below — per-row identity and source envelope binding | firewall |
+| `signals` | object | exact 33 signal ids → `{value, available}` | no missing-key representation |
 
-`signals` follows the sibling's cell contract (`_validate_cell`, line 828):
-exactly `value` and `available`; `available` is a bool; an unknown signal id
-refuses (`unknown_signal_id`); a **missing** signal id is unavailable and
-counted into `availability_by_class`.
+`signals` has exactly the 33 keys from `SIGNAL_IDS`; missing or extra ids
+refuse. A cell has exactly `value` and `available`. The sole unavailable
+representation is `{"value": null, "available": false}`. `available:true`
+requires a non-null raw response; `available:false` requires null. The encoder
+is invoked only for `available:true`, so null can never reach
+`illegal_response`. Availability's declared unit is **primary text rows per
+signal per class**:
+
+```
+available primary rows / all retained primary rows in that class
+```
+
+Unavailable cells are excluded from the per-work reduction and a work is
+`contributing` to a signal only when it retains at least one available primary
+cell. Bridge availability is separate: it determines the paired population for
+that signal and never enters `availability_by_class`.
+Tests: `test_unavailable_cell_is_false_with_null_only`;
+`test_availability_denominator_is_all_primary_rows`;
+`test_unavailable_cells_excluded_before_encoding_and_reduction`.
 
 **`provenance`, class-scoped, exact key sets.**
 
@@ -592,16 +654,84 @@ after `pre_ai_cutoff_year`), `source_corpus_id`, `claim_license_amendment`,
 `model_revision`, `prompt_family`, `generated_date` (ISO),
 `claim_license_amendment`, `register_extension`.
 
-Binding rules, each a **refusal** (`unknown_amendment_id` /
-`missing_license_amendment`): a primary segment row carries `CLA-79-A1` and a
-null `register_extension`; an Arm A bridge row carries `CLA-79-A2` and
-`REG-AUDIT-B1`; any other combination refuses.
-Test: `test_amendment_id_bound_to_row_role`.
+**Provenance binding is a total table.** No row reaches evaluation unless its
+`(arm, role, source_kind, subfloor_bridge_side)` tuple matches exactly one row:
 
-**`judge`, per row, exact key set (v4, round-3 fix 8):** `kind` (closed 1:
-`manifest`; `mock` refuses), `model`, `model_revision`, `prompt_version`, and
-`source_envelope_sha256` — an **operator-asserted digest**; M1 opens no
-envelope (anti-fabrication defense 2).
+| Arm | Role/kind/side | Producer | `claim_license_amendment` | `register_extension` |
+|---|---|---|---|---|
+| `segment_regime` | primary / segment / null | `narrative_decision_long_form` under `--calibration-emit-segments` | `CLA-79-A1` | null |
+| `segment_regime` | bridge / whole_work / null | `narrative_decision_audit.py` under `--bridge-control` | `CLA-79-A2` | `REG-AUDIT-B1` |
+| `subfloor` | primary / whole_work / null | ordinary `narrative_decision_audit.py` | null | null |
+| `subfloor` | bridge / whole_work / `full` | ordinary `narrative_decision_audit.py` | null | null |
+| `subfloor` | bridge / whole_work / `truncated` | ordinary `narrative_decision_audit.py` on the exact truncated text | null | null |
+
+A missing required id refuses `missing_license_amendment`; any non-null or
+wrong id outside the row's exact table entry refuses `unknown_amendment_id`.
+Arm B needs no sub-floor license object for the reason in Corrected premise 4.
+`test_amendment_id_bound_to_row_role` walks all five table rows plus every
+cross-row substitution.
+
+**`judge`, per row, exact key set:** `kind`, `model`, `model_revision`,
+`prompt_version`, `source_envelope_sha256`, and `source_envelope_path`.
+`source_envelope_sha256` is exactly `str | null` at schema validation:
+non-null for every row and null is routed to `unbound_source_envelope` by the
+ordered refusal chain, not swallowed by the generic schema refusal.
+`source_envelope_path` is non-null for **every row**. It is local input only and
+never enters the receipt.
+`kind` is first checked specifically for `mock`, so `mock_row_judge` remains
+reachable, and then closed to the base audit's actual backend domain:
+`manifest`, `anthropic`, `openai`, `gemini`, `agent_host`. Arm A additionally
+requires `manifest`; an invented kind is `manifest_schema_violation`. All
+identity strings are non-empty; `model` must not belong to
+`NON_CONCRETE_JUDGE_MODELS`.
+
+At `--evaluate`, **every producer envelope path** is opened and the consumer
+recomputes its framed `source_envelope_sha256`. Both Arm A producer envelope
+types carry `target.source_content_sha256`, derived from exact whole-source
+UTF-8 bytes under the shared source-work domain, and the consumer requires it
+to equal the row's `source_work_sha256`. All rows sharing a
+`source_work_id` must carry one identical `source_work_sha256`; swapping an
+equal-length producer envelope between works therefore refuses before any
+statistic.
+
+For an Arm A bridge envelope the consumer additionally verifies
+`results.register_extension == "REG-AUDIT-B1"`; the producer judge quad equals
+the row judge quad; canonical `target.words` equals both `n_words` and
+`source_work_words`; the row `content_sha256` equals the framed whole-source
+content digest; and `signals_map(results.values, value_key="value")` equals the
+row's exact 33-signal map.
+
+For an Arm A primary calibration envelope the consumer verifies
+`results.calibration_only is true`; its judge quad and segmentation identity
+equal the row/registration; canonical `target.words` equals
+`source_work_words`; re-segmenting the source bytes selects the row's
+`segment_index` and re-derives `n_words` and framed `content_sha256`; and the
+matching producer `per_segment` signal map equals the row map after the
+`response` → `value` key projection.
+
+For every Arm B ordinary-audit envelope, the consumer opens the producer's
+`target.path`, recomputes `target.words` with the shared canonical counter,
+requires it to equal row `n_words`, hashes the exact judged bytes under the
+content domain, and requires equality with row `content_sha256`; it also checks
+the producer judge quad and exact 33-signal transcription. Within each Arm B
+bridge `(label, source_work_id)` pair, the full row's judged bytes hash to both
+rows' shared `source_work_sha256`. The truncated row must equal the
+deterministic prefix of the full UTF-8 text ending at the end byte of its
+`n_words`-th Unicode `\S+` match; no normalization or reserialization is
+allowed. Each bridge pair has exactly one `full` and one `truncated` row.
+
+Any failure refuses `source_envelope_mismatch`. This is the consumer of
+REG-AUDIT-B1 and the same-source firewall; the carrier is no longer unread.
+Tests: `test_bridge_source_envelope_verified_at_evaluate`;
+`test_bridge_source_envelope_digest_mismatch_refuses`;
+`test_bridge_source_envelope_register_extension_mismatch_refuses`;
+`test_bridge_source_envelope_judge_mismatch_refuses`;
+`test_bridge_source_envelope_target_words_mismatch_refuses`;
+`test_same_length_different_source_work_swap_refuses`;
+`test_primary_source_envelope_resegments_and_rederives_row`;
+`test_arm_b_full_and_truncated_envelopes_reopened`;
+`test_arm_b_unrelated_short_text_refuses_as_truncation`;
+`test_arm_b_truncation_byte_boundary_pinned`.
 
 **`read_mode`, closed domain of 3 (v5, R8):** `single_pass_whole_text` \|
 `chunked_merge` \| `summarized`. **Only `single_pass_whole_text` is accepted in
@@ -658,49 +788,62 @@ never silently vanishes.
 
 | Reason | Rule |
 |---|---|
-| `whole_text_tier` | primary row whose tier is `whole_text` |
-| `single_segment_work` | source work yields fewer than `min_segment_count_by_work` primary rows |
+| `source_work_in_range` | Arm A row whose `source_work_words` is below `min_source_work_words` |
 | `below_length_band` | `n_words` below the band for this row's (arm, role, side) |
 | `above_length_band` | ditto, above |
 | `duplicate_content_sha256` | a second row in the same class with an identical content hash |
-| `source_work_in_range` | Arm A row whose `source_work_words` is below `min_source_work_words` |
+| `whole_text_tier` | primary row whose tier is `whole_text` |
+| `single_segment_work` | source work yields fewer than `min_segment_count_by_work` primary rows after the five row-local drops above |
 
-**`REFUSAL_REASONS`, closed set of 28 — the count is the length of the table
-below, not an independent constant** (fix 2: v4 declared "closed at 23" while at
-least five mandated refusals had no id, so the closure test could not pass).
-Every entry exits 2 with no receipt written. Three v4 ids are **collapsed**, and
-each collapse is stated in its own row.
+Drops are also ordered and first-match-only. Each row is assigned at most one
+reason, in the table order. After the five row-local passes, the implementation
+groups surviving Arm A primary rows by `(label, source_work_id)` and drops every
+remaining row in a group below `min_segment_count_by_work` as
+`single_segment_work`. Thus an in-range, duplicate, out-of-band `whole_text`
+row contributes only `source_work_in_range`, and no count can be inflated by
+overlapping reasons. `test_drop_precedence_first_match_wins` walks all adjacent
+pairs and a multiply-invalid fixture.
+
+**Refusal precedence is ordered and first-match-wins.** JSON decoding and the
+minimum type checks needed to route a row occur first; then the checks below run
+in table order. Specific anti-fabrication and license failures precede the
+generic exact-schema sweep. A fixture may violate later rules deliberately and
+must still return the first applicable id. This makes every reason reachable
+without weakening a guard.
+
+**`REFUSAL_REASONS`, closed set of 28 — derived from this ordered table, never
+an independent count.** Every entry exits 2 with no receipt written.
 
 | Reason | Rule |
 |---|---|
-| `segmenter_binding_violation` | *collapse of v4's `missing_segmenter_binding` plus the missing whole-work direction:* a `segment` row with a null `segmenter`, **or** a `whole_work` row carrying a non-null one |
-| `segmenter_binding_mismatch` | params hash or version differs from the registration |
+| `malformed_artifact` | thresholds, registration, registration manifest, or evaluation manifest is unreadable, invalid JSON/JSONL, or has a non-object top level/row; thresholds/registration additionally use this reason for wrong schema, wrong type, non-finite/out-of-range values, or non-exact key sets |
+| `registration_manifest_not_values_free` | a registration row carries any key outside the eight-key identity/content/side design allowlist |
+| `post_hoc_thresholds` | live thresholds framed digest differs from registration |
+| `registration_mismatch` | any other registered hash, arm, identity, prompt, work-id, or segmenter binding differs from live input |
+| `duplicate_text_id` | repeated `text_id` |
+| `mock_row_judge` | row judge kind/model is `mock`, or model belongs to `NON_CONCRETE_JUDGE_MODELS` |
+| `unbound_source_envelope` | `source_envelope_sha256` or `source_envelope_path` is null/empty |
+| `source_envelope_mismatch` | any producer envelope cannot be opened, rebound to its source bytes, or matched to its row; Arm A checks include extension/calibration, segmenter/re-segmentation, and transcription; Arm B checks include exact target bytes and truncation derivation |
+| `row_judge_identity_mismatch` | row judge quad differs from the registered quad; this also makes a mixed-identity manifest fail without a redundant mixed-identity id |
+| `cross_source_kind_primary` | Arm A primary row is not a segment |
+| `mixed_arm_manifest` | row shape is inconsistent with the selected arm |
+| `segmenter_binding_violation` | a segment row has null segmenter or a whole-work row carries one |
+| `segmenter_binding_mismatch` | segmenter version, params hash, target words, or emitter differs from registration |
+| `bridge_row_word_count_mismatch` | Arm A bridge `n_words` differs from `source_work_words` |
+| `bridge_read_mode_unsupported` | Arm A bridge `read_mode` is not `single_pass_whole_text` |
+| `source_work_words_exceeds_judge_context` | Arm A bridge `source_work_words` exceeds registered judge context |
+| `missing_license_amendment` | the total provenance table requires a non-null amendment and the row has null |
+| `unknown_amendment_id` | amendment/extension tuple differs from the total provenance table, including a non-null id on Arm B |
+| `unknown_signal_id` | signals map key set differs from the exact 33 ids |
+| `manifest_schema_violation` | after the specific checks above, any row/provenance/segmenter/judge/signal-cell key set, exact type, nullability, or closed domain is invalid; the message names object and key |
+| `illegal_response` | an available raw response is rejected by its routed encoder |
 | `degenerate_manifest_vectors` | within-work identical-vector tripwire |
 | `cross_work_degenerate_vectors` | cross-work identical-vector tripwire |
-| `manifest_schema_violation` | *collapse of v4's `missing_provenance_key` plus the row / `provenance` / `segmenter` / `judge` / `signals` exact-key-set and closed-domain violations v4 mandated in prose and never gave an id:* any manifest object whose key set is not exact, or whose value falls outside a declared closed domain (including a `publication_year` after `pre_ai_cutoff_year`). The message names the object and the offending key. |
-| `missing_license_amendment` | required amendment id absent |
-| `unknown_amendment_id` | amendment id not bound to this row's role |
-| `illegal_response` | a value the routed encoder refuses — matching the sibling's own behaviour and docstring rationale (line 594) |
-| `unknown_signal_id` | a signals key outside the 33 |
-| `duplicate_text_id` | repeated `text_id` |
-| `mock_row_judge` | a row whose judge kind or model is `mock`, or the non-concrete host sentinel |
-| `row_judge_identity_mismatch` | a row's judge quad differs from the registered quad |
-| `mixed_row_judge_identities` | more than one distinct judge quad in the manifest |
-| `unbound_source_envelope` | a row without `source_envelope_sha256` |
-| `cross_source_kind_primary` | primary row that is not a segment, in Arm A |
-| `mixed_arm_manifest` | rows inconsistent with the requested arm |
-| `length_overlap_below_floor` | class length-overlap gate breached |
-| `band_table_inconsistent` | any of the five band consistency rules |
-| `floor_arithmetic_violation` | the floor chain in §"Unit of analysis" |
-| `registration_mismatch` | registration hashes do not match the live inputs |
-| `post_hoc_thresholds` | thresholds hash differs from the registered one |
-| `prompt_signal_blindness_violation` | a generation prompt names a signal or the paper |
-| `unregistered_prompt_family` | a `prompt_family` in the manifest with no registration entry — v4 mandated this refusal **and named its test** while giving it no id |
-| `registration_manifest_not_values_free` | a registration row carrying more than the 5 allowed keys |
-| `malformed_artifact` | *stated collapse:* the thresholds or the registration artifact is structurally invalid — bad JSON, wrong schema string, non-exact key set, wrong type, or an out-of-range number. The message names which file. The keys fix 3 deletes (`indicator_effect_margin`, `auc_null`, `per_response_class`) land here. |
-| `bridge_row_word_count_mismatch` | an Arm A bridge row whose `n_words` differs from its `source_work_words` |
-| `bridge_read_mode_unsupported` | **(R8)** a bridge row whose `read_mode` is not `single_pass_whole_text` |
-| `source_work_words_exceeds_judge_context` | **(R8)** a bridge row whose `source_work_words` exceeds the registration's declared judge context bound |
+| `prompt_signal_blindness_violation` | registered generation prompt names a signal, feature, paper, or taxonomy source under the pinned matching rules |
+| `unregistered_prompt_family` | AI row prompt family has no registered prompt |
+| `band_table_inconsistent` | any of the six band consistency rules |
+| `floor_arithmetic_violation` | the floor chain or a mandatory lower bound is violated |
+| `length_overlap_below_floor` | retained primary class length overlap is below the registered ceiling/floor gate |
 
 Tests, split by kind (round-3 fix 7): `test_drop_reason_domain_closed_at_6`;
 `test_every_drop_reason_reachable` (one fixture per drop, asserting the count
@@ -709,15 +852,17 @@ receipt**); `test_refusal_reason_domain_closed_at_28` (asserting the constant
 equals the enumerated table's length, so the two cannot drift);
 `test_every_refusal_reason_exits_2_and_writes_no_receipt` (parametrized, one
 fixture per row); `test_drop_and_refusal_sets_disjoint`;
-`test_every_refuses_sentence_maps_to_exactly_one_reason_id` — fix 2's walk,
-pinned: this table is the sole refusal vocabulary and every refusal path in the
-script returns a member of it.
+`test_refusal_precedence_first_match_wins` (one fixture per adjacent pair);
+`test_every_refuses_sentence_maps_to_exactly_one_reason_id` — this table is the
+sole refusal vocabulary and every refusal path returns a member.
 
-**`class_counts`**, keyed by label × role (4 cells; inapplicable cells carry
-`n_texts` 0, never absent). Each cell has exactly `n_texts`, `n_source_works`,
+**`class_counts`** is a flat exact four-key object:
+`pre_ai_human.primary`, `pre_ai_human.bridge`, `ai_generated.primary`,
+`ai_generated.bridge`. Inapplicable cells carry `n_texts` 0, never disappear.
+Each cell has exactly `n_texts`, `n_source_works`,
 `n_source_envelopes`, `n_authors` (null for the ai class),
 `n_generator_families` (null for the human class), `max_share_single_work`
-(text units), `segment_count_stats` — exactly `{min: int, max: int, median:
+(text units, **null for both bridge cells**), `segment_count_stats` — exactly `{min: int, max: int, median:
 float}`, **null when the arm is `subfloor`** (fix 14) —
 `tier_counts` (**null when the arm is `subfloor`**), and `dropped_by_reason`
 over the 6 drops.
@@ -726,11 +871,12 @@ Tests: `test_inapplicable_floor_is_null_not_zero`,
 
 ## Value encoding
 
-The sole response→value encoders are `convert_mean_response` (line 584) and
-`option_present` (line 608) in `narrative_longform_agreement`. 78 imports them
+The sole response→value encoders are `convert_mean_response`
+(`narrative_longform_agreement.py:673`) and `option_present`
+(`narrative_longform_agreement.py:697`). 78 imports them
 and defines no encoder.
 
-Verified at `a33ad8b`: for all 33 signals and every **legal** response these
+Verified at `4bebd71`: for all 33 signals and every **legal** response these
 agree exactly with the audit's public `signal_target_value`
 (`narrative_decision_audit.py:151`) via `encode_value`
 (`narrative_decision_audit.py:119`). The only divergence is on illegal input —
@@ -756,6 +902,14 @@ Test: `test_response_class_disjoint_and_total` — disjoint, union is exactly th
 its class's declared set. **No option-free signal is `binary`**, so
 `convert_mean_response`'s "not a mean-class type" refusal is unreachable for the
 19.
+
+**Leaning join is signal-id-level.** At import the child builds
+`LEANING_BY_SIGNAL_ID` by iterating `iter_signals()` and applying
+`signal_id_for(feature, signal)` to each `FeatureSignal.leaning`. The key set
+must equal `SIGNAL_IDS` exactly. Joining by `feature.key` is forbidden: the
+three dual-leaning features produce six signal ids with opposite leanings.
+`test_leaning_sign_convention_pinned` asserts the total 33-id map and the six
+dual-leaning ids individually.
 
 **Indicator estimator.** Per-work value = that work's prevalence over its
 primary rows, in [0,1]. Positive class = **ai** (the precedent's convention,
@@ -808,25 +962,44 @@ Test: `test_precedent_verdict_mapping_total_and_injective`.
 
 **Precedence chain: one pure function, first match wins.**
 `derive_polarity_verdict` returns a (verdict, step) pair, modelled on
-`derive_verdict` (`narrative_longform_agreement` lines 991–1047).
+`derive_verdict` (`narrative_longform_agreement.py:1259`).
 
 1. **`judge_answer_absent`** — availability below `min_availability_rate` in
    either class.
 2. **`insufficient_support`** — a class-scoped corpus floor unmet; support below
-   `min_signal_support` in either class; or either class's bridge population
-   below `min_bridge_works`. *No control, no verdict.*
-3. **The control step, now interval-based (fix 6 / R8).** v4 compared a bare
-   point estimate at n = 8 against the floor, so a scarcity-pass and an
+   `min_signal_support` in either class; either class's arm-wide bridge
+   population below `min_bridge_works`; **or the current signal has fewer than
+   `min_bridge_works` available paired bridge works in either class.**
+   Unavailable bridge cells do not count. Thus n = 0 or 1 never reaches an SE
+   computation, and neither does any n below the registered per-signal floor.
+   *No control, no verdict.*
+3. **The control step, interval-based (fix 6 / R8).** v4 compared a bare
+   point estimate at n = 8 against the ceiling, so a scarcity-pass and an
    evidence-pass were indistinguishable and the failure direction was
-   under-detecting the confound. v5 applies the spec's own interval rule:
-   - the point estimate **exceeds** `fragment_shift_max` /
-     `subfloor_shift_max` → **`fragment_artifact_confounded`** /
-     **`subfloor_artifact_confounded`**;
-   - else one-sided equivalence: the shift's **upper** confidence bound — the
-     mean plus 1.645 × SE over the paired works, SE = sample SD ÷ √n — must
-     clear the floor. If it does not, the control failed to establish
-     equivalence and the verdict is **`bridge_inconclusive`**;
-   - else the control passes and the chain continues.
+   under-detecting the confound. The only legal reading is evaluated per class,
+   then combined:
+
+   ```
+   for each class:
+       if class_point >= applicable_ceiling:
+           class_state = artifact_confounded
+       elif class_ci_upper >= applicable_ceiling:
+           class_state = bridge_inconclusive
+       else:
+           class_state = pass
+
+   arm state = artifact_confounded if either class is confounded;
+               else bridge_inconclusive if either class is inconclusive;
+               else pass
+   ```
+
+   Equality of the point estimate is confounded; equality only at the upper
+   bound is inconclusive; only both values strictly below the ceiling pass.
+   Each class shift upper bound is mean + 1.645 × (sample SD ÷ √n) over paired
+   available works.
+   Tests discriminate the directions:
+   `test_low_bridge_point_with_wide_interval_is_inconclusive` and
+   `test_low_bridge_point_with_tight_interval_passes`.
 
    `bridge_inconclusive` blocks `polarity_matches` and `polarity_inverted`
    **exactly as `insufficient_support` does** — a signal whose control could not
@@ -891,12 +1064,22 @@ condition), `test_arm_exclusive_confound_labels`,
 ## Gates and their estimators
 
 **Class length matching.** Statistic: the **overlapping coefficient** over the
-two classes' per-text word-count distributions, binned on the deciles of the
-pooled distribution (`length_bins`, default 10) — the sum over bins of the
-minimum of the two class proportions, in [0,1]. Below `length_overlap_min` the
-**run refuses** (`length_overlap_below_floor`). Computed over **primary rows
-only** — bridge populations have their own bands and are not length-matched to
-the primary contrast.
+two classes' primary-row word-count distributions, using deterministic pooled
+quantile bins (`length_bins`, default 10) — the sum over bins of the minimum of
+the two class proportions, in [0,1].
+
+The edge algorithm is exact and uses no interpolation. Sort all pooled
+`n_words` integers ascending into `x` of length `N`. For each
+`j = 1..length_bins-1`, select `x[ceil(j*N/length_bins)-1]`; deduplicate the
+selected values while preserving ascending order. The bins are
+`(-infinity, edge_1]`, `(edge_1, edge_2]`, ..., `(edge_last, +infinity)`.
+Repeated cutpoints therefore collapse, no equal word count is split between
+bins, `length_bins > N` is legal, and an all-tied corpus has one populated bin.
+Within each class, divide each bin count by that class's total retained primary
+rows. Below `length_overlap_min` the **run refuses**
+(`length_overlap_below_floor`). Bridge populations never enter the estimator.
+`test_length_overlap_quantile_edges_hand_computed` pins boundaries, repeated
+cutpoints, an all-tied corpus, and `length_bins > N`.
 
 **Bridge shift (Arm A) and sub-floor shift (Arm B).** Comparison population:
 source works appearing on both sides of the pairing within the same class — Arm
@@ -931,24 +1114,33 @@ judges agree yields a shift of exactly 0 however the option is distributed
 `numeric` signals and is **null for `indicator` signals**, which have no
 response-unit scale (fix 14).
 
-**Pre-step-3 null rule (fix 14).** `bridge.value`, `bridge.ci_upper`, and
-`bridge.threshold` are null exactly when the chain exited at or before step 2 —
+**Pre-step-3 null rule (fix 14).** `bridge.value`, `bridge.ci_upper`,
+`bridge.value_response_units`, `bridge.threshold`, `bridge.by_class`, and
+`bridge.ci_upper_by_class` have null class values exactly when the chain exited
+at or before step 2 —
 which includes every case where a class's bridge population is below
 `min_bridge_works`. Step 3 is reached only with a non-null value, so it never
 compares against null.
 
-Because both response classes are on [0,1], v3's four floor keys collapse to
-**two**: `fragment_shift_max` and `subfloor_shift_max`. The reported bridge value
-is the **max over the two classes**; `by_class` records both, and `ci_upper` is
-the one-sided upper bound on that same worst-case class.
+Because both response classes are on [0,1], v3's four shift controls collapse
+to **two ceilings**: `fragment_shift_ceiling` and
+`subfloor_shift_ceiling`. The reported bridge value is the **max over the two
+class points**; `by_class` records each point. `bridge.ci_upper` is
+independently the max of both class upper bounds, and
+`ci_upper_by_class` records each. The verdict is produced by the per-class
+state reduction above, never by selecting one class solely because it had the
+higher point estimate.
 Tests: `test_bridge_shift_paired_within_work`;
 **`test_heterogeneous_no_shift_corpus_is_not_fragment_confounded`** (fix 4's
 named negative — per-work segment prevalences vary widely while every whole-work
 answer matches the segment majority; the shift must be 0 and no confound label
 may appear); `test_indicator_segment_side_dichotomized_by_majority_tie_to_zero`;
 `test_class_asymmetric_bridge_shift_caught_by_max_not_hidden_by_mean`;
+`test_crossed_class_point_and_upper_bound_is_inconclusive`;
+`test_point_at_or_above_ceiling_is_confounded`;
 `test_numeric_shift_range_normalized_across_scale_and_ordinal`;
-`test_bridge_block_null_before_step_3`.
+`test_bridge_block_null_before_step_3`;
+`test_signal_with_unavailable_bridge_values_is_insufficient_support_not_licensed`.
 
 **Single-work share.** `max_share_single_work` = the maximum over source works
 of that work's primary-row count in the class divided by the class's
@@ -974,8 +1166,8 @@ the count below is the table's length.
 | `min_source_work_words` | Arm A, every row | `CEILING_WORDS` + 1 = 25,001 | row drop |
 | `length_overlap_min` | class pair, primary rows | 0.80 | run refuses |
 | `length_bins` | length gate | 10 | — |
-| `fragment_shift_max` | Arm A, both response classes | float in [0,1] | confound label |
-| `subfloor_shift_max` | Arm B, both response classes | float in [0,1] | confound label |
+| `fragment_shift_ceiling` | Arm A, both response classes | float in [0,1] | step-3 interval gate |
+| `subfloor_shift_ceiling` | Arm B, both response classes | float in [0,1] | step-3 interval gate |
 | `effect_threshold_numeric` | numeric | float (absolute *g*) | below → `polarity_chance` |
 | `pre_ai_cutoff_year` | human provenance | int | refusal via `manifest_schema_violation` |
 
@@ -987,29 +1179,29 @@ and v3's manifest carried **no per-row judge identity and no envelope binding**,
 so the receipt's judge block was an unverified operator assertion that got
 hashed and attested. v4 answers at the manifest layer.
 
-1. **Per-row judge provenance, three mechanical refusals** (round-3 fix 8).
+1. **Per-row judge provenance, two mechanical refusals.**
    Every row carries the `judge` object above. Refusals, all exit 2:
    `mock_row_judge` (any row declaring `mock` or the non-concrete host
-   sentinel); `row_judge_identity_mismatch` (a row's identity quad differs from
-   the registration's); `mixed_row_judge_identities` (more than one distinct
-   quad across the manifest — this catches the case where the registration
-   itself was written to match a mixed corpus).
+   model set); `row_judge_identity_mismatch` (a row's identity quad differs
+   from registration). The latter necessarily catches a mixed corpus because
+   one registration carries one quad; the redundant mixed-identity reason is
+   deleted under R7.
    Tests: one per refusal, plus
    `test_registered_judge_block_is_derived_not_asserted` (the receipt's judge
    block is built from the manifest's rows *after* the equality checks pass, so
    it cannot disagree with the corpus).
-2. **Source-envelope digest — operator-asserted, no envelope opened in M1**
-   (fix 8, downgraded from v4's overclaim). Each row declares a
+2. **Source-envelope digest, with producer verification.** Each row declares a
    `source_envelope_sha256`; a row without one refuses
    (`unbound_source_envelope`). The receipt records `n_source_envelopes` per
    class cell and a top-level `source_envelopes_sha256` over the sorted distinct
-   declared digests. **M1 carries no envelope path and never opens an envelope**,
-   so what is bound is the *set of declared digests*, not the files: this makes
-   the declaration tamper-evident against later edits of the receipt or manifest
-   and establishes nothing about the envelopes themselves. Envelope existence and
-   content are in the stated residue below, and in `stated_limits`. v4's "bound
-   by hash to a source envelope file" is withdrawn.
-   Test: `test_source_envelope_digest_set_bound_into_derivation`.
+   digests. Every row carries a producer path and is re-opened and verified
+   under `source_envelope_mismatch`; Arm A adds its calibration/extension
+   contracts, and Arm B adds exact target-byte and truncation-pair checks.
+   `source_envelopes_sha256` binds the sorted set only after every member passes.
+   The remaining residue is operator custody over which paths were supplied,
+   not an unread digest.
+   Tests: `test_source_envelope_digest_set_bound_into_derivation` plus the
+   producer-envelope tests in §"The manifest".
 3. **Generation-prompt binding and signal-blindness scan** (round-3 fix 8). The
    registration carries `generation_prompts`, one entry per distinct
    `prompt_family` in the AI class, each with `prompt_family`, `prompt_sha256`,
@@ -1017,16 +1209,21 @@ hashed and attested. v4 answers at the manifest layer.
    from the registration refuses. At registration, each prompt text is scanned
    case-folded for every `CoreFeature` key, every feature label, every signal
    option string, and a closed forbidden-token tuple (the paper's name, its
-   arXiv id, and the feature-taxonomy source's name). **Any hit refuses**
+   arXiv id, and the feature-taxonomy source's name). Single-word options use
+   Unicode-aware word boundaries; multi-token snake-case tokens and feature
+   keys use literal substring matching; multi-word labels and paper names use
+   whitespace-normalized phrase matching. The option `yes` is the pinned
+   collision: `eyes` and `yesterday` do not match it. **Any actual hit refuses**
    (`prompt_signal_blindness_violation`) — a generation prompt naming the 33
    signals manufactures the predicted polarity.
-   **Stated limit, claiming only what it does:** a substring scan catches
+   **Stated limit, claiming only what it does:** a lexical scan catches
    *naming*. It does not catch paraphrase, conditioning by example, or a prompt
    the operator did not register. It lowers the floor; it does not close the
    hole, and the residue is custody.
    Tests: `test_prompt_naming_a_feature_key_refuses`,
    `test_prompt_naming_a_signal_option_refuses`,
    `test_prompt_naming_the_paper_refuses`, `test_clean_prompt_registers`,
+   `test_prompt_containing_the_word_eyes_registers_clean`,
    `test_unregistered_prompt_family_refuses`.
 4. **Degenerate-vector tripwire, two tiers** (P2 — v3 grouped by label and role
    only). The fingerprint is the **exact scored input**: canonical-JSON bytes of
@@ -1040,7 +1237,8 @@ hashed and attested. v4 answers at the manifest layer.
      source works → refuse `cross_work_degenerate_vectors`. Two different works
      producing identical 33-signal vectors is a manifest-assembly error.
    `DEGENERATE_VECTOR_MIN` is imported by name from
-   `narrative_decision_long_form` (= 3, line 110) so the surfaces cannot drift.
+   `narrative_decision_long_form` (= 3 at
+   `narrative_decision_long_form.py:122`) so the surfaces cannot drift.
    Tests: `test_three_identical_vectors_within_a_work_refuse`,
    `test_three_identical_vectors_across_works_refuse`,
    `test_two_identical_vectors_pass` (the negative — refusing at 2 would be a
@@ -1051,16 +1249,19 @@ hashed and attested. v4 answers at the manifest layer.
    round-3 fix 8). `mock` and the non-concrete host sentinel refuse at
    `--register` **and** `--evaluate` for the *registered* identity block. That
    check alone proves only that the operator declared a concrete identity; it is
-   defense 1 that binds the declaration to every row, and defense 2 that binds
-   every row to a file. None of them proves a model read the text.
+   defense 1 that binds the declaration to every row, and defense 2 that
+   verifies producer content for Arm A bridge rows. None proves a model read
+   the text.
 7. **Duplicate-text drop.** A repeated content hash within a class is dropped
    (`duplicate_content_sha256`), so a padded corpus cannot inflate support past
    a floor.
 8. **`--verify` with full re-derivation.** Mirrors `verify_receipt`
-   (`narrative_longform_agreement` line 1357): every receipt field is recomputed
+   (`narrative_longform_agreement.py:1686`): every receipt field is recomputed
    from (manifest, thresholds, registration) and compared; **verdict strings are
-   never trusted**; only `date`, `registration_path`, and `manifest_path` are
-   exempt. Floats round to 10 dp in preimages; receipts are byte-deterministic
+   never trusted and no receipt field is exempt from comparison**. `date` is a
+   verifier argument, never read from the receipt under test; the path carriers
+   are recomputed as privacy-safe basenames. Floats round to 10 dp in preimages;
+   receipts are byte-deterministic
    across subprocess runs. The sibling's four tamper tests are reproduced:
    `test_verify_rejects_hand_edited_verdict`,
    `test_verify_rejects_tampered_statistic`,
@@ -1102,49 +1303,109 @@ against a null of 0.5. Numeric signals keep `effect_threshold_numeric`, which
 Test: `test_indicator_margin_keys_do_not_exist` — a thresholds file carrying
 either key refuses as `malformed_artifact`, and no code path reads them.
 
-Validation mirrors the sibling's `load_thresholds` (line 663): exact key sets at
-every level, numbers not bools, ranges checked (`min_availability_rate`,
-`length_overlap_min`, `max_share_single_work`, `fragment_shift_max`,
-`subfloor_shift_max` in [0,1]), plus the band consistency rules and the floor
-arithmetic.
+Validation mirrors the sibling's `load_thresholds`
+(`narrative_longform_agreement.py:757`): exact key sets at
+every level and numbers excluding bool. Exact floor domains are:
 
-**Registration artifact**, schema `narrative-polarity-registration/1`, exact 9
+- integers: `min_source_works >= 24`, `min_authors >= 8`,
+  `min_generator_families >= 2`, `min_signal_support >= 24`,
+  `min_class_n >= 20`, `class_n_margin >= 4`,
+  `min_segment_count_by_work >= 3`, `min_bridge_works >= 8`,
+  `min_source_work_words >= CEILING_WORDS + 1`, and `length_bins >= 2`;
+- finite numbers: `0 < max_share_single_work <= 0.15`,
+  `0.90 <= min_availability_rate <= 1`,
+  `0.80 <= length_overlap_min <= 1`,
+  `0 <= fragment_shift_ceiling <= 1`,
+  `0 <= subfloor_shift_ceiling <= 1`, and
+  `effect_threshold_numeric > 0`;
+- `pre_ai_cutoff_year` is an integer from 1 through the year component of the
+  registration date.
+
+Every band leaf is an integer excluding bool and at least 1, with
+`min_words <= max_words`; the six additional band consistency rules and floor
+arithmetic then run.
+
+**Registration artifact**, schema `narrative-polarity-registration/1`, exact 10
 keys: `schema`, `date`, `arm`, `thresholds_sha256`, `work_ids_sha256`,
-`signal_id_set_sha256`, `segmenter` (null when the arm is `subfloor`), `judge`
-(five keys: the four identity fields plus `context_bound_words`, R8), and
-`generation_prompts`.
+`design_sha256`, `signal_id_set_sha256`, `segmenter` (null when the arm is
+`subfloor`), `judge` (five keys: the four identity fields plus
+`context_bound_words`, R8), and `generation_prompts`.
+
+`date` is canonical ISO `YYYY-MM-DD` and is required as a CLI argument in
+register, evaluate, **and verify**. Verification uses the asserted argument to
+re-derive the receipt and never trusts the receipt's date.
+
+The registration `segmenter` is null for Arm B and, for Arm A, is an exact
+four-key object: `emitter` fixed to `narrative_decision_long_form`,
+`segmenter_version` equal to `SEGMENTER_VERSION`, `params_sha256` a framed
+digest string, and `segment_target_words` an integer excluding bool in
+`[FLOOR_WORDS, CEILING_WORDS]`. The registration `judge` is exact:
+`kind`, `model`, `model_revision`, and `prompt_version` are non-empty strings,
+`model` is concrete and non-mock, and `context_bound_words` is an integer
+excluding bool and at least 1. For Arm A, `kind` must be `manifest`; this is the
+only current producer backend that supplies the exact non-empty identity quad
+required by the bridge contract.
+
+`generation_prompts` is a JSON array sorted ascending by `prompt_family`, with
+unique families. Each item is an exact three-key object:
+`prompt_family` is a non-empty string, `prompt_sha256` is the framed digest of
+the exact prompt bytes, and `prompt_text_path` is the privacy-safe basename
+only. `--generation-prompt FAMILY=PATH` rejects an empty/duplicate family,
+missing file, or non-file path before registration. Any wrong order, duplicate,
+extra key, absolute/directory-bearing path, or type mismatch in the persisted
+array is `malformed_artifact`.
 
 **`work_ids_sha256` preimage, defined:** the canonical-JSON hash of the sorted
 set of **distinct `source_work_id` values**, not of per-row ids. This
 deliberately differs from the sibling, whose unit is the row
-(`work_ids_sha256_for_rows`, line 984, hashes each row's work id); 78's unit of
+(`work_ids_sha256_for_rows` at
+`narrative_longform_agreement.py:1252`, hashes each row's work id); 78's unit of
 analysis is the source work, so its design must be bound at that unit. Stated
 rather than left to inference.
 Test: `test_work_ids_hash_is_over_distinct_source_works`.
 
 **"Values-free" defined.** A registration manifest row carries exactly
-`text_id`, `label`, `role`, `source_kind`, and `source_work_id`, and must carry
-**none** of `signals`, `n_words`, `source_work_words`, `content_sha256`,
-`provenance`, `segmenter`, `judge`. Any of those present → refusal
+`text_id`, `label`, `role`, `source_kind`, `source_work_id`,
+`subfloor_bridge_side`, `content_sha256`, and `source_work_sha256`. Content and
+control-side identities are known before judging and are
+part of the preregistered sample, not outcomes. It must carry **none** of
+`signals`, `n_words`, `source_work_words`, `provenance`, `segmenter`, or
+`judge`. Any of those present → refusal
 `registration_manifest_not_values_free`. This is stricter than the sibling
 (which bans only values) on purpose: 78's floors are computed from provenance,
 so admitting provenance at register time would let an operator tune floors to a
 corpus they have already seen.
 Test: `test_registration_manifest_rejects_provenance_and_values`.
 
+**`design_sha256` binds the values-free design and sample, not merely the work
+set.** The registration loader canonicalizes each eight-key row in the key
+order `text_id`, `label`, `role`, `source_kind`, `source_work_id`,
+`subfloor_bridge_side`, `content_sha256`, `source_work_sha256`; sorts the list
+by the tuple with each nullable member represented by `(value or "")` (the
+empty sentinel sorts before every valid non-empty value); canonical-JSON serializes
+the list; and hashes it under
+`setec.voiceprint.spec78.design-projection-json.v1`. Evaluation projects those
+same eight keys from every live manifest row, sorts identically, and requires
+equality with registration. This keeps outcomes and provenance unseen while
+preventing post-registration mutation or substitution of row identity, class,
+role, kind, work assignment, control side, judged content, or source work.
+Tests mutate each of the eight fields one at a time and require
+`registration_mismatch`;
+`source_work_id` must change both design and work-id bindings.
+
 **Derivation binding — rule, not enumeration.** The sibling's preimage covers
 supports, statistics, segmenter, and judge only (`_derivation_sha256`, lines
 1221–1262), so v3's claim that `floors_applied` was "covered by
 `derivation_sha256`" was **false**. 78 states the rule instead:
 
-> Every receipt field except `schema_version`, `date`, `registration_path`,
-> `manifest_path`, and `derivation_sha256` itself enters the canonical-JSON
-> preimage, with all floats rounded to 10 dp and all maps canonically sorted.
+> Every receipt field except `derivation_sha256` itself enters the
+> canonical-JSON preimage, including schema, date, and the privacy-safe
+> registration/manifest basenames. Floats round to 10 dp and maps sort
+> canonically. No value is copied from a prior receipt during verification.
 
 Pinned mechanically rather than by list, so the binding cannot drift as the
-receipt grows: `test_derivation_preimage_covers_every_receipt_field` — for each
-non-exempt field, perturb it and assert the digest changes; for each exempt
-field, perturb it and assert it does not.
+receipt grows: `test_derivation_preimage_covers_every_receipt_field` perturbs
+each field other than the digest slot and asserts the digest changes.
 
 ## Receipt
 
@@ -1158,17 +1419,24 @@ set (23): `schema_version`, `date`, `arm`, `signal_id_set_sha256`,
 (v5, R8; null when the arm is `subfloor`), `floors_applied`, `bands_applied`,
 `multiplicity`, `deferrals`, **`stated_limits`** (v5, fix 14), `per_signal`.
 
-**`stated_limits` is a closed set of 6 ids** (fix 14), carried in the artifact so
+**`stated_limits` is a closed set of 6 ids**, carried in the artifact so
 a limit cannot be lost between this document and the findings document:
 `custody_residue` (write access to registration, manifest, prompts, and receipt
 together can produce a self-consistent fabrication); `judge_read_unproven` (no
-mechanism shows a model read any text); `envelope_digest_operator_asserted` (M1
-opens no envelope); `prompt_scan_naming_only` (the blindness scan catches naming,
-not paraphrase or conditioning by example); `bridge_read_unverified` (`read_mode`
+mechanism shows a model read any text); `envelope_path_custody` (M1 reopens
+every producer envelope and exact target bytes, but the operator still selects
+the local paths);
+`prompt_scan_naming_only` (the blindness scan catches naming, not paraphrase or
+conditioning by example); `bridge_read_unverified` (`read_mode`
 is a declaration, not a proof); `shortness_residue` (Arm B establishes
 truncation-invariance, not native-shortness validity).
-Test: `test_findings_document_reproduces_every_stated_limit` — the committed
-findings document must contain every id, and the set must be exactly these 6.
+The M1 deliverable
+`plugins/setec-voiceprint/references/calibration/storyscope-polarity-m1-findings.md`
+is judge-free: it records the schema/version, the six ids and their meanings,
+the two-arm claim boundary, the cross-spec suppression rule, and explicitly
+states that no empirical result exists in M1. Test:
+`test_findings_document_reproduces_every_stated_limit` — the committed findings
+document contains every id exactly once and no empirical verdict.
 
 `segmenter` and `covered_source_work_range` are null when the arm is `subfloor`.
 
@@ -1184,7 +1452,7 @@ Test: `test_covered_length_range_excludes_bridge_rows`.
 Both covered-range blocks carry `min_words`, `max_words`, `median_words`, and a
 `unit` string (`words_per_text` and `words_per_source_work` respectively).
 
-**Per-signal cell, exact key set (14):**
+**Per-signal cell, exact key set (15):**
 
 | Key | Type | Domain / meaning |
 |---|---|---|
@@ -1200,13 +1468,45 @@ Both covered-range blocks carry `min_words`, `max_words`, `median_words`, and a
 | `sign_stability` | null | always null in M1 (R1) |
 | `statistics` | array | entries with `name`, `value`, `threshold`, `direction`, `role`, `estimand`; empty before step 6 |
 | `ci` | object \| null | `lo`, `hi`, `z`, `method`; null before step 6 |
-| `bridge` | object | `statistic` (`paired_absolute_shift`), `value`, `ci_upper` **(v5, fix 6)**, `value_response_units` (null for indicators), `threshold`, `by_class`, `n_works_by_class`; the first four are null before step 3 |
+| `bridge` | object | `statistic` (always `paired_absolute_shift`), `value`, `ci_upper`, `value_response_units` (null for indicators), `threshold`, `by_class`, `ci_upper_by_class`, `n_works_by_class`; before step 3 the four scalar values and both class maps carry null values, while `statistic` and counts remain populated |
 | `multiplicity` | null | always null in M1 (**R6**) |
+| `joint_claim_suppressed` | bool | true exactly for `fragment_artifact_confounded`, `bridge_inconclusive`, or a spec-79 `not_aggregatable` operator; false otherwise |
+
+Nested exact sets are closed:
+
+- `judge` = `kind`, `model`, `model_revision`, `prompt_version`,
+  `context_bound_words`;
+- `floors_applied` = exactly the 17 floor keys in §"Gates", with exact types;
+- `bands_applied` = the exact five cells and exact `{min_words,max_words}`
+  leaves from §"Length bands";
+- top-level `multiplicity` = exactly `method`, `alpha`, `family`, all null in M1;
+- `deferrals` = exactly `sign_stability`, `multiplicity`, both non-empty strings
+  in M1;
+- `availability_by_class`, `bridge.by_class`, `bridge.ci_upper_by_class`, and
+  `bridge.n_works_by_class` = exactly `pre_ai_human`, `ai_generated`;
+- `ci` = exactly `lo`, `hi`, `z`, `method`;
+- `bridge` = exactly the eight keys in the table.
+
+`statistics` has one of three exact shapes. Before step 6 it is empty. Numeric
+step-6 cells carry two six-key entries (`name`, `value`, `threshold`,
+`direction`, `role`, `estimand`): `hedges_g` is `verdict_bearing` with
+direction `absolute_interval`; `direction_aware_auc` is `comparison_only` with
+threshold null and direction `comparison_only`. Indicator step-6 cells carry
+one `direction_aware_auc` entry, `verdict_bearing`, threshold fixed at 0.5,
+direction `interval_around_fixed_null`. No other name/role pairing is legal.
+
+**Claim-strength asymmetry is explicit.** Numeric cells must clear a registered
+non-zero absolute Hedges-*g* threshold. Indicator cells have no registered
+effect margin and claim only that the 95% direction-aware AUC interval excludes
+the precedent's fixed 0.5 null. An indicator `polarity_matches` is therefore a
+direction claim, not evidence of a minimum practical effect. The receipt's
+statistic `threshold` is 0.5 for indicator entries and the registered
+`effect_threshold_numeric` for numeric entries.
 
 **Deferrals are mechanically consistent with their slots (R1, R6).** M1 writes
-both reason strings from module constants. Invariant, tested both ways for each
-key: the deferral reason is null **iff** at least one carrier for that key is
-non-null.
+both reason strings from module constants. A deferral reason is non-null iff
+every carrier for that computation is null; any future non-null carrier
+requires the corresponding reason to become null.
 Tests: `test_m1_sign_stability_null_everywhere_with_reason`,
 `test_m1_multiplicity_null_everywhere_with_reason`,
 `test_deferral_reasons_and_slots_mutually_consistent`.
@@ -1240,6 +1540,7 @@ per_signal.*.availability_by_class.*
 per_signal.*.bridge.value              per_signal.*.bridge.value_response_units
 per_signal.*.bridge.ci_upper
 per_signal.*.bridge.threshold          per_signal.*.bridge.by_class.*
+per_signal.*.bridge.ci_upper_by_class.*
 class_counts.*.max_share_single_work
 class_counts.*.segment_count_stats.median
 covered_length_range.median_words      covered_source_work_range.median_words
@@ -1303,10 +1604,13 @@ rewritten permitted-use clause separates the two:
 > this permits: encoding each per-segment response to its numeric or indicator
 > value, and forming an **internal, never-emitted per-source-work reduction** (a
 > mean or a prevalence) used **solely as the unit of a class-level statistic**.
-> It does not permit any **reported or claimed** work-level value: no whole-work
-> scalar, no aggregate score, no ranking, no per-work figure in any emitted
-> artifact, and no claim about the segmented work, its author, its provenance,
-> or its style. It does not permit consumption by any surface other than the one
+> It does not permit any **reported or claimed signal-derived** work-level
+> value: no whole-work signal scalar, signal aggregate score, signal ranking,
+> or per-work signal figure in any emitted artifact. Aggregate corpus-
+> description fields required by the receipt (covered source-work range,
+> counts, bands, and floors) are not signal-derived work values and are not
+> prohibited. It permits no claim about the segmented work, its author, its
+> provenance, or its style, and no consumption by a surface other than the one
 > named above.
 
 **Tests that can see a violation**, not just a string:
@@ -1344,11 +1648,30 @@ whole-work judged value is therefore outside its declared register even though
 no hard gate refuses it. R5 requires a named, tested extension.
 
 - **Constants** in `narrative_decision_audit.py`: a `REG-AUDIT-B1` id constant,
-  a bridge ceiling constant, a bridge length-range tuple starting at 25,001, and
-  the extension sentence below.
+  `BRIDGE_CONTROL_MAX_WORDS = 200_000`, bridge length range
+  `(25_001, BRIDGE_CONTROL_MAX_WORDS)`, and the extension sentence below.
 - **Flag** `--bridge-control`. When set, the `ClaimLicense` construction selects
-  the bridge range; the run refuses (`bad_input`) if the target is in range;
-  behaviour without the flag is byte-unchanged.
+  the bridge range; before constructing or invoking a judge, the run computes
+  the shared canonical source count and refuses (`bad_input`) unless
+  `25_001 <= target_words <= BRIDGE_CONTROL_MAX_WORDS`. The flag also hard
+  requires `--judge manifest`; API, host, and mock backends refuse before judge
+  construction because they do not currently supply the exact registered
+  identity quad. Behaviour without the flag is byte-unchanged. The producer
+  keeps its existing
+  30-feature `results.values` shape. At spec-78 evaluate time, the consumer
+  calls `signals_map(envelope["results"]["values"], value_key="value")` and
+  requires exact equality with the bridge row's 33-id `signals` map. This is the
+  named transcription step and avoids a circular import from the base audit
+  back into its long-form consumer. No aggregate or verdict is added.
+  A flagged envelope also carries
+  `results.bridge_judge = {kind, model, model_revision, prompt_version}`, copied
+  from the manifest result after exact non-empty string validation, and
+  `target.source_content_sha256` under the shared framed source-work domain.
+  Both keys are absent on unflagged runs. The long-form producer likewise adds
+  `target.source_content_sha256` only on calibration envelopes; scoring
+  envelopes remain byte-identical. The shared counter is
+  `narrative_longform_segment.count_words`; the base audit's legacy
+  `[A-Za-z']+` count remains untouched off the flag.
 - **Boundary against the existing warning channel (fix 10).** The base audit's
   `register_warnings_for` (`narrative_decision_audit.py:559`) branches only
   *below* `MIN_FICTION_WORDS` and on a missing-dialogue check: an over-ceiling
@@ -1367,6 +1690,8 @@ no hard gate refuses it. R5 requires a named, tested extension.
   alone. Two carriers the override cannot erase: a `register_extension` results
   key (a results field, not license prose), and the extension sentence
   **appended after** any operator override when the flag is set.
+  `results.register_extension` is emitted **only** under `--bridge-control`;
+  the key is absent, not null, on every unflagged run.
 - **Exact wording:**
 
   > *Register extension REG-AUDIT-B1.* This run scored a work above the audit's
@@ -1379,15 +1704,22 @@ no hard gate refuses it. R5 requires a named, tested extension.
 - Tests, in `test_narrative_decision_audit.py`:
   `test_bridge_control_extends_declared_length_range`;
   `test_bridge_control_refuses_in_range_target`;
+  `test_bridge_control_boundaries_25000_25001_200000_200001`;
+  `test_bridge_control_requires_manifest_judge`;
+  `test_bridge_control_uses_shared_source_counter`;
   `test_without_flag_length_range_byte_unchanged`;
+  `test_unflagged_golden_envelope_byte_unchanged`;
   `test_register_extension_survives_does_not_license_override`;
-  `test_bridge_control_stamps_results_key`.
+  `test_bridge_control_stamps_results_key`;
+  `test_bridge_control_signals_map_round_trips_all_33` (loads a real flagged
+  envelope, expands its 30 values, and compares all 33 manifest cells).
 - **Pin consequence, stated:** spec 79's test contract pins the
   `length_range_words` tuple byte-unchanged. That pin is re-scoped to "unchanged
   **without** `--bridge-control`", and a new pin covers the bridge tuple. The
   base audit's contract fixture must be re-verified at build time; if the flag
   touches any fixture-covered output, the fixture is regenerated in the same
-  commit.
+  commit. M1 acceptance also runs `tools/check_capabilities_drift.py --check`;
+  the new flag must not create an undeclared capability/golden drift.
 
 ### This child's own license posture
 
@@ -1419,13 +1751,19 @@ surface, stdlib-only, judge-free over precomputed values. Flat flags:
 `--arm` (`segment_regime` or `subfloor`), `--manifest` PATH, `--thresholds`
 PATH, `--registration` PATH (required for `--evaluate` and `--verify`), `--out`
 PATH, exactly one of `--register` / `--evaluate` / `--verify`, `--date` (ISO,
-required for register and evaluate, never read from the clock),
+required for all three modes, never read from the clock),
 `--generation-prompt` FAMILY=PATH (repeatable; required at registration for
 every AI prompt family), the three segmenter-identity flags, and the four
-judge-identity flags.
+judge-identity flags plus `--judge-context-bound-words`.
+
+Like the post-#366 sibling, register/evaluate refuse before writing when
+`--out` aliases any input by resolved path, symlink, or hard-link identity.
+Verify intentionally reads the existing receipt named by `--out`. Tests cover
+every mode/input pair plus symlink and hard-link aliases.
 
 **Refusals:** one exception type, printed to stderr with **exit 2**, mirroring
-the sibling's main function (lines 1550–1552). Its reason strings are the closed
+the sibling's main function at `narrative_longform_agreement.py:1927`. Its
+reason strings are the closed
 `REFUSAL_REASONS` set. `REASON_CATEGORIES` is not in play — a calibration script
 writes a JSON artifact, not a `build_output` envelope. The `REG-AUDIT-B1` work,
 which *does* touch an envelope-emitting surface, keeps the closed six unchanged
@@ -1474,7 +1812,9 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 `test_read_mode_required_on_arm_a_bridge_rows_and_null_elsewhere`;
 `test_bridge_row_word_count_mismatch_refuses`;
 `test_unregistered_prompt_family_refuses`; `test_drop_reason_domain_closed_at_6`;
+`test_drop_precedence_first_match_wins`;
 `test_every_drop_reason_reachable`; `test_refusal_reason_domain_closed_at_28`;
+`test_refusal_precedence_first_match_wins`;
 `test_every_refuses_sentence_maps_to_exactly_one_reason_id`;
 `test_every_refusal_reason_exits_2_and_writes_no_receipt`;
 `test_drop_and_refusal_sets_disjoint`;
@@ -1486,7 +1826,10 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 `test_single_segment_work_dropped_and_counted`;
 `test_amendment_id_bound_to_row_role`;
 `test_truncated_row_content_hash_differs_from_full_side`;
-`test_bridge_row_n_words_equals_source_work_words`.
+`test_bridge_row_n_words_equals_source_work_words`;
+`test_unavailable_cell_is_false_with_null_only`;
+`test_availability_denominator_is_all_primary_rows`;
+`test_unavailable_cells_excluded_before_encoding_and_reduction`.
 
 **Over-ceiling regime (R5, R8)** —
 `test_bridge_band_above_judge_context_refuses_at_register`;
@@ -1504,10 +1847,16 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 
 **Gates and floors** — `test_length_overlap_gate_refuses_disjoint_classes`;
 `test_length_overlap_computed_over_primary_rows_only`;
+`test_length_overlap_quantile_edges_hand_computed`;
 `test_bridge_shift_paired_within_work`;
 `test_heterogeneous_no_shift_corpus_is_not_fragment_confounded`;
 `test_indicator_segment_side_dichotomized_by_majority_tie_to_zero`;
 `test_bridge_block_null_before_step_3`;
+`test_signal_with_unavailable_bridge_values_is_insufficient_support_not_licensed`;
+`test_low_bridge_point_with_wide_interval_is_inconclusive`;
+`test_low_bridge_point_with_tight_interval_passes`;
+`test_crossed_class_point_and_upper_bound_is_inconclusive`;
+`test_point_at_or_above_ceiling_is_confounded`;
 `test_class_asymmetric_bridge_shift_caught_by_max_not_hidden_by_mean`;
 `test_fragment_artifact_confounded_excludes_signal_from_verdict`;
 `test_subfloor_artifact_confounded_excludes_signal_from_verdict`;
@@ -1521,13 +1870,24 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 `test_three_identical_vectors_across_works_refuse`;
 `test_two_identical_vectors_pass`; `test_mock_row_judge_refused`;
 `test_row_judge_identity_mismatch_refused`;
-`test_mixed_row_judge_identities_refused`;
 `test_unbound_source_envelope_refused`;
+`test_bridge_source_envelope_verified_at_evaluate`;
+`test_bridge_source_envelope_digest_mismatch_refuses`;
+`test_bridge_source_envelope_register_extension_mismatch_refuses`;
+`test_bridge_source_envelope_judge_mismatch_refuses`;
+`test_bridge_source_envelope_target_words_mismatch_refuses`;
+`test_same_length_different_source_work_swap_refuses`;
+`test_primary_source_envelope_resegments_and_rederives_row`;
+`test_arm_b_full_and_truncated_envelopes_reopened`;
+`test_arm_b_unrelated_short_text_refuses_as_truncation`;
+`test_arm_b_truncation_byte_boundary_pinned`;
+`test_unknown_arm_b_judge_kind_refuses`;
 `test_registered_judge_block_is_derived_not_asserted`;
 `test_source_envelope_digest_set_bound_into_derivation`;
 `test_prompt_naming_a_feature_key_refuses`;
 `test_prompt_naming_a_signal_option_refuses`;
 `test_prompt_naming_the_paper_refuses`; `test_clean_prompt_registers`;
+`test_prompt_containing_the_word_eyes_registers_clean`;
 `test_unregistered_prompt_family_refuses`;
 `test_duplicate_content_sha256_dropped`;
 `test_mock_refused_at_register_and_evaluate`;
@@ -1542,11 +1902,15 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 `test_registration_key_set_exact`;
 `test_work_ids_hash_is_over_distinct_source_works`;
 `test_registration_manifest_rejects_provenance_and_values`;
+`test_design_hash_binds_all_eight_identity_content_side_fields`;
+`test_post_registration_content_substitution_refuses`;
 `test_registration_before_evaluate_required`;
 `test_post_hoc_thresholds_refused`;
-`test_derivation_preimage_covers_every_receipt_field`.
+`test_derivation_preimage_covers_every_receipt_field`;
+`test_verify_requires_asserted_date`.
 
-**Receipt** — schema round-trip with the exact 23-key and 14-key sets;
+**Receipt** — schema round-trip with the exact 23-key and 15-key sets plus every
+nested exact set;
 `test_mandated_receipt_schema_passes_its_own_guard`;
 `test_covered_length_range_excludes_bridge_rows`;
 `test_findings_document_reproduces_every_stated_limit`;
@@ -1562,6 +1926,12 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 `test_subfloor_receipt_segmenter_and_source_range_null`;
 `test_receipt_byte_deterministic_across_processes`.
 
+**Framed hashing and aliases** — frozen registry whose asserted count is
+derived from the domain table (12 in M1); same-payload
+cross-domain inequality; length-framing collision negative; each artifact and
+content field uses its assigned domain; register/evaluate output refuses every
+input alias by path, symlink, and hard link.
+
 **Spec 79 side** (`test_narrative_decision_long_form`):
 `test_calibration_envelope_carries_amendment_ids`;
 `test_scoring_envelope_carries_no_amendment`;
@@ -1574,9 +1944,15 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 `test_unflagged_over_ceiling_run_emits_no_new_warning`;
 `test_bridge_control_extends_declared_length_range`;
 `test_bridge_control_refuses_in_range_target`;
+`test_bridge_control_boundaries_25000_25001_200000_200001`;
+`test_bridge_control_requires_manifest_judge`;
+`test_bridge_control_uses_shared_source_counter`;
 `test_without_flag_length_range_byte_unchanged`;
+`test_unflagged_golden_envelope_byte_unchanged`;
 `test_register_extension_survives_does_not_license_override`;
-`test_bridge_control_stamps_results_key`.
+`test_bridge_control_stamps_results_key`;
+`test_bridge_control_signals_map_round_trips_all_33`;
+`tools/check_capabilities_drift.py --check`.
 
 ## Increments
 
@@ -1584,7 +1960,9 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
   calibration script, both artifacts, the receipt schema, the `--verify`
   re-derivation path, the guards, synthetic fixtures, the full test contract,
   **plus the three new contract objects** (`CLA-79-A1`, `CLA-79-A2`,
-  `REG-AUDIT-B1`) with their tests, two changelog fragments, and the re-scoped
+  `REG-AUDIT-B1`) with their tests, the judge-free findings file named in
+  §"Receipt", `changelog.d/storyscope-polarity-m1.md`,
+  `changelog.d/storyscope-polarity-contract-amendments.md`, and the re-scoped
   base-surface pin in spec 79. Judge-free. No replicate dimension, no sign
   statistic (R1), no multiplicity computation (R6).
 - **M2 (separate evaluation authorizations, may split per arm):** the real
@@ -1615,8 +1993,9 @@ segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
 Any change to the 33-signal schema, the 7 bundles, the segmenter, the sibling
 calibration script, or judge prompts — **excepting, by name, the two one-line
 `__all__` promotions**: `direction_aware_auc` in `narrative_polarity_audit.py`
-and `DEGENERATE_VECTOR_MIN` in `narrative_decision_long_form`, which the import
-discipline mandates (fix 13). Any change to spec 79 or the base audit
+and `DEGENERATE_VECTOR_MIN` in `narrative_decision_long_form`, plus the
+`_signals_map` → `signals_map` public rename/value-key extension in the latter,
+which the import/transcription discipline mandates. Any change to spec 79 or the base audit
 **other than the three objects enumerated in §"Contract surfaces this child
 adds"**. Dickensian-ness inference from polarity. Detector construction,
 per-text provenance verdicts, AI-detection thresholds, and any selection or
@@ -1630,8 +2009,7 @@ and multiplicity computation (both M2).
 2. Which generator families constitute the AI class (2 is a hard floor).
 3. Threshold values for every floor and band, and Arm B's truncation-length
    draw — all registered pre-run.
-4. The bridge ceiling constant — the upper bound of the extended register.
-5. Whether Arm B's control population is drawn from the same authors as its
+4. Whether Arm B's control population is drawn from the same authors as its
    primary human class.
 
 ## Consumer note and sequencing
@@ -1932,3 +2310,28 @@ remaining mechanism-level defect, and believes the residue is parameter choice
 (open questions 2, 4, 5), one build-time verification (question 3), and one
 feasibility risk that is empirical rather than editorial (question 1). A
 reviewer is free to disagree with any of that.
+
+## Surgery record (v5 → v6, issue #368)
+
+One pass over the round-5 prioritized list; earlier verdict documents were not
+re-folded. All consumed facts were re-grounded against post-#366
+`origin/main` at `4bebd71022ed8beb9c97db8e0e6300ef6150c897`.
+
+| # | Round-5 fix | v6 disposition |
+|---|---|---|
+| 1 | Total provenance table, including Arm B and a named producer | Folded. Five legal row tuples are exhaustive. Arm B uses the ordinary base audit with null amendment/extension; the below-floor/above-ceiling license distinction is explicit. |
+| 2 | Unambiguous bridge inequality and directional tests | Folded. The controls are renamed ceilings; `<` passes, `>=` is inconclusive, and wide-vs-tight directional tests pin the reading. |
+| 3 | Per-signal paired-population floor | Folded. `min_bridge_works` applies per signal and class after availability filtering; n below the floor exits at step 2, never at the SE calculation. |
+| 4 | Define availability, null representation, denominator, and encoder order | Folded. Exact 33-id maps; false-with-null is the only unavailable cell; primary-row denominators and contribution rules are explicit. |
+| 5 | Ordered refusal precedence and reachable anti-fabrication ids | Folded. Twenty-eight first-match reasons; specific judge/envelope/license checks precede generic schema; redundant mixed-identity id deleted. |
+| 6 | Signal-level leaning join and complete import table | Folded. `CORE_FEATURES`/`iter_signals` and `NON_CONCRETE_JUDGE_MODELS` are imported; the 33-id leaning map and six dual-leaning ids are pinned. |
+| 7 | Prompt match semantics and `yes` collision | Folded. Word-boundary, snake-case substring, and normalized phrase rules are distinct; `eyes` is the negative fixture; paraphrase remains a stated limit. |
+| 8 | Verify Arm A bridge producer envelopes or state an honest downgrade | Folded via verification. Bridge paths are opened at evaluate; framed digest, REG-AUDIT-B1, judge quad, target words, and expanded signals are recomputed and checked. |
+| 9 | Name the 30-feature → 33-signal transcription | Folded. Existing `_signals_map` becomes exported `signals_map` with closed `value_key`; the consumer expands a real producer envelope and compares all 33 cells. |
+| 10 | Mechanical closure sweep | Folded. Six derivable band rules; flat class-count keys; nested exact receipt domains; judge-free findings path; 200,000-word bridge ceiling; narrowed A1 ban; flag-only extension carrier; capability-drift gate; AST behavior without `__all__`; per-signal joint suppression carrier; and claim-strength asymmetry. |
+
+**Post-#366 digest correction.** The issue description says the merged fix
+train left framed/domain-separated spec-79 digests. Live main does not:
+`7ec1b30` removed that experiment before #366 merged. This spec records the
+actual raw producer contracts and applies issue #368's stronger framing rule
+only to new spec-78 digest fields. No spec-79 digest is silently reinterpreted.

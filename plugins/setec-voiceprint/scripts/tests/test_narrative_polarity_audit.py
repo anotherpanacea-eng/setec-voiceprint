@@ -28,6 +28,10 @@ for p in (str(ROOT), str(CALIB)):
         sys.path.insert(0, p)
 
 import narrative_polarity_audit as npa  # type: ignore  # noqa: E402
+
+
+def test_direction_aware_auc_is_exported():
+    assert "direction_aware_auc" in npa.__all__
 from narrative_feature_schema import (  # type: ignore  # noqa: E402
     CORE_FEATURES,
 )

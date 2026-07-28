@@ -82,6 +82,7 @@ from typing import Any
 import narrative_decision_audit as nda  # type: ignore
 import narrative_judge as nj  # type: ignore
 import narrative_longform_segment as nls  # type: ignore
+from storyscope_polarity_contract import source_work_sha256  # type: ignore
 from claim_license import ClaimLicense  # type: ignore
 from narrative_feature_schema import (  # type: ignore
     BUNDLE_LABELS,
@@ -100,6 +101,10 @@ __all__ = [
     "SCRIPT_VERSION",
     "signal_id_for",
     "all_signal_ids",
+    "DEGENERATE_VECTOR_MIN",
+    "signals_map",
+    "CLAIM_LICENSE_AMENDMENTS",
+    "CLAIM_LICENSE_AMENDMENT_IDS",
     "OPERATOR_TABLE",
     "OPERATOR_MEAN",
     "OPERATOR_PREVALENCE",
@@ -566,16 +571,20 @@ def _cache_store(
     )
 
 
-def _signals_map(cleaned: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def signals_map(
+    cleaned: dict[str, Any], *, value_key: str = "response"
+) -> dict[str, dict[str, Any]]:
     """Per-signal {response, available} from a segment's cleaned judge
     values. Responses stay exactly as the judge returned them (a string,
     or a list of strings for multi features); no encoding, no numerics."""
+    if value_key not in {"response", "value"}:
+        raise ValueError("value_key must be 'response' or 'value'")
     out: dict[str, dict[str, Any]] = {}
     for f in CORE_FEATURES:
         v = cleaned.get(f.key)
         for s in f.signals:
             out[signal_id_for(f, s)] = {
-                "response": list(v) if isinstance(v, list) else v,
+                value_key: list(v) if isinstance(v, list) else v,
                 "available": v is not None,
             }
     return out
@@ -666,7 +675,7 @@ def _segment_payload(
     """Construct the one canonical cache/emission payload for a segment."""
     return {
         "binding": binding,
-        "signals": _signals_map(cleaned),
+        "signals": signals_map(cleaned),
         "register_warnings": list(nda.register_warnings_for(
             seg_text, nda.count_words(seg_text)
         )),
@@ -972,7 +981,10 @@ M1_DOES_NOT_LICENSE = (
     "narrative_decision_audit.signal_target_value function is "
     "mechanically derivable from what this surface emits and is "
     "explicitly OUTSIDE the license — derivation is possible, not "
-    "prevented, and unsupported by any validation in this increment."
+    "prevented, and unsupported by any validation in this increment. "
+    "CLA-79-A2 is limited to the base audit's separately stamped "
+    "REG-AUDIT-B1 bridge-control whole-work responses and grants no use "
+    "of this scoring envelope."
 )
 
 CALIBRATION_LICENSES = (
@@ -992,8 +1004,31 @@ CALIBRATION_DOES_NOT_LICENSE = (
     "chain is a misuse. Also refuses everything the scoring surface "
     "refuses: work-level aggregation, AI/human provenance verdicts, and "
     "any reduction of per-segment values (including via the public "
-    "narrative_decision_audit.signal_target_value function)."
+    "narrative_decision_audit.signal_target_value function). Amendment "
+    "CLA-79-A1 permits only the named spec-78 consumer's internal, never-"
+    "emitted per-source-work reduction as a class-statistic input."
 )
+
+CLAIM_LICENSE_AMENDMENTS = (
+    {
+        "id": "CLA-79-A1",
+        "permits": (
+            "narrative_polarity_extension may consume calibration_only "
+            "segment envelopes as primary-contrast rows and form an internal, "
+            "never-emitted per-source-work reduction solely for a class-level statistic."
+        ),
+        "consumers": ("narrative_polarity_extension",),
+    },
+    {
+        "id": "CLA-79-A2",
+        "permits": (
+            "narrative_polarity_extension may consume bridge-control whole-work "
+            "raw responses solely to estimate a whole-versus-segment shift."
+        ),
+        "consumers": ("narrative_polarity_extension",),
+    },
+)
+CLAIM_LICENSE_AMENDMENT_IDS = tuple(entry["id"] for entry in CLAIM_LICENSE_AMENDMENTS)
 
 
 # ---------- run --------------------------------------------------------
@@ -1159,6 +1194,7 @@ def _run(
     if calibration:
         results: dict[str, Any] = {
             "calibration_only": True,
+            "claim_license_amendments": list(CLAIM_LICENSE_AMENDMENT_IDS),
             "judge_kind": judge_kind,
             "judge": judge_block,
             "segmentation": nls.segmentation_dict(seg),
@@ -1184,6 +1220,7 @@ def _run(
         does_not_license_text = CALIBRATION_DOES_NOT_LICENSE
     else:
         results = {
+            "claim_license_amendments": [],
             "segmentation": nls.segmentation_dict(seg),
             "per_segment": _per_segment_block(
                 seg, payloads, calibration_only=False
@@ -1238,7 +1275,7 @@ def _run(
         ],
     )
 
-    return build_output(
+    envelope = build_output(
         task_surface=TASK_SURFACE,
         tool=TOOL_NAME,
         version=SCRIPT_VERSION,
@@ -1250,6 +1287,9 @@ def _run(
         available=True,
         warnings=warnings,
     )
+    if calibration:
+        envelope["target"]["source_content_sha256"] = source_work_sha256(text)
+    return envelope
 
 
 # ---------- CLI ---------------------------------------------------------

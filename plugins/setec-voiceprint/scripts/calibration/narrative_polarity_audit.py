@@ -99,6 +99,7 @@ __all__ = [
     "load_manifest",
     "auc_mannwhitney",
     "hanley_mcneil_se",
+    "direction_aware_auc",
     "polarity_verdict",
     "build_report",
 ]

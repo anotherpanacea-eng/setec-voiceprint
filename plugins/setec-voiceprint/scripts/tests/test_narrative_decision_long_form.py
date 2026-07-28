@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
 import narrative_decision_long_form as ndlf  # type: ignore  # noqa: E402
 import narrative_feature_schema as nfs  # type: ignore  # noqa: E402
 import narrative_longform_segment as nls  # type: ignore  # noqa: E402
+from storyscope_polarity_contract import source_work_sha256  # type: ignore  # noqa: E402
 from output_schema import REASON_CATEGORIES  # type: ignore  # noqa: E402
 
 
@@ -380,7 +381,9 @@ def test_envelope_top_level(long_envelope, long_case):
     assert set(results.keys()) == {
         "segmentation", "per_segment", "per_signal_aggregates",
         "per_bundle", "validation_binding", "judge", "cache",
+        "claim_license_amendments",
     }
+    assert results["claim_license_amendments"] == []
     assert results["judge"] == {
         "kind": "manifest",
         "model": "test-judge",
@@ -671,6 +674,12 @@ def test_calibration_mock_allowed_any_length(tmp_path):
     assert results["judge_kind"] == "mock"  # prominent, mandated
     assert results["judge"]["kind"] == "mock"
     assert results["per_signal_aggregates"] == {}
+    assert results["claim_license_amendments"] == list(
+        ndlf.CLAIM_LICENSE_AMENDMENT_IDS
+    )
+    assert envelope["target"]["source_content_sha256"] == source_work_sha256(
+        target.read_text(encoding="utf-8")
+    )
     assert "per_bundle" not in results
     assert "validation_binding" not in results
     assert len(results["per_segment"]) >= 1
@@ -680,6 +689,25 @@ def test_calibration_mock_allowed_any_length(tmp_path):
     assert "evidentiary" in does_not
     # the guard runs on calibration emissions too
     ndlf.assert_no_work_level_reduction(results)
+
+
+def test_spec78_public_contract_exports_and_signal_value_projection():
+    assert "DEGENERATE_VECTOR_MIN" in ndlf.__all__
+    assert "signals_map" in ndlf.__all__
+    assert set(ndlf.CLAIM_LICENSE_AMENDMENT_IDS) == {"CLA-79-A1", "CLA-79-A2"}
+    assert all(set(entry) == {"id", "permits", "consumers"}
+               for entry in ndlf.CLAIM_LICENSE_AMENDMENTS)
+    cleaned = _full_values(0)
+    response_map = ndlf.signals_map(cleaned)
+    value_map = ndlf.signals_map(cleaned, value_key="value")
+    assert set(response_map) == set(ndlf.all_signal_ids())
+    assert set(value_map) == set(ndlf.all_signal_ids())
+    assert all(set(cell) == {"response", "available"}
+               for cell in response_map.values())
+    assert all(set(cell) == {"value", "available"}
+               for cell in value_map.values())
+    with pytest.raises(ValueError):
+        ndlf.signals_map(cleaned, value_key="other")
 
 
 @pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
