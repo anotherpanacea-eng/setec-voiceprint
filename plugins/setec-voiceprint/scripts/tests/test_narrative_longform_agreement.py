@@ -26,8 +26,8 @@ Pins:
     heterogeneous, and registration-mismatched identities.
   * Achieved segment lengths are recomputed from the bound segment text;
     asserted integers are cross-checked and refuse.
-  * Receipt: exact key set, computed segment bands, framed digests with
-    one domain per payload schema.
+  * Receipt: exact key set, computed segment bands, and the repository's
+    shared plain-SHA digest contract.
   * verify_receipt: re-derives verdicts from artifacts, takes the date
     from the caller, and exempts NOTHING; hand-edited verdicts,
     statistics, derivations, dates, paths, and swapped manifests all
@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -307,11 +306,9 @@ def run_cli(args):
     )
 
 
-def expected_framed(domain: bytes, payload: bytes) -> str:
-    """Independent re-implementation of the framing rule."""
-    return "sha256:" + hashlib.sha256(
-        domain + struct.pack(">Q", len(payload)) + payload
-    ).hexdigest()
+def expected_sha(payload: bytes) -> str:
+    """Independent implementation of the repository's plain-SHA contract."""
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 def canonical(obj) -> bytes:
@@ -550,6 +547,27 @@ def test_work_with_fewer_than_three_segments_refuses(tmp_path):
         pipeline(tmp_path, rows)
 
 
+def test_signal_support_requires_three_contributing_segments(tmp_path):
+    """A three-segment work is not three-segment support for a signal when
+    only one segment has an available value for that signal.
+
+    The first repair enforced three total segments per work but still counted
+    a work as support after finding just one available segment cell. That
+    could validate a one-segment reduction and later license a live aggregate
+    only emitted at three contributing segments.
+    """
+    rows = make_rows()
+    for row in rows:
+        for seg in row["segments"][1:]:
+            seg["signals"][SIG_MEAN] = cell(None, available=False)
+
+    receipt, _ = pipeline(tmp_path, rows)
+    result = receipt["per_signal"][SIG_MEAN]
+    assert result["support"] == 0
+    assert result["verdict"] == "insufficient_support"
+    assert result["statistics"] == []
+
+
 # ---------- judge provenance is derived, not asserted --------------------
 
 MOCK_JUDGE = {
@@ -702,7 +720,7 @@ def test_content_hash_mismatch_refuses(tmp_path):
     m = tmp_path / "m.jsonl"
     write_jsonl(m, rows)
     with pytest.raises(
-        nla.CalibrationRefusal, match="does not match the framed digest",
+        nla.CalibrationRefusal, match="does not match the SHA-256 digest",
     ):
         nla.load_manifest_rows(m, values_free=False)
 
@@ -943,44 +961,26 @@ def test_receipt_shape_and_bands(tmp_path):
             assert stat["direction"] in ("min", "max")
 
 
-def test_every_receipt_hash_is_framed_under_its_own_domain(tmp_path):
-    """Codex P2: raw `hashlib.sha256` was reused across content, offsets,
-    parameters, work ids, derivations, registrations, and manifests, so a
-    digest could not say which schema it hashed."""
+def test_every_receipt_hash_uses_the_shared_plain_sha_contract(tmp_path):
     receipt, paths = pipeline(tmp_path, make_rows())
-    for key, path, domain in (
-        ("thresholds_sha256", paths["thresholds"],
-         nls.DOMAIN_THRESHOLDS_FILE),
-        ("registration_sha256", paths["registration"],
-         nls.DOMAIN_REGISTRATION_FILE),
-        ("manifest_sha256", paths["manifest"], nls.DOMAIN_MANIFEST_FILE),
+    for key, path in (
+        ("thresholds_sha256", paths["thresholds"]),
+        ("registration_sha256", paths["registration"]),
+        ("manifest_sha256", paths["manifest"]),
     ):
         raw = path.read_bytes()
-        assert receipt[key] == expected_framed(domain, raw)
-        # ...and NOT the raw digest the three fields used to share a
-        # construction with.
-        assert receipt[key] != "sha256:" + hashlib.sha256(raw).hexdigest()
+        assert receipt[key] == expected_sha(raw)
     ids_payload = canonical(sorted(nla.SIGNAL_IDS))
-    assert receipt["signal_id_set_sha256"] == expected_framed(
-        nls.DOMAIN_SIGNAL_ID_SET, ids_payload)
+    assert receipt["signal_id_set_sha256"] == expected_sha(ids_payload)
     assert receipt["derivation_sha256"].startswith("sha256:")
-    # The three file digests are distinct even though the domain is the
-    # only thing distinguishing two identical artifacts would have.
-    assert len({
-        receipt["thresholds_sha256"], receipt["registration_sha256"],
-        receipt["manifest_sha256"],
-    }) == 3
 
 
-def test_identical_bytes_under_two_file_domains_differ(tmp_path):
+def test_identical_file_bytes_have_the_same_plain_hash(tmp_path):
     a = tmp_path / "a.bin"
     b = tmp_path / "b.bin"
     a.write_bytes(b"identical")
     b.write_bytes(b"identical")
-    assert nls.framed_file_digest(nls.DOMAIN_THRESHOLDS_FILE, a) != \
-        nls.framed_file_digest(nls.DOMAIN_MANIFEST_FILE, b)
-    assert nls.framed_file_digest(nls.DOMAIN_THRESHOLDS_FILE, a) == \
-        nls.framed_file_digest(nls.DOMAIN_THRESHOLDS_FILE, b)
+    assert nla.file_sha256(a) == nla.file_sha256(b) == expected_sha(b"identical")
 
 
 def test_registration_record_contents(tmp_path):
@@ -991,14 +991,11 @@ def test_registration_record_contents(tmp_path):
     assert registration["schema"] == "narrative-longform-registration/1"
     assert registration["segmenter"] == SEGMENTER
     assert registration["judge"] == JUDGE
-    # work_ids_sha256 = framed canonical JSON of the sorted work_id list.
-    assert registration["work_ids_sha256"] == expected_framed(
-        nls.DOMAIN_WORK_IDS,
-        canonical([f"w{i:02d}" for i in range(N_WORKS)]),
-    )
-    assert registration["thresholds_sha256"] == expected_framed(
-        nls.DOMAIN_THRESHOLDS_FILE, paths["thresholds"].read_bytes(),
-    )
+    # work_ids_sha256 = plain SHA-256 of canonical sorted work IDs.
+    assert registration["work_ids_sha256"] == expected_sha(
+        canonical([f"w{i:02d}" for i in range(N_WORKS)]))
+    assert registration["thresholds_sha256"] == expected_sha(
+        paths["thresholds"].read_bytes())
 
 
 # ---------- registration enforcement -----------------------------------
@@ -1034,6 +1031,24 @@ def test_register_refuses_segment_values_even_without_whole(tmp_path):
         write_json(t, LICENSED_THRESHOLDS)
         nla.build_registration(
             date=DATE, thresholds_path=t, manifest_path=m,
+            segmenter=dict(SEGMENTER), judge=dict(JUDGE),
+        )
+
+
+@pytest.mark.parametrize("rider", [
+    {"whole_work": []},
+    {"segments": {}},
+    {"answers": {}},
+    {"segments": [{"segment_id": "s1", "answers": {}}]},
+])
+def test_register_values_free_shape_fails_closed(tmp_path, rider):
+    t = tmp_path / "t.json"
+    d = tmp_path / "d.jsonl"
+    write_json(t, LICENSED_THRESHOLDS)
+    write_jsonl(d, [dict({"work_id": "w1"}, **rider)])
+    with pytest.raises(nla.CalibrationRefusal, match="values-free"):
+        nla.build_registration(
+            date=DATE, thresholds_path=t, manifest_path=d,
             segmenter=dict(SEGMENTER), judge=dict(JUDGE),
         )
 
@@ -1155,6 +1170,16 @@ def test_date_must_be_canonical_iso(tmp_path):
         )
 
 
+def test_evaluation_cannot_predate_registration(tmp_path):
+    _, paths = pipeline(tmp_path, make_rows())
+    with pytest.raises(nla.CalibrationRefusal, match="predates registration"):
+        nla.build_receipt(
+            date="2026-07-26", thresholds_path=paths["thresholds"],
+            registration_path=paths["registration"],
+            manifest_path=paths["manifest"],
+        )
+
+
 # ---------- thresholds artifact strictness -------------------------------
 
 def test_thresholds_schema_strict(tmp_path):
@@ -1183,6 +1208,13 @@ def test_thresholds_schema_strict(tmp_path):
     write_json(t, bad)
     with pytest.raises(nla.CalibrationRefusal, match="missing"):
         nla.load_thresholds(t)
+    # JSON's non-standard Infinity/NaN spellings must not bypass comparisons.
+    for value in (float("inf"), float("-inf"), float("nan")):
+        bad = json.loads(json.dumps(LICENSED_THRESHOLDS))
+        bad["per_operator"]["mean"]["mad_max_response_units"] = value
+        write_json(t, bad)
+        with pytest.raises(nla.CalibrationRefusal, match="finite"):
+            nla.load_thresholds(t)
     # The licensed artifact is itself valid, and stricter floors pass.
     write_json(t, LICENSED_THRESHOLDS)
     assert nla.load_thresholds(t)["floors"]["min_works"] == 24
@@ -1296,8 +1328,13 @@ def test_verify_refuses_a_predated_or_postdated_receipt(tmp_path):
             )
         # And asserting the forged date does not rescue it either: the date
         # is inside the derivation preimage.
+        expected_reason = (
+            "predates registration"
+            if forged_date < DATE
+            else "derivation_sha256"
+        )
         with pytest.raises(
-            nla.CalibrationRefusal, match="derivation_sha256",
+            nla.CalibrationRefusal, match=expected_reason,
         ):
             nla.verify_receipt(
                 receipt_path, paths["thresholds"], paths["registration"],
@@ -1319,6 +1356,14 @@ def test_verify_refuses_relabelled_artifact_paths(tmp_path):
             receipt_path, paths["thresholds"], paths["registration"],
             paths["manifest"], DATE,
         )
+
+
+def test_receipt_paths_are_privacy_safe_basenames(tmp_path):
+    receipt, paths = pipeline(tmp_path, make_rows())
+    assert receipt["registration_path"] == paths["registration"].name
+    assert receipt["manifest_path"] == paths["manifest"].name
+    serialized = json.dumps(receipt, sort_keys=True)
+    assert str(tmp_path) not in serialized
 
 
 def test_verify_cli(tmp_path):

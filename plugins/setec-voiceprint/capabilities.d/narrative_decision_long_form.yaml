@@ -22,7 +22,7 @@ entries:
       (spec 79 M2). Not a provenance verdict; reducing per-segment values to a
       work-level scalar is derivable but outside the claim license.
     registers:
-      - fiction
+      - long_form_fiction
     use_when:
       - "Target is long-form fiction ABOVE 25,000 words (novels)"
       - "You want per-segment narrative-decision distributions across a book"
@@ -63,7 +63,7 @@ entries:
     outputs:
       schema_version: "1.0"
       artifacts:
-        - .longform.json
+        - .narrative_long_form.json
     dependencies:
       python: []
       python_optional: []

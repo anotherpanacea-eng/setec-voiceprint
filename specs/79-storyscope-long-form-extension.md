@@ -9,8 +9,8 @@
 - **Status:** **AS-BUILT (M1)** — implemented 2026-07-27 on
   `feat/spec77-longform-m1` (branch name predates the renumber) (commit `858352c`; 11 files, 100 module tests,
   full plugin suite 8,752 green), then **revised 2026-07-27 under external
-  review** (3 P1 / 6 P2 / 3 P3 findings folded; 155 module tests, full plugin
-  suite 8,881 green). **Where this document and the code
+  review** (initial and follow-up findings folded; verification refreshed on
+  the final repair head). **Where this document and the code
   disagree, the code and its tests govern**; §"As built" records every
   divergence, and §"As built — review round" records what the review changed.
   M2 (receipts, thresholds, licensing) remains unbuilt.
@@ -127,23 +127,17 @@ human actually read each segment.
 
 ### S2a — hashing convention
 
-> **Superseded by the code (2026-07-27).** This section's rule — plain
-> SHA-256, no domain separation, "inventing one would create a vocabulary with
-> no consumer" — was wrong, and the built code does the opposite. See
-> §"As built — review round", entry **H**. What follows is retained because
-> the reasoning it got wrong is instructive; **spec 78 must adopt the built
-> rule, not this paragraph.**
-
 Stated once so no field's derivation is left to inference. Every `*_sha256` in
-specs 78 and 79 is an **ordinary SHA-256 over exact file bytes** — no domain
-separation, no canonicalization — with exactly two exceptions, both computed
-over canonical JSON per the calibration script's existing
-`_manifest_content_hash` idiom: `derivation_sha256` and `signal_id_set_sha256`.
-Concretely, `thresholds_sha256`, `registration_sha256`, `manifest_sha256`,
-`receipt_sha256`, and every `*_source_sha256` are plain file hashes; a reader
-never has to guess which kind a field is. These surfaces deliberately do **not** adopt a domain table:
-they emit no cross-artifact identity that a domain would protect, and inventing
-one would create a vocabulary with no consumer.
+specs 78 and 79 is an **ordinary SHA-256** with no domain prefix.
+`thresholds_sha256`, `registration_sha256`, `manifest_sha256`,
+`receipt_sha256`, and every `*_source_sha256` hash exact file bytes; segment
+content hashes exact UTF-8 bytes. Structured identities — including
+`derivation_sha256`, `signal_id_set_sha256`, segmenter parameters, work IDs,
+judge input, and cache bindings — hash canonical JSON using sorted keys,
+compact separators, and UTF-8. The named field identifies the payload schema.
+These surfaces deliberately do **not** adopt a domain table: they emit no
+cross-artifact identity that a domain would protect, and inventing one would
+create a vocabulary with no consumer.
 
 ### S3 — validation receipt
 
@@ -659,12 +653,17 @@ an assertion.
 `load_thresholds` accepted any floor `≥ 1`, `_segment_bands` imposed no
 segment minimum, and the committed tests minted `validated_aggregatable`
 receipts at floors 3/3/1 with four works and two segments each — against the
-mandated 24/18/6 and `validated_segment_count_range.min ≥ 3`. As built, the
-spec floors are refusals at registration and evaluation alike, a work with
-fewer than three segments refuses, and the test module no longer contains a
-sub-licensed thresholds fixture at all: the regime **is** the fixture, and the
-statistics are arranged to be hand-checkable inside it (rho exactly 1.0, MAD
-exactly ⅓, AUC exactly 1.0 over 24 works × 3 segments).
+mandated 24/18/6 and `validated_segment_count_range.min ≥ 3`. The first repair
+then enforced three total segments per work but still counted a signal as
+supported when only one segment had an available value, validating a
+one-segment reduction that the live emitter could never license below three
+contributors. As built, the spec floors are refusals at registration and
+evaluation alike, every study work has at least three segments, and a work
+contributes to a signal's support only with at least three available segment
+cells. The test module no longer contains a sub-licensed thresholds fixture at
+all: the regime **is** the fixture, and the statistics are arranged to be
+hand-checkable inside it (rho exactly 1.0, MAD exactly ⅓, AUC exactly 1.0 over
+24 works × 3 segments).
 
 **E. Two thresholds are floored at the point they stop discriminating.** New,
 beyond the spec text: `auc_min` must exceed 0.5 and `spearman_min` must exceed
@@ -682,10 +681,10 @@ post-dated receipt re-derived perfectly against its own lie and a receipt
 could name trusted-looking artifacts while being checked against others. As
 built: the date is a **caller argument** (`--verify` now requires `--date`),
 all sixteen keys are compared, and `date`, both path strings, and both
-validated bands are inside the derivation preimage. Consequence, stated:
-relocating an artifact now requires re-issuing the receipt rather than
-relabelling one — which is what §S3's "bound … by path and hash" always
-meant.
+validated bands are inside the derivation preimage. The recorded locators are
+privacy-safe basenames, not host-specific absolute paths; the exact byte hashes
+remain authoritative. Renaming an artifact requires re-issuing the receipt,
+while moving it without renaming does not.
 
 **G. The resume cache re-verifies on every load.** `_cache_load` accepted any
 dict containing `"signals"` and emitted it with no re-validation, and the key
@@ -693,38 +692,24 @@ did not bind the judge input — so editing a manifest response while keeping
 the segment content and declared identity served the previous run's answers,
 and hand-editing `signals`/`values_vector` in the (predictable) cache file put
 a forged vector in charge of the degenerate-judge tripwire. As built: the key
-binds the framed digest of the resolved manifest entry; each entry stores a
+binds the plain digest of the resolved manifest entry; each entry stores a
 `binding` block that must equal the live binding; `signals` is re-validated for
 exact key set, exact leaf types, and closed feature vocabularies; and
 `values_vector` must re-derive from `signals`. A present-but-unverifiable entry
 **refuses** (`bad_input`) rather than silently recomputing — a tampered cache
-should not be able to disappear.
+should not be able to disappear. For a local deterministic manifest judge, a
+nominal cache hit is also compared with a payload freshly re-derived from the
+live manifest entry, so a schema-valid response edit plus recomputed vector
+still refuses.
 
-**H. Framed digests replace raw SHA-256 everywhere (supersedes §S2a).** The
-same `hashlib.sha256(payload)` was reused across segment content, boundary
-offsets, segmenter parameters, work-id lists, derivations, and three separate
-files. The collision is not hypothetical: the one-segment boundary-offsets
-payload `[[0,7]]` is byte-identical to a seven-character source text
-`[[0,7]]`, so a segment's content hash and its segmentation's boundary hash
-were the *same digest under two schemas*. As built, every `*_sha256` in this
-family is `SHA256(domain_ascii_LF || uint64_be(len) || payload)` on the
-`register_sweep.framed_sha256` house idiom, with **twelve frozen domains, one
-per payload schema**, registered in one place
-(`narrative_longform_segment.FROZEN_DOMAINS`) so uniqueness is auditable, and
-an unregistered domain refuses:
-
-```
-setec-narrative-longform-segment-content-v1     setec-narrative-longform-thresholds-file-v1
-setec-narrative-longform-boundary-offsets-v1    setec-narrative-longform-registration-file-v1
-setec-narrative-longform-segmenter-params-v1    setec-narrative-longform-manifest-file-v1
-setec-narrative-longform-cache-key-v1           setec-narrative-longform-work-ids-v1
-setec-narrative-longform-base-audit-source-v1   setec-narrative-longform-signal-id-set-v1
-setec-narrative-longform-judge-input-v1         setec-narrative-longform-derivation-v1
-```
-
-This changes **every recorded hash** in the family, including manifest keys.
-M1 is unreleased and no receipt exists, so nothing is migrated; the format
-break is recorded here rather than versioned.
+**H. The shared plain-SHA contract is preserved.** An intermediate repair
+introduced domain-separated framed hashes after observing that identical
+content and boundary payload bytes produce the same digest. Integration
+rejected that change: the named receipt fields already identify their
+schemas, identical bytes are expected to have the same ordinary SHA-256, and
+spec 78 explicitly shares §S2a's contract. Adding an incompatible second
+hash vocabulary would have broken cross-spec joins without closing a
+demonstrated substitution path.
 
 **I. `params_sha256` binds regex flags.** It bound each tier's `p.pattern` and
 not its `p.flags`, while the chapter tier depends on `re.M | re.I`:

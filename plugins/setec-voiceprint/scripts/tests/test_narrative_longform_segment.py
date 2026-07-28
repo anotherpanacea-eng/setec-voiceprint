@@ -27,7 +27,6 @@ import json
 import os
 import random
 import re
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -48,16 +47,9 @@ LIMIT = int(TARGET * nls.MAX_TARGET_RATIO)  # 7500
 _SHA_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
-def expected_framed(domain: bytes, payload: bytes) -> str:
-    """Independent re-implementation of the framing rule.
-
-    Deliberately does NOT call the module's helper: the point is to pin the
-    construction ``SHA256(domain_ascii_LF || uint64_be(len) || payload)``, and
-    a test that calls the function under test pins nothing.
-    """
-    return "sha256:" + hashlib.sha256(
-        domain + struct.pack(">Q", len(payload)) + payload
-    ).hexdigest()
+def expected_sha(payload: bytes) -> str:
+    """Independent implementation of the repository's plain-SHA contract."""
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 # ---------------------------------------------------------------- fixtures
@@ -117,16 +109,14 @@ def check_invariants(seg: "nls.Segmentation", text: str) -> None:
         prev_end = s.end
         chunk = s.text(text)
         assert s.n_words == nls.count_words(chunk)
-        assert s.content_sha256 == expected_framed(
-            nls.DOMAIN_SEGMENT_CONTENT, chunk.encode("utf-8"))
+        assert s.content_sha256 == expected_sha(chunk.encode("utf-8"))
     assert seg.segments[0].start == 0
     if not seg.excluded_spans:
         assert seg.segments[-1].end == len(text)  # full coverage
     # boundary hash preimage: compact JSON of [[start, end], ...]
     offsets = json.dumps([[s.start, s.end] for s in seg.segments],
                          separators=(",", ":")).encode()
-    assert seg.boundary_offsets_sha256 == expected_framed(
-        nls.DOMAIN_BOUNDARY_OFFSETS, offsets)
+    assert seg.boundary_offsets_sha256 == expected_sha(offsets)
     assert seg.params_sha256 == nls.params_digest(seg.segment_target_words)
     assert _SHA_RE.match(seg.boundary_offsets_sha256)
     assert _SHA_RE.match(seg.params_sha256)
@@ -477,33 +467,10 @@ def test_params_digest_changes_when_word_pattern_flags_change(monkeypatch):
     assert nls.params_digest(5000) != before
 
 
-# ------------------------------------------- 7b. framed digest domains
+# -------------------------------------------- 7b. shared SHA-256 contract
 
-def test_framed_digest_construction_and_domain_registry():
-    # Every frozen domain is ASCII, LF-terminated, and unique — a domain
-    # reused across two payload schemas is the whole failure mode.
-    assert len(set(nls.FROZEN_DOMAINS)) == len(nls.FROZEN_DOMAINS)
-    for domain in nls.FROZEN_DOMAINS:
-        assert isinstance(domain, bytes)
-        assert domain.isascii() and domain.endswith(b"\n")
-    # The construction is pinned independently of the implementation.
-    assert nls.framed_digest(nls.DOMAIN_SEGMENT_CONTENT, b"abc") == \
-        expected_framed(nls.DOMAIN_SEGMENT_CONTENT, b"abc")
-    # An unregistered domain has no payload schema and is refused.
-    with pytest.raises(nls.DomainError):
-        nls.framed_digest(b"setec-not-a-registered-domain-v1\n", b"abc")
-    with pytest.raises(nls.DomainError):
-        nls.framed_digest(nls.DOMAIN_SEGMENT_CONTENT, "abc")
-
-
-def test_same_bytes_under_two_schemas_do_not_collide():
-    """Codex P2, the demonstrated collision.
-
-    The source text `[[0,7]]` and the one-segment boundary-offsets payload
-    `[[0,7]]` are the SAME BYTES. Under raw sha256 the content hash and the
-    boundary hash of that segmentation were identical, so a receipt could not
-    say which schema it had hashed.
-    """
+def test_same_bytes_under_two_named_fields_share_the_plain_digest():
+    """Field names supply the schema; identical bytes have one plain digest."""
     text = "[[0,7]]"
     seg = nls.segment_text(text)
     assert seg.n_segments == 1
@@ -511,16 +478,8 @@ def test_same_bytes_under_two_schemas_do_not_collide():
     offsets = json.dumps([[0, 7]], separators=(",", ":")).encode()
     assert offsets == text.encode("utf-8")  # the collision precondition
 
-    assert seg.segments[0].content_sha256 != seg.boundary_offsets_sha256
-    # ...and each is the framed digest under its OWN domain.
-    assert seg.segments[0].content_sha256 == expected_framed(
-        nls.DOMAIN_SEGMENT_CONTENT, offsets)
-    assert seg.boundary_offsets_sha256 == expected_framed(
-        nls.DOMAIN_BOUNDARY_OFFSETS, offsets)
-    # The raw digest they used to share is emitted nowhere.
-    raw = "sha256:" + hashlib.sha256(offsets).hexdigest()
-    assert raw not in (seg.segments[0].content_sha256,
-                       seg.boundary_offsets_sha256, seg.params_sha256)
+    assert seg.segments[0].content_sha256 == seg.boundary_offsets_sha256
+    assert seg.boundary_offsets_sha256 == expected_sha(offsets)
 
 
 def test_params_digest_changes_when_a_tier_pattern_changes(monkeypatch):

@@ -145,6 +145,14 @@ def test_signal_ids_33_unique_19_14_split():
             )
 
 
+def test_capability_matches_runtime_register_and_output_suffix():
+    manifest = (
+        ROOT.parent / "capabilities.d" / "narrative_decision_long_form.yaml"
+    ).read_text(encoding="utf-8")
+    assert "\n    registers:\n      - long_form_fiction\n" in manifest
+    assert "\n      artifacts:\n        - .narrative_long_form.json\n" in manifest
+
+
 def test_eight_single_leaning_option_bearing_ids_retain_suffix():
     """The v3-defeating pin: these eight single-leaning option-bearing
     signals must keep their option suffix."""
@@ -674,6 +682,23 @@ def test_calibration_mock_allowed_any_length(tmp_path):
     ndlf.assert_no_work_level_reduction(results)
 
 
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+def test_output_cannot_alias_the_source_text(tmp_path, alias_kind):
+    target = tmp_path / "source.txt"
+    original = _make_text(4).encode("utf-8")
+    target.write_bytes(original)
+    out = target
+    if alias_kind == "symlink":
+        out = tmp_path / "source-link.txt"
+        out.symlink_to(target)
+    rc = ndlf.main([
+        str(target), "--judge", "mock",
+        "--calibration-emit-segments", "--out", str(out),
+    ])
+    assert rc == 1
+    assert target.read_bytes() == original
+
+
 def test_calibration_mock_long_text_exempt_from_tripwire(
     long_case, tmp_path
 ):
@@ -796,6 +821,31 @@ def test_edited_cache_values_vector_refuses(long_case, tmp_path):
     rc, envelope = _rerun_with_cache(long_case, tmp_path, cache_dir)
     assert rc == 1
     assert "values_vector" in envelope["reason"]
+
+
+def test_schema_valid_cache_forgery_refuses(long_case, tmp_path):
+    """A legal response plus its recomputed vector is still not live judge
+    output and must fail the manifest comparison."""
+    cache_dir = _warm_cache(long_case, tmp_path)
+    entry = sorted(cache_dir.glob("*.json"))[0]
+    payload = json.loads(entry.read_text(encoding="utf-8"))
+    feature = next(f for f in nfs.CORE_FEATURES if f.feature_type == "scale")
+    signal_ids = [
+        ndlf.signal_id_for(feature, signal)
+        for signal in feature.signals
+    ]
+    old = payload["signals"][signal_ids[0]]["response"]
+    new = next(option for option in feature.response_options if option != old)
+    for signal_id in signal_ids:
+        payload["signals"][signal_id]["response"] = new
+    payload["values_vector"] = ndlf._values_vector(
+        ndlf._cleaned_from_signals(payload["signals"])
+    )
+    entry.write_text(json.dumps(payload), encoding="utf-8")
+
+    rc, envelope = _rerun_with_cache(long_case, tmp_path, cache_dir)
+    assert rc == 1
+    assert "live manifest" in envelope["reason"]
 
 
 def test_cache_entry_moved_to_another_key_refuses(long_case, tmp_path):

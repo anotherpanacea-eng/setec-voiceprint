@@ -8,7 +8,7 @@
   "family": "narrative-decision",
   "purpose": "Score a work ABOVE the narrative-decision audit's 25,000-word ceiling by deterministic segmentation (chapter/scene/blank-line/paragraph tiers, greedy packing) plus per-segment scoring with the unchanged base audit. M1 emits per-segment raw responses only: every work-level aggregate is suppressed as provisional_unvalidated until a validation receipt exists (spec 79 M2). Not a provenance verdict; reducing per-segment values to a work-level scalar is derivable but outside the claim license.\n",
   "registers": [
-    "fiction"
+    "long_form_fiction"
   ],
   "use_when": [
     "Target is long-form fiction ABOVE 25,000 words (novels)",
@@ -78,7 +78,7 @@
   "outputs": {
     "schema_version": "1.0",
     "artifacts": [
-      ".longform.json"
+      ".narrative_long_form.json"
     ]
   },
   "dependencies": {

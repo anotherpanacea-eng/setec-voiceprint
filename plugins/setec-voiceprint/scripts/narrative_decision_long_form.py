@@ -43,7 +43,7 @@ Judge provenance (S2, M1 subset):
 Resume cache (``--cache-dir``): per-segment results cache under a key that
 binds the segment content hash to the judge identity (kind, model,
 model_revision, prompt_version), the RESOLVED JUDGE INPUT (for a manifest
-judge, the framed digest of that segment's manifest entry — editing a
+judge, the plain SHA-256 digest of that segment's manifest entry — editing a
 response must miss, not hit stale), the segmenter ``params_sha256``, and the
 base-audit identity (script version + prompt fingerprint). Content hash alone
 is NOT the key — a rerun under a different judge or prompt version must miss.
@@ -69,7 +69,9 @@ CLI (flat, no subcommands):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import sys
 import tempfile
 from collections import Counter
@@ -306,6 +308,19 @@ class _Refusal(Exception):
         self.reason = reason
 
 
+def _paths_alias(left: Path, right: Path) -> bool:
+    """True when two paths resolve to the same file, including hard links."""
+    try:
+        if left.resolve() == right.resolve():
+            return True
+    except OSError:
+        pass
+    try:
+        return left.exists() and right.exists() and os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
 # ---------- per-segment scoring ---------------------------------------
 
 def _base_audit_identity() -> str:
@@ -320,9 +335,9 @@ def _base_audit_identity() -> str:
     prompt_fp = nj.fingerprint_prompt()
     if version:
         return f"narrative_decision_audit/{version}+prompt:{prompt_fp}"
-    return nls.framed_digest(
-        nls.DOMAIN_BASE_AUDIT_SOURCE, Path(nda.__file__).read_bytes()
-    )
+    return "sha256:" + hashlib.sha256(
+        Path(nda.__file__).read_bytes()
+    ).hexdigest()
 
 
 def _judge_input_digest(judge_kind: str, entry: Any) -> str | None:
@@ -335,7 +350,9 @@ def _judge_input_digest(judge_kind: str, entry: Any) -> str | None:
     """
     if judge_kind != "manifest":
         return None
-    return nls.framed_object_digest(nls.DOMAIN_JUDGE_INPUT, entry)
+    return "sha256:" + hashlib.sha256(
+        nls.canonical_json_bytes(entry)
+    ).hexdigest()
 
 
 def _cache_binding(
@@ -363,9 +380,9 @@ def _cache_key(binding: dict[str, Any]) -> str:
     """Cache key over the whole binding. Content hash ALONE is forbidden —
     a rerun under a different judge, prompt version, or manifest entry must
     MISS."""
-    return nls.framed_object_digest(
-        nls.DOMAIN_CACHE_KEY, binding
-    ).split(":", 1)[1]
+    return hashlib.sha256(
+        nls.canonical_json_bytes(binding)
+    ).hexdigest()
 
 
 _CACHE_PAYLOAD_KEYS = frozenset({
@@ -470,7 +487,11 @@ def _validate_cached_signals(signals: Any, where: str) -> None:
 
 
 def _cache_load(
-    cache_dir: Path | None, key: str, binding: dict[str, Any]
+    cache_dir: Path | None,
+    key: str,
+    binding: dict[str, Any],
+    *,
+    expected_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Load a cached per-segment result, re-verified against ``binding``.
 
@@ -523,6 +544,13 @@ def _cache_load(
             f"{where}: 'values_vector' does not re-derive from 'signals' "
             f"(the tripwire input must be a function of the emitted "
             f"responses, not an independent assertion)",
+        )
+    if expected_payload is not None and payload != expected_payload:
+        raise _Refusal(
+            "bad_input",
+            f"{where}: cached responses do not match the values re-derived "
+            f"from the live manifest entry. A schema-valid cache edit is "
+            f"still a forged result, not a cache hit.",
         )
     return payload
 
@@ -628,6 +656,27 @@ def _load_keyed_manifest(path: Path) -> dict[str, Any]:
     return data
 
 
+def _segment_payload(
+    *,
+    binding: dict[str, Any],
+    cleaned: dict[str, Any],
+    validation_warnings: list[str],
+    seg_text: str,
+) -> dict[str, Any]:
+    """Construct the one canonical cache/emission payload for a segment."""
+    return {
+        "binding": binding,
+        "signals": _signals_map(cleaned),
+        "register_warnings": list(nda.register_warnings_for(
+            seg_text, nda.count_words(seg_text)
+        )),
+        "validation_warnings": list(validation_warnings),
+        # tripwire input + cache round-trip check; a function of
+        # `signals`, never an independent assertion.
+        "values_vector": _values_vector(cleaned),
+    }
+
+
 def _score_segments(
     *,
     seg: "nls.Segmentation",
@@ -650,6 +699,9 @@ def _score_segments(
     ) as tmp_dir:
         for s in seg.segments:
             entry: Any = None
+            seg_text = s.text(text)
+            manifest_cleaned: dict[str, Any] | None = None
+            manifest_validation_warnings: list[str] | None = None
             if judge_kind == "manifest":
                 assert keyed_manifest is not None
                 entry = keyed_manifest[s.content_sha256]
@@ -657,6 +709,34 @@ def _score_segments(
                     entry,
                     f"segment {s.index} ({s.content_sha256})",
                 )
+                # A manifest judge is local and deterministic, so validate and
+                # execute it even on a nominal cache hit. This gives the cache
+                # loader an independent expected payload; internal
+                # self-consistency alone cannot detect an attacker who edits a
+                # response to another legal option and recomputes the vector.
+                flat_path = Path(tmp_dir) / f"segment_{s.index}.json"
+                flat_path.write_text(json.dumps(entry), encoding="utf-8")
+                try:
+                    manifest_judge = nj.build_judge(
+                        "manifest", manifest_path=flat_path
+                    )
+                except nj.JudgeError as exc:
+                    raise _Refusal(
+                        "bad_input",
+                        f"segment {s.index} "
+                        f"({s.content_sha256}): manifest entry rejected "
+                        f"by the base judge: {exc}",
+                    )
+                try:
+                    manifest_result = manifest_judge(seg_text)
+                except nj.JudgeError as exc:  # pragma: no cover - local read
+                    raise _Refusal(
+                        "internal_error",
+                        f"judge execution failed on segment {s.index} "
+                        f"({s.content_sha256}): {exc}",
+                    )
+                manifest_cleaned, manifest_validation_warnings = \
+                    nj.validate_values(manifest_result.values)
             elif judge_kind == "mock":
                 identity = {
                     "model": "mock", "model_revision": None,
@@ -675,58 +755,51 @@ def _score_segments(
                 judge_input_sha256=_judge_input_digest(judge_kind, entry),
             )
             key = _cache_key(binding)
-            cached = _cache_load(cache_dir, key, binding)
+            expected_manifest_payload = (
+                _segment_payload(
+                    binding=binding,
+                    cleaned=manifest_cleaned,
+                    validation_warnings=manifest_validation_warnings,
+                    seg_text=seg_text,
+                )
+                if manifest_cleaned is not None
+                and manifest_validation_warnings is not None
+                else None
+            )
+            cached = _cache_load(
+                cache_dir,
+                key,
+                binding,
+                expected_payload=expected_manifest_payload,
+            )
             if cached is not None:
                 n_hits += 1
                 payloads.append(cached)
                 continue
             n_misses += 1
 
-            seg_text = s.text(text)
             if judge_kind == "manifest":
-                # Hand the UNCHANGED base judge a flat per-segment
-                # manifest, so its own shape validation applies verbatim.
-                flat_path = Path(tmp_dir) / f"segment_{s.index}.json"
-                flat_path.write_text(
-                    json.dumps(entry), encoding="utf-8"
-                )
-                try:
-                    judge = nj.build_judge(
-                        "manifest", manifest_path=flat_path
-                    )
-                except nj.JudgeError as exc:
-                    raise _Refusal(
-                        "bad_input",
-                        f"segment {s.index} "
-                        f"({s.content_sha256}): manifest entry rejected "
-                        f"by the base judge: {exc}",
-                    )
+                assert expected_manifest_payload is not None
+                payload = expected_manifest_payload
             else:
                 assert shared_judge is not None
-                judge = shared_judge
-
-            try:
-                result = judge(seg_text)
-            except nj.JudgeError as exc:
-                raise _Refusal(
-                    "internal_error",
-                    f"judge execution failed on segment {s.index} "
-                    f"({s.content_sha256}): {exc}",
+                try:
+                    result = shared_judge(seg_text)
+                except nj.JudgeError as exc:
+                    raise _Refusal(
+                        "internal_error",
+                        f"judge execution failed on segment {s.index} "
+                        f"({s.content_sha256}): {exc}",
+                    )
+                cleaned, validation_warnings = nj.validate_values(
+                    result.values
                 )
-            cleaned, validation_warnings = nj.validate_values(
-                result.values
-            )
-            payload = {
-                "binding": binding,
-                "signals": _signals_map(cleaned),
-                "register_warnings": list(nda.register_warnings_for(
-                    seg_text, nda.count_words(seg_text)
-                )),
-                "validation_warnings": list(validation_warnings),
-                # tripwire input + cache round-trip check; a function of
-                # `signals`, never an independent assertion.
-                "values_vector": _values_vector(cleaned),
-            }
+                payload = _segment_payload(
+                    binding=binding,
+                    cleaned=cleaned,
+                    validation_warnings=validation_warnings,
+                    seg_text=seg_text,
+                )
             _cache_store(cache_dir, key, payload)
             payloads.append(payload)
     return payloads, identities, n_hits, n_misses
@@ -1304,7 +1377,9 @@ def _emit_refusal(
         target_path=target_path,
         target_words=target_words,
     )
-    if args.out is not None:
+    if args.out is not None and (
+        target_path is None or not _paths_alias(args.out, target_path)
+    ):
         args.out.write_text(
             json.dumps(envelope, indent=2, default=str), encoding="utf-8"
         )
@@ -1327,6 +1402,12 @@ def main(argv: list[str] | None = None) -> int:
         if not target_path.exists():
             raise _Refusal(
                 "bad_input", f"target file not found at {target_path}"
+            )
+        if args.out is not None and _paths_alias(args.out, target_path):
+            raise _Refusal(
+                "bad_input",
+                f"output path {args.out} aliases the target {target_path}; "
+                f"refusing to overwrite source text with the JSON envelope",
             )
         try:
             text = target_path.read_text(encoding="utf-8")

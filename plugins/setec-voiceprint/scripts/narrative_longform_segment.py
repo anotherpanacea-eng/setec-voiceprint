@@ -24,100 +24,19 @@ the rule the spec drafts kept omitting and which decides everything else:
 Determinism: same bytes and parameters produce byte-identical boundaries in any
 process. No RNG, no dict-ordering dependence, no clock.
 
-Digests: every ``*_sha256`` emitted anywhere in the spec-79 long-form family is
-a FRAMED digest — see "Framed digests" below. A raw ``sha256(payload)`` is
-never emitted, because the same bytes can be a legal payload under two
-different schemas (the one-segment offsets payload ``[[0,7]]`` and a
-seven-character source text ``[[0,7]]`` are the same bytes) and a raw digest
-cannot tell a reader which one it hashed.
+Digests follow the shared spec-78/79 contract: ordinary SHA-256 over the
+specified exact bytes or canonical JSON, with a ``sha256:`` prefix. Field names
+carry the payload schema; digest domains are not embedded in the preimage.
 """
 from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import struct
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Iterable
 
 SEGMENTER_VERSION = "narrative-longform-segmenter/1"
-
-# ---------- framed digests -------------------------------------------
-#
-# The house idiom, taken from ``register_sweep.framed_sha256``:
-#
-#     SHA256(domain_ascii_LF || uint64_be(len(payload)) || payload)
-#
-# Every domain is ASCII, ends in its own LF, and belongs to EXACTLY ONE
-# payload schema. Reusing a domain across schemas is the defect this
-# construction exists to prevent, so the registry below is frozen and
-# ``framed_digest`` refuses an unregistered domain. The registry spans the
-# whole spec-79 family (segmenter, orchestrator, calibration harness) so that
-# domain uniqueness is auditable in one place; a test asserts the domains are
-# distinct.
-
-DOMAIN_SEGMENT_CONTENT = b"setec-narrative-longform-segment-content-v1\n"
-DOMAIN_BOUNDARY_OFFSETS = b"setec-narrative-longform-boundary-offsets-v1\n"
-DOMAIN_SEGMENTER_PARAMS = b"setec-narrative-longform-segmenter-params-v1\n"
-DOMAIN_CACHE_KEY = b"setec-narrative-longform-cache-key-v1\n"
-DOMAIN_BASE_AUDIT_SOURCE = b"setec-narrative-longform-base-audit-source-v1\n"
-DOMAIN_JUDGE_INPUT = b"setec-narrative-longform-judge-input-v1\n"
-DOMAIN_THRESHOLDS_FILE = b"setec-narrative-longform-thresholds-file-v1\n"
-DOMAIN_REGISTRATION_FILE = b"setec-narrative-longform-registration-file-v1\n"
-DOMAIN_MANIFEST_FILE = b"setec-narrative-longform-manifest-file-v1\n"
-DOMAIN_WORK_IDS = b"setec-narrative-longform-work-ids-v1\n"
-DOMAIN_SIGNAL_ID_SET = b"setec-narrative-longform-signal-id-set-v1\n"
-DOMAIN_DERIVATION = b"setec-narrative-longform-derivation-v1\n"
-
-FROZEN_DOMAINS: tuple[bytes, ...] = (
-    DOMAIN_SEGMENT_CONTENT,
-    DOMAIN_BOUNDARY_OFFSETS,
-    DOMAIN_SEGMENTER_PARAMS,
-    DOMAIN_CACHE_KEY,
-    DOMAIN_BASE_AUDIT_SOURCE,
-    DOMAIN_JUDGE_INPUT,
-    DOMAIN_THRESHOLDS_FILE,
-    DOMAIN_REGISTRATION_FILE,
-    DOMAIN_MANIFEST_FILE,
-    DOMAIN_WORK_IDS,
-    DOMAIN_SIGNAL_ID_SET,
-    DOMAIN_DERIVATION,
-)
-
-_FILE_CHUNK = 64 * 1024
-
-
-class DomainError(ValueError):
-    """An unregistered or malformed framing domain was supplied."""
-
-
-def _check_domain(domain: bytes) -> None:
-    if type(domain) is not bytes:
-        raise DomainError("framing domain must be bytes")
-    if not domain.isascii() or not domain.endswith(b"\n"):
-        raise DomainError(
-            f"framing domain must be ASCII and LF-terminated: {domain!r}"
-        )
-    if domain not in FROZEN_DOMAINS:
-        raise DomainError(
-            f"framing domain {domain!r} is not registered; an unfrozen "
-            f"domain has no payload schema"
-        )
-
-
-def framed_digest(domain: bytes, payload: bytes) -> str:
-    """``"sha256:" + SHA256(domain || uint64_be(len) || payload)``."""
-    _check_domain(domain)
-    if type(payload) is not bytes:
-        raise DomainError("framed payload must be bytes")
-    h = hashlib.sha256()
-    h.update(domain)
-    h.update(struct.pack(">Q", len(payload)))
-    h.update(payload)
-    return "sha256:" + h.hexdigest()
-
 
 def canonical_json_bytes(obj: Any) -> bytes:
     """Canonical JSON: sorted keys, no whitespace, raw unicode."""
@@ -126,34 +45,8 @@ def canonical_json_bytes(obj: Any) -> bytes:
     ).encode("utf-8")
 
 
-def framed_object_digest(domain: bytes, obj: Any) -> str:
-    """Frame a canonical-JSON payload under ``domain``."""
-    return framed_digest(domain, canonical_json_bytes(obj))
-
-
-def framed_file_digest(domain: bytes, path: Path) -> str:
-    """Frame the exact bytes of a file under ``domain``, streamed.
-
-    The length prefix comes from ``fstat`` on the OPEN handle, and a short or
-    long read against it raises rather than producing a digest over a
-    different byte count than the frame declares.
-    """
-    _check_domain(domain)
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        size = os.fstat(f.fileno()).st_size
-        h.update(domain)
-        h.update(struct.pack(">Q", size))
-        seen = 0
-        for chunk in iter(lambda: f.read(_FILE_CHUNK), b""):
-            seen += len(chunk)
-            h.update(chunk)
-    if seen != size:
-        raise DomainError(
-            f"{path}: read {seen} bytes but framed {size}; file changed "
-            f"under the digest"
-        )
-    return "sha256:" + h.hexdigest()
+def _sha(payload: bytes) -> str:
+    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 DEFAULT_TARGET_WORDS = 5000
 FLOOR_WORDS = 2000          # the base audit's advisory register floor
@@ -255,14 +148,14 @@ def count_words(text: str) -> int:
 
 
 def content_digest(text: str) -> str:
-    """The framed digest of a segment's exact UTF-8 bytes.
+    """The SHA-256 digest of a segment's exact UTF-8 bytes.
 
     The sole derivation of ``content_sha256`` anywhere in this family: the
     orchestrator's manifest keys and the calibration harness's per-segment
     content binding both call it, so a manifest key and a live segment hash
     are the same function of the same bytes by construction.
     """
-    return framed_digest(DOMAIN_SEGMENT_CONTENT, text.encode("utf-8"))
+    return _sha(text.encode("utf-8"))
 
 
 def params_digest(target: int) -> str:
@@ -286,7 +179,7 @@ def params_digest(target: int) -> str:
         "tier_patterns": [[p.pattern, int(p.flags)] for _, p in _TIER_PATTERNS],
         "word_pattern": [_WORD.pattern, int(_WORD.flags)],
     }
-    return framed_object_digest(DOMAIN_SEGMENTER_PARAMS, payload)
+    return _sha(canonical_json_bytes(payload))
 
 
 def _unit_starts(text: str, tier_index: int) -> list[int]:
@@ -415,9 +308,7 @@ def segment_text(text: str, *, segment_target_words: int = DEFAULT_TARGET_WORDS
             segments=segments,
             excluded_spans=tuple(excluded),
             params_sha256=params_digest(segment_target_words),
-            boundary_offsets_sha256=framed_digest(
-                DOMAIN_BOUNDARY_OFFSETS, offsets
-            ),
+            boundary_offsets_sha256=_sha(offsets),
         )
 
     raise SegmentationInfeasible(

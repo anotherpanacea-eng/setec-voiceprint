@@ -210,7 +210,7 @@ derivation_sha256 — exact construction
         date,                                     # the receipt's own date
         registration_sha256,                       # "sha256:..." string
         manifest_sha256,                          # "sha256:..." string
-        registration_path, manifest_path,         # exact argument strings
+        registration_path, manifest_path,         # privacy-safe basenames
         [[signal_id, support], ...],              # all 33, sorted by id
         [[signal_id, name, round(value, 10),
           round(threshold, 10), direction], ...], # every recorded stat,
@@ -222,8 +222,8 @@ derivation_sha256 — exact construction
         {"min": ..., "max": ...},                 # segment count range
         {"min": ..., "max": ..., "median": ...},  # achieved segment words
     ]
-    derivation_sha256 = framed_digest(DOMAIN_DERIVATION,
-                                      canonical_json(preimage))
+    derivation_sha256 = "sha256:" + sha256(
+        canonical_json(preimage)).hexdigest()
 
 where ``canonical_json(x)`` is ``json.dumps(x, sort_keys=True,
 separators=(",", ":"), ensure_ascii=False).encode("utf-8")``. Floats
@@ -231,21 +231,14 @@ are rounded to 10 decimal places in the preimage (and stored rounded in
 the receipt) so the digest is byte-stable. ``date`` and the two path fields
 are IN the preimage: spec 79 S3 says the receipt is bound to its registration
 and manifest "by path and hash", and a field outside the preimage is a field
-an editor can rewrite for free.
+an editor can rewrite for free. Only each artifact's basename is recorded:
+the corresponding file hash is the authority, while omitting host-specific
+absolute directories keeps receipts portable and safe to share.
 
-Hashing convention: every ``*_sha256`` is a FRAMED digest,
-``SHA256(domain_ascii_LF || uint64_be(len) || payload)``, with one frozen
-domain per payload schema — the registry lives in
-``narrative_longform_segment`` and covers this script too. A raw
-``sha256(payload)`` is emitted nowhere. The reason is concrete: raw digests
-were reused across content bytes, boundary offsets, parameters, work-id
-lists, derivations, and three different files, and the one-segment offsets
-payload ``[[0,7]]`` is byte-identical to a seven-character source text
-``[[0,7]]`` — the same digest, two schemas, no way to tell them apart.
-``thresholds_sha256``, ``registration_sha256``, and ``manifest_sha256`` frame
-exact FILE bytes (streamed); ``derivation_sha256``, ``signal_id_set_sha256``,
-``work_ids_sha256``, and each segment's ``content_sha256`` frame canonical
-JSON or exact content bytes under their own domains.
+Hashing convention: every ``*_sha256`` follows the shared spec 78/79
+contract, ``"sha256:" + SHA256(payload).hexdigest()``. File fields hash exact
+file bytes (streamed); derivation and identifier-set fields hash canonical
+JSON; segment content fields hash exact UTF-8 bytes.
 
 Verification
 ------------
@@ -261,9 +254,9 @@ receipt's verdict strings.
 and must equal the receipt's; rebuilding the expected receipt from the
 receipt's own date made pre- and post-dating free, because the tampered value
 was fed straight back into the comparison it was supposed to fail. The two
-path fields are compared as recorded, which is what "bound by path" means:
-relocating the artifacts requires re-issuing the receipt rather than
-re-labelling one.
+path fields are compared as recorded basenames. Renaming an artifact requires
+re-issuing the receipt; relocating it without renaming does not, and the byte
+hash still binds the exact artifact.
 
 CLI (flat flags)
 ----------------
@@ -292,6 +285,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _datetime
+import hashlib
 import json
 import math
 import sys
@@ -311,7 +305,7 @@ from narrative_feature_schema import (  # type: ignore  # noqa: E402
 )
 
 # Signal ids are still derived locally (spec 79 S1); what IS imported is the
-# digest framing, the frozen domain registry, and the word counter — a
+# content digest and the word counter — a
 # manifest's segment lengths and a live run's segment lengths must be the same
 # function of the same bytes, and two copies of a `\S+` regex are two chances
 # to drift.
@@ -332,6 +326,8 @@ __all__ = [
     "SIGNAL_IDS",
     "signal_id_set_sha256",
     "canonical_json_bytes",
+    "canonical_json_sha256",
+    "file_sha256",
     "SPEC_FLOOR_MINIMUMS",
     "MIN_SEGMENTS_PER_WORK",
     "DEGENERATE_SEGMENT_MIN",
@@ -577,19 +573,26 @@ SIGNAL_IDS: tuple[str, ...] = tuple(sorted(SIGNALS))
 canonical_json_bytes = nls.canonical_json_bytes
 
 
-def _framed_file(domain: bytes, path: Path) -> str:
-    """Framed digest over exact file bytes, refusing an unreadable file."""
+def canonical_json_sha256(obj: Any) -> str:
+    """Ordinary SHA-256 over canonical JSON."""
+    return "sha256:" + hashlib.sha256(canonical_json_bytes(obj)).hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    """Ordinary SHA-256 over exact file bytes, read in chunks."""
+    digest = hashlib.sha256()
     try:
-        return nls.framed_file_digest(domain, path)
-    except (OSError, nls.DomainError) as exc:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(64 * 1024), b""):
+                digest.update(chunk)
+    except OSError as exc:
         raise CalibrationRefusal(f"cannot hash {path}: {exc}") from exc
+    return "sha256:" + digest.hexdigest()
 
 
 def signal_id_set_sha256() -> str:
-    """Framed canonical-JSON digest of the sorted 33 signal ids."""
-    return nls.framed_object_digest(
-        nls.DOMAIN_SIGNAL_ID_SET, list(SIGNAL_IDS)
-    )
+    """Canonical-JSON hash of the sorted 33 signal ids."""
+    return canonical_json_sha256(list(SIGNAL_IDS))
 
 
 # ---------- statistics (stdlib) --------------------------------------
@@ -742,7 +745,12 @@ def _require_keys(
 def _require_number(value: Any, what: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise CalibrationRefusal(f"{what} must be a number; got {value!r}")
-    return float(value)
+    number = float(value)
+    if not math.isfinite(number):
+        raise CalibrationRefusal(
+            f"{what} must be finite; got {value!r}"
+        )
+    return number
 
 
 def load_thresholds(path: Path) -> dict[str, Any]:
@@ -1009,17 +1017,63 @@ def load_manifest_rows(
             )
         seen_ids.add(work_id)
         if values_free:
-            whole = obj.get("whole_work")
-            if isinstance(whole, dict) and whole:
+            allowed_row_keys = {
+                "work_id", "n_words", "judge_identity",
+                "whole_work", "segments",
+            }
+            extra_row_keys = set(obj) - allowed_row_keys
+            if extra_row_keys:
                 raise CalibrationRefusal(
                     f"registration manifest must be values-free: work "
-                    f"{work_id!r} carries whole_work values"
+                    f"{work_id!r} carries unexpected field(s) "
+                    f"{sorted(extra_row_keys)}"
                 )
-            for seg in obj.get("segments") or []:
-                if isinstance(seg, dict) and seg.get("signals"):
+            if "n_words" in obj:
+                design_words = obj["n_words"]
+                if isinstance(design_words, bool) \
+                        or not isinstance(design_words, int) \
+                        or design_words < 1:
+                    raise CalibrationRefusal(
+                        f"registration manifest work {work_id!r}: n_words "
+                        f"must be an integer >= 1 when present"
+                    )
+            whole = obj.get("whole_work")
+            if whole is not None and whole != {}:
+                raise CalibrationRefusal(
+                    f"registration manifest must be values-free: work "
+                    f"{work_id!r} carries whole_work values or a malformed "
+                    f"whole_work field"
+                )
+            design_segments = obj.get("segments")
+            if design_segments is not None \
+                    and not isinstance(design_segments, list):
+                raise CalibrationRefusal(
+                    f"registration manifest must be values-free: work "
+                    f"{work_id!r} segments must be a list when present"
+                )
+            allowed_segment_keys = {
+                "segment_id", "content", "content_sha256", "n_words",
+                "judge_identity", "signals",
+            }
+            for seg in design_segments or []:
+                if not isinstance(seg, dict):
                     raise CalibrationRefusal(
                         f"registration manifest must be values-free: "
-                        f"work {work_id!r} carries segment values"
+                        f"work {work_id!r} carries a malformed segment"
+                    )
+                extra_segment_keys = set(seg) - allowed_segment_keys
+                if extra_segment_keys:
+                    raise CalibrationRefusal(
+                        f"registration manifest must be values-free: work "
+                        f"{work_id!r} segment carries unexpected field(s) "
+                        f"{sorted(extra_segment_keys)}"
+                    )
+                signals = seg.get("signals")
+                if signals is not None and signals != {}:
+                    raise CalibrationRefusal(
+                        f"registration manifest must be values-free: "
+                        f"work {work_id!r} carries segment values or a "
+                        f"malformed signals field"
                     )
             rows.append({"work_id": work_id})
             continue
@@ -1091,7 +1145,7 @@ def load_manifest_rows(
             if csha != computed_sha:
                 raise CalibrationRefusal(
                     f"{where}: content_sha256 {csha} does not match the "
-                    f"framed digest of 'content' ({computed_sha})"
+                    f"SHA-256 digest of 'content' ({computed_sha})"
                 )
             snw = seg["n_words"]
             if isinstance(snw, bool) or not isinstance(snw, int) or snw < 1:
@@ -1195,10 +1249,8 @@ def derive_manifest_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def work_ids_sha256_for_rows(rows: list[dict[str, Any]]) -> str:
-    """Framed canonical-JSON digest of the sorted work_id list."""
-    return nls.framed_object_digest(
-        nls.DOMAIN_WORK_IDS, sorted(r["work_id"] for r in rows)
-    )
+    """Canonical-JSON hash of the sorted work_id list."""
+    return canonical_json_sha256(sorted(r["work_id"] for r in rows))
 
 
 # ---------- verdict derivation (THE rule) ------------------------------
@@ -1270,10 +1322,14 @@ def _signal_pairs(
     """Extract (whole_value, segment_aggregate) pairs for one signal.
 
     A work contributes iff its whole-work cell is available AND at
-    least one segment cell is available. Returns (whole_vec, seg_vec,
-    support). For not_aggregatable signals only availability is
-    counted — values are never converted (the signals are never
-    evaluated), so (whole_vec, seg_vec) come back empty.
+    least ``MIN_SEGMENTS_PER_WORK`` segment cells are available. The
+    live emitter requires the same three-segment coverage before it can
+    license an aggregate; admitting a one- or two-segment calibration
+    pair would validate a different reduction than the licensed one.
+    Returns (whole_vec, seg_vec, support). For not_aggregatable signals
+    only availability is counted — values are never converted (the
+    signals are never evaluated), so (whole_vec, seg_vec) come back
+    empty.
     """
     whole_vec: list[float] = []
     seg_vec: list[float] = []
@@ -1288,7 +1344,7 @@ def _signal_pairs(
             if spec.signal_id in seg["signals"]
             and seg["signals"][spec.signal_id][1]
         ]
-        if not available_segments:
+        if len(available_segments) < MIN_SEGMENTS_PER_WORK:
             continue
         support += 1
         if spec.operator == OPERATOR_NOT_AGGREGATABLE:
@@ -1507,7 +1563,7 @@ def _derivation_sha256(
             "median": round(float(words_band["median"]), 10),
         },
     ]
-    return nls.framed_object_digest(nls.DOMAIN_DERIVATION, preimage)
+    return canonical_json_sha256(preimage)
 
 
 def build_registration(
@@ -1526,9 +1582,7 @@ def build_registration(
     registration = {
         "schema": REGISTRATION_SCHEMA,
         "date": date,
-        "thresholds_sha256": _framed_file(
-            nls.DOMAIN_THRESHOLDS_FILE, thresholds_path
-        ),
+        "thresholds_sha256": file_sha256(thresholds_path),
         "work_ids_sha256": work_ids_sha256_for_rows(rows),
         "segmenter": _validate_segmenter(segmenter),
         "judge": _validate_judge(judge),
@@ -1552,10 +1606,13 @@ def build_receipt(
     thresholds = load_thresholds(thresholds_path)
     registration = load_registration(registration_path)
     rows = load_manifest_rows(manifest_path, values_free=False)
+    if date < registration["date"]:
+        raise CalibrationRefusal(
+            f"evaluation date {date!r} predates registration date "
+            f"{registration['date']!r}"
+        )
 
-    thresholds_sha = _framed_file(
-        nls.DOMAIN_THRESHOLDS_FILE, thresholds_path
-    )
+    thresholds_sha = file_sha256(thresholds_path)
     work_ids_sha = work_ids_sha256_for_rows(rows)
     if registration["thresholds_sha256"] != thresholds_sha:
         raise CalibrationRefusal(
@@ -1586,10 +1643,10 @@ def build_receipt(
         for signal_id in SIGNAL_IDS
     }
     count_range, words_band = _segment_bands(rows)
-    registration_sha = _framed_file(
-        nls.DOMAIN_REGISTRATION_FILE, registration_path
-    )
-    manifest_sha = _framed_file(nls.DOMAIN_MANIFEST_FILE, manifest_path)
+    registration_sha = file_sha256(registration_path)
+    manifest_sha = file_sha256(manifest_path)
+    registration_locator = registration_path.name
+    manifest_locator = manifest_path.name
     receipt = {
         "schema_version": RECEIPT_SCHEMA,
         "date": date,
@@ -1601,8 +1658,8 @@ def build_receipt(
             date=date,
             registration_sha256=registration_sha,
             manifest_sha256=manifest_sha,
-            registration_path=str(registration_path),
-            manifest_path=str(manifest_path),
+            registration_path=registration_locator,
+            manifest_path=manifest_locator,
             per_signal=per_signal,
             segmenter=registration["segmenter"],
             judge=judge,
@@ -1610,8 +1667,8 @@ def build_receipt(
             words_band=words_band,
         ),
         "manifest_sha256": manifest_sha,
-        "registration_path": str(registration_path),
-        "manifest_path": str(manifest_path),
+        "registration_path": registration_locator,
+        "manifest_path": manifest_locator,
         "corpus_n_works": len(rows),
         "segmenter": dict(registration["segmenter"]),
         "judge": judge,
