@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import stylometry_core as sc  # type: ignore
 import voice_profile as vp  # type: ignore
 
 
@@ -34,6 +35,38 @@ CLAIM_LICENSE_KEYS = frozenset({
 })
 
 
+# build_profile builds `baseline_summary` by calling
+# stylometry_core.summarize_entries on the baseline features, so the
+# fixture does too. Hand-typing the block made the register-tier
+# assertion tautological: build_audit_payload copies the profile dict
+# wholesale into `results`, so the assertion only re-read a key the
+# fixture itself inserted. Deriving the block makes it transitively pin
+# real emission. The word counts reproduce the previously hand-written
+# n_files / total_words / min / max exactly.
+_BASELINE_WORD_COUNTS = (400, 6000) + (1860,) * 10
+
+
+def _baseline_entries(registers: list[str | None] | None = None) -> list[dict]:
+    """Entry dicts in summarize_entries' input shape.
+
+    ``registers`` defaults to an all-private_composed baseline; pass
+    ``None`` in a slot for an entry that declares no register, or an
+    unregistered leaf name for one the closed registry cannot resolve.
+    """
+    if registers is None:
+        registers = ["personal"] * len(_BASELINE_WORD_COUNTS)
+    entries = []
+    for index, n_words in enumerate(_BASELINE_WORD_COUNTS):
+        register = registers[index]
+        entries.append({
+            "id": f"prior_{index}",
+            "path": f"prior_{index}.md",
+            "summary": {"n_words": n_words},
+            "metadata": {} if register is None else {"register": register},
+        })
+    return entries
+
+
 def _fake_profile() -> dict:
     """Construct a minimal profile dict mirroring build_profile's
     return shape. Avoids the spaCy + corpus load the real script
@@ -42,20 +75,7 @@ def _fake_profile() -> dict:
     return {
         "task_surface": "voice_coherence",
         "privacy": "private",
-        "baseline_summary": {
-            "n_files": 12,
-            "total_words": 25000,
-            "mean_words": 2083,
-            "min_words": 400,
-            "max_words": 6000,
-            "register_tier_counts": {
-                "private_composed": 12,
-                "private_dyadic": 0,
-                "public_composed": 0,
-                "public_responsive": 0,
-            },
-            "unresolved_register_count": 0,
-        },
+        "baseline_summary": sc.summarize_entries(_baseline_entries()),
         "preprocessing": {
             "opt_out": False,
             "tokens_stripped": 120,
@@ -132,8 +152,34 @@ class TestResultsPayload:
         r = envelope["results"]
         assert "baseline_summary" in r
         assert r["baseline_summary"]["register_tier_counts"]["private_composed"] == 12
+        assert r["baseline_summary"]["unresolved_register_count"] == 0
         assert "selected_features" in r
         assert "families" in r
+
+    def test_unresolved_baseline_registers_reach_the_envelope(self):
+        """A NON-ZERO unresolved count must survive onto the consumed
+        surface. `results.baseline_summary.unresolved_register_count` is
+        the only signal a consumer gets that the profiled corpus holds
+        entries whose privacy tier could not be resolved; asserting only
+        ``== 0`` cannot tell a working counter from one stuck at zero.
+        """
+        profile = _fake_profile()
+        profile["baseline_summary"] = sc.summarize_entries(
+            _baseline_entries(
+                ["personal"] * 9 + [None, "not.registered", None]
+            )
+        )
+        envelope = vp.build_audit_payload(
+            profile, target_path=Path("baselines/personal/"),
+        )
+        summary = envelope["results"]["baseline_summary"]
+        assert summary["unresolved_register_count"] == 3
+        assert summary["register_tier_counts"] == {
+            "private_composed": 9,
+            "private_dyadic": 0,
+            "public_composed": 0,
+            "public_responsive": 0,
+        }
 
     def test_no_legacy_top_level_keys(self, envelope):
         # `warnings` is intentionally a top-level envelope key

@@ -283,6 +283,37 @@ def _build_repetition_audit() -> dict[str, Any]:
     )
 
 
+def _register_tier_receipts(register: str, n_files: int) -> dict[str, Any]:
+    """Derive the two register-tier receipt fields from the REAL emitter.
+
+    Per the faithfulness contract above, a golden's values must come from
+    the surface's own code path wherever a code path exists. Both
+    ``compare_to_baseline`` and ``build_profile`` fill ``baseline_summary``
+    from ``stylometry_core.summarize_entries``, so the fixture derives
+    ``register_tier_counts`` / ``unresolved_register_count`` from the same
+    call rather than typing them out — otherwise the drift gate is blind
+    to a change in stylometry_core's tier accounting.
+
+    The remaining ``baseline_summary`` fields stay representative literals
+    (a golden is a canonical envelope, not a real corpus run).
+    """
+    import stylometry_core as sc  # type: ignore
+
+    summary = sc.summarize_entries([
+        {
+            "id": f"prior_{index}",
+            "path": f"<fixture>/prior_{index}.md",
+            "summary": {"n_words": 8000},
+            "metadata": {"register": register},
+        }
+        for index in range(n_files)
+    ])
+    return {
+        "register_tier_counts": summary["register_tier_counts"],
+        "unresolved_register_count": summary["unresolved_register_count"],
+    }
+
+
 def _build_voice_distance() -> dict[str, Any]:
     import voice_distance as m  # type: ignore
     from register_classifier import classify_register  # type: ignore
@@ -320,13 +351,7 @@ def _build_voice_distance() -> dict[str, Any]:
             "min_words": 5000,
             "max_words": 12000,
             "registers": ["personal"],
-            "register_tier_counts": {
-                "private_composed": 6,
-                "private_dyadic": 0,
-                "public_composed": 0,
-                "public_responsive": 0,
-            },
-            "unresolved_register_count": 0,
+            **_register_tier_receipts("personal", 6),
             "personas": [],
             "privacy_values": [],
             "files": [
@@ -389,13 +414,7 @@ def _build_voice_profile() -> dict[str, Any]:
             "min_words": 5000,
             "max_words": 12000,
             "registers": ["literary_fiction"],
-            "register_tier_counts": {
-                "private_composed": 0,
-                "private_dyadic": 0,
-                "public_composed": 6,
-                "public_responsive": 0,
-            },
-            "unresolved_register_count": 0,
+            **_register_tier_receipts("literary_fiction", 6),
             "personas": [],
             "privacy_values": [],
             "files": [

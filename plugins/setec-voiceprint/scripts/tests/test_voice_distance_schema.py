@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import stylometry_core as sc  # type: ignore
 import voice_distance as vd  # type: ignore
 from register_classifier import REGISTER_TAXONOMY  # type: ignore
 
@@ -37,6 +38,38 @@ CLAIM_LICENSE_KEYS = frozenset({
 })
 
 
+# compare_to_baseline builds `baseline_summary` by calling
+# stylometry_core.summarize_entries on the baseline features, so the
+# fixture does too. Hand-typing the block made the register-tier
+# envelope assertions tautological: build_audit_payload copies
+# baseline_summary wholesale, so they only re-read keys the fixture
+# itself inserted. Deriving the block makes them transitively pin real
+# emission. The word counts reproduce the previously hand-written
+# n_files / total_words / mean / min / max exactly.
+_BASELINE_WORD_COUNTS = (1200, 5400, 2500, 2500, 2500, 2500, 2500, 2900)
+
+
+def _baseline_entries(registers: list[str | None] | None = None) -> list[dict]:
+    """Entry dicts in summarize_entries' input shape.
+
+    ``registers`` defaults to an all-public_composed baseline; pass
+    ``None`` in a slot for an entry that declares no register, or an
+    unregistered leaf name for one the closed registry cannot resolve.
+    """
+    if registers is None:
+        registers = ["blog_essay"] * len(_BASELINE_WORD_COUNTS)
+    entries = []
+    for index, n_words in enumerate(_BASELINE_WORD_COUNTS):
+        register = registers[index]
+        entries.append({
+            "id": f"prior_{index}",
+            "path": f"prior_{index}.md",
+            "summary": {"n_words": n_words},
+            "metadata": {} if register is None else {"register": register},
+        })
+    return entries
+
+
 def _fake_result() -> dict:
     """Mirror compare_to_baseline's return shape with the minimum
     fields build_audit_payload reads. Avoids the spaCy + stylometric
@@ -48,20 +81,7 @@ def _fake_result() -> dict:
             "n_words": 3200,
             "n_sentences": 180,
         },
-        "baseline_summary": {
-            "n_files": 8,
-            "total_words": 22000,
-            "mean_words": 2750,
-            "min_words": 1200,
-            "max_words": 5400,
-            "register_tier_counts": {
-                "private_composed": 0,
-                "private_dyadic": 0,
-                "public_composed": 8,
-                "public_responsive": 0,
-            },
-            "unresolved_register_count": 0,
-        },
+        "baseline_summary": sc.summarize_entries(_baseline_entries()),
         "overall": {
             "weighted_delta": 1.4,
             "band": "Moderate drift",
@@ -130,6 +150,30 @@ class TestTargetAndBaseline:
             "public_responsive": 0,
         }
         assert envelope["baseline"]["unresolved_register_count"] == 0
+
+    def test_unresolved_baseline_registers_reach_the_envelope(self):
+        """A NON-ZERO unresolved count must survive onto the consumed
+        surface. `baseline.unresolved_register_count` is the only signal
+        a consumer gets that a pooled reference holds entries whose
+        privacy tier could not be resolved; asserting only ``== 0``
+        cannot tell a working counter from one stuck at zero.
+        """
+        result = _fake_result()
+        result["baseline_summary"] = sc.summarize_entries(
+            _baseline_entries(
+                ["blog_essay"] * 6 + [None, "not.registered"]
+            )
+        )
+        envelope = vd.build_audit_payload(
+            result, target_path=Path("draft.md"),
+        )
+        assert envelope["baseline"]["unresolved_register_count"] == 2
+        assert envelope["baseline"]["register_tier_counts"] == {
+            "private_composed": 0,
+            "private_dyadic": 0,
+            "public_composed": 6,
+            "public_responsive": 0,
+        }
 
 
 class TestResultsPayload:
