@@ -61,6 +61,9 @@ if str(ROOT) not in sys.path:
 from claim_license import ClaimLicense  # type: ignore
 from manifest_validator import resolve_path, validate_manifest  # type: ignore
 from output_schema import build_output  # type: ignore
+from register_taxonomy import (  # type: ignore
+    assert_personal_register_isolated,
+)
 from stylometry_core import (  # type: ignore
     DEFAULT_LIMITS,
     FAMILY_WEIGHTS,
@@ -195,6 +198,18 @@ def build_pov_profiles(
     """For each POV, run extract_features on every doc and compute
     the POV's centroid (per-family per-doc mean across docs).
     Returns (profiles_by_pov, selected_features_by_family)."""
+    # Register-tier isolation (#369). Per-POV centroids are pooled author
+    # references — this script's docstring calls them voice-cloning input — and
+    # `select_feature_names` below runs over the UNION of every POV, so a single
+    # private-dyadic document moves the coordinates of every other POV as well
+    # as its own. This surface groups solely on `pov` and never reads
+    # `register`, so nothing downstream would notice the mixture. Checked over
+    # the whole grouping, before the first `read_text`, for both reasons.
+    assert_personal_register_isolated([
+        {"metadata": entry.extra}
+        for entries in grouped.values()
+        for entry in entries
+    ])
     items_by_pov: dict[str, list[dict[str, Any]]] = {}
     n_docs_by_pov: dict[str, int] = {}
     n_words_by_pov: dict[str, int] = {}

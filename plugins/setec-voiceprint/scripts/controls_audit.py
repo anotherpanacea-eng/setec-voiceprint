@@ -62,6 +62,9 @@ if str(SCRIPT_DIR) not in sys.path:
 from claim_license import ClaimLicense  # type: ignore
 from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import strip_non_prose  # type: ignore
+from register_taxonomy import (  # type: ignore
+    assert_personal_register_isolated,
+)
 from stylometry_core import (  # type: ignore
     FUNCTION_WORDS,
     function_word_features,
@@ -630,6 +633,22 @@ def main(argv: list[str] | None = None) -> int:
             "or supplied controls, or pass --manifest with "
             "non-overlapping entries.\n"
         )
+        return 2
+
+    # Register-tier isolation (#369). `filtered` is the pooled author reference
+    # this audit is built on: its entries become ONE function-word baseline mean
+    # that the questioned text and both controls are scored against — the same
+    # object `voice_distance` guards. Checked on `filtered` rather than on the
+    # freshly loaded set so an entry the self-overlap guard already dropped
+    # cannot cause a false refusal, and checked HERE because the very next line
+    # discards the entry metadata the register lives in. `load_entries` is a
+    # bare loader with no guard of its own, so the surface must do this itself.
+    # Reported as an operator error rather than a traceback, matching the
+    # `return 2` convention every other baseline failure in this file uses.
+    try:
+        assert_personal_register_isolated(filtered)
+    except ValueError as exc:
+        sys.stderr.write(f"Baseline error: {exc}\n")
         return 2
 
     baseline_texts = [
