@@ -4,6 +4,8 @@ entries:
   surface: voice_coherence_acquisition
   status: todo
   handoff: none
+  # consumers: no code importer — acquire_corpus_template cites it as a prose reference
+  # instance only. Surfaced by skills: corpus-acquisition, setup.
   consumers: []
   family: TODO
   purpose: import Google Takeout Blogger exports.

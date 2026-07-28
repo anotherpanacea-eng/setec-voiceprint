@@ -4,6 +4,7 @@ entries:
   surface: voice_coherence_acquisition
   status: todo
   handoff: none
+  # consumers: no code importer; surfaced by skills: corpus-acquisition, setup.
   consumers: []
   family: TODO
   purpose: pull literary-horror short fiction from online magazines.

@@ -5,7 +5,10 @@
     "length_floor_words": null,
     "tier": "surprisal"
   },
-  "consumers": [],
+  "consumers": [
+    "diveye_signals",
+    "variance_audit"
+  ],
   "dependencies": {
     "python": []
   },

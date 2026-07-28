@@ -4,7 +4,11 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  # consumers: also surfaced by skills: metric-targeted-restoration,
+  # smoothing-diagnosis.
+  consumers:
+  - manuscript_bigram_diff
+  - restoration_packet
   family: TODO
   purpose: 'bigram_diff.py Per-bigram POS-bigram diff: single target document vs.
     a comparison cluster.'

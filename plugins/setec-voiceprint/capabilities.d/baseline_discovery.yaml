@@ -4,6 +4,7 @@ entries:
   surface: setup
   status: todo
   handoff: none
+  # consumers: no code importer; surfaced by skill: setup.
   consumers: []
   family: TODO
   purpose: locate the user's existing baselines folder.

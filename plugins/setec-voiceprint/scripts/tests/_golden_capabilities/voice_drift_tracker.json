@@ -5,7 +5,10 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "generate_voice_report",
+    "pov_voice_profile"
+  ],
   "dependencies": {
     "python": []
   },

@@ -4,7 +4,12 @@ entries:
   surface: craft_restoration
   status: todo
   handoff: none
-  consumers: []
+  # consumers: setec_run_set emits its CLI as a next-action; also named in the SHIPPED
+  # mimicry_cosplay_audit claim_license contract fixture. Also surfaced by skills:
+  # metric-targeted-restoration, setec.
+  consumers:
+  - mimicry_cosplay_audit
+  - setec_run_set
   family: TODO
   purpose: 'Cathedral upgrade #7 v2.'
   use_when:

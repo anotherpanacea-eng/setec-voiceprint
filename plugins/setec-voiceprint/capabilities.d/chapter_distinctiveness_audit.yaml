@@ -4,6 +4,7 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
+  # consumers: no code importer; surfaced by skill: smoothing-diagnosis.
   consumers: []
   family: TODO
   purpose: chapter_distinctiveness_audit.py Chapter-aware vocabulary repetition diagnostic.

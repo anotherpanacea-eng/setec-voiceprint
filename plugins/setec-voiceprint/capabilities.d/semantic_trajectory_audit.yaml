@@ -4,7 +4,9 @@ entries:
   surface: voice_coherence
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - cosine_explanation
+  - voice_fingerprint
   family: TODO
   purpose: paired-release Release 12.
   use_when:

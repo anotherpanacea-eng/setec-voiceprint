@@ -4,7 +4,12 @@ entries:
   surface: validation
   status: heuristic
   handoff: none
-  consumers: []
+  # consumers: imported by setec_run_set; also named in the SHIPPED
+  # mimicry_cosplay_audit claim_license contract fixture. Also surfaced by skills:
+  # setec, smoothing-diagnosis.
+  consumers:
+  - mimicry_cosplay_audit
+  - setec_run_set
   family: cross-surface-interpretation
   purpose: 'Cross-surface interpretation meta-layer: reads any subset of audit JSONs
     (smoothing variance, voice distance, General Imposters, idiolect preservation,

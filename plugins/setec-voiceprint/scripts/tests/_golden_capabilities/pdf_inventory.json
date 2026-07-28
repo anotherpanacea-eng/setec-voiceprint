@@ -5,7 +5,9 @@
     "length_floor_words": null,
     "tier": "ocr"
   },
-  "consumers": [],
+  "consumers": [
+    "pdf_extract"
+  ],
   "dependencies": {
     "python": [
       "concurrent",

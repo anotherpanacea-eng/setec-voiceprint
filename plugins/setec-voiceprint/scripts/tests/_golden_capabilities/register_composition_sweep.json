@@ -4,7 +4,9 @@
   "surface": "validation",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "manifest_validator"
+  ],
   "family": "validation",
   "purpose": "Aggregate register-family count inventory for an explicitly scoped slice of a private corpus manifest. Runs the receipt-bound H1 register classifier over the scoped documents and emits fixed zero-filled count buckets (declared family, classified family, their crosstab, refusal reasons, and same/different/unresolved match counts). It answers one hygiene question only \u2014 is this slice obviously register-mixed enough to warrant a human check? \u2014 and it does not answer that question itself: there is no score, threshold, band, rank, percentage, flag, or verdict anywhere in the output.\n",
   "use_when": [

@@ -4,7 +4,9 @@ entries:
   surface: voice_coherence
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - generate_voice_report
+  - pov_voice_profile
   family: TODO
   purpose: 'time-drift surface (cathedral #6 sub-item).'
   use_when:

@@ -4,7 +4,8 @@ entries:
   surface: assertoric
   status: empirically_oriented
   handoff: none
-  consumers: []
+  consumers:
+  - argument_decision_audit
   family: argument-moves
   purpose: aggregate the deterministic B4 stance + B3 abstraction signals plus
     the net-new AGD marker module (assuring/guarding/discounting) over a corpus

@@ -647,7 +647,16 @@ def test_capabilities_yaml_surface_handoff_consumers():
     """AC-15: capabilities.d/cross_doc_novelty_profile.yaml asserts correct surface/handoff/consumers.
 
     The boundary is enforced ENTIRELY in-tree (not by a downstream voicewright gate).
+
+    What the boundary actually is: this surface must not become a *cross-repo*
+    consumer surface. The mechanisms for that are `handoff: none` and the
+    absence of the R1 bundle (`setec_run.consumer_entries()` promotes on
+    `json_delivery`), both asserted below. `consumers` records who READS the
+    surface in-tree — `cross_doc_argument_consistency` imports it — so an
+    in-repo capability id there is registry truth, not a boundary breach. The
+    assertion is therefore "no repo name in consumers", not "consumers empty".
     """
+    consumer_repos = {"apodictic", "setec-voicewright", "voicewright", "ultrareview"}
     # Find the capabilities.d directory relative to the scripts dir.
     caps_dir = SCRIPTS.parent / "capabilities.d"
     yaml_path = caps_dir / "cross_doc_novelty_profile.yaml"
@@ -666,15 +675,26 @@ def test_capabilities_yaml_surface_handoff_consumers():
         assert entry["handoff"] == "none", (
             f"handoff must be 'none', got {entry['handoff']!r}"
         )
-        assert entry["consumers"] == [], (
-            f"consumers must be [], got {entry['consumers']!r}"
+        assert entry["consumers"] == ["cross_doc_argument_consistency"], (
+            f"consumers must record only the in-tree importer, got "
+            f"{entry['consumers']!r}"
+        )
+        assert not (set(entry["consumers"]) & consumer_repos), (
+            f"consumers must not name a consumer REPO — that is what would "
+            f"vendor this surface across the boundary: {entry['consumers']!r}"
+        )
+        assert "json_delivery" not in entry, (
+            "an R1 bundle would promote this to a dispatcher consumer surface"
         )
     except ImportError:
         # yaml not available — read as text and do a string search.
         text = yaml_path.read_text(encoding="utf-8")
         assert "surface: set_level_diversity" in text
         assert "handoff: none" in text
-        assert "consumers: []" in text
+        assert "- cross_doc_argument_consistency" in text
+        assert "json_delivery" not in text
+        for repo in consumer_repos:
+            assert f"- {repo}\n" not in text
 
 
 # ---- AC-16: embedding-lens fails loud on import-SUCCESS too --------------------
