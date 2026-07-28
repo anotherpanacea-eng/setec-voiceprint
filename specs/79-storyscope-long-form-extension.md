@@ -622,6 +622,23 @@ lands `REG-AUDIT-B1`, a bridge-scoped extension to the **base audit's** declared
 Until these land, `CALIBRATION_DOES_NOT_LICENSE` refuses all evidentiary
 use of `calibration_only` output without exception, exactly as built.
 
+**Cross-spec precedence between the two fragment-vs-whole controls.** This
+spec's M1 agreement arm and spec 78's Arm A bridge measure the same evidence
+family — whether a signal answered on a fragment tracks the same signal answered
+on the whole work — but they are not interchangeable. This arm runs on
+**in-range** works (a first receipt cannot license a novel, per §"Segmentation,
+and the two-dimensional regime bound"), pairs a whole-work value against a
+segment mean, and thresholds Spearman plus mean absolute deviation in response
+units. Spec 78's bridge runs on **over-ceiling** works under `CLA-79-A2` and
+`REG-AUDIT-B1`, and thresholds a range-normalized paired absolute shift with a
+one-sided equivalence bound. **The joint rule:** a signal marked
+`fragment_artifact_confounded` or `bridge_inconclusive` in a spec-78 Arm A
+receipt is suppressed in any joint novel-scale claim **regardless of its status
+here**, including `validated_aggregatable` — 78's control is the one that ran at
+novel scale, and this arm cannot license what it never exercised. The converse
+does not hold: a `not_aggregatable` here is not rescued by a spec-78 bridge
+pass.
+
 ## Consumer note
 
 First consumer: the Dickens Craft Atlas. **Novel-scale validated aggregates do

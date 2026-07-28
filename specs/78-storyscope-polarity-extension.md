@@ -12,20 +12,32 @@
 > `voiceprint-78-storyscope-polarity-REVIEW-v3-2026-07-27.md`), reviewed at
 > `spec/78-v3-fold` @ `99ed3e9`.
 >
-> **v4 2026-07-27:** the round-3 verdict is folded here under owner rulings
-> **R5** (true over-ceiling bridge; the three-lens option-b recommendation is
-> explicitly rejected) and **R6** (multiplicity deferred to M2 on the
-> `sign_stability` pattern). All 11 round-3 fixes plus the 7-item P2 sweep are
-> dispositioned in the [v4 fold record](#fold-record-v3--v4). Banner history is
-> provenance and is non-destructive.
+> **v4 2026-07-27:** the round-3 verdict folded under owner rulings **R5** (true
+> over-ceiling bridge) and **R6** (multiplicity deferred to M2). All 11 round-3
+> fixes plus the 7-item P2 sweep are dispositioned in the
+> [v4 fold record](#fold-record-v3--v4).
+>
+> **Review 2026-07-27 (round 4):** v4 NEEDS-REWORK (six lenses, P1 × 8,
+> P2 × 12; verdict recorded in fleet-coordination
+> `voiceprint-78-storyscope-polarity-REVIEW-v4-2026-07-27.md`), reviewed at
+> `spec/78-v3-fold` @ `01b5819`. Round-4 P1s were largely **self-contradictions
+> minted by v4's own new machinery**.
+>
+> **v5 2026-07-27 — FINAL FOLD.** Folded under **R7** (loop cap: surgical, not
+> generative — fold exactly the prescribed fixes, prefer the branch that deletes
+> surface, no new mechanism beyond what a fix names) and **R8** (bridge
+> mechanics under the reaffirmed R5). All 14 round-4 fixes are dispositioned in
+> the [v5 fold record](#fold-record-v4--v5). Banner history is provenance and is
+> non-destructive.
 
 > Establish whether the 33 narrative-decision signals keep their paper-anchored
 > polarity and their computability (a) on segments drawn from over-ceiling works
 > and (b) below the 2,000-word floor. The polarity half of the Dickens umbrella's
 > StoryScope acceptance item, commissioned as a successor arm to spec 79.
 
-- **Status:** Draft v4 (round-3 NEEDS-REWORK folded 2026-07-27 under owner
-  rulings R5–R6, on top of the v3 fold of R1–R4; see fold record)
+- **Status:** Draft v5 — **final fold** (round-4 NEEDS-REWORK folded 2026-07-27
+  under owner rulings R7–R8, on top of the v4 fold of R5–R6 and the v3 fold of
+  R1–R4; see fold record). Round 5 is terminal by owner ruling R7.
 - **Tier:** near-term — jointly with [spec 79](79-storyscope-long-form-extension.md)
   discharges umbrella acceptance item 16
 - **GPU required:** no (judge-cost-external; every judged run under this child —
@@ -63,7 +75,7 @@ deliverables are cited as `narrative_polarity_extension` (planned) and
 - **R4 — landing order.** The spec pair publishes first; the 78 build sequences
   after spec 79's M1 merges.
 
-**Round 3 rulings (new, binding, folded here).**
+**Round 3 rulings (folded in v4, unchanged here).**
 
 - **R5 — the bridge is TRUE OVER-CEILING.** The owner rejects the three-lens
   option-b recommendation (in-range works judged whole). Arm A's bridge rows
@@ -83,6 +95,26 @@ deliverables are cited as `narrative_polarity_extension` (planned) and
   round-3 fix 4's "either way, give it a carrier" requirement is satisfied.
   v3's open question 2 is resolved: precedence-step-7 consideration is deferred
   to M2 with multiplicity itself.
+
+**Round 4 rulings (new, binding, folded here).**
+
+- **R7 — loop cap.** v5 is **surgical, not generative**: fold exactly the
+  prescribed round-4 fixes and introduce no new mechanism, field, test, or guard
+  beyond what a fix names. Where a fix offers two branches, prefer the one that
+  **deletes surface** unless the deleting branch contradicts R8. Round 4 is
+  terminal-adjacent: round 5 either ships to build or parks the spec.
+- **R8 — bridge mechanics, under the reaffirmed R5.** The over-ceiling bridge
+  stands, and gains the firewall lens's mechanics: a required `read_mode` on
+  bridge rows over a closed domain, with **only `single_pass_whole_text`
+  accepted in M1** and the others refusing; a registration-time check of the
+  bridge corpus against a **declared judge context bound**; `bridge_read_mode`
+  propagated into the receipt; and an **interval-based** control gate —
+  one-sided equivalence against `fragment_shift_max`, with a
+  **`bridge_inconclusive`** state that blocks `polarity_matches` and
+  `polarity_inverted` exactly as `insufficient_support` does, so that a
+  scarcity-pass is **distinguishable** from an evidence-pass. The v4 change of
+  `min_bridge_works` from 12 to 8 is recorded in the fold record as a
+  **claim-strength reduction**, not a parameter default.
 
 ## Verified repo facts this spec depends on
 
@@ -106,7 +138,7 @@ which is where the consumed code actually lives. Rows added in v4 are marked
 | Calibration license constants | `CALIBRATION_LICENSES`, `CALIBRATION_DOES_NOT_LICENSE` ("Refuses ALL evidentiary use") | lines 652–667, wired at lines 854–855 |
 | **Base audit declared range (v4)** | `length_range_words=(MIN_FICTION_WORDS, 25_000)` — a **hardcoded literal** in the `ClaimLicense` construction; `MIN_FICTION_WORDS` = 2000 (`narrative_decision_audit.py:82`) | `narrative_decision_audit.py:458` |
 | **Base audit license text is operator-overridable (v4)** | `--does-not-license` overrides `DEFAULT_DOES_NOT_LICENSE` (`narrative_decision_audit.py:98`) wholesale | `narrative_decision_audit.py:686`, applied at `narrative_decision_audit.py:781` |
-| **Base audit has no hard length gate (v4)** | over-ceiling targets run and emit a caveat; the 25,000 is license metadata, not a refusal | spec 79 §"Verified repo facts", re-checked |
+| **Base audit has no hard length gate, and no over-ceiling caveat (v5, corrected)** | over-ceiling targets run **with no warning and no caveat**: `register_warnings_for` branches only on `target_words` below `MIN_FICTION_WORDS` and on a missing-dialogue check. The 25,000 is license metadata — not a refusal, not a warning. **v4 asserted a caveat that does not exist.** | `narrative_decision_audit.py:559` |
 | Calibration script | `narrative_longform_agreement` | unmerged |
 | Verdict rule | `derive_verdict`, one pure function, six numbered ordered steps | lines 991–1047 |
 | Receipt builder / verifier | `build_receipt` (line 1289), `verify_receipt` (line 1357) — re-derives every field, exempts only `date`, `registration_path`, `manifest_path` | same module |
@@ -142,13 +174,18 @@ exactly three named contract objects.
 | `CLA-79-A2` | amendment to spec 79's licenses, permitting over-ceiling whole-work bridge values | same registry | 78 M1 |
 | `REG-AUDIT-B1` | bridge-scoped register extension to the base audit's declared `length_range_words` | `narrative_decision_audit.py` | 78 M1 |
 
-Files touched outside this child's own script and test module:
+Files touched outside this child's own script and test module — v4's list was
+incomplete, omitting the `__all__` promotion its own import table mandates
+(fix 13):
 `narrative_decision_long_form` (amendment registry, one sentence in
 `CALIBRATION_DOES_NOT_LICENSE` and one in `M1_DOES_NOT_LICENSE`, one results
 key), `narrative_decision_audit.py` (four constants, one `--bridge-control`
 flag, a conditional at `narrative_decision_audit.py:458`, one non-overridable
 results key, one appended-after-override license sentence), their two test
-modules, spec 79's document (amendment record), and two `changelog.d` fragments.
+modules, **`narrative_polarity_audit.py` and `test_narrative_polarity_audit.py`**
+(the one-line `direction_aware_auc` `__all__` promotion and its pin), **the
+`DEGENERATE_VECTOR_MIN` promotion in `narrative_decision_long_form`'s `__all__`**,
+spec 79's document (amendment record), and two `changelog.d` fragments.
 **Nothing else** — not the segmenter, not the sibling calibration script, not
 the 33-signal schema, not the capability fragment or its golden.
 
@@ -179,8 +216,10 @@ verbatim)". Each adoption names the 79 section **and** the as-built code.
   refusals** (§"Anti-fabrication defenses"). What S2 plus those refusals
   establish: every row declares a concrete, non-`mock` identity; all rows
   declare the *same* identity; that identity equals the registered one; and
-  each row is bound by hash to a source envelope file. What they still do
-  **not** establish: that a model or human read any text. That residue is
+  each row declares a source-envelope digest bound into the receipt's
+  derivation. What they still do **not** establish: that any envelope exists or
+  matches its declared digest (M1 opens none), or that a model or human read any
+  text. That residue is
   custody, not mechanism, and is stated in the findings document.
 - **S2a — hashing convention.** Adopted: no domain separation, exactly as 79
   built it. 78 additionally **publishes the classification** so a reader never
@@ -208,15 +247,25 @@ copies nothing**:
 
 | Helper | Source | Decision |
 |---|---|---|
-| `signal_id_for`, `all_signal_ids`, `DEGENERATE_VECTOR_MIN` | `narrative_decision_long_form` | import (declared in `__all__`, or a public constant) |
-| `convert_mean_response`, `option_present`, `canonical_json_bytes`, `canonical_json_sha256`, `file_sha256`, `signal_id_set_sha256`, `average_ranks`, `SignalSpec`, `SIGNALS`, `SIGNAL_IDS` | `narrative_longform_agreement` | import (public names) |
+| `signal_id_for`, `all_signal_ids` | `narrative_decision_long_form` | import (declared in `__all__`, lines 86–98) |
+| `convert_mean_response`, `option_present`, `canonical_json_bytes`, `canonical_json_sha256`, `file_sha256`, `signal_id_set_sha256`, `average_ranks`, `SIGNALS`, `SIGNAL_IDS` | `narrative_longform_agreement` | import — all are in that module's `__all__` (line 251). **`SignalSpec` is dropped from v4's list** (fix 13): it is *not* declared there, and 78 never needs the class — `SIGNALS` yields the instances. |
 | `auc_mannwhitney`, `hanley_mcneil_se`, `polarity_verdict` | `narrative_polarity_audit.py` | import (in `__all__`) |
-| `direction_aware_auc` | `narrative_polarity_audit.py` | **promote + pin**: public-named but absent from `__all__`, so the 78 build adds it there — a one-line additive change, pinned by `test_direction_aware_auc_is_exported`. 78 does not import an undeclared name. |
+| `direction_aware_auc` | `narrative_polarity_audit.py` | **promote + pin**: public-named but absent from `__all__`, so the 78 build adds it there — a one-line additive change, pinned by `test_direction_aware_auc_is_exported`. |
+| `DEGENERATE_VECTOR_MIN` | `narrative_decision_long_form` | **promote + pin, symmetrically** (fix 13): also absent from its module's `__all__`, and v4 imported it anyway while claiming to import only declared names. The 78 build adds it there — that module is already touched for the amendment registry — preserving the no-drift property that motivated importing it by name. Pinned by `test_degenerate_vector_min_is_exported`. |
 | `CEILING_WORDS`, `FLOOR_WORDS`, `SEGMENTER_VERSION` | `narrative_longform_segment` | import (public constants) |
 | `_require_keys`, `_validate_date`, `_write_json` | `narrative_longform_agreement` | **neither import nor copy** — 78 defines its own equivalents. An underscore name is not a contract; importing it would couple 78 to a refactor silently. |
 
-Pinned by `test_no_underscore_imports_from_sibling_modules` (an AST scan of
-78's own imports asserting no imported name begins with an underscore).
+**The rule, restated as what it actually is** (fix 13 — v4 said "public names"
+and then applied it inconsistently): *78 may import a name from a sibling module
+only if that module declares no `__all__`, or the name appears in it; and never a
+name beginning with an underscore.* All three sibling modules **do** declare an
+`__all__`, so every imported name must be declared — which is why the two
+undeclared names above are resolved by dropping one and promoting the other,
+rather than by exception.
+Pinned by `test_no_undeclared_or_underscore_imports_from_sibling_modules`: an AST
+scan of 78's imports that resolves each source module's `__all__` and asserts
+every imported name is a member and none begins with an underscore. v4's pin
+checked only the underscore half and would have passed `SignalSpec`.
 
 **Ownership boundary against the in-range precedent.** `narrative_polarity_audit.py`
 owns the **in-range, per-text** polarity study: its `Row`, its `load_manifest`
@@ -337,9 +386,13 @@ build**, via two new contract objects rather than an assumption.
   or the arm is `insufficient_support` wholesale — *no control, no verdict*.
 - **Bridge rows never enter a class statistic**; they enter only the per-signal
   `bridge` block. This is asserted, not assumed:
-  `test_bridge_rows_absent_from_class_statistics` re-runs the estimator with
-  every bridge row's values replaced by extremes and asserts byte-identical
-  statistics.
+  `test_bridge_rows_absent_from_class_statistics` re-runs with every bridge
+  row's values replaced by extremes and asserts byte-identity of the
+  **pre-precedence class-statistic inputs and outputs** — the per-work value
+  vectors, `support`, and the raw AUC / Hedges *g* / SE / interval — while
+  **allowing the `bridge` block and the resulting verdict to change**, which they
+  must (fix 12). v4 asserted byte-identical *statistics* outright, which no
+  correct implementation can satisfy, inviting a builder to gut the check.
 - **Bridge rows are exempt from the primary length band** (round-3 fix 1) —
   they are governed by the over-ceiling `bridge` band. See §"Length bands".
 
@@ -358,10 +411,10 @@ labelled `whole_text`, and a whole text below the floor passes as ONE segment
 one whole-work "segment" reinstates the truncation confound in reverse on
 exactly the ending/resolution family. Therefore, for **every** primary-contrast
 source work in **both** classes: the work must yield at least
-`min_segments_per_work` primary rows (registered, floor ≥ 3), and no primary
+`min_segment_count_by_work` primary rows (registered, floor ≥ 3), and no primary
 row may carry `tier` = `whole_text`. Failures drop as `single_segment_work` and
 `whole_text_tier`. `class_counts` records `tier_counts` and
-`n_segments_per_work` per class.
+`segment_count_stats` per class.
 
 **Non-transfer clause, reconciled with the per-work unit** (round-3 fix 3). v3
 asserted "per-segment direction only" about a statistic whose unit is the work.
@@ -458,6 +511,9 @@ Registration-time consistency checks, all refusing `band_table_inconsistent`:
 4. `bridge_truncated` equals `primary` exactly — a truncation that lands
    outside the primary regime controls nothing.
 5. every cell's minimum does not exceed its maximum.
+6. **(v5, R8)** the `segment_regime` bridge band's maximum does not exceed the
+   registration's declared `judge.context_bound_words` — a bridge corpus that
+   could not have been read in a single pass cannot be registered.
 
 **The two named exemption tests** (round-3 fix 1):
 
@@ -511,6 +567,7 @@ refuses, mirroring the sibling's strict `_require_keys` discipline.
 | `subfloor_bridge_side` | str \| null | closed 2 + null | non-null iff the arm is `subfloor` and the role is `bridge` |
 | `provenance` | object | class-scoped, below | |
 | `segmenter` | object \| null | non-null **iff** `source_kind` is `segment` | |
+| `read_mode` | str \| null | closed 3, below; **non-null iff the role is `bridge` and the arm is `segment_regime`** | **(v5, R8)** the bridge's mechanical carrier |
 | `judge` | object | below — **per-row identity (v4)** | firewall |
 | `signals` | object | signal id → `{value, available}` | |
 
@@ -537,7 +594,37 @@ Test: `test_amendment_id_bound_to_row_role`.
 
 **`judge`, per row, exact key set (v4, round-3 fix 8):** `kind` (closed 1:
 `manifest`; `mock` refuses), `model`, `model_revision`, `prompt_version`, and
-`source_envelope_sha256` (the file hash of the envelope this row came from).
+`source_envelope_sha256` — an **operator-asserted digest**; M1 opens no
+envelope (anti-fabrication defense 2).
+
+**`read_mode`, closed domain of 3 (v5, R8):** `single_pass_whole_text` \|
+`chunked_merge` \| `summarized`. **Only `single_pass_whole_text` is accepted in
+M1**; the other two refuse (`bridge_read_mode_unsupported`). This is the
+mechanical carrier round 4 found missing: v4's bridge rested on operator-declared
+integers, so an operator who chunk-and-merged or summarised a 100,000-word novel
+recorded a truthful `source_work_words` and `content_sha256`, the bridge shift
+measured nothing, and the receipt licensed all 33 signals off a control that
+never ran. `read_mode` makes that declaration explicit and refusable. It does
+**not** prove the declared read happened — that residue is carried in
+`stated_limits` as `bridge_read_unverified`.
+
+**Judge context bound (v5, R8).** The registration's `judge` block carries a
+fifth key, `context_bound_words`. Two checks:
+
+- **registration time** — the `segment_regime` bridge band's maximum must not
+  exceed `context_bound_words` (band consistency rule 6, refusing
+  `band_table_inconsistent`), so a design that could not have been read in one
+  pass cannot be registered;
+- **evaluate time** — a bridge row whose `source_work_words` exceeds
+  `context_bound_words` refuses `source_work_words_exceeds_judge_context`.
+
+The receipt records the accepted mode in `bridge_read_mode`.
+Tests: `test_chunked_merge_read_mode_refuses`;
+`test_summarized_read_mode_refuses`;
+`test_read_mode_required_on_arm_a_bridge_rows_and_null_elsewhere`;
+`test_bridge_band_above_judge_context_refuses_at_register`;
+`test_bridge_row_above_judge_context_refuses_at_evaluate`;
+`test_bridge_read_mode_recorded_in_receipt`.
 
 **`segmenter`, exact key set** (null for `whole_work`; a `whole_work` row with a
 non-null `segmenter`, or a `segment` row with null, **refuses**): `emitter`
@@ -551,8 +638,9 @@ and equal to the registration), `segment_target_words` (≥ `FLOOR_WORDS`), `tie
 Round-3 gap 7: v3 listed three conditions as *drops* that it specified
 elsewhere as run-level *refusals*, making `test_every_drop_reason_reachable`
 unimplementable and inviting a builder to silently weaken a refusal — the unsafe
-direction. v4 assigns every condition to exactly one of the two, on a stated
-principle:
+direction. v4 assigned every condition to exactly one of the two on a stated
+principle, but its refusal table was not total; **v5 completes the walk** (fix 2)
+and keeps the principle:
 
 > **Refuse** when the manifest is malformed, mis-provenanced, or
 > license-violating — a broken pipeline, where continuing would certify a corpus
@@ -565,22 +653,25 @@ never silently vanishes.
 | Reason | Rule |
 |---|---|
 | `whole_text_tier` | primary row whose tier is `whole_text` |
-| `single_segment_work` | source work yields fewer than `min_segments_per_work` primary rows |
+| `single_segment_work` | source work yields fewer than `min_segment_count_by_work` primary rows |
 | `below_length_band` | `n_words` below the band for this row's (arm, role, side) |
 | `above_length_band` | ditto, above |
 | `duplicate_content_sha256` | a second row in the same class with an identical content hash |
 | `source_work_in_range` | Arm A row whose `source_work_words` is below `min_source_work_words` |
 
-**`REFUSAL_REASONS`, closed set of 23.** Every one exits 2 with no receipt
-written.
+**`REFUSAL_REASONS`, closed set of 28 — the count is the length of the table
+below, not an independent constant** (fix 2: v4 declared "closed at 23" while at
+least five mandated refusals had no id, so the closure test could not pass).
+Every entry exits 2 with no receipt written. Three v4 ids are **collapsed**, and
+each collapse is stated in its own row.
 
 | Reason | Rule |
 |---|---|
-| `missing_segmenter_binding` | `segment` row with a null `segmenter` (v3 called this a drop) |
-| `segmenter_binding_mismatch` | params hash or version differs from the registration (v3: drop) |
-| `degenerate_manifest_vectors` | within-work identical-vector tripwire (v3: drop) |
-| `cross_work_degenerate_vectors` | cross-work identical-vector tripwire **(v4)** |
-| `missing_provenance_key` | a class-scoped provenance key absent or empty |
+| `segmenter_binding_violation` | *collapse of v4's `missing_segmenter_binding` plus the missing whole-work direction:* a `segment` row with a null `segmenter`, **or** a `whole_work` row carrying a non-null one |
+| `segmenter_binding_mismatch` | params hash or version differs from the registration |
+| `degenerate_manifest_vectors` | within-work identical-vector tripwire |
+| `cross_work_degenerate_vectors` | cross-work identical-vector tripwire |
+| `manifest_schema_violation` | *collapse of v4's `missing_provenance_key` plus the row / `provenance` / `segmenter` / `judge` / `signals` exact-key-set and closed-domain violations v4 mandated in prose and never gave an id:* any manifest object whose key set is not exact, or whose value falls outside a declared closed domain (including a `publication_year` after `pre_ai_cutoff_year`). The message names the object and the offending key. |
 | `missing_license_amendment` | required amendment id absent |
 | `unknown_amendment_id` | amendment id not bound to this row's role |
 | `illegal_response` | a value the routed encoder refuses — matching the sibling's own behaviour and docstring rationale (line 594) |
@@ -598,20 +689,30 @@ written.
 | `registration_mismatch` | registration hashes do not match the live inputs |
 | `post_hoc_thresholds` | thresholds hash differs from the registered one |
 | `prompt_signal_blindness_violation` | a generation prompt names a signal or the paper |
+| `unregistered_prompt_family` | a `prompt_family` in the manifest with no registration entry — v4 mandated this refusal **and named its test** while giving it no id |
 | `registration_manifest_not_values_free` | a registration row carrying more than the 5 allowed keys |
+| `malformed_artifact` | *stated collapse:* the thresholds or the registration artifact is structurally invalid — bad JSON, wrong schema string, non-exact key set, wrong type, or an out-of-range number. The message names which file. The keys fix 3 deletes (`indicator_effect_margin`, `auc_null`, `per_response_class`) land here. |
+| `bridge_row_word_count_mismatch` | an Arm A bridge row whose `n_words` differs from its `source_work_words` |
+| `bridge_read_mode_unsupported` | **(R8)** a bridge row whose `read_mode` is not `single_pass_whole_text` |
+| `source_work_words_exceeds_judge_context` | **(R8)** a bridge row whose `source_work_words` exceeds the registration's declared judge context bound |
 
 Tests, split by kind (round-3 fix 7): `test_drop_reason_domain_closed_at_6`;
 `test_every_drop_reason_reachable` (one fixture per drop, asserting the count
 lands in the right `class_counts` cell **and the run still produces a
-receipt**); `test_refusal_reason_domain_closed_at_23`;
+receipt**); `test_refusal_reason_domain_closed_at_28` (asserting the constant
+equals the enumerated table's length, so the two cannot drift);
 `test_every_refusal_reason_exits_2_and_writes_no_receipt` (parametrized, one
-fixture per refusal); `test_drop_and_refusal_sets_disjoint`.
+fixture per row); `test_drop_and_refusal_sets_disjoint`;
+`test_every_refuses_sentence_maps_to_exactly_one_reason_id` — fix 2's walk,
+pinned: this table is the sole refusal vocabulary and every refusal path in the
+script returns a member of it.
 
 **`class_counts`**, keyed by label × role (4 cells; inapplicable cells carry
 `n_texts` 0, never absent). Each cell has exactly `n_texts`, `n_source_works`,
 `n_source_envelopes`, `n_authors` (null for the ai class),
 `n_generator_families` (null for the human class), `max_share_single_work`
-(text units), `n_segments_per_work` (**null when the arm is `subfloor`**),
+(text units), `segment_count_stats` — exactly `{min: int, max: int, median:
+float}`, **null when the arm is `subfloor`** (fix 14) —
 `tier_counts` (**null when the arm is `subfloor`**), and `dropped_by_reason`
 over the 6 drops.
 Tests: `test_inapplicable_floor_is_null_not_zero`,
@@ -689,10 +790,10 @@ Tests: `test_comparison_only_statistics_cannot_change_a_verdict`,
 
 ## The verdict domain and the precedence chain
 
-**One closed domain, both arms, 8 members:** `polarity_matches`,
+**One closed domain, both arms, 9 members:** `polarity_matches`,
 `polarity_inverted`, `polarity_chance`, `fragment_artifact_confounded`,
-`subfloor_artifact_confounded`, `insufficient_support`, `indeterminate`,
-`judge_answer_absent`.
+`subfloor_artifact_confounded`, **`bridge_inconclusive`** (new in v5, fix 6),
+`insufficient_support`, `indeterminate`, `judge_answer_absent`.
 
 **Mapping from the precedent**, total and injective: `matches` →
 `polarity_matches`; `inverted` → `polarity_inverted`; `chance` →
@@ -708,31 +809,64 @@ Test: `test_precedent_verdict_mapping_total_and_injective`.
 2. **`insufficient_support`** — a class-scoped corpus floor unmet; support below
    `min_signal_support` in either class; or either class's bridge population
    below `min_bridge_works`. *No control, no verdict.*
-3. **`fragment_artifact_confounded`** (Arm A) / **`subfloor_artifact_confounded`**
-   (Arm B) — the bridge shift exceeds `fragment_shift_max` /
-   `subfloor_shift_max`.
+3. **The control step, now interval-based (fix 6 / R8).** v4 compared a bare
+   point estimate at n = 8 against the floor, so a scarcity-pass and an
+   evidence-pass were indistinguishable and the failure direction was
+   under-detecting the confound. v5 applies the spec's own interval rule:
+   - the point estimate **exceeds** `fragment_shift_max` /
+     `subfloor_shift_max` → **`fragment_artifact_confounded`** /
+     **`subfloor_artifact_confounded`**;
+   - else one-sided equivalence: the shift's **upper** confidence bound — the
+     mean plus 1.645 × SE over the paired works, SE = sample SD ÷ √n — must
+     clear the floor. If it does not, the control failed to establish
+     equivalence and the verdict is **`bridge_inconclusive`**;
+   - else the control passes and the chain continues.
+
+   `bridge_inconclusive` blocks `polarity_matches` and `polarity_inverted`
+   **exactly as `insufficient_support` does** — a signal whose control could not
+   establish equivalence is not licensed. One member serves both arms; the
+   receipt's `arm` says which control was inconclusive.
 4. **`polarity_chance`** — indicator signals only: either class below
    `min_class_n`. This is the precedent's forced-`chance` guard, retained at 20.
-   **Rationale, corrected (round-3 fix 6):** the Hanley-McNeil SE is a
-   large-sample approximation that collapses toward zero under near-perfect
-   separation *in small samples*, producing a spuriously narrow interval. It is
-   a **sample-size** guard; it has nothing to do with one class having zero
-   variance, and v3's sentence asserting otherwise was wrong and is deleted.
-5. **`indeterminate` — genuine indeterminacy only** (round-3 fix 6, rescoped):
-   numeric → zero pooled SD; indicator → **both** classes' per-work vectors
-   constant. Nothing else.
+   The Hanley-McNeil SE is a large-sample approximation that collapses toward
+   zero under near-perfect separation *in small samples*, producing a spuriously
+   narrow interval; it is a **sample-size** guard.
+   **Reachability, stated (fix 11).** Under the mandated floor arithmetic
+   (`min_signal_support` at least `min_class_n` + `class_n_margin`) a signal
+   reaching step 4 already has at least `min_class_n` + `class_n_margin` works in
+   each class, so **step 4 cannot fire end-to-end, by design.** It is retained as
+   defence-in-depth for any future increment that relaxes the floor relation, and
+   **its tests are direct unit calls on `derive_polarity_verdict`: no CLI-level
+   fixture exists, by design.** v4's three named tests implied an end-to-end
+   fixture and would have tempted a builder to weaken the registration check in
+   order to produce one.
+5. **`indeterminate` — genuine estimator degeneracy only** (fix 14): the
+   estimator cannot produce a usable interval. Numeric → the pooled SD is zero,
+   or `se_g` is zero. Indicator → both classes' per-work vectors are constant, or
+   the Hanley-McNeil SE is zero, which is exactly perfect separation (an absolute
+   direction-aware AUC deviation of 0.5 drives the SE numerator to zero).
+   Nothing else.
 6. **`polarity_matches` \| `polarity_inverted` \| `polarity_chance`** — the
-   verdict-bearing interval versus its threshold.
+   verdict-bearing interval versus its threshold. For indicators the null is
+   **fixed at 0.5** by the pinned precedent (fix 3); the decision is
+   `polarity_verdict`'s at z = 1.96.
 
-**The one-class-saturated case is a result, not a hole.** v3's step 5 converted
-the arm's strongest legitimate finding — a rare AI tell absent from every human
-work — into an empty `indeterminate` cell. Under v4 that case reaches step 6,
-emits full statistics and an interval, and additionally sets
-`separation_saturated` true (set when exactly one class's per-work vector is
-constant and the other is not). The marker is carried into the findings document
-so a reader knows the interval rests on a saturated class.
+**No zero-width interval is ever emitted** (fix 14). A degenerate estimator
+exits at step 5 with a null `ci`, so a confident verdict can never rest on an SE
+of zero. Test: `test_no_zero_width_ci_emitted`.
+
+**The one-class-saturated case is still a result, not a hole** — round-3 fix 6
+is preserved. When one class's per-work vector is constant and the other is not,
+the SE is non-zero (ties keep the AUC off its boundary), so the signal reaches
+step 6, emits full statistics and an interval, and sets `separation_saturated`
+true. **v5 restates that marker's trigger in estimator terms** (fix 14): it is
+set whenever the estimator sits at or against its degenerate boundary — exactly
+one class constant, or perfect separation. Perfect separation is the one
+sub-case that now exits at step 5, because its interval has zero width; the
+marker still records it, so it is never invisible.
 Tests: `test_one_class_saturated_emits_verdict_with_marker`,
 `test_both_classes_constant_is_indeterminate`,
+`test_perfect_separation_is_indeterminate_with_marker`,
 `test_separation_saturated_false_on_ordinary_input`.
 
 **`verdict_step` is recorded** (round-3 fix 10): every cell carries the step
@@ -762,28 +896,62 @@ the primary contrast.
 source works appearing on both sides of the pairing within the same class — Arm
 A, an over-ceiling bridge whole-work row plus at least one primary segment row
 with the same `source_work_id`; Arm B, a `full` row plus a `truncated` row with
-the same `source_work_id`. Statistic, per signal, per class,
-**range-normalized** (P2) so one floor is comparable across signals:
+the same `source_work_id`. The statistic is named `paired_absolute_shift` in
+**both** arms (fix 14), and is **range-normalized** so one floor is comparable
+across signals.
 
-- `numeric`: the mean over works of the absolute paired difference, **divided by
-  the signal's response range** (max minus min encoded value over its response
-  options). Unit `fraction_of_response_range`, in [0,1]. The raw response-unit
-  value is also recorded as `value_response_units` so nothing is lost.
-- `indicator`: the mean over works of the absolute paired difference, in [0,1],
-  already normalized.
+**The estimand, stated per response class and per side (fix 4).** v4 said only
+"the absolute paired difference" and left the segment-side operand undefined for
+Arm A's one-to-many pairing. As written it fired on the null: a whole-work
+indicator is 0 or 1, a segment prevalence is a fraction, and under a *perfect
+no-shift* corpus with ordinary within-work heterogeneity the absolute difference
+has an expected value near 0.5 — so step 3 would have stamped
+`fragment_artifact_confounded` on most option-bearing signals from heterogeneity
+alone. v5 defines both operands so the null is a true zero:
 
-Because both classes are now on [0,1], v3's four floor keys collapse to **two**:
-`fragment_shift_max` and `subfloor_shift_max`. The reported bridge value is the
-**max over the two classes**; `by_class` records both.
-Tests: `test_bridge_shift_paired_within_work`,
-`test_class_asymmetric_bridge_shift_caught_by_max_not_hidden_by_mean`,
-`test_numeric_shift_range_normalized_across_scale_and_ordinal`.
+| Arm / class | Side A | Side B | Value |
+|---|---|---|---|
+| Arm A, `numeric` | the whole-work encoded value | the **mean** of that work's primary-segment encoded values | absolute difference ÷ the signal's response range (max minus min encoded value over its response options); unit `fraction_of_response_range`, in [0,1] |
+| Arm A, `indicator` | the whole-work 0/1 indicator | that work's primary segments **dichotomized by the majority rule**: 1 when the option is the majority answer across the work's contributing primary segments, 0 otherwise, **ties resolve to 0** | absolute difference, already in [0,1] |
+| Arm B, either class | the `full` row's value | the `truncated` row's value | as for Arm A's class; **no dichotomization** — both sides are single whole texts |
+
+The majority rule is fixed in this spec, not registered, and is pinned by test.
+It makes both Arm A operands indicators of the same event — *does this work
+exhibit the option* — so a corpus in which the whole-work judge and the segment
+judges agree yields a shift of exactly 0 however the option is distributed
+*within* each work.
+
+`value_response_units` carries the un-normalized response-unit value for
+`numeric` signals and is **null for `indicator` signals**, which have no
+response-unit scale (fix 14).
+
+**Pre-step-3 null rule (fix 14).** `bridge.value`, `bridge.ci_upper`, and
+`bridge.threshold` are null exactly when the chain exited at or before step 2 —
+which includes every case where a class's bridge population is below
+`min_bridge_works`. Step 3 is reached only with a non-null value, so it never
+compares against null.
+
+Because both response classes are on [0,1], v3's four floor keys collapse to
+**two**: `fragment_shift_max` and `subfloor_shift_max`. The reported bridge value
+is the **max over the two classes**; `by_class` records both, and `ci_upper` is
+the one-sided upper bound on that same worst-case class.
+Tests: `test_bridge_shift_paired_within_work`;
+**`test_heterogeneous_no_shift_corpus_is_not_fragment_confounded`** (fix 4's
+named negative — per-work segment prevalences vary widely while every whole-work
+answer matches the segment majority; the shift must be 0 and no confound label
+may appear); `test_indicator_segment_side_dichotomized_by_majority_tie_to_zero`;
+`test_class_asymmetric_bridge_shift_caught_by_max_not_hidden_by_mean`;
+`test_numeric_shift_range_normalized_across_scale_and_ordinal`;
+`test_bridge_block_null_before_step_3`.
 
 **Single-work share.** `max_share_single_work` = the maximum over source works
 of that work's primary-row count in the class divided by the class's
 primary-row count — the unit is **texts, not words**.
 
-**Class-scoped corpus floors** (the 18 floor keys of the thresholds artifact):
+**Class-scoped corpus floors** — the **17** floor keys of the thresholds
+artifact, which is their single home. Fix 3 collapsed v4's
+`floors` / `per_response_class` dual carrier; there is no second carrier, and
+the count below is the table's length.
 
 | Floor key | Applies to | Default | Breach |
 |---|---|---|---|
@@ -795,7 +963,7 @@ primary-row count — the unit is **texts, not words**.
 | `min_class_n` | indicator signals | 20 | forced `polarity_chance` (step 4) |
 | `class_n_margin` | registration check | 4 | `floor_arithmetic_violation` |
 | `min_availability_rate` | per signal, each class | 0.90 | `judge_answer_absent` |
-| `min_segments_per_work` | each class, Arm A | 3 | row drop |
+| `min_segment_count_by_work` | each class, Arm A | 3 | row drop |
 | `min_bridge_works` | each class, bridge role | 8 (R5: over-ceiling scarcity) | `insufficient_support` |
 | `min_source_work_words` | Arm A, every row | `CEILING_WORDS` + 1 = 25,001 | row drop |
 | `length_overlap_min` | class pair, primary rows | 0.80 | run refuses |
@@ -803,8 +971,7 @@ primary-row count — the unit is **texts, not words**.
 | `fragment_shift_max` | Arm A, both response classes | float in [0,1] | confound label |
 | `subfloor_shift_max` | Arm B, both response classes | float in [0,1] | confound label |
 | `effect_threshold_numeric` | numeric | float (absolute *g*) | below → `polarity_chance` |
-| `indicator_effect_margin` | indicator | float ≥ 0, default 0.0 | interval must clear 0.5 plus the margin |
-| `pre_ai_cutoff_year` | human provenance | int | refusal via `missing_provenance_key` |
+| `pre_ai_cutoff_year` | human provenance | int | refusal via `manifest_schema_violation` |
 
 ## Anti-fabrication defenses, owned here
 
@@ -825,13 +992,18 @@ hashed and attested. v4 answers at the manifest layer.
    `test_registered_judge_block_is_derived_not_asserted` (the receipt's judge
    block is built from the manifest's rows *after* the equality checks pass, so
    it cannot disagree with the corpus).
-2. **Source-envelope binding.** Each row's `source_envelope_sha256` is the file
-   hash of the envelope it came from; a row without it refuses
+2. **Source-envelope digest — operator-asserted, no envelope opened in M1**
+   (fix 8, downgraded from v4's overclaim). Each row declares a
+   `source_envelope_sha256`; a row without one refuses
    (`unbound_source_envelope`). The receipt records `n_source_envelopes` per
    class cell and a top-level `source_envelopes_sha256` over the sorted distinct
-   envelope hashes, so the corpus's provenance surface is itself hashed and
-   re-derived by `--verify`.
-   Test: `test_source_envelope_set_bound_into_derivation`.
+   declared digests. **M1 carries no envelope path and never opens an envelope**,
+   so what is bound is the *set of declared digests*, not the files: this makes
+   the declaration tamper-evident against later edits of the receipt or manifest
+   and establishes nothing about the envelopes themselves. Envelope existence and
+   content are in the stated residue below, and in `stated_limits`. v4's "bound
+   by hash to a source envelope file" is withdrawn.
+   Test: `test_source_envelope_digest_set_bound_into_derivation`.
 3. **Generation-prompt binding and signal-blindness scan** (round-3 fix 8). The
    registration carries `generation_prompts`, one entry per distinct
    `prompt_family` in the AI class, each with `prompt_family`, `prompt_sha256`,
@@ -901,28 +1073,40 @@ residue is custody, not mechanism.
 Round-3 fix 9: the thresholds and registration artifacts were named but never
 enumerated. Both now have exact key sets and are strictly validated on load.
 
-**Thresholds artifact**, schema `narrative-polarity-thresholds/1`, exact 4 keys
-— `alpha` and `method` are **absent** because R6 defers multiplicity:
+**Thresholds artifact**, schema `narrative-polarity-thresholds/1`, exact 3 keys
+— `alpha` and `method` are absent because R6 defers multiplicity, and
+`per_response_class` is **deleted** by fix 3:
 
 ```json
 {"schema": "narrative-polarity-thresholds/1",
- "floors": {"<each of the 18 floor keys>": 0},
- "bands": {"<the 5 band cells>": {"min_words": 0, "max_words": 0}},
- "per_response_class": {
-     "numeric":   {"effect_threshold": 0.0},
-     "indicator": {"auc_null": 0.5, "effect_margin": 0.0}}}
+ "floors": {"<each of the 17 floor keys>": 0},
+ "bands": {"<the 5 band cells>": {"min_words": 0, "max_words": 0}}}
 ```
+
+**The indicator null is fixed at 0.5 by the pinned precedent, not registered**
+(fix 3). v4 registered `indicator_effect_margin` and `auc_null`, hashed them
+into the thresholds and derivation digests, and gave them no mechanism that
+could honour them: the imported `polarity_verdict` hardcodes 0.5 and takes no
+margin parameter, and the precedent is pinned byte-identical apart from its
+`__all__` line. A registered threshold that silently changes nothing is exactly
+the fabrication surface this child exists to close, so **both keys are deleted**
+and the indicator decision is whatever `polarity_verdict` returns at z = 1.96
+against a null of 0.5. Numeric signals keep `effect_threshold_numeric`, which
+78's own inline rule does honour.
+Test: `test_indicator_margin_keys_do_not_exist` — a thresholds file carrying
+either key refuses as `malformed_artifact`, and no code path reads them.
 
 Validation mirrors the sibling's `load_thresholds` (line 663): exact key sets at
 every level, numbers not bools, ranges checked (`min_availability_rate`,
 `length_overlap_min`, `max_share_single_work`, `fragment_shift_max`,
-`subfloor_shift_max` in [0,1]; `auc_null` exactly 0.5), plus the band
-consistency rules and the floor arithmetic.
+`subfloor_shift_max` in [0,1]), plus the band consistency rules and the floor
+arithmetic.
 
 **Registration artifact**, schema `narrative-polarity-registration/1`, exact 9
 keys: `schema`, `date`, `arm`, `thresholds_sha256`, `work_ids_sha256`,
-`signal_id_set_sha256`, `segmenter` (null when the arm is `subfloor`), `judge`,
-and `generation_prompts`.
+`signal_id_set_sha256`, `segmenter` (null when the arm is `subfloor`), `judge`
+(five keys: the four identity fields plus `context_bound_words`, R8), and
+`generation_prompts`.
 
 **`work_ids_sha256` preimage, defined:** the canonical-JSON hash of the sorted
 set of **distinct `source_work_id` values**, not of per-row ids. This
@@ -960,14 +1144,37 @@ field, perturb it and assert it does not.
 
 Schema `narrative_polarity_extension_receipt/1`, written only by `--evaluate`,
 committed under `references/calibration` beside a findings document. Exact key
-set (21): `schema_version`, `date`, `arm`, `signal_id_set_sha256`,
+set (23): `schema_version`, `date`, `arm`, `signal_id_set_sha256`,
 `thresholds_sha256`, `registration_sha256`, `derivation_sha256`,
 `manifest_sha256`, `source_envelopes_sha256`, `registration_path`,
 `manifest_path`, `class_counts`, `covered_length_range`,
-`covered_source_work_range`, `segmenter`, `judge`, `floors_applied`,
-`bands_applied`, `multiplicity`, `deferrals`, `per_signal`.
+`covered_source_work_range`, `segmenter`, `judge`, **`bridge_read_mode`**
+(v5, R8; null when the arm is `subfloor`), `floors_applied`, `bands_applied`,
+`multiplicity`, `deferrals`, **`stated_limits`** (v5, fix 14), `per_signal`.
+
+**`stated_limits` is a closed set of 6 ids** (fix 14), carried in the artifact so
+a limit cannot be lost between this document and the findings document:
+`custody_residue` (write access to registration, manifest, prompts, and receipt
+together can produce a self-consistent fabrication); `judge_read_unproven` (no
+mechanism shows a model read any text); `envelope_digest_operator_asserted` (M1
+opens no envelope); `prompt_scan_naming_only` (the blindness scan catches naming,
+not paraphrase or conditioning by example); `bridge_read_unverified` (`read_mode`
+is a declaration, not a proof); `shortness_residue` (Arm B establishes
+truncation-invariance, not native-shortness validity).
+Test: `test_findings_document_reproduces_every_stated_limit` — the committed
+findings document must contain every id, and the set must be exactly these 6.
 
 `segmenter` and `covered_source_work_range` are null when the arm is `subfloor`.
+
+**Both covered ranges are computed over `role: primary` rows only** (fix 9). v4
+left the population unstated while the non-transfer clause scopes every verdict
+to `covered_length_range`; including R5's over-ceiling bridge rows would have
+silently widened the license from segment scale to novel scale — the exact
+over-claim this document exists to prevent. Bridge scale is deliberately given no
+block of its own: the bridge is a control, not a licensed regime, and its extent
+is visible only in the `class_counts` bridge cells, which the non-transfer clause
+does not reference.
+Test: `test_covered_length_range_excludes_bridge_rows`.
 Both covered-range blocks carry `min_words`, `max_words`, `median_words`, and a
 `unit` string (`words_per_text` and `words_per_source_work` respectively).
 
@@ -975,7 +1182,7 @@ Both covered-range blocks carry `min_words`, `max_words`, `median_words`, and a
 
 | Key | Type | Domain / meaning |
 |---|---|---|
-| `verdict` | str | the closed 8 |
+| `verdict` | str | the closed 9 |
 | `verdict_step` | int | 1–6, the precedence step that produced it **(v4)** |
 | `operator` | str | spec 79's three — **license metadata only; routes nothing** |
 | `units` | str | spec 79's unit string for that operator |
@@ -983,11 +1190,11 @@ Both covered-range blocks carry `min_words`, `max_words`, `median_words`, and a
 | `response_class` | str | closed 2: `numeric` \| `indicator` — the routing key |
 | `support` | int | distinct contributing source works (min over classes) |
 | `availability_by_class` | object | human and ai fractions in [0,1] |
-| `separation_saturated` | bool | one class constant, the other not **(v4)** |
+| `separation_saturated` | bool | the estimator sits at its degenerate boundary: exactly one class constant, or perfect separation **(v5, fix 14)** |
 | `sign_stability` | null | always null in M1 (R1) |
 | `statistics` | array | entries with `name`, `value`, `threshold`, `direction`, `role`, `estimand`; empty before step 6 |
 | `ci` | object \| null | `lo`, `hi`, `z`, `method`; null before step 6 |
-| `bridge` | object | `statistic`, `value`, `value_response_units`, `threshold`, `by_class`, `n_works_by_class` |
+| `bridge` | object | `statistic` (`paired_absolute_shift`), `value`, `ci_upper` **(v5, fix 6)**, `value_response_units` (null for indicators), `threshold`, `by_class`, `n_works_by_class`; the first four are null before step 3 |
 | `multiplicity` | null | always null in M1 (**R6**) |
 
 **Deferrals are mechanically consistent with their slots (R1, R6).** M1 writes
@@ -1008,7 +1215,15 @@ rule, raising a dedicated error type.
   `score`, `aggregate`, `aggregate_score`, `rank`, `ranking`, `per_text`,
   `per_work`, `work_value`, `provenance_verdict`.
 - **Rule 2 — forbidden key substrings, any depth:** `per_text`, `per_work`,
-  `text_id`, `work_value`, `ranking`.
+  `text_id`, `work_value`, `ranking`. **This set is closed, and no exemption is
+  carved into it: future receipt keys are named around it** (fix 1). v4 banned
+  the substring `per_work` while its own mandated receipt carried
+  `n_segments_per_work` and `min_segments_per_work`, and Rule 3's allowlist
+  whitelisted a path Rule 2 rejected — the schema and
+  `test_real_receipt_passes_the_guard` could not both hold, and the cheapest
+  builder resolution was to weaken the anti-disclosure guard, the unsafe
+  direction. v5 renames the two keys instead: `segment_count_stats` in
+  `class_counts`, and the floor `min_segment_count_by_work`.
 - **Rule 3 — closed float allowlist.** A float leaf is legal only at these key
   paths (a star means any list index or map key), and nowhere else:
 
@@ -1017,9 +1232,10 @@ per_signal.*.statistics.*.value        per_signal.*.statistics.*.threshold
 per_signal.*.ci.lo    per_signal.*.ci.hi    per_signal.*.ci.z
 per_signal.*.availability_by_class.*
 per_signal.*.bridge.value              per_signal.*.bridge.value_response_units
+per_signal.*.bridge.ci_upper
 per_signal.*.bridge.threshold          per_signal.*.bridge.by_class.*
 class_counts.*.max_share_single_work
-class_counts.*.n_segments_per_work.median
+class_counts.*.segment_count_stats.median
 covered_length_range.median_words      covered_source_work_range.median_words
 floors_applied.*
 ```
@@ -1039,6 +1255,14 @@ list of unlisted paths, against a real emitted receipt),
 `test_real_receipt_passes_the_guard` (run against the **runtime** receipt,
 matching spec 79's as-built practice), and
 `test_no_per_text_key_survives_the_receipt`.
+
+**Spec-level consistency check (fix 1).**
+`test_mandated_receipt_schema_passes_its_own_guard` walks the receipt key set
+*as this document mandates it* — every top-level key, every per-signal key, every
+`class_counts` key, and every allowlisted float path — and asserts each survives
+Rules 1 and 2, and that every Rule 3 path names a key the schema actually has. A
+future key that collides with the guard fails here rather than in the builder's
+judgement.
 
 ## Claim licenses, amendments, and the register extension
 
@@ -1119,6 +1343,17 @@ no hard gate refuses it. R5 requires a named, tested extension.
 - **Flag** `--bridge-control`. When set, the `ClaimLicense` construction selects
   the bridge range; the run refuses (`bad_input`) if the target is in range;
   behaviour without the flag is byte-unchanged.
+- **Boundary against the existing warning channel (fix 10).** The base audit's
+  `register_warnings_for` (`narrative_decision_audit.py:559`) branches only
+  *below* `MIN_FICTION_WORDS` and on a missing-dialogue check: an over-ceiling
+  run today is silent. `REG-AUDIT-B1` is **deliberately a separate channel and
+  does not extend that function.** The reason: `register_warnings_for` is a
+  free-text advisory list an operator may ignore, whereas the extension must be a
+  *license* fact bound to a flag and carried in a results key the
+  `--does-not-license` override cannot erase. **Unflagged over-ceiling runs stay
+  silent, exactly as today** — v5 changes no behaviour on the unflagged path, and
+  `test_without_flag_length_range_byte_unchanged` plus
+  `test_unflagged_over_ceiling_run_emits_no_new_warning` pin that.
 - **Non-overridable carriers.** The base audit's refusal text is
   operator-overridable wholesale (`--does-not-license`,
   `narrative_decision_audit.py:686`, applied at
@@ -1199,15 +1434,21 @@ is part of the contract; grouped here for the builder.
 **Identity, routing, encoding** — `test_response_class_disjoint_and_total`;
 `test_encoders_agree_with_signal_target_value_over_all_33`;
 `test_illegal_response_refuses_exit_2`; `test_leaning_sign_convention_pinned`;
-`test_no_underscore_imports_from_sibling_modules`;
-`test_direction_aware_auc_is_exported`.
+`test_no_undeclared_or_underscore_imports_from_sibling_modules`;
+`test_direction_aware_auc_is_exported`;
+`test_degenerate_vector_min_is_exported`;
+`test_indicator_margin_keys_do_not_exist`.
 
 **Verdict domain** — `test_verdict_domain_closed_and_total`;
 `test_verdict_precedence_order`; `test_arm_exclusive_confound_labels`;
 `test_precedent_verdict_mapping_total_and_injective`;
 `test_verdict_uses_interval_not_point`;
 `test_verdict_step_recorded_and_matches_chain`;
-`test_forced_chance_distinguishable_from_interval_chance`;
+`test_forced_chance_distinguishable_from_interval_chance` (unit call);
+`test_step_4_has_no_cli_level_fixture_by_design`;
+`test_bridge_inconclusive_blocks_matches_and_inverted`;
+`test_no_zero_width_ci_emitted`;
+`test_perfect_separation_is_indeterminate_with_marker`;
 `test_one_class_saturated_emits_verdict_with_marker`;
 `test_both_classes_constant_is_indeterminate`;
 `test_separation_saturated_false_on_ordinary_input`;
@@ -1218,12 +1459,17 @@ is part of the contract; grouped here for the builder.
 matches/inverted/chance/indeterminate set on synthetic fixtures, modelled on the
 sibling's hand-computed Spearman and AUC tests;
 `test_zero_pooled_sd_is_indeterminate_no_epsilon`;
-`test_min_class_n_forces_chance_at_20`;
+`test_min_class_n_forces_chance_unit_call`;
 `test_numeric_shift_range_normalized_across_scale_and_ordinal`.
 
-**Manifest** — exact-key-set refusals on row, provenance, segmenter, judge, and
-signal cells; `test_drop_reason_domain_closed_at_6`;
-`test_every_drop_reason_reachable`; `test_refusal_reason_domain_closed_at_23`;
+**Manifest** — exact-key-set and closed-domain refusals on row, provenance,
+segmenter, judge, and signal cells, all mapping to `manifest_schema_violation`;
+`test_chunked_merge_read_mode_refuses`; `test_summarized_read_mode_refuses`;
+`test_read_mode_required_on_arm_a_bridge_rows_and_null_elsewhere`;
+`test_bridge_row_word_count_mismatch_refuses`;
+`test_unregistered_prompt_family_refuses`; `test_drop_reason_domain_closed_at_6`;
+`test_every_drop_reason_reachable`; `test_refusal_reason_domain_closed_at_28`;
+`test_every_refuses_sentence_maps_to_exactly_one_reason_id`;
 `test_every_refusal_reason_exits_2_and_writes_no_receipt`;
 `test_drop_and_refusal_sets_disjoint`;
 `test_inapplicable_floor_is_null_not_zero`;
@@ -1236,7 +1482,11 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 `test_truncated_row_content_hash_differs_from_full_side`;
 `test_bridge_row_n_words_equals_source_work_words`.
 
-**Over-ceiling regime (R5)** — `test_in_range_source_work_dropped_from_arm_a`;
+**Over-ceiling regime (R5, R8)** —
+`test_bridge_band_above_judge_context_refuses_at_register`;
+`test_bridge_row_above_judge_context_refuses_at_evaluate`;
+`test_bridge_read_mode_recorded_in_receipt`;
+`test_in_range_source_work_dropped_from_arm_a`;
 `test_min_source_work_words_imported_from_segmenter_ceiling`;
 `test_covered_source_work_range_recorded`;
 `test_bridge_rows_absent_from_class_statistics`.
@@ -1249,6 +1499,9 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 **Gates and floors** — `test_length_overlap_gate_refuses_disjoint_classes`;
 `test_length_overlap_computed_over_primary_rows_only`;
 `test_bridge_shift_paired_within_work`;
+`test_heterogeneous_no_shift_corpus_is_not_fragment_confounded`;
+`test_indicator_segment_side_dichotomized_by_majority_tie_to_zero`;
+`test_bridge_block_null_before_step_3`;
 `test_class_asymmetric_bridge_shift_caught_by_max_not_hidden_by_mean`;
 `test_fragment_artifact_confounded_excludes_signal_from_verdict`;
 `test_subfloor_artifact_confounded_excludes_signal_from_verdict`;
@@ -1265,7 +1518,7 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 `test_mixed_row_judge_identities_refused`;
 `test_unbound_source_envelope_refused`;
 `test_registered_judge_block_is_derived_not_asserted`;
-`test_source_envelope_set_bound_into_derivation`;
+`test_source_envelope_digest_set_bound_into_derivation`;
 `test_prompt_naming_a_feature_key_refuses`;
 `test_prompt_naming_a_signal_option_refuses`;
 `test_prompt_naming_the_paper_refuses`; `test_clean_prompt_registers`;
@@ -1279,6 +1532,7 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 `test_verify_rejects_swapped_manifest`; `test_verify_cli_exit_2_on_tamper`.
 
 **Artifacts and registration** — `test_thresholds_key_set_exact`;
+`test_indicator_margin_keys_do_not_exist`;
 `test_registration_key_set_exact`;
 `test_work_ids_hash_is_over_distinct_source_works`;
 `test_registration_manifest_rejects_provenance_and_values`;
@@ -1286,7 +1540,10 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 `test_post_hoc_thresholds_refused`;
 `test_derivation_preimage_covers_every_receipt_field`.
 
-**Receipt** — schema round-trip with the exact 21-key and 14-key sets;
+**Receipt** — schema round-trip with the exact 23-key and 14-key sets;
+`test_mandated_receipt_schema_passes_its_own_guard`;
+`test_covered_length_range_excludes_bridge_rows`;
+`test_findings_document_reproduces_every_stated_limit`;
 `test_injected_float_at_unlisted_path_raises`;
 `test_real_receipt_passes_the_guard`;
 `test_no_per_text_key_survives_the_receipt`;
@@ -1308,6 +1565,7 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 `test_amendment_entry_key_set_exact`.
 
 **Base audit side** (`test_narrative_decision_audit.py`):
+`test_unflagged_over_ceiling_run_emits_no_new_warning`;
 `test_bridge_control_extends_declared_length_range`;
 `test_bridge_control_refuses_in_range_target`;
 `test_without_flag_length_range_byte_unchanged`;
@@ -1349,7 +1607,10 @@ signal cells; `test_drop_reason_domain_closed_at_6`;
 ## Out of scope
 
 Any change to the 33-signal schema, the 7 bundles, the segmenter, the sibling
-calibration script, or judge prompts. Any change to spec 79 or the base audit
+calibration script, or judge prompts — **excepting, by name, the two one-line
+`__all__` promotions**: `direction_aware_auc` in `narrative_polarity_audit.py`
+and `DEGENERATE_VECTOR_MIN` in `narrative_decision_long_form`, which the import
+discipline mandates (fix 13). Any change to spec 79 or the base audit
 **other than the three objects enumerated in §"Contract surfaces this child
 adds"**. Dickensian-ness inference from polarity. Detector construction,
 per-text provenance verdicts, AI-detection thresholds, and any selection or
@@ -1378,6 +1639,35 @@ alone discharges it.**
 require spec 79's stability receipt covering the run's segment count *and*
 achieved lengths, **and** Arm A's polarity receipt; sub-floor claims
 additionally require Arm B.
+
+**Cross-spec precedence between the two fragment-vs-whole controls** (fix 7).
+Arm A's bridge and spec 79's M1 agreement arm measure the **same evidence
+family** — whether a signal answered on a fragment tracks the same signal
+answered on the whole work — at different scales and on different
+normalizations, and v4 left a consumer free to license a signal 79 validated and
+78 confounded. They are not interchangeable:
+
+- **79's agreement arm** runs on **in-range** works (its own consequence section
+  caps a first receipt at roughly 25,000–27,500 words: "it cannot license a
+  novel"), pairs a whole-work value against a **segment mean**, and thresholds
+  **Spearman plus mean absolute deviation in response units**.
+- **78's Arm A bridge** runs on **over-ceiling** works under `CLA-79-A2` and
+  `REG-AUDIT-B1`, pairs a whole-work value against a segment mean *or* a
+  majority-dichotomized indicator, and thresholds a **range-normalized paired
+  absolute shift** with a one-sided equivalence bound. The normalizations differ
+  because the estimands differ: 79 asks whether segment means *rank-track* and
+  *stay close to* whole-work values across a corpus; 78 asks whether a single
+  work's fragment view *shifts* from its whole view by more than a registered
+  fraction, at novel scale.
+
+**The joint rule:** a signal marked `fragment_artifact_confounded` **or**
+`bridge_inconclusive` in an Arm A receipt is **suppressed in any joint
+novel-scale claim, regardless of its status in a spec-79 receipt** — including
+`validated_aggregatable`. 78's control is the one that ran at the scale the
+claim is being made at; 79's cannot license what it never exercised. The
+converse does not hold: a spec-79 `not_aggregatable` is not rescued by an Arm A
+pass. This paragraph is reproduced in spec 79's amendment table so neither
+document can drift from it alone.
 
 **Sequencing (R4).** The spec pair publishes first. The 78 M1 build begins only
 after spec 79's M1 merges. Any real judged run under either child is a
@@ -1418,7 +1708,7 @@ declined.
 | 5 | Gate the over-ceiling regime mechanically | **Folded in full.** `source_work_words` on every Arm A row, `min_source_work_words` imported from the segmenter's `CEILING_WORDS`, drop reason `source_work_in_range`, `covered_source_work_range` in the receipt, and the sentence assigning in-range works to spec 79's regime | §Arm A → *The over-ceiling regime* |
 | 6 | Rescope precedence step 5 to genuine indeterminacy with a `separation_saturated` marker; delete the wrong Hanley-McNeil rationale | **Folded in full.** Step 5 is now zero-pooled-SD (numeric) / both-classes-constant (indicator); the one-class-saturated case reaches step 6 with full statistics and the marker; the incorrect rationale sentence is deleted and replaced with the sample-size statement | §The verdict domain → steps 4–5 |
 | 7 | Make each contested condition either a drop or a refusal; update the closed set and count; split the tests | **Folded in full**, and applied beyond the three named: a stated principle (broken pipeline → refuse; composition fact → drop) yields `DROP_REASONS` (6) and `REFUSAL_REASONS` (23), plus a disjointness test | §The manifest → *Drops versus refusals* |
-| 8 | Per-row judge provenance plus three mechanical refusals plus a prompt signal-blindness scan; reword S2 and defense 6 | **Folded in full**, plus source-envelope binding hashed into the receipt and a derived-not-asserted judge block. S2 and defense 6 reworded to claim only what they do; the scan's limit (naming, not paraphrase) stated | §Anti-fabrication defenses 1–3, 6; §Inherited contracts → S2 |
+| 8 | Per-row judge provenance plus three mechanical refusals plus a prompt signal-blindness scan; reword S2 and defense 6 | **Folded**, plus a derived-not-asserted judge block. **v4's envelope-binding claim was an overclaim; corrected in v5 under round-4 fix 8.** S2 and defense 6 reworded to claim only what they do; the scan's limit (naming, not paraphrase) stated | §Anti-fabrication defenses 1–3, 6; §Inherited contracts → S2 |
 | 9 | Enumerate the two artifacts; define the work-id preimage and "values-free"; fix or delete the unimplementable family-size test; enumerate this child's derivation preimage | **Folded in full.** Both artifacts get exact key sets; `work_ids_sha256` is over **distinct source works** (a stated divergence from the sibling); "values-free" is a 5-key allowlist; the family-size test is **deleted** (R6 removes multiplicity from registration); the preimage is specified as a **rule plus a mechanical coverage test** rather than a list that can drift — and v3's false "covered by `derivation_sha256`" claim is corrected against the sibling's real preimage | §Artifacts |
 | 10 | Close the floor arithmetic; record which step produced a `polarity_chance` | **Folded in full.** The floor chain is refused at registration; defaults corrected (18 → 24) with a test asserting v3's defaults would now refuse; `verdict_step` recorded 1–6 | §Unit of analysis, §The verdict domain |
 | 11 | P2 sweep, 7 items | **All 7 folded** — see the sub-table below | various |
@@ -1427,7 +1717,7 @@ declined.
 
 | P2 item | Disposition | Folded at |
 |---|---|---|
-| Per-arm null for `class_counts` segment fields | Folded — `n_segments_per_work` and `tier_counts` are null when the arm is `subfloor`, with a test | §The manifest → `class_counts` |
+| Per-arm null for `class_counts` segment fields | Folded — `segment_count_stats` and `tier_counts` are null when the arm is `subfloor`, with a test | §The manifest → `class_counts` |
 | Range-normalize the shift floors | Folded — the numeric shift is divided by the signal's response range, unit `fraction_of_response_range`; the four v3 floor keys collapse to two; raw units retained as `value_response_units` | §Gates |
 | Replace "No domain table, deliberately" with a three-row hashing table; define `content_sha256` for whole-work and truncated rows | Folded — the classification table is published (S2a's *no domain separation* decision is unchanged); `content_sha256` defined for all four row kinds, with the truncated-row hash over the truncated text | §Hash classification |
 | Restate Arm B's claim as truncation-invariance with the shortness residue named | Folded — the claim is restated as truncation-invariance, and the composed-vs-cut residue is named as an open empirical question, not claimed | §Arm B |
@@ -1472,17 +1762,24 @@ declined.
    tests, plus a disjointness test — so a builder cannot quietly move a
    condition from the refusal set to the drop set.
 
-**Open questions for round 4.**
+**Open questions carried out of round 3.**
 
 1. **Bridge feasibility is the one genuinely open risk.** `min_bridge_works` is
    set to 8 per class rather than v3's 12, because R5's rows are over-ceiling
    works judged whole. Two sub-questions: is 8 defensible for a paired shift
-   estimate, and can a judge actually produce a whole-work response set for a
-   100,000-word novel? The `manifest` backend makes the value *representable*
-   regardless (it is precomputed), so the mechanism is sound; whether a real
-   judge can supply it is an M2 feasibility question this spec does not pretend
-   to settle. If round 4 believes it cannot, the honest move is to reopen the
-   R5-versus-option-b decision with the owner rather than to weaken the floor.
+   estimate, and can a judge actually produce a **single-pass** whole-work
+   response set for a 100,000-word novel? **v4 answered by saying the `manifest`
+   backend makes the value representable, so the mechanism is sound. That
+   sentence is deleted:** representability is not evidence, and substituting one
+   for the other is the move the firewall lens exists to catch. The honest
+   residue, after R8's `read_mode` carrier and context-bound check — M1 refuses a
+   declared chunk-merge or summarised read, and refuses a bridge work longer than
+   the declared judge context, but it **cannot verify that a single-pass read
+   actually occurred**; that is custody, and it is carried in `stated_limits` as
+   `bridge_read_unverified`. If no judge can supply a single-pass over-ceiling
+   read, Arm A has no control, and the honest move is to reopen the
+   R5-versus-option-b decision with the owner rather than to weaken the floor or
+   relax `read_mode`.
 2. **Cross-work degenerate tripwire false positives.** Tier 2 refuses on three
    byte-identical 33-signal vectors spanning at least two works. For sub-floor
    texts with saturated responses this is more plausible than for novels. Is a
@@ -1500,14 +1797,132 @@ declined.
    exactly the opening-grounding and character-introduction family. Head,
    random-window, or both with a registered split?
 
-**Convergence assessment.** v4 folds every round-3 fix and every P2 item, and
-the three constructs the round-3 verdict called "each one defect from sound" —
-the length-band gate, the bridge, and `CLA-79-A1` — are now specified at the
-data layer with registration-time consistency checks, named producers, and
-behavioural rather than string-presence tests. What remains open is, with one
-exception, **parameter choice rather than mechanism**: numbers to register
-(questions 2, 4, 5) and a build-time verification to perform (question 3). The
-exception is question 1, a genuine feasibility risk inherited from R5, which is
-an owner and empirical question rather than a spec defect. **Round 4 should
-therefore be the last review round**, and its job is to confirm mechanism
-closure and rule on question 1's fallback rather than to re-open the design.
+## Fold record (v4 → v5)
+
+Per-fix disposition of the round-4 verdict (P1 × 8, P2 × 12; **14** prioritized
+fixes — the coordinator's brief said 12, which was its own truncation; the hub
+document lists 14 and all 14 are folded). Rulings R7 (loop cap) and R8 (bridge
+mechanics). Every fix is folded; none is declined.
+
+| # | Fix (abbreviated) | Disposition | Folded at |
+|---|---|---|---|
+| 1 | Rename the colliding receipt keys; do **not** carve a Rule-2 exemption; add a spec-level self-check | **Folded, delete-branch.** `n_segments_per_work` → `segment_count_stats`, `min_segments_per_work` → `min_segment_count_by_work` at all 7 sites (manifest, floors table, Rule 3 allowlist, tests). Rule 2 is declared closed with no exemption; `test_mandated_receipt_schema_passes_its_own_guard` added | §Receipt guards, §The manifest, §Gates |
+| 2 | Walk every "refuses" sentence, assign one reason id each, derive the count, rename the closure test | **Folded in full.** 4 ids added (`unregistered_prompt_family`, `bridge_row_word_count_mismatch`, plus R8's two), 3 **stated collapses** (`segmenter_binding_violation`, `manifest_schema_violation`, `malformed_artifact`); count derived from the table (28); test renamed; `test_every_refuses_sentence_maps_to_exactly_one_reason_id` added | §Drops versus refusals |
+| 3 | Resolve the unusable indicator threshold; collapse the floors / `per_response_class` dual carrier | **Folded, delete-branch per R7.** `indicator_effect_margin` and `auc_null` **deleted**; the indicator null is fixed at 0.5 by the pinned precedent; `per_response_class` **deleted** and `floors` is the single home (17 keys, count restated); `test_indicator_margin_keys_do_not_exist` added | §Artifacts, §Gates, §Precedence step 6 |
+| 4 | Define the Arm A bridge estimand per response class; dichotomize the indicator segment side; add the named negative test | **Folded in full.** A per-arm, per-class operand table; indicators dichotomized by a **majority rule with ties to 0** (a true zero null, so within-work heterogeneity cannot manufacture a confound); `test_heterogeneous_no_shift_corpus_is_not_fragment_confounded` added | §Gates → bridge estimand |
+| 5 | Mechanical carrier for the bridge read: `read_mode`, judge context bound, receipt propagation; delete "the mechanism is sound" | **Folded in full (R8).** `read_mode` on bridge rows, closed domain of 3, only `single_pass_whole_text` accepted; context bound declared in the registration's `judge` block with a registration-time band check and an evaluate-time row check; `bridge_read_mode` in the receipt; the rhetorical sentence deleted and the residue stated | §The manifest, §Length bands rule 6, §Receipt, §Open questions |
+| 6 | Make the bridge gate obey the spec's own interval rule; record 12→8 as a claim-strength reduction | **Folded in full (R8).** Step 3 becomes point-estimate-then-one-sided-equivalence with `bridge_inconclusive`, a 9th domain member that blocks `polarity_matches`/`polarity_inverted` as `insufficient_support` does; `bridge.ci_upper` added; **12→8 is recorded below as a claim-strength reduction** | §Precedence step 3, §Receipt |
+| 7 | Cross-spec precedence paragraph in both 78 and 79 | **Folded in full.** Why the two fragment-vs-whole controls differ in scale and normalization, and the joint rule: `fragment_artifact_confounded` **or** `bridge_inconclusive` suppresses the signal in any joint novel-scale claim regardless of 79's `validated_aggregatable`; the converse does not hold. Reproduced in spec 79's amendment table | §Consumer note, spec 79 §Amendment record |
+| 8 | Fix the envelope-binding claim — re-hash, or downgrade to operator-asserted | **Folded, downgrade-branch per R7** (the envelopes are not in hand at register time, so a re-hash would need a new manifest path field, new I/O, and a new refusal). Defense 2 and S2 now say *operator-asserted digest, no envelope opened in M1*; envelope existence moved into the residue and `stated_limits`; the v4 fold-record row corrected | §Anti-fabrication defense 2, §Inherited contracts S2 |
+| 9 | State the covered-range population; add the exclusion test | **Folded, minimal branch.** Both ranges are computed over `role: primary` rows only, with the reason (including bridge rows would widen the license from segment to novel scale); **no separate bridge block added**, per R7; `test_covered_length_range_excludes_bridge_rows` | §Receipt |
+| 10 | Correct the false verified fact; state `REG-AUDIT-B1`'s boundary against the existing warning channel | **Folded in full.** The row now reads "over-ceiling targets run with **no warning and no caveat**" against `narrative_decision_audit.py:559`; the extension is declared a **deliberately separate channel** that does not extend `register_warnings_for`, with unflagged runs staying silent and a test pinning it | §Verified repo facts, §REG-AUDIT-B1 |
+| 11 | Resolve dead precedence step 4 | **Folded, retain-and-scope branch** (see tensions below). Unreachability is stated as by-design; step 4 is retained as defence-in-depth; **its tests become direct unit calls** on the verdict function with a spec sentence that no CLI-level fixture exists by design | §Precedence step 4 |
+| 12 | Rescope `test_bridge_rows_absent_from_class_statistics` | **Folded in full.** The assertion target is named: byte-identity of the **pre-precedence class-statistic inputs and outputs** (per-work vectors, `support`, raw AUC / *g* / SE / interval), explicitly allowing the `bridge` block and the verdict to change | §Arm A → The bridge |
+| 13 | Reconcile the import discipline and complete the touched-files list | **Folded in full.** `narrative_polarity_audit.py` and its test module added to the list; both `__all__` promotions excepted in Out-of-scope **by name**; the rule restated as *`__all__`-declared where the module declares one, never underscore-prefixed*; `SignalSpec` **dropped** (subtraction — `SIGNALS` yields the instances), `DEGENERATE_VECTOR_MIN` **promoted** symmetrically; the AST pin strengthened to check declaration, not just underscores | §Inherited contracts, §Contract surfaces, §Out of scope |
+| 14 | Smaller closures (7 items) | **All folded** — see the sub-table | various |
+
+**Fix 14 detail.**
+
+| Item | Disposition | Folded at |
+|---|---|---|
+| Trigger `separation_saturated` on estimator degeneracy; forbid zero-width CIs | Folded — the marker's trigger is restated in estimator terms (one class constant, or perfect separation); perfect separation now exits at step 5 because its interval has zero width, so **no zero-width `ci` is ever emitted**, while round-3 fix 6's one-class-saturated routing to step 6 is preserved | §Precedence steps 5–6 |
+| `stated_limits` closed set in the receipt + findings-document test | Folded — 6 ids, enumerated, with `test_findings_document_reproduces_every_stated_limit` | §Receipt |
+| Bridge block's pre-step-3 null rule | Folded — `value`, `ci_upper`, and `threshold` are null exactly when the chain exited at or before step 2; step 3 never compares against null | §Gates |
+| Arm B statistic name | Folded — `paired_absolute_shift`, the same name in both arms, with the Arm B row of the operand table stating that no dichotomization is needed | §Gates |
+| `value_response_units` for indicators | Folded — **null**; indicators have no response-unit scale | §Gates, §Receipt |
+| Enumerate the renamed segment-count key set | Folded — `segment_count_stats` is exactly `{min, max, median}` | §The manifest |
+| Restate the convergence paragraph as owner intention | Folded — retitled *Author's completion note*, with the explicit statement that **no reviewer's remit or severity may be bounded by the artifact under review**; the terminal-round decision is attributed to owner ruling R7, not argued for by the document | §Author's completion note |
+
+**Claim-strength reduction, recorded as R8 requires.** v4 lowered
+`min_bridge_works` from 12 to 8 and filed it as a parameter default. **It is
+not.** It is a reduction in the strength of every Arm A claim: the bridge shift
+is estimated from fewer paired works, so its interval is wider and more signals
+will land in `bridge_inconclusive` rather than passing the control. v5 accepts
+the reduction because R5's bridge corpus is genuinely scarce, and pairs it with
+fix 6's interval gate so the weakening is **visible in the verdict** instead of
+being absorbed silently by a point estimate.
+
+**Branches that genuinely conflicted with R7 or R8.**
+
+1. **Fix 11 (dead step 4) — the delete branch was refused.** R7 prefers
+   deletion, and deleting step 4 would remove a precedence step and three tests.
+   But step 4 is the only consumer of `min_class_n`, and `min_class_n` is the
+   only consumer of `class_n_margin` and of the floor-arithmetic registration
+   check. Deleting step 4 therefore cascades into deleting two floors and the
+   arithmetic check — **undoing round-3 fix 10, which the owner folded one round
+   ago**, and leaving `min_signal_support` with no lower anchor. The retain-and-
+   scope branch adds **zero** surface (one sentence plus three test-scope
+   changes) and keeps the precedent's guard as defence-in-depth. Recorded as a
+   deliberate departure from R7's default preference, on the ground that the
+   deleting branch is not local.
+2. **Fix 6 versus R7's "no new mechanism."** An interval on the bridge shift, a
+   `ci_upper` field, and a 9th verdict member are all new machinery in a round
+   whose discipline is subtraction. R8 names them explicitly, so R8 governs; the
+   addition is held to exactly what R8 names (one bound, one field, one member
+   serving **both** arms rather than an arm-parallel pair).
+3. **Fix 3's delete branch versus R8.** No conflict: the deleted keys are
+   indicator-side thresholds and R8 concerns the bridge gate. The two are
+   independent, so R7's default preference stands unmodified.
+4. **Fix 8's downgrade versus the firewall.** Downgrading is the honest
+   description of what M1 does, but it *weakens a stated defense*. It is
+   acceptable only because the weakening is made visible: the claim moves into
+   `stated_limits` as `envelope_digest_operator_asserted`, where a reader meets
+   it rather than having to infer it from silence.
+
+**Net effect on the document.** *Deleted:* two registered threshold keys
+(`indicator_effect_margin`, `auc_null`), one thresholds-artifact block
+(`per_response_class`), one import-table entry (`SignalSpec`), three refusal ids
+folded into stated collapses, one rhetorical sentence in open question 1, and
+v4's reviewer-bounding convergence claim. *Added:* one verdict member
+(`bridge_inconclusive`), one manifest field (`read_mode`), one registration key
+(`judge.context_bound_words`), two receipt keys (`bridge_read_mode`,
+`stated_limits`), one bridge field (`ci_upper`), and four refusal ids.
+
+**The document grew: 1,513 → 1,928 lines, +415.** Reported rather than massaged.
+The deleted objects are small; the folds that dominate the delta are prose
+reconciliations a fix demanded and none of them is new machinery — the refusal
+walk (fix 2, +28 table rows and a stated principle), the bridge estimand table
+(fix 4), the cross-spec precedence paragraph (fix 7), the `stated_limits`
+enumeration (fix 14), and the per-fix record itself (~120 lines of the total).
+The count that matters for R7 is the mechanism count, which is roughly flat
+(+6 objects, −6 objects), while the *unmechanized* surface — registered values
+nothing reads, refusals with no id, claims with no carrier — is strictly
+smaller than v4's.
+
+**Open questions for round 5.**
+
+1. **Bridge feasibility remains the one empirical risk**, now narrowed by R8:
+   `read_mode` refuses a declared chunk-merge or summarised read and the context
+   bound refuses an unreadable corpus, but neither proves a single-pass read
+   occurred. If no judge can supply one at over-ceiling length, Arm A has no
+   control — an owner decision (reopen R5 versus option-b), not a spec edit.
+2. **`min_bridge_works` = 8 with an interval gate.** With fix 6 in place, is 8
+   still defensible, or does the equivalence bound at n = 8 land nearly every
+   signal in `bridge_inconclusive`, making Arm A vacuous in a different way?
+   This is arithmetic the build can answer on synthetic fixtures before any
+   judged run.
+3. **Cross-work degenerate tripwire false positives** for sub-floor texts with
+   saturated responses — Arm A only, or both arms?
+4. **`REG-AUDIT-B1`'s contract-fixture blast radius** — still a build-time
+   verification, unchanged from round 4.
+5. **Arm B truncation draw** — head-only, random-window, or a registered split.
+
+
+**Author's completion note.** v5 folds every round-4 fix and every P2 item. The
+three constructs round 4 named — the receipt guard's collision with its own
+mandated schema, the refusal set's non-totality, and the unusable indicator
+threshold — are resolved by renaming, enumeration, and deletion respectively;
+the bridge gains R8's `read_mode` carrier, context bound, and interval-based
+gate; and the indicator bridge estimand now has a true zero null.
+
+**This paragraph bounds nothing about the next review** (fix 14). v4's version
+asserted that a particular round "should be the last review round" and told the
+reviewer what its job was. That was out of place: **no reviewer's remit or
+severity may be bounded by the artifact under review.** The terminal-round
+decision is the owner's, taken in ruling R7 before this fold, and it is recorded
+here as owner intention rather than as an author's argument. What this document
+can honestly say about its own state is only this: the author knows of no
+remaining mechanism-level defect, and believes the residue is parameter choice
+(open questions 2, 4, 5), one build-time verification (question 3), and one
+feasibility risk that is empirical rather than editorial (question 1). A
+reviewer is free to disagree with any of that.
