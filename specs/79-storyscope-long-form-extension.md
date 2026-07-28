@@ -8,9 +8,12 @@
 
 - **Status:** **AS-BUILT (M1)** — implemented 2026-07-27 on
   `feat/spec77-longform-m1` (branch name predates the renumber) (commit `858352c`; 11 files, 100 module tests,
-  full plugin suite 8,752 green). **Where this document and the code
+  full plugin suite 8,752 green), then **revised 2026-07-27 under external
+  review** (3 P1 / 6 P2 / 3 P3 findings folded; 155 module tests, full plugin
+  suite 8,881 green). **Where this document and the code
   disagree, the code and its tests govern**; §"As built" records every
-  divergence. M2 (receipts, thresholds, licensing) remains unbuilt.
+  divergence, and §"As built — review round" records what the review changed.
+  M2 (receipts, thresholds, licensing) remains unbuilt.
 - **Tier:** near-term — jointly with [spec 78](78-storyscope-polarity-extension.md)
   discharges the Dickens umbrella's StoryScope acceptance item
 - **GPU required:** no
@@ -123,6 +126,13 @@ is declared and that values differ across segments; it cannot prove a model or
 human actually read each segment.
 
 ### S2a — hashing convention
+
+> **Superseded by the code (2026-07-27).** This section's rule — plain
+> SHA-256, no domain separation, "inventing one would create a vocabulary with
+> no consumer" — was wrong, and the built code does the opposite. See
+> §"As built — review round", entry **H**. What follows is retained because
+> the reasoning it got wrong is instructive; **spec 78 must adopt the built
+> rule, not this paragraph.**
 
 Stated once so no field's derivation is left to inference. Every `*_sha256` in
 specs 78 and 79 is an **ordinary SHA-256 over exact file bytes** — no domain
@@ -600,6 +610,169 @@ decided differently from the drafts. Each entry is tested.
 `min_setec_version` and `json_delivery` so M1 cannot promote to a live
 consumer surface; golden, claim-license drop-in, changelog fragment, and
 regenerated calibration-readiness doc all landed with it.
+
+## As built — review round (2026-07-27)
+
+External review returned NEEDS-REWORK on the section above with a single
+through-line: the calibration harness could mint an apparently-validating
+receipt out of mock-derived data, falsified achieved lengths, and a study
+below the mandated regime, while the scoring cache could emit stale or forged
+per-segment evidence. Every entry below is a change to the code, and every one
+carries a negative test that reproduces the reviewer's construction.
+
+**A. Judge provenance is derived from the manifest, not copied from the
+registration.** Manifest segments carried no judge identity at all, and
+`--evaluate` wrote `"judge": dict(registration["judge"])` — the operator's own
+pre-registration typing — straight into the receipt. So a study judged by the
+deterministic mock could be registered under a concrete `manifest` identity
+and emerge inside a licensing receipt. As built: every manifest row **and**
+every segment carries a full `judge_identity`, each validated by the same
+function that guards the registration (concrete strings, no `mock` kind *or*
+`mock` model, no `host-resolved`), the corpus must be homogeneous, and the
+receipt's `judge` block is that derived identity — cross-checked against the
+registration and refusing on disagreement.
+
+**B. Degenerate manifests refuse.** The reviewer's construction paired the
+laundered identity with three *constant* segments per work, so tied prevalence
+scored AUC 0.5 and "passed" a 0.5 threshold. As built, the harness applies the
+orchestrator's own tripwire to the study corpus: ≥3 byte-identical per-segment
+signal maps inside one work refuse. (Spec §S2 said the tripwire "applies to
+every kind"; the first build scoped it to scoring runs only — that narrowing
+is now partly undone, on the study side.)
+
+**C. Achieved segment lengths are recomputed from bound content.** The house
+rule is that a gate recomputes from artifacts and never trusts a recorded
+field, and `_segment_bands` read `seg["n_words"]`. Genuine 5,000-word segments
+recorded as 20,000 produced a receipt certifying a 20,000-word band nothing
+had exercised — and that band is precisely what will later license or refuse a
+novel. **Branch taken, and why:** the alternative honest branch was refusal —
+"bands cannot be certified from asserted integers" — which would have deleted
+the receipt's length arm outright. Instead the manifest format now **carries
+the text**: each segment has a required `content` field, `content_sha256` and
+`n_words` are recomputed from it with the segmenter's own `content_digest` and
+`\S+` counter, and the recorded values are cross-checked and refuse on
+disagreement. This is a manifest-format break (M1 is unreleased, so no
+migration), and it is the branch that keeps the band a measurement rather than
+an assertion.
+
+**D. The licensed regime is enforced, and the offending fixtures are gone.**
+`load_thresholds` accepted any floor `≥ 1`, `_segment_bands` imposed no
+segment minimum, and the committed tests minted `validated_aggregatable`
+receipts at floors 3/3/1 with four works and two segments each — against the
+mandated 24/18/6 and `validated_segment_count_range.min ≥ 3`. As built, the
+spec floors are refusals at registration and evaluation alike, a work with
+fewer than three segments refuses, and the test module no longer contains a
+sub-licensed thresholds fixture at all: the regime **is** the fixture, and the
+statistics are arranged to be hand-checkable inside it (rho exactly 1.0, MAD
+exactly ⅓, AUC exactly 1.0 over 24 works × 3 segments).
+
+**E. Two thresholds are floored at the point they stop discriminating.** New,
+beyond the spec text: `auc_min` must exceed 0.5 and `spearman_min` must exceed
+0.0. A coin-flip AUC threshold licenses aggregation on evidence of nothing,
+and it was the operator input in the reviewer's construction.
+`mad_max_response_units` is **not** bounded — its scale depends on the
+feature's response options, so the honest place to fix it is the
+pre-registered artifact. That asymmetry is deliberate and is the one threshold
+this script cannot sanity-bound.
+
+**F. Nothing is exempt from receipt verification.** `verify_receipt` rebuilt
+the expected receipt from the *receipt's own* `date` and then exempted `date`,
+`registration_path`, and `manifest_path` from comparison, so a pre- or
+post-dated receipt re-derived perfectly against its own lie and a receipt
+could name trusted-looking artifacts while being checked against others. As
+built: the date is a **caller argument** (`--verify` now requires `--date`),
+all sixteen keys are compared, and `date`, both path strings, and both
+validated bands are inside the derivation preimage. Consequence, stated:
+relocating an artifact now requires re-issuing the receipt rather than
+relabelling one — which is what §S3's "bound … by path and hash" always
+meant.
+
+**G. The resume cache re-verifies on every load.** `_cache_load` accepted any
+dict containing `"signals"` and emitted it with no re-validation, and the key
+did not bind the judge input — so editing a manifest response while keeping
+the segment content and declared identity served the previous run's answers,
+and hand-editing `signals`/`values_vector` in the (predictable) cache file put
+a forged vector in charge of the degenerate-judge tripwire. As built: the key
+binds the framed digest of the resolved manifest entry; each entry stores a
+`binding` block that must equal the live binding; `signals` is re-validated for
+exact key set, exact leaf types, and closed feature vocabularies; and
+`values_vector` must re-derive from `signals`. A present-but-unverifiable entry
+**refuses** (`bad_input`) rather than silently recomputing — a tampered cache
+should not be able to disappear.
+
+**H. Framed digests replace raw SHA-256 everywhere (supersedes §S2a).** The
+same `hashlib.sha256(payload)` was reused across segment content, boundary
+offsets, segmenter parameters, work-id lists, derivations, and three separate
+files. The collision is not hypothetical: the one-segment boundary-offsets
+payload `[[0,7]]` is byte-identical to a seven-character source text
+`[[0,7]]`, so a segment's content hash and its segmentation's boundary hash
+were the *same digest under two schemas*. As built, every `*_sha256` in this
+family is `SHA256(domain_ascii_LF || uint64_be(len) || payload)` on the
+`register_sweep.framed_sha256` house idiom, with **twelve frozen domains, one
+per payload schema**, registered in one place
+(`narrative_longform_segment.FROZEN_DOMAINS`) so uniqueness is auditable, and
+an unregistered domain refuses:
+
+```
+setec-narrative-longform-segment-content-v1     setec-narrative-longform-thresholds-file-v1
+setec-narrative-longform-boundary-offsets-v1    setec-narrative-longform-registration-file-v1
+setec-narrative-longform-segmenter-params-v1    setec-narrative-longform-manifest-file-v1
+setec-narrative-longform-cache-key-v1           setec-narrative-longform-work-ids-v1
+setec-narrative-longform-base-audit-source-v1   setec-narrative-longform-signal-id-set-v1
+setec-narrative-longform-judge-input-v1         setec-narrative-longform-derivation-v1
+```
+
+This changes **every recorded hash** in the family, including manifest keys.
+M1 is unreleased and no receipt exists, so nothing is migrated; the format
+break is recorded here rather than versioned.
+
+**I. `params_sha256` binds regex flags.** It bound each tier's `p.pattern` and
+not its `p.flags`, while the chapter tier depends on `re.M | re.I`:
+recompiling the identical pattern text without `re.I` silently stopped
+`chapter i.` being a boundary and left the receipt-bound segmenter identity
+unchanged. Patterns are now bound as `(pattern, flags)` pairs — the word
+counter too.
+
+**J. A chapter keyword alone is no longer a heading.** `(?:CHAPTER|BOOK|PART|
+STAVE)\b.*$` accepted any keyword-leading line, so a novel's own sentence —
+`CHAPTER headings are conventions…` — opened a chapter. As built the tier
+requires **keyword + numeral**, per this spec's own §Segmentation, and the
+line must then end or turn into a title on punctuation (`BOOK I read
+yesterday` is a sentence; `BOOK I.` and `STAVE I: MARLEY` are headings).
+**Divergence, listed:** "numeral" is read to include a closed list of English
+number words and ordinals (`STAVE ONE`, `BOOK THE FIRST`), because the
+spelled forms are the dominant nineteenth-century convention and the strict
+reading would refuse *A Christmas Carol*. The reviewer's counter-example is
+still refused: `headings` is not in the list. The mandated 100,000-word
+`BOOK`-descent fixture — absent from the first build — now exists and asserts
+descent below the chapter tier.
+
+**K. Envelope fields the first build omitted.** `per_segment` entries now
+carry the spec-mandated `reduction_licensed: false`, and
+`validation_binding.match` carries **all ten** of §S3's enumerated
+required-match fields each set to `absent`, rather than `{}` — an empty match
+object is indistinguishable from one that lost a field. `per_segment` also
+gains `validation_warnings`, for the next entry.
+
+**L. The claim license describes the cleaning it performs.** It promised the
+judge's response "exactly as returned" while emitting
+`narrative_judge.validate_values` output, which drops out-of-vocabulary
+multi-select options and nulls out-of-vocabulary scalars — `["valid","bogus"]`
+emitted as `["valid"]` under an "exact raw" license. **Branch taken, and
+why:** emitting raw *and* cleaned would double the payload and put
+schema-invalid values back into an evidentiary envelope, so the license text
+now describes the cleaning precisely instead — and, so that the description is
+checkable rather than merely accurate, each segment carries the base judge's
+`validation_warnings` verbatim, which name every dropped option.
+
+**M. Judge-identity fields are exact-typed.** `judge_identity.model: []` raised
+an uncaught `TypeError` while building the identity set and `model: 7` escaped
+as a `WorkLevelReductionError` from the emit guard. Each field is now a
+non-empty string or null, and anything else is a closed `bad_input` refusal.
+
+**N. Spec renumbering.** The emitted claim license said "spec 77" and cited a
+nonexistent `specs/77-storyscope-long-form-extension.md`; all three modules
+now say 79.
 
 ## Consumer note
 

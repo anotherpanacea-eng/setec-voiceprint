@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """narrative_longform_agreement.py — whole-vs-segmented agreement study
-for the narrative-decision audit's long-form extension (spec 77, M1).
+for the narrative-decision audit's long-form extension (spec 79, M1).
 
 Purpose
 -------
@@ -17,7 +17,7 @@ Everything here is pure Python (stdlib only), deterministic, and
 clock-free: the only date that ever appears in an artifact comes from
 the required ``--date`` flag.
 
-Signal identity (spec 77 S1, implemented locally)
+Signal identity (spec 79 S1, implemented locally)
 -------------------------------------------------
 
 ::
@@ -41,10 +41,37 @@ Manifest format (JSONL, one row per work)
 ::
 
     {"work_id": str, "n_words": int,
+     "judge_identity": {"kind": str, "model": str,
+                        "model_revision": str, "prompt_version": str},
      "whole_work": {signal_id: {"value": ..., "available": bool}},
-     "segments": [{"segment_id": str, "content_sha256": str,
-                   "n_words": int,
+     "segments": [{"segment_id": str, "content": str,
+                   "content_sha256": str, "n_words": int,
+                   "judge_identity": {...},
                    "signals": {signal_id: {"value": ..., "available": bool}}}]}
+
+**Segments carry their text.** ``content`` is the exact segment string the
+judge was shown. ``content_sha256`` and ``n_words`` are RECOMPUTED from it —
+by the segmenter's own ``content_digest`` and ``\\S+`` counter, so the manifest
+and a live run measure in the same units — and the row's recorded values are
+compared to the recomputation and refuse on any disagreement. Nothing the
+receipt asserts about achieved segment length rests on an operator-typed
+integer: ``validated_segment_words`` is the band that will later license or
+refuse a live novel, and a band certified from asserted integers certifies
+nothing.
+
+**Judge provenance is per work and per segment, and it is derived.** Every
+row and every segment declares a full ``judge_identity``; each is validated
+exactly as the registration's is (concrete strings, no ``mock``, no
+``host-resolved``), the corpus must be homogeneous, and the receipt's
+``judge`` block is that DERIVED identity — cross-checked against the
+registration rather than copied from it. Without this, a study judged by the
+deterministic mock could be registered under a concrete manifest identity and
+laundered into a licensing receipt.
+
+**Degenerate manifests refuse.** If three or more of a work's segments carry
+byte-identical signal maps, the run refuses: that is the signature of a
+text-blind judge, and it is the same >= 3 tripwire the orchestrator applies to
+scoring runs.
 
 Values are RAW judge responses: Likert strings ("4"), option strings
 ("resolved_internally"), or lists of option strings for multi-select.
@@ -73,10 +100,22 @@ Thresholds artifact (schema ``narrative-longform-thresholds/1``)
 Direction is explicit in the key names: ``*_min`` means
 higher-is-better (value >= threshold passes), ``*_max`` means
 lower-is-better (value <= threshold passes). A ``mean`` signal passes
-only if BOTH statistics pass. Real values are operator-frozen later;
-tests carry a documented example.
+only if BOTH statistics pass.
 
-Two-step pre-registration (spec 77 S4)
+The floors are NOT operator-tunable downward. Spec 79 fixes the licensed
+regime at >= 24 works, >= 18 works of per-signal support, and >= 6 works per
+indicator class, and ``load_thresholds`` refuses anything weaker at
+registration and at evaluation alike. A study run under 3/3/1 is not a small
+study; it is a different study, and a receipt minted from one would license
+work-level aggregation on evidence spec 79 never authorised. Two per-operator
+thresholds are likewise floored at the point where they stop discriminating:
+``auc_min`` must exceed 0.5 (a coin flip licenses nothing) and
+``spearman_min`` must exceed 0.0. ``mad_max_response_units`` has no ceiling —
+its scale depends on the feature's response options, so the honest place to
+fix it is the pre-registered artifact, and it is the one threshold this
+script cannot sanity-bound for you.
+
+Two-step pre-registration (spec 79 S4)
 --------------------------------------
 
 ``--register`` writes a ``narrative-longform-registration/1`` record
@@ -94,7 +133,8 @@ The registration manifest must be VALUES-FREE: ``--register`` refuses
 if any row carries a non-empty ``whole_work`` or any segment with
 non-empty ``signals``. ``mock`` judges and non-concrete identities
 (empty, null, or the ``host-resolved`` sentinel) refuse at registration
-AND evaluation, always.
+AND evaluation, always — at evaluation against the identity DERIVED from the
+manifest, not the one the operator typed at registration.
 
 ``--evaluate`` refuses without a registration whose
 ``thresholds_sha256`` AND ``work_ids_sha256`` both match the live
@@ -167,8 +207,10 @@ derivation_sha256 — exact construction
 ::
 
     preimage = [
+        date,                                     # the receipt's own date
         registration_sha256,                       # "sha256:..." string
         manifest_sha256,                          # "sha256:..." string
+        registration_path, manifest_path,         # exact argument strings
         [[signal_id, support], ...],              # all 33, sorted by id
         [[signal_id, name, round(value, 10),
           round(threshold, 10), direction], ...], # every recorded stat,
@@ -177,31 +219,51 @@ derivation_sha256 — exact construction
          "segment_target_words": ...},            #   exactly these keys
         {"kind": ..., "model": ...,               # judge identity,
          "model_revision": ..., "prompt_version": ...},
+        {"min": ..., "max": ...},                 # segment count range
+        {"min": ..., "max": ..., "median": ...},  # achieved segment words
     ]
-    derivation_sha256 = (
-        "sha256:" + sha256(canonical_json(preimage)).hexdigest())
+    derivation_sha256 = framed_digest(DOMAIN_DERIVATION,
+                                      canonical_json(preimage))
 
 where ``canonical_json(x)`` is ``json.dumps(x, sort_keys=True,
 separators=(",", ":"), ensure_ascii=False).encode("utf-8")``. Floats
 are rounded to 10 decimal places in the preimage (and stored rounded in
-the receipt) so the digest is byte-stable.
+the receipt) so the digest is byte-stable. ``date`` and the two path fields
+are IN the preimage: spec 79 S3 says the receipt is bound to its registration
+and manifest "by path and hash", and a field outside the preimage is a field
+an editor can rewrite for free.
 
-Hashing convention (spec 77 S2a): every ``*_sha256`` is an ordinary
-SHA-256 with a ``"sha256:"`` prefix. ``thresholds_sha256``,
-``registration_sha256``, and ``manifest_sha256`` are over exact FILE
-bytes (chunked, mirroring ``calibrate_thresholds._manifest_content_hash``);
-``derivation_sha256``, ``signal_id_set_sha256``, and
-``work_ids_sha256`` are over canonical JSON.
+Hashing convention: every ``*_sha256`` is a FRAMED digest,
+``SHA256(domain_ascii_LF || uint64_be(len) || payload)``, with one frozen
+domain per payload schema — the registry lives in
+``narrative_longform_segment`` and covers this script too. A raw
+``sha256(payload)`` is emitted nowhere. The reason is concrete: raw digests
+were reused across content bytes, boundary offsets, parameters, work-id
+lists, derivations, and three different files, and the one-segment offsets
+payload ``[[0,7]]`` is byte-identical to a seven-character source text
+``[[0,7]]`` — the same digest, two schemas, no way to tell them apart.
+``thresholds_sha256``, ``registration_sha256``, and ``manifest_sha256`` frame
+exact FILE bytes (streamed); ``derivation_sha256``, ``signal_id_set_sha256``,
+``work_ids_sha256``, and each segment's ``content_sha256`` frame canonical
+JSON or exact content bytes under their own domains.
 
 Verification
 ------------
 
 ``verify_receipt(receipt_path, thresholds_path, registration_path,
-manifest_path)`` RE-DERIVES the verdicts from the manifest + thresholds
-and the derivation_sha256 from the artifacts, and refuses on any
+manifest_path, date)`` RE-DERIVES the verdicts from the manifest +
+thresholds and the derivation_sha256 from the artifacts, and refuses on any
 mismatch. A hand-edited "validated_aggregatable with Spearman 0.02"
 receipt is therefore detectable: the verifier never trusts the
 receipt's verdict strings.
+
+**No field is exempt from comparison.** The date is supplied by the CALLER
+and must equal the receipt's; rebuilding the expected receipt from the
+receipt's own date made pre- and post-dating free, because the tampered value
+was fed straight back into the comparison it was supposed to fail. The two
+path fields are compared as recorded, which is what "bound by path" means:
+relocating the artifacts requires re-issuing the receipt rather than
+re-labelling one.
 
 CLI (flat flags)
 ----------------
@@ -219,9 +281,9 @@ CLI (flat flags)
   ``--judge-prompt-version``).
 * ``--evaluate``: requires ``--registration`` and ``--date``; writes
   the receipt to ``--out``.
-* ``--verify``: requires ``--registration``; READS the receipt at
-  ``--out`` and re-derives everything. Exit 0 iff the receipt is
-  reproducible from the artifacts.
+* ``--verify``: requires ``--registration`` and ``--date``; READS the
+  receipt at ``--out`` and re-derives everything. Exit 0 iff the receipt is
+  reproducible from the artifacts under the date the caller asserts.
 
 Refusals exit 2 with a one-line reason on stderr.
 """
@@ -230,7 +292,6 @@ from __future__ import annotations
 
 import argparse
 import datetime as _datetime
-import hashlib
 import json
 import math
 import sys
@@ -244,9 +305,16 @@ PARENT_DIR = SCRIPT_DIR.parent
 if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
+import narrative_longform_segment as nls  # type: ignore  # noqa: E402
 from narrative_feature_schema import (  # type: ignore  # noqa: E402
     CORE_FEATURES,
 )
+
+# Signal ids are still derived locally (spec 79 S1); what IS imported is the
+# digest framing, the frozen domain registry, and the word counter — a
+# manifest's segment lengths and a live run's segment lengths must be the same
+# function of the same bytes, and two copies of a `\S+` regex are two chances
+# to drift.
 
 __all__ = [
     "CalibrationRefusal",
@@ -264,8 +332,9 @@ __all__ = [
     "SIGNAL_IDS",
     "signal_id_set_sha256",
     "canonical_json_bytes",
-    "canonical_json_sha256",
-    "file_sha256",
+    "SPEC_FLOOR_MINIMUMS",
+    "MIN_SEGMENTS_PER_WORK",
+    "DEGENERATE_SEGMENT_MIN",
     "average_ranks",
     "spearman_rho",
     "mean_absolute_deviation",
@@ -276,6 +345,7 @@ __all__ = [
     "load_thresholds",
     "load_registration",
     "load_manifest_rows",
+    "derive_manifest_judge",
     "work_ids_sha256_for_rows",
     "build_registration",
     "build_receipt",
@@ -309,6 +379,29 @@ OPERATOR_UNITS = {
 # The sentinel judge_backends.judge_identity_is_concrete() rejects.
 _NON_CONCRETE_SENTINEL = "host-resolved"
 
+# The licensed calibration regime (spec 79, "Calibration script" and
+# "Segmentation"). These are FLOORS ON THE FLOORS: a thresholds artifact may
+# demand more evidence, never less.
+SPEC_FLOOR_MINIMUMS: dict[str, int] = {
+    "min_works": 24,
+    "min_signal_support": 18,
+    "min_class_support": 6,
+}
+
+# "Aggregates require >= 3 contributing segments", so every work in the study
+# must actually have been segmented into at least three.
+MIN_SEGMENTS_PER_WORK = 3
+
+# >= this many byte-identical per-signal value maps inside one work is the
+# text-blind-judge signature; mirrors the orchestrator's tripwire.
+DEGENERATE_SEGMENT_MIN = 3
+
+# Below these a threshold stops discriminating: AUC 0.5 is a coin flip and
+# Spearman 0.0 is no relationship, so either would license aggregation on
+# evidence of nothing.
+MIN_AUC_THRESHOLD_EXCLUSIVE = 0.5
+MIN_SPEARMAN_THRESHOLD_EXCLUSIVE = 0.0
+
 _RECEIPT_KEYS = frozenset({
     "schema_version", "date", "arm", "signal_id_set_sha256",
     "thresholds_sha256", "registration_sha256", "derivation_sha256",
@@ -330,7 +423,7 @@ class CalibrationRefusal(Exception):
     """Raised on any refusal; the CLI maps it to exit code 2."""
 
 
-# ---------- the frozen operator table (spec 77, duplicated locally) --
+# ---------- the frozen operator table (spec 79, duplicated locally) --
 #
 # Keyed by "feature_key" (option=None signals) or "feature_key.option"
 # (option-bearing signals). The import-time self-check below asserts
@@ -405,7 +498,7 @@ class SignalSpec:
 
 
 def _build_registry() -> dict[str, SignalSpec]:
-    """Derive signal ids locally (spec 77 S1) and join the frozen
+    """Derive signal ids locally (spec 79 S1) and join the frozen
     operator table. Raises at import on any drift between the table
     and the schema."""
     registry: dict[str, SignalSpec] = {}
@@ -481,30 +574,22 @@ SIGNAL_IDS: tuple[str, ...] = tuple(sorted(SIGNALS))
 
 # ---------- hashing --------------------------------------------------
 
-def canonical_json_bytes(obj: Any) -> bytes:
-    """Canonical JSON: sorted keys, no whitespace, raw unicode."""
-    return json.dumps(
-        obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
-    ).encode("utf-8")
+canonical_json_bytes = nls.canonical_json_bytes
 
 
-def canonical_json_sha256(obj: Any) -> str:
-    return "sha256:" + hashlib.sha256(canonical_json_bytes(obj)).hexdigest()
-
-
-def file_sha256(path: Path) -> str:
-    """Chunked SHA-256 over exact file bytes, "sha256:"-prefixed —
-    the ``calibrate_thresholds._manifest_content_hash`` idiom."""
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(64 * 1024), b""):
-            h.update(chunk)
-    return f"sha256:{h.hexdigest()}"
+def _framed_file(domain: bytes, path: Path) -> str:
+    """Framed digest over exact file bytes, refusing an unreadable file."""
+    try:
+        return nls.framed_file_digest(domain, path)
+    except (OSError, nls.DomainError) as exc:
+        raise CalibrationRefusal(f"cannot hash {path}: {exc}") from exc
 
 
 def signal_id_set_sha256() -> str:
-    """Canonical-JSON hash of the sorted 33 signal ids."""
-    return canonical_json_sha256(list(SIGNAL_IDS))
+    """Framed canonical-JSON digest of the sorted 33 signal ids."""
+    return nls.framed_object_digest(
+        nls.DOMAIN_SIGNAL_ID_SET, list(SIGNAL_IDS)
+    )
 
 
 # ---------- statistics (stdlib) --------------------------------------
@@ -690,6 +775,15 @@ def load_thresholds(path: Path) -> dict[str, Any]:
                 f"thresholds.floors.{k} must be an integer >= 1; "
                 f"got {v!r}"
             )
+        minimum = SPEC_FLOOR_MINIMUMS[k]
+        if v < minimum:
+            raise CalibrationRefusal(
+                f"thresholds.floors.{k} is {v}, below the licensed spec 79 "
+                f"regime of {minimum}. Floors bind the study, not the other "
+                f"way round: a receipt minted under a weaker floor would "
+                f"license work-level aggregation on evidence the spec never "
+                f"authorised. Raise the floor or run a larger study."
+            )
     per_op = obj["per_operator"]
     if not isinstance(per_op, dict):
         raise CalibrationRefusal("thresholds.per_operator must be an object")
@@ -711,6 +805,12 @@ def load_thresholds(path: Path) -> dict[str, Any]:
         raise CalibrationRefusal(
             f"spearman_min must be in [-1, 1]; got {spearman_min}"
         )
+    if spearman_min <= MIN_SPEARMAN_THRESHOLD_EXCLUSIVE:
+        raise CalibrationRefusal(
+            f"spearman_min must be > {MIN_SPEARMAN_THRESHOLD_EXCLUSIVE}; "
+            f"got {spearman_min}. At or below zero the threshold accepts "
+            f"no relationship (or an inverse one) as agreement."
+        )
     mad_max = _require_number(
         mean_block["mad_max_response_units"], "mad_max_response_units",
     )
@@ -730,6 +830,13 @@ def load_thresholds(path: Path) -> dict[str, Any]:
     if not (0.0 <= auc_min <= 1.0):
         raise CalibrationRefusal(
             f"auc_min must be in [0, 1]; got {auc_min}"
+        )
+    if auc_min <= MIN_AUC_THRESHOLD_EXCLUSIVE:
+        raise CalibrationRefusal(
+            f"auc_min must be > {MIN_AUC_THRESHOLD_EXCLUSIVE}; got "
+            f"{auc_min}. AUC 0.5 is a coin flip, and a corpus with tied "
+            f"prevalence everywhere scores exactly 0.5 — a threshold there "
+            f"licenses aggregation on evidence of nothing."
         )
     return obj
 
@@ -766,24 +873,32 @@ def _validate_segmenter(block: Any) -> dict[str, Any]:
     return seg
 
 
-def _validate_judge(block: Any) -> dict[str, Any]:
-    judge = _validate_identity_block(block, _JUDGE_KEYS, "judge")
+def _validate_judge(block: Any, what: str = "judge") -> dict[str, Any]:
+    """Validate one judge-identity block, wherever it came from.
+
+    The SAME function guards the registration's operator-typed identity and
+    every identity carried by the manifest, so a mock judge cannot be legal
+    in the place the values actually came from and illegal only in the place
+    the operator filled in by hand.
+    """
+    judge = _validate_identity_block(block, _JUDGE_KEYS, what)
     for k in sorted(_JUDGE_KEYS):
         v = judge[k]
         if not isinstance(v, str) or not v.strip():
             raise CalibrationRefusal(
-                f"judge.{k} must be a non-empty string; got {v!r} "
-                f"(null identity refuses — spec 77 S2)"
+                f"{what}.{k} must be a non-empty string; got {v!r} "
+                f"(null identity refuses — spec 79 S2)"
             )
         if v == _NON_CONCRETE_SENTINEL:
             raise CalibrationRefusal(
-                f"judge.{k} is the non-concrete sentinel "
-                f"{_NON_CONCRETE_SENTINEL!r}; refused (spec 77 S2)"
+                f"{what}.{k} is the non-concrete sentinel "
+                f"{_NON_CONCRETE_SENTINEL!r}; refused (spec 79 S2)"
             )
-    if judge["kind"] == "mock":
+    if judge["kind"] == "mock" or judge["model"] == "mock":
         raise CalibrationRefusal(
-            "judge.kind 'mock' is refused at registration and "
-            "evaluation, always (spec 77 S2)"
+            f"{what}: a 'mock' judge is refused at registration and "
+            f"evaluation, always (spec 79 S2). Mock values describe "
+            f"nothing about any text and can license nothing."
         )
     return judge
 
@@ -915,6 +1030,10 @@ def load_manifest_rows(
                 f"manifest work {work_id!r}: n_words must be an "
                 f"integer >= 1"
             )
+        work_judge = _validate_judge(
+            obj.get("judge_identity"),
+            f"work {work_id!r} judge_identity",
+        )
         whole = _validate_signal_map(
             obj.get("whole_work"), f"work {work_id!r} whole_work",
         )
@@ -933,7 +1052,10 @@ def load_manifest_rows(
                 )
             _require_keys(
                 seg,
-                {"segment_id", "content_sha256", "n_words", "signals"},
+                {
+                    "segment_id", "content", "content_sha256", "n_words",
+                    "judge_identity", "signals",
+                },
                 f"work {work_id!r} segment",
             )
             seg_id = seg["segment_id"]
@@ -948,31 +1070,60 @@ def load_manifest_rows(
                     f"{seg_id!r}"
                 )
             seg_ids.add(seg_id)
+            where = f"manifest work {work_id!r} segment {seg_id!r}"
+            content = seg["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise CalibrationRefusal(
+                    f"{where}: 'content' must be the segment's exact text "
+                    f"as a non-empty string. The achieved-length band in "
+                    f"the receipt is recomputed from it; a segment that "
+                    f"ships only its word count cannot be certified."
+                )
+            # RECOMPUTE, then compare. The recorded values are the
+            # manifest's self-description, not the harness's evidence.
+            computed_sha = nls.content_digest(content)
+            computed_words = nls.count_words(content)
             csha = seg["content_sha256"]
             if not isinstance(csha, str) or not csha.startswith("sha256:"):
                 raise CalibrationRefusal(
-                    f"manifest work {work_id!r} segment {seg_id!r}: "
-                    f"content_sha256 must be 'sha256:'-prefixed"
+                    f"{where}: content_sha256 must be 'sha256:'-prefixed"
+                )
+            if csha != computed_sha:
+                raise CalibrationRefusal(
+                    f"{where}: content_sha256 {csha} does not match the "
+                    f"framed digest of 'content' ({computed_sha})"
                 )
             snw = seg["n_words"]
             if isinstance(snw, bool) or not isinstance(snw, int) or snw < 1:
                 raise CalibrationRefusal(
-                    f"manifest work {work_id!r} segment {seg_id!r}: "
-                    f"n_words must be an integer >= 1"
+                    f"{where}: n_words must be an integer >= 1"
                 )
+            if snw != computed_words:
+                raise CalibrationRefusal(
+                    f"{where}: recorded n_words {snw} != {computed_words} "
+                    f"words actually present in 'content'. Achieved segment "
+                    f"lengths are recomputed from the bound text, never "
+                    f"read off an asserted integer."
+                )
+            seg_judge = _validate_judge(
+                seg["judge_identity"], f"{where} judge_identity",
+            )
             signals = _validate_signal_map(
                 seg["signals"],
                 f"work {work_id!r} segment {seg_id!r} signals",
             )
             segments.append({
                 "segment_id": seg_id,
-                "content_sha256": csha,
-                "n_words": snw,
+                "content_sha256": computed_sha,
+                "n_words": computed_words,
+                "judge_identity": seg_judge,
                 "signals": signals,
             })
+        _refuse_degenerate_segments(work_id, segments)
         rows.append({
             "work_id": work_id,
             "n_words": n_words,
+            "judge_identity": work_judge,
             "whole_work": whole,
             "segments": segments,
         })
@@ -981,9 +1132,73 @@ def load_manifest_rows(
     return rows
 
 
+def _refuse_degenerate_segments(
+    work_id: str, segments: list[dict[str, Any]],
+) -> None:
+    """Refuse a work whose segments carry identical signal maps.
+
+    A text-blind judge — one flat manifest replayed per segment — produces
+    exactly this, and the resulting per-work aggregates are constants
+    masquerading as measurements. Same >= 3 threshold as the orchestrator's
+    scoring-run tripwire.
+    """
+    counts: dict[bytes, int] = {}
+    for seg in segments:
+        key = canonical_json_bytes(
+            {sid: list(cell) for sid, cell in seg["signals"].items()}
+        )
+        counts[key] = counts.get(key, 0) + 1
+    worst = max(counts.values()) if counts else 0
+    if worst >= DEGENERATE_SEGMENT_MIN:
+        raise CalibrationRefusal(
+            f"manifest work {work_id!r}: {worst} of {len(segments)} "
+            f"segments carry byte-identical signal maps "
+            f"(>= {DEGENERATE_SEGMENT_MIN}). That is the signature of a "
+            f"text-blind judge, and such a work cannot contribute to an "
+            f"agreement study."
+        )
+
+
+def derive_manifest_judge(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """The corpus's judge identity, DERIVED from the manifest.
+
+    Every work-level and segment-level identity must agree; a heterogeneous
+    corpus has no single identity a receipt could bind, and picking one would
+    be an assertion dressed as a derivation.
+    """
+    seen: dict[tuple, list[str]] = {}
+    for row in rows:
+        entries = [(row["judge_identity"], f"work {row['work_id']!r}")]
+        entries += [
+            (seg["judge_identity"],
+             f"work {row['work_id']!r} segment {seg['segment_id']!r}")
+            for seg in row["segments"]
+        ]
+        for identity, where in entries:
+            key = tuple(identity[k] for k in sorted(_JUDGE_KEYS))
+            seen.setdefault(key, []).append(where)
+    if not seen:
+        raise CalibrationRefusal(
+            "manifest carries no judge identities to derive from"
+        )
+    if len(seen) > 1:
+        examples = [
+            f"{sites[0]}: {dict(zip(sorted(_JUDGE_KEYS), key))}"
+            for key, sites in sorted(seen.items())[:2]
+        ]
+        raise CalibrationRefusal(
+            f"manifest carries {len(seen)} distinct judge identities; a "
+            f"receipt binds ONE. First two: {examples}"
+        )
+    (key,) = seen
+    return dict(zip(sorted(_JUDGE_KEYS), key))
+
+
 def work_ids_sha256_for_rows(rows: list[dict[str, Any]]) -> str:
-    """Canonical-JSON hash of the sorted work_id list."""
-    return canonical_json_sha256(sorted(r["work_id"] for r in rows))
+    """Framed canonical-JSON digest of the sorted work_id list."""
+    return nls.framed_object_digest(
+        nls.DOMAIN_WORK_IDS, sorted(r["work_id"] for r in rows)
+    )
 
 
 # ---------- verdict derivation (THE rule) ------------------------------
@@ -1190,7 +1405,14 @@ def _segment_bands(
     rows: list[dict[str, Any]],
 ) -> tuple[dict[str, int], dict[str, float]]:
     """Compute validated_segment_count_range and
-    validated_segment_words from the manifest's segments."""
+    validated_segment_words from the manifest's segments.
+
+    Both bands are functions of the bound segment CONTENT — ``n_words`` was
+    recomputed at load — and a work below the >= 3-segment floor refuses
+    rather than widening the count range downward: spec 79 fixes
+    ``validated_segment_count_range.min >= 3``, and a receipt whose own band
+    says 1 would license a single-segment run.
+    """
     counts = [len(row["segments"]) for row in rows]
     words = [
         seg["n_words"] for row in rows for seg in row["segments"]
@@ -1199,6 +1421,18 @@ def _segment_bands(
         raise CalibrationRefusal(
             "manifest carries no segments; segment bands are "
             "uncomputable"
+        )
+    thin = [
+        row["work_id"] for row in rows
+        if len(row["segments"]) < MIN_SEGMENTS_PER_WORK
+    ]
+    if thin:
+        raise CalibrationRefusal(
+            f"{len(thin)} work(s) carry fewer than "
+            f"{MIN_SEGMENTS_PER_WORK} segments "
+            f"(e.g. {thin[:3]}). Spec 79 requires >= 3 contributing "
+            f"segments, so validated_segment_count_range.min >= 3 and a "
+            f"thinner work cannot enter the study."
         )
     words_sorted = sorted(words)
     n = len(words_sorted)
@@ -1220,11 +1454,16 @@ def _segment_bands(
 
 def _derivation_sha256(
     *,
+    date: str,
     registration_sha256: str,
     manifest_sha256: str,
+    registration_path: str,
+    manifest_path: str,
     per_signal: dict[str, dict[str, Any]],
     segmenter: dict[str, Any],
     judge: dict[str, Any],
+    count_range: dict[str, int],
+    words_band: dict[str, float],
 ) -> str:
     """Exact construction — see the module docstring."""
     supports = [
@@ -1243,8 +1482,11 @@ def _derivation_sha256(
         for stat in cell["statistics"]
     )
     preimage = [
+        date,
         registration_sha256,
         manifest_sha256,
+        registration_path,
+        manifest_path,
         supports,
         stats_rows,
         {
@@ -1258,8 +1500,14 @@ def _derivation_sha256(
             "model_revision": judge["model_revision"],
             "prompt_version": judge["prompt_version"],
         },
+        {"min": count_range["min"], "max": count_range["max"]},
+        {
+            "min": words_band["min"],
+            "max": words_band["max"],
+            "median": round(float(words_band["median"]), 10),
+        },
     ]
-    return canonical_json_sha256(preimage)
+    return nls.framed_object_digest(nls.DOMAIN_DERIVATION, preimage)
 
 
 def build_registration(
@@ -1278,7 +1526,9 @@ def build_registration(
     registration = {
         "schema": REGISTRATION_SCHEMA,
         "date": date,
-        "thresholds_sha256": file_sha256(thresholds_path),
+        "thresholds_sha256": _framed_file(
+            nls.DOMAIN_THRESHOLDS_FILE, thresholds_path
+        ),
         "work_ids_sha256": work_ids_sha256_for_rows(rows),
         "segmenter": _validate_segmenter(segmenter),
         "judge": _validate_judge(judge),
@@ -1303,7 +1553,9 @@ def build_receipt(
     registration = load_registration(registration_path)
     rows = load_manifest_rows(manifest_path, values_free=False)
 
-    thresholds_sha = file_sha256(thresholds_path)
+    thresholds_sha = _framed_file(
+        nls.DOMAIN_THRESHOLDS_FILE, thresholds_path
+    )
     work_ids_sha = work_ids_sha256_for_rows(rows)
     if registration["thresholds_sha256"] != thresholds_sha:
         raise CalibrationRefusal(
@@ -1317,13 +1569,27 @@ def build_receipt(
             f"{registration['work_ids_sha256']} != live {work_ids_sha}"
         )
 
+    # The receipt's judge block is the manifest's, DERIVED and re-validated;
+    # the registration's copy is only the pre-declaration it must match.
+    judge = derive_manifest_judge(rows)
+    _validate_judge(judge, "manifest judge_identity")
+    if judge != dict(registration["judge"]):
+        raise CalibrationRefusal(
+            f"registration does not match: the manifest was judged by "
+            f"{judge}, the registration pre-declared "
+            f"{dict(registration['judge'])}. The receipt binds the judge "
+            f"that produced the values, so the two must agree."
+        )
+
     per_signal = {
         signal_id: _evaluate_signal(SIGNALS[signal_id], rows, thresholds)
         for signal_id in SIGNAL_IDS
     }
     count_range, words_band = _segment_bands(rows)
-    registration_sha = file_sha256(registration_path)
-    manifest_sha = file_sha256(manifest_path)
+    registration_sha = _framed_file(
+        nls.DOMAIN_REGISTRATION_FILE, registration_path
+    )
+    manifest_sha = _framed_file(nls.DOMAIN_MANIFEST_FILE, manifest_path)
     receipt = {
         "schema_version": RECEIPT_SCHEMA,
         "date": date,
@@ -1332,18 +1598,23 @@ def build_receipt(
         "thresholds_sha256": thresholds_sha,
         "registration_sha256": registration_sha,
         "derivation_sha256": _derivation_sha256(
+            date=date,
             registration_sha256=registration_sha,
             manifest_sha256=manifest_sha,
+            registration_path=str(registration_path),
+            manifest_path=str(manifest_path),
             per_signal=per_signal,
             segmenter=registration["segmenter"],
-            judge=registration["judge"],
+            judge=judge,
+            count_range=count_range,
+            words_band=words_band,
         ),
         "manifest_sha256": manifest_sha,
         "registration_path": str(registration_path),
         "manifest_path": str(manifest_path),
         "corpus_n_works": len(rows),
         "segmenter": dict(registration["segmenter"]),
-        "judge": dict(registration["judge"]),
+        "judge": judge,
         "validated_segment_count_range": count_range,
         "validated_segment_words": words_band,
         "per_signal": per_signal,
@@ -1359,16 +1630,21 @@ def verify_receipt(
     thresholds_path: Path,
     registration_path: Path,
     manifest_path: Path,
+    date: str,
 ) -> dict[str, Any]:
     """Re-derive everything from the artifacts and refuse on mismatch.
 
     The verdict strings inside the receipt are NEVER trusted: the
     verdicts, statistics, supports, hashes, bands, and
     derivation_sha256 are all recomputed from (manifest, thresholds,
-    registration) and compared field-by-field. Only ``date``,
-    ``registration_path``, and ``manifest_path`` are exempt from
-    comparison (the date is an operator input and paths may legally
-    differ across machines). Returns the verified receipt.
+    registration) and compared field-by-field.
+
+    NOTHING is exempt. ``date`` comes from the CALLER and must equal the
+    receipt's — the earlier version rebuilt the expected receipt from the
+    receipt's own date, so a pre- or post-dated receipt re-derived perfectly
+    against its own lie. The two path fields are compared as recorded, which
+    is what spec 79 S3's "bound by path and hash" asks for: an artifact moved
+    on disk needs a re-issued receipt, not a relabelled one.
     """
     try:
         receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
@@ -1391,16 +1667,19 @@ def verify_receipt(
             f"receipt schema_version must be {RECEIPT_SCHEMA!r}; got "
             f"{receipt['schema_version']!r}"
         )
-    date = receipt["date"]
     _validate_date(date)
+    if receipt["date"] != date:
+        raise CalibrationRefusal(
+            f"receipt date {receipt['date']!r} != the asserted date "
+            f"{date!r}; a receipt cannot certify its own date"
+        )
     expected = build_receipt(
         date=date,
         thresholds_path=thresholds_path,
         registration_path=registration_path,
         manifest_path=manifest_path,
     )
-    exempt = {"date", "registration_path", "manifest_path"}
-    for key in sorted(_RECEIPT_KEYS - exempt):
+    for key in sorted(_RECEIPT_KEYS):
         if receipt[key] != expected[key]:
             raise CalibrationRefusal(
                 f"receipt field {key!r} does not re-derive from the "
@@ -1439,7 +1718,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Whole-vs-segmented agreement study for the narrative "
-            "long-form extension (spec 77 M1; judge-free, precomputed "
+            "long-form extension (spec 79 M1; judge-free, precomputed "
             "values)."
         ),
     )
@@ -1542,8 +1821,14 @@ def main(argv: list[str] | None = None) -> int:
         # --verify
         if args.registration is None:
             raise CalibrationRefusal("--verify requires --registration")
+        if args.date is None:
+            raise CalibrationRefusal(
+                "--verify requires --date: the date is asserted by the "
+                "verifier, never read out of the receipt under test"
+            )
         verify_receipt(
             args.out, args.thresholds, args.registration, args.manifest,
+            args.date,
         )
         print(f"receipt verified: {args.out}")
         return 0

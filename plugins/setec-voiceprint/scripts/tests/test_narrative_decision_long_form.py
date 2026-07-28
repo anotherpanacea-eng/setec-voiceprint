@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for narrative_decision_long_form.py (spec 77 M1).
+"""Tests for narrative_decision_long_form.py (spec 79 M1).
 
 Model-free: mock/manifest judges only, no network. Covers the S1
 signal-id pins, the operator-table partition (disjoint AND total over the
@@ -390,7 +390,14 @@ def test_per_segment_raw_responses(long_envelope, long_case):
     for i, block in enumerate(per_segment):
         assert set(block.keys()) == {
             "index", "content_sha256", "signals", "register_warnings",
+            "validation_warnings", "reduction_licensed",
         }
+        # Spec-mandated, and absent from the first build: the mechanical
+        # residue against the reconstruction limit rides on every block.
+        assert block["reduction_licensed"] is False
+        assert all(
+            isinstance(w, str) for w in block["validation_warnings"]
+        )
         assert block["index"] == i
         assert block["content_sha256"] == seg.segments[i].content_sha256
         assert set(block["signals"].keys()) == set(ndlf.all_signal_ids())
@@ -459,14 +466,30 @@ def test_per_bundle_class_rollups_null(long_envelope):
 
 
 def test_validation_binding_receipt_absent(long_envelope):
-    assert long_envelope["results"]["validation_binding"] == {
-        "receipt_present": False,
-        "receipt_path": None,
-        "receipt_sha256": None,
-        "match": {},
-        "licensed": False,
-        "suppression_reason": "provisional_unvalidated",
+    """Spec 79: every S3 required-match field is present and `absent`.
+
+    The first build emitted `match: {}`, which is indistinguishable from a
+    match object that silently lost a field.
+    """
+    binding = long_envelope["results"]["validation_binding"]
+    assert binding["receipt_present"] is False
+    assert binding["receipt_path"] is None
+    assert binding["receipt_sha256"] is None
+    assert binding["licensed"] is False
+    assert binding["suppression_reason"] == "provisional_unvalidated"
+    assert binding["match"] == {
+        "signal_id_set_sha256": "absent",
+        "segmenter.version": "absent",
+        "segmenter.params_sha256": "absent",
+        "segmenter.segment_target_words": "absent",
+        "judge.kind": "absent",
+        "judge.model": "absent",
+        "judge.model_revision": "absent",
+        "judge.prompt_version": "absent",
+        "validated_segment_count_range": "absent",
+        "validated_segment_words": "absent",
     }
+    assert set(binding["match"]) == set(ndlf.REQUIRED_MATCH_FIELDS)
 
 
 def test_claim_license_demotion(long_envelope):
@@ -476,6 +499,97 @@ def test_claim_license_demotion(long_envelope):
     assert "work-level aggregation" in does_not
     assert "provenance" in does_not
     assert "signal_target_value" in does_not
+
+
+def test_license_describes_the_cleaning_it_actually_performs(long_envelope):
+    """Codex P2: the license said "exactly as returned"; the code emits
+    `validate_values` output, which DROPS out-of-vocabulary multi-select
+    options and NULLS out-of-vocabulary scalars."""
+    licenses = long_envelope["claim_license"]["licenses"]
+    assert "exactly as returned" not in licenses
+    for phrase in ("validate_values", "DROPPED", "null", "validation_warnings"):
+        assert phrase in licenses, phrase
+    refs = long_envelope["claim_license"]["references"]
+    assert any("specs/79-storyscope-long-form-extension.md" in r for r in refs)
+    assert not any("77-storyscope" in r for r in refs)
+    comparison = long_envelope["claim_license"]["comparison_set"]
+    assert "spec 79" in comparison["literature_anchor"]
+
+
+def test_cleaning_is_visible_in_validation_warnings(long_case, tmp_path):
+    """The emission stays truthful because the drop is recorded.
+
+    A multi-select carrying one legal and one bogus option emits only the
+    legal one — the exact case Codex named — and the segment's
+    `validation_warnings` says so verbatim.
+    """
+    multi = next(
+        f for f in nfs.CORE_FEATURES if f.feature_type == "multi"
+    )
+    keyed = _keyed_manifest(long_case["seg"])
+    first = long_case["seg"].segments[0].content_sha256
+    keyed[first]["values"][multi.key] = [
+        multi.response_options[0], "bogus_option"
+    ]
+    manifest = tmp_path / "dirty.json"
+    manifest.write_text(json.dumps(keyed), encoding="utf-8")
+    out = tmp_path / "o.json"
+    assert ndlf.main([
+        str(long_case["target"]), "--judge", "manifest",
+        "--judge-manifest", str(manifest), "--out", str(out),
+    ]) == 0
+    block = json.loads(out.read_text(encoding="utf-8"))["results"][
+        "per_segment"
+    ][0]
+    sid = ndlf.signal_id_for(multi, multi.signals[0])
+    assert block["signals"][sid]["response"] == [multi.response_options[0]]
+    assert any(
+        "bogus_option" in w and multi.key in w
+        for w in block["validation_warnings"]
+    )
+
+
+# ---------- judge-identity typing (closed refusals) ---------------------
+
+@pytest.mark.parametrize("bad", [[], 7, {"nested": 1}, True, 1.5])
+def test_manifest_judge_identity_exact_types_refuse(
+    long_case, tmp_path, bad
+):
+    """Codex P3: `model: []` raised an uncaught TypeError building the
+    identity set, and `model: 7` escaped as a WorkLevelReductionError from
+    the emit guard. Both are bad input and must refuse as such."""
+    keyed = _keyed_manifest(long_case["seg"])
+    for entry in keyed.values():
+        entry["judge_identity"]["model"] = bad
+    manifest = tmp_path / f"badid.json"
+    manifest.write_text(json.dumps(keyed), encoding="utf-8")
+    rc, envelope = _run_expect_refusal(
+        [
+            str(long_case["target"]), "--judge", "manifest",
+            "--judge-manifest", str(manifest),
+        ],
+        tmp_path / "o.json",
+    )
+    assert rc == 1
+    assert envelope["reason_category"] == "bad_input"
+    assert "judge_identity.model" in envelope["reason"]
+
+
+def test_manifest_judge_identity_non_object_refuses(long_case, tmp_path):
+    keyed = _keyed_manifest(long_case["seg"])
+    for entry in keyed.values():
+        entry["judge_identity"] = ["not", "an", "object"]
+    manifest = tmp_path / "badid2.json"
+    manifest.write_text(json.dumps(keyed), encoding="utf-8")
+    rc, envelope = _run_expect_refusal(
+        [
+            str(long_case["target"]), "--judge", "manifest",
+            "--judge-manifest", str(manifest),
+        ],
+        tmp_path / "o.json",
+    )
+    assert rc == 1
+    assert "judge_identity" in envelope["reason"]
 
 
 def test_no_forbidden_reduction_fields_anywhere(long_envelope):
@@ -626,6 +740,115 @@ def test_cache_same_judge_hits_changed_prompt_version_misses(
     assert (
         env1["results"]["per_segment"] == env2["results"]["per_segment"]
     )
+
+
+# ---------- cache tamper / staleness (Codex P2) -------------------------
+
+def _warm_cache(long_case, tmp_path, manifest_path=None) -> Path:
+    cache_dir = tmp_path / "cache"
+    rc = ndlf.main([
+        str(long_case["target"]), "--judge", "manifest",
+        "--judge-manifest", str(manifest_path or long_case["manifest"]),
+        "--cache-dir", str(cache_dir), "--out", str(tmp_path / "warm.json"),
+    ])
+    assert rc == 0
+    assert list(cache_dir.glob("*.json"))
+    return cache_dir
+
+
+def _rerun_with_cache(long_case, tmp_path, cache_dir, manifest_path=None):
+    return _run_expect_refusal(
+        [
+            str(long_case["target"]), "--judge", "manifest",
+            "--judge-manifest", str(manifest_path or long_case["manifest"]),
+            "--cache-dir", str(cache_dir),
+        ],
+        tmp_path / "o.json",
+    )
+
+
+def test_edited_cache_signals_refuse_rather_than_emit(long_case, tmp_path):
+    """Codex P2: `_cache_load` accepted any dict containing `signals` and
+    emitted it without re-running judge validation. Forge a response in the
+    cache file and the run emitted the forgery."""
+    cache_dir = _warm_cache(long_case, tmp_path)
+    entry = sorted(cache_dir.glob("*.json"))[0]
+    payload = json.loads(entry.read_text(encoding="utf-8"))
+    sid = sorted(payload["signals"])[0]
+    payload["signals"][sid]["response"] = "not_an_option_in_any_feature"
+    entry.write_text(json.dumps(payload), encoding="utf-8")
+
+    rc, envelope = _rerun_with_cache(long_case, tmp_path, cache_dir)
+    assert rc == 1
+    assert envelope["reason_category"] == "bad_input"
+    assert "cache entry" in envelope["reason"]
+
+
+def test_edited_cache_values_vector_refuses(long_case, tmp_path):
+    """The forged vector is what drives the degenerate-judge tripwire, so
+    it must be a function of the emitted signals, not a free field."""
+    cache_dir = _warm_cache(long_case, tmp_path)
+    entry = sorted(cache_dir.glob("*.json"))[0]
+    payload = json.loads(entry.read_text(encoding="utf-8"))
+    payload["values_vector"] = '{"forged":"vector"}'
+    entry.write_text(json.dumps(payload), encoding="utf-8")
+
+    rc, envelope = _rerun_with_cache(long_case, tmp_path, cache_dir)
+    assert rc == 1
+    assert "values_vector" in envelope["reason"]
+
+
+def test_cache_entry_moved_to_another_key_refuses(long_case, tmp_path):
+    """A cache file is not authoritative because of its filename: the
+    binding it records must equal the live one."""
+    cache_dir = _warm_cache(long_case, tmp_path)
+    entries = sorted(cache_dir.glob("*.json"))
+    assert len(entries) >= 2
+    entries[1].write_bytes(entries[0].read_bytes())  # segment 0 under key 1
+
+    rc, envelope = _rerun_with_cache(long_case, tmp_path, cache_dir)
+    assert rc == 1
+    assert "binding" in envelope["reason"]
+
+
+def test_changed_manifest_response_misses_instead_of_serving_stale(
+    long_case, tmp_path
+):
+    """Codex P2: change a manifest response while keeping segment content
+    and declared identity, and the old answers were served from cache."""
+    cache_dir = _warm_cache(long_case, tmp_path)
+    keyed = _keyed_manifest(long_case["seg"])
+    first = long_case["seg"].segments[0].content_sha256
+    scale = next(
+        f for f in nfs.CORE_FEATURES if f.feature_type == "scale"
+    )
+    old = keyed[first]["values"][scale.key]
+    new = next(o for o in scale.response_options if o != old)
+    keyed[first]["values"][scale.key] = new
+    edited = tmp_path / "edited.json"
+    edited.write_text(json.dumps(keyed), encoding="utf-8")
+
+    out = tmp_path / "after.json"
+    assert ndlf.main([
+        str(long_case["target"]), "--judge", "manifest",
+        "--judge-manifest", str(edited), "--cache-dir", str(cache_dir),
+        "--out", str(out),
+    ]) == 0
+    results = json.loads(out.read_text(encoding="utf-8"))["results"]
+    # segment 0 recomputed; the untouched segments still hit.
+    assert results["cache"]["n_misses"] == 1
+    assert results["cache"]["n_hits"] == long_case["seg"].n_segments - 1
+    sid = ndlf.signal_id_for(scale, scale.signals[0])
+    assert results["per_segment"][0]["signals"][sid]["response"] == new
+
+
+def test_unreadable_cache_entry_refuses(long_case, tmp_path):
+    cache_dir = _warm_cache(long_case, tmp_path)
+    sorted(cache_dir.glob("*.json"))[0].write_text("{ not json",
+                                                   encoding="utf-8")
+    rc, envelope = _rerun_with_cache(long_case, tmp_path, cache_dir)
+    assert rc == 1
+    assert "invalid JSON" in envelope["reason"]
 
 
 def test_cache_disabled_reports_disabled(long_envelope):

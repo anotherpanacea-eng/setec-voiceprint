@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""narrative_decision_long_form.py — spec 77 M1: StoryScope long-form extension.
+"""narrative_decision_long_form.py — spec 79 M1: StoryScope long-form extension.
 
 Score a work above the narrative-decision audit's 25,000-word ceiling by
 deterministic segmentation (``narrative_longform_segment``) plus one base-audit
@@ -42,10 +42,21 @@ Judge provenance (S2, M1 subset):
 
 Resume cache (``--cache-dir``): per-segment results cache under a key that
 binds the segment content hash to the judge identity (kind, model,
-model_revision, prompt_version), the segmenter ``params_sha256``, and the
-base-audit identity (script version + prompt fingerprint). Content hash
-alone is NOT the key — a rerun under a different judge or prompt version
-must miss.
+model_revision, prompt_version), the RESOLVED JUDGE INPUT (for a manifest
+judge, the framed digest of that segment's manifest entry — editing a
+response must miss, not hit stale), the segmenter ``params_sha256``, and the
+base-audit identity (script version + prompt fingerprint). Content hash alone
+is NOT the key — a rerun under a different judge or prompt version must miss.
+
+A cache entry is NEVER emitted on the strength of its filename. Every load
+re-verifies, and refuses (``bad_input``) rather than falling back to a
+recompute: the stored ``binding`` block must equal the live binding
+field-for-field; the stored ``signals`` map must carry exactly the 33 signal
+ids with exact leaf types and responses drawn from the feature schema's closed
+vocabularies; and the stored ``values_vector`` — the string the degenerate-
+judge tripwire counts — must re-derive from those signals. A hand-edited cache
+file therefore cannot smuggle a forged vector past the tripwire, and a stale
+entry cannot outlive the manifest it came from.
 
 CLI (flat, no subcommands):
 
@@ -58,7 +69,6 @@ CLI (flat, no subcommands):
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 import tempfile
@@ -310,44 +320,210 @@ def _base_audit_identity() -> str:
     prompt_fp = nj.fingerprint_prompt()
     if version:
         return f"narrative_decision_audit/{version}+prompt:{prompt_fp}"
-    return "sha256:" + hashlib.sha256(
-        Path(nda.__file__).read_bytes()
-    ).hexdigest()
+    return nls.framed_digest(
+        nls.DOMAIN_BASE_AUDIT_SOURCE, Path(nda.__file__).read_bytes()
+    )
 
 
-def _cache_key(
+def _judge_input_digest(judge_kind: str, entry: Any) -> str | None:
+    """Framed digest of the judge input actually resolved for a segment.
+
+    For ``manifest`` this is the per-segment entry: two runs that agree on
+    content hash and declared identity but disagree on the recorded responses
+    are DIFFERENT runs, and a cache keyed without this returns the first run's
+    answers for the second run's manifest.
+    """
+    if judge_kind != "manifest":
+        return None
+    return nls.framed_object_digest(nls.DOMAIN_JUDGE_INPUT, entry)
+
+
+def _cache_binding(
+    *,
     content_sha256: str,
     judge_kind: str,
     identity: dict[str, Any],
     params_sha256: str,
-) -> str:
-    """Cache key over (segment content hash, judge kind/model/revision/
-    prompt_version, segmenter params, base-audit identity). Content hash
-    ALONE is forbidden — a rerun under a different judge must MISS."""
-    payload = json.dumps({
+    judge_input_sha256: str | None,
+) -> dict[str, Any]:
+    """The closed set of facts a cached per-segment result is valid for."""
+    return {
         "segment_content_sha256": content_sha256,
         "judge_kind": judge_kind,
         "judge_model": identity.get("model"),
         "judge_model_revision": identity.get("model_revision"),
         "judge_prompt_version": identity.get("prompt_version"),
+        "judge_input_sha256": judge_input_sha256,
         "segmenter_params_sha256": params_sha256,
         "base_audit_identity": _base_audit_identity(),
-    }, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    }
 
 
-def _cache_load(cache_dir: Path | None, key: str) -> dict[str, Any] | None:
+def _cache_key(binding: dict[str, Any]) -> str:
+    """Cache key over the whole binding. Content hash ALONE is forbidden —
+    a rerun under a different judge, prompt version, or manifest entry must
+    MISS."""
+    return nls.framed_object_digest(
+        nls.DOMAIN_CACHE_KEY, binding
+    ).split(":", 1)[1]
+
+
+_CACHE_PAYLOAD_KEYS = frozenset({
+    "binding", "signals", "register_warnings", "validation_warnings",
+    "values_vector",
+})
+
+
+def _values_vector(cleaned: dict[str, Any]) -> str:
+    """The canonical string the degenerate-judge tripwire counts."""
+    return json.dumps(cleaned, sort_keys=True, separators=(",", ":"))
+
+
+def _cleaned_from_signals(signals: dict[str, Any]) -> dict[str, Any]:
+    """Invert ``_signals_map``: recover the per-feature cleaned values.
+
+    Every signal of a feature carries that feature's response, so the
+    inversion is total and the round trip is checkable.
+    """
+    cleaned: dict[str, Any] = {}
+    for f in CORE_FEATURES:
+        sid = signal_id_for(f, f.signals[0])
+        cleaned[f.key] = signals[sid]["response"]
+    return cleaned
+
+
+def _validate_cached_signals(signals: Any, where: str) -> None:
+    """Exact-shape, exact-type, closed-vocabulary re-validation.
+
+    Applied to a cached payload at LOAD, not merely at store: an entry that
+    was written correctly and edited afterwards is exactly the case a
+    store-time check cannot see.
+    """
+    if not isinstance(signals, dict):
+        raise _Refusal("bad_input", f"{where}: 'signals' must be an object")
+    expected = set(all_signal_ids())
+    if set(signals) != expected:
+        missing = sorted(expected - set(signals))[:3]
+        extra = sorted(set(signals) - expected)[:3]
+        raise _Refusal(
+            "bad_input",
+            f"{where}: 'signals' key set does not match the 33 schema "
+            f"signal ids (missing {missing}, unexpected {extra})",
+        )
+    for f in CORE_FEATURES:
+        options = set(f.response_options)
+        responses = []
+        for s in f.signals:
+            cell = signals[signal_id_for(f, s)]
+            if not isinstance(cell, dict) or set(cell) != {
+                "response", "available"
+            }:
+                raise _Refusal(
+                    "bad_input",
+                    f"{where}: signal cell for {f.key!r} must have exactly "
+                    f"keys {{response, available}}",
+                )
+            if not isinstance(cell["available"], bool):
+                raise _Refusal(
+                    "bad_input",
+                    f"{where}: 'available' for {f.key!r} must be a bool",
+                )
+            response = cell["response"]
+            if response is None:
+                pass
+            elif f.feature_type == "multi":
+                if not isinstance(response, list) or not all(
+                    isinstance(x, str) for x in response
+                ):
+                    raise _Refusal(
+                        "bad_input",
+                        f"{where}: multi-select {f.key!r} needs a list of "
+                        f"strings",
+                    )
+                illegal = [x for x in response if x not in options]
+                if illegal:
+                    raise _Refusal(
+                        "bad_input",
+                        f"{where}: {f.key!r} carries options outside the "
+                        f"schema vocabulary: {illegal[:3]}",
+                    )
+            else:
+                if not isinstance(response, str) or response not in options:
+                    raise _Refusal(
+                        "bad_input",
+                        f"{where}: {f.key!r} response {response!r} is not "
+                        f"one of the feature's options",
+                    )
+            if cell["available"] != (response is not None):
+                raise _Refusal(
+                    "bad_input",
+                    f"{where}: 'available' for {f.key!r} contradicts its "
+                    f"response",
+                )
+            responses.append(response)
+        if any(r != responses[0] for r in responses[1:]):
+            raise _Refusal(
+                "bad_input",
+                f"{where}: signals of feature {f.key!r} disagree; a "
+                f"per-feature response cannot differ across its own signals",
+            )
+
+
+def _cache_load(
+    cache_dir: Path | None, key: str, binding: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Load a cached per-segment result, re-verified against ``binding``.
+
+    Returns None only when nothing is cached. Anything present but not
+    re-verifiable REFUSES — silently recomputing would let a tampered entry
+    disappear without a trace, and silently emitting it is the defect.
+    """
     if cache_dir is None:
         return None
     path = cache_dir / f"{key}.json"
     if not path.is_file():
         return None
+    where = f"cache entry {path}"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None  # unreadable cache entry -> recompute
-    if not isinstance(payload, dict) or "signals" not in payload:
-        return None
+    except OSError as exc:
+        raise _Refusal("bad_input", f"{where}: cannot read ({exc})")
+    except json.JSONDecodeError as exc:
+        raise _Refusal(
+            "bad_input",
+            f"{where}: invalid JSON ({exc}); delete the cache directory to "
+            f"recompute",
+        )
+    if not isinstance(payload, dict) or set(payload) != _CACHE_PAYLOAD_KEYS:
+        raise _Refusal(
+            "bad_input",
+            f"{where}: payload must be an object with exactly "
+            f"{sorted(_CACHE_PAYLOAD_KEYS)}",
+        )
+    if payload["binding"] != binding:
+        raise _Refusal(
+            "bad_input",
+            f"{where}: recorded binding does not match this run's segment "
+            f"content / judge identity / judge input / segmenter params / "
+            f"base-audit identity",
+        )
+    _validate_cached_signals(payload["signals"], where)
+    for k in ("register_warnings", "validation_warnings"):
+        v = payload[k]
+        if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
+            raise _Refusal(
+                "bad_input", f"{where}: {k!r} must be a list of strings"
+            )
+    expected_vector = _values_vector(
+        _cleaned_from_signals(payload["signals"])
+    )
+    if payload["values_vector"] != expected_vector:
+        raise _Refusal(
+            "bad_input",
+            f"{where}: 'values_vector' does not re-derive from 'signals' "
+            f"(the tripwire input must be a function of the emitted "
+            f"responses, not an independent assertion)",
+        )
     return payload
 
 
@@ -377,15 +553,52 @@ def _signals_map(cleaned: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return out
 
 
-def _manifest_identity(entry: dict[str, Any]) -> dict[str, Any]:
-    ji = entry.get("judge_identity") or {}
-    if not isinstance(ji, dict):
+_IDENTITY_FIELDS = ("model", "model_revision", "prompt_version")
+
+
+def _manifest_identity(entry: Any, where: str) -> dict[str, Any]:
+    """Judge identity for one manifest entry, with EXACT types.
+
+    Each field is a non-empty string or null; anything else refuses here
+    rather than surfacing later as a ``TypeError`` from set construction (an
+    unhashable ``model: []``) or as an uncaught reduction error (``model: 7``
+    reaching the emit guard as a stray int leaf).
+    """
+    if not isinstance(entry, dict):
+        raise _Refusal(
+            "bad_input",
+            f"{where}: manifest entry must be a JSON object, got "
+            f"{type(entry).__name__}",
+        )
+    ji = entry.get("judge_identity")
+    if ji is None:
         ji = {}
-    return {
-        "model": ji.get("model"),
-        "model_revision": ji.get("model_revision"),
-        "prompt_version": ji.get("prompt_version"),
-    }
+    if not isinstance(ji, dict):
+        raise _Refusal(
+            "bad_input",
+            f"{where}: 'judge_identity' must be a JSON object, got "
+            f"{type(ji).__name__}",
+        )
+    identity: dict[str, Any] = {}
+    for field in _IDENTITY_FIELDS:
+        value = ji.get(field)
+        if value is None:
+            identity[field] = None
+            continue
+        if not isinstance(value, str):
+            raise _Refusal(
+                "bad_input",
+                f"{where}: judge_identity.{field} must be a string or null, "
+                f"got {type(value).__name__}",
+            )
+        if not value.strip():
+            raise _Refusal(
+                "bad_input",
+                f"{where}: judge_identity.{field} is empty; declare a "
+                f"concrete identity or omit the field",
+            )
+        identity[field] = value
+    return identity
 
 
 def _load_keyed_manifest(path: Path) -> dict[str, Any]:
@@ -436,14 +649,13 @@ def _score_segments(
         prefix="ndlf_manifest_"
     ) as tmp_dir:
         for s in seg.segments:
+            entry: Any = None
             if judge_kind == "manifest":
                 assert keyed_manifest is not None
                 entry = keyed_manifest[s.content_sha256]
-                identity = (
-                    _manifest_identity(entry)
-                    if isinstance(entry, dict) else
-                    {"model": None, "model_revision": None,
-                     "prompt_version": None}
+                identity = _manifest_identity(
+                    entry,
+                    f"segment {s.index} ({s.content_sha256})",
                 )
             elif judge_kind == "mock":
                 identity = {
@@ -455,10 +667,15 @@ def _score_segments(
                 identity = dict(api_identity)
             identities.append(identity)
 
-            key = _cache_key(
-                s.content_sha256, judge_kind, identity, seg.params_sha256
+            binding = _cache_binding(
+                content_sha256=s.content_sha256,
+                judge_kind=judge_kind,
+                identity=identity,
+                params_sha256=seg.params_sha256,
+                judge_input_sha256=_judge_input_digest(judge_kind, entry),
             )
-            cached = _cache_load(cache_dir, key)
+            key = _cache_key(binding)
+            cached = _cache_load(cache_dir, key, binding)
             if cached is not None:
                 n_hits += 1
                 payloads.append(cached)
@@ -500,15 +717,15 @@ def _score_segments(
                 result.values
             )
             payload = {
+                "binding": binding,
                 "signals": _signals_map(cleaned),
-                "register_warnings": nda.register_warnings_for(
+                "register_warnings": list(nda.register_warnings_for(
                     seg_text, nda.count_words(seg_text)
-                ),
-                "validation_warnings": validation_warnings,
-                # internal only (tripwire + cache); never emitted.
-                "values_vector": json.dumps(
-                    cleaned, sort_keys=True, separators=(",", ":")
-                ),
+                )),
+                "validation_warnings": list(validation_warnings),
+                # tripwire input + cache round-trip check; a function of
+                # `signals`, never an independent assertion.
+                "values_vector": _values_vector(cleaned),
             }
             _cache_store(cache_dir, key, payload)
             payloads.append(payload)
@@ -530,6 +747,15 @@ def _per_segment_block(
             "content_sha256": s.content_sha256,
             "signals": payload["signals"],
             "register_warnings": list(payload["register_warnings"]),
+            # The base judge's schema validation drops out-of-vocabulary
+            # options and nulls out-of-vocabulary scalars; carrying its
+            # warnings per segment is what makes that cleaning auditable
+            # rather than invisible.
+            "validation_warnings": list(payload["validation_warnings"]),
+            # Spec 79's mechanical residue against the reconstruction
+            # limit: reducing these responses to a work-level scalar is
+            # derivable and is NOT licensed, stated on every block.
+            "reduction_licensed": False,
         }
         if calibration_only:
             entry["calibration_only"] = True
@@ -610,13 +836,34 @@ def _per_bundle_block() -> dict[str, dict[str, Any]]:
     return out
 
 
+# Spec 79 S3's enumerated required-match fields, in spec order. Every one is
+# emitted with an explicit verdict, because an ABSENT key and a key whose
+# value is "absent" read the same to a machine and opposite to a person: an
+# empty `match` object cannot be distinguished from a match object that
+# forgot a field.
+REQUIRED_MATCH_FIELDS: tuple[str, ...] = (
+    "signal_id_set_sha256",
+    "segmenter.version",
+    "segmenter.params_sha256",
+    "segmenter.segment_target_words",
+    "judge.kind",
+    "judge.model",
+    "judge.model_revision",
+    "judge.prompt_version",
+    "validated_segment_count_range",
+    "validated_segment_words",
+)
+
+MATCH_ABSENT = "absent"
+
+
 def _validation_binding_block() -> dict[str, Any]:
     """M1: no receipt exists; every run is unlicensed by construction."""
     return {
         "receipt_present": False,
         "receipt_path": None,
         "receipt_sha256": None,
-        "match": {},
+        "match": {field: MATCH_ABSENT for field in REQUIRED_MATCH_FIELDS},
         "licensed": False,
         "suppression_reason": SUPPRESSION_REASON_M1,
     }
@@ -625,14 +872,20 @@ def _validation_binding_block() -> dict[str, Any]:
 # ---------- claim licenses --------------------------------------------
 
 M1_LICENSES = (
-    "Per-segment raw responses for the 33 StoryScope narrative-decision "
+    "Per-segment responses for the 33 StoryScope narrative-decision "
     "signals (Russell et al. 2026, arXiv:2604.03136v4) over a "
     "deterministic, hash-bound segmentation of a work above the base "
-    "audit's 25,000-word ceiling: for each segment, the judge's raw "
-    "response per signal (string, exactly as returned) plus "
-    "availability, and the segmentation record (tier, per-segment word "
-    "counts, boundary and parameter hashes). Distributional, "
-    "per-segment description only."
+    "audit's 25,000-word ceiling: for each segment, the judge's response "
+    "per signal AFTER the base audit's schema validation "
+    "(narrative_judge.validate_values), plus availability, and the "
+    "segmentation record (tier, per-segment word counts, boundary and "
+    "parameter hashes). That validation is not a pass-through: an option "
+    "outside a multi-select feature's closed vocabulary is DROPPED from "
+    "the emitted list, a scalar outside its feature's vocabulary is "
+    "emitted as null with available=false, and a missing feature is "
+    "emitted as null — each such edit recorded verbatim in the segment's "
+    "validation_warnings. No re-encoding, no numeric conversion, and no "
+    "other rewriting occurs. Distributional, per-segment description only."
 )
 
 M1_DOES_NOT_LICENSE = (
@@ -651,8 +904,11 @@ M1_DOES_NOT_LICENSE = (
 
 CALIBRATION_LICENSES = (
     "Calibration-fixture output only: the deterministic segmentation "
-    "record and per-segment raw judge responses, stamped "
-    "calibration_only, for building the spec-77 calibration corpus."
+    "record and per-segment judge responses as validated by "
+    "narrative_judge.validate_values (out-of-vocabulary options dropped, "
+    "out-of-vocabulary scalars nulled, every edit recorded in the "
+    "segment's validation_warnings), stamped calibration_only, for "
+    "building the spec-79 calibration corpus."
 )
 
 CALIBRATION_DOES_NOT_LICENSE = (
@@ -892,7 +1148,7 @@ def _run(
         comparison_set={
             "literature_anchor": (
                 "Russell et al. 2026 (StoryScope, arXiv:2604.03136v4); "
-                "segmented long-form extension per spec 77"
+                "segmented long-form extension per spec 79"
             ),
             "judge_kind": judge_kind,
             "judge_model": judge_block.get("model") or "(unspecified)",
@@ -905,7 +1161,7 @@ def _run(
         references=[
             "Russell et al. 2026, 'StoryScope: Narrative-Level "
             "Detection of AI-Generated Fiction' (arXiv:2604.03136v4)",
-            "specs/77-storyscope-long-form-extension.md (M1)",
+            "specs/79-storyscope-long-form-extension.md (M1)",
         ],
     )
 
@@ -928,7 +1184,7 @@ def _run(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "StoryScope long-form extension (spec 77 M1): segment an "
+            "StoryScope long-form extension (spec 79 M1): segment an "
             "over-ceiling work and run the narrative-decision audit's "
             "scoring path per segment. Work-level aggregates are "
             "suppressed (provisional_unvalidated) — no validation "

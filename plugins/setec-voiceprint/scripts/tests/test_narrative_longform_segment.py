@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for narrative_longform_segment.py (spec 77, M1).
+"""Tests for narrative_longform_segment.py (spec 79, M1).
 
 Stdlib + pytest only. No network, no model, no judge.
 
@@ -27,6 +27,7 @@ import json
 import os
 import random
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -45,6 +46,18 @@ CEILING = nls.CEILING_WORDS                # 25000
 LIMIT = int(TARGET * nls.MAX_TARGET_RATIO)  # 7500
 
 _SHA_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def expected_framed(domain: bytes, payload: bytes) -> str:
+    """Independent re-implementation of the framing rule.
+
+    Deliberately does NOT call the module's helper: the point is to pin the
+    construction ``SHA256(domain_ascii_LF || uint64_be(len) || payload)``, and
+    a test that calls the function under test pins nothing.
+    """
+    return "sha256:" + hashlib.sha256(
+        domain + struct.pack(">Q", len(payload)) + payload
+    ).hexdigest()
 
 
 # ---------------------------------------------------------------- fixtures
@@ -104,16 +117,16 @@ def check_invariants(seg: "nls.Segmentation", text: str) -> None:
         prev_end = s.end
         chunk = s.text(text)
         assert s.n_words == nls.count_words(chunk)
-        digest = hashlib.sha256(chunk.encode("utf-8")).hexdigest()
-        assert s.content_sha256 == "sha256:" + digest
+        assert s.content_sha256 == expected_framed(
+            nls.DOMAIN_SEGMENT_CONTENT, chunk.encode("utf-8"))
     assert seg.segments[0].start == 0
     if not seg.excluded_spans:
         assert seg.segments[-1].end == len(text)  # full coverage
     # boundary hash preimage: compact JSON of [[start, end], ...]
     offsets = json.dumps([[s.start, s.end] for s in seg.segments],
                          separators=(",", ":")).encode()
-    assert seg.boundary_offsets_sha256 == \
-        "sha256:" + hashlib.sha256(offsets).hexdigest()
+    assert seg.boundary_offsets_sha256 == expected_framed(
+        nls.DOMAIN_BOUNDARY_OFFSETS, offsets)
     assert seg.params_sha256 == nls.params_digest(seg.segment_target_words)
     assert _SHA_RE.match(seg.boundary_offsets_sha256)
     assert _SHA_RE.match(seg.params_sha256)
@@ -286,6 +299,78 @@ def test_descent_triggered_by_post_merge_oversize():
     assert all(w >= FLOOR for w in seg.segment_words)
 
 
+def test_book_divided_100k_novel_descends_below_the_book_tier():
+    """The fixture spec 79 mandates by name and the build never wrote.
+
+    A 100,000-word novel divided on five BOOK headings packs to five
+    ~20,000-word segments: a legal `{3,5}` count range that would license
+    whole-novel claims off a study validated on 5,000-word segments. Segment
+    SIZE is as load-bearing as segment count, so the tier must be rejected and
+    the segmenter must descend.
+    """
+    books = []
+    for b in range(1, 6):
+        books.append(f"BOOK {roman(b)}.")
+        # 20 paragraphs of 1,000 words: 20,000 words per BOOK, and the
+        # paragraph tier below has real units to pack.
+        books.append("\n\n".join(body(1000, f"bk{b}p{p}") for p in range(20)))
+    text = "\n\n".join(books) + "\n"
+    assert 99_000 < nls.count_words(text) < 101_000
+
+    # The BOOK tier on its own yields exactly the shape the spec warns about.
+    book_spans = nls._pack(text, nls._unit_starts(text, 0), TARGET)
+    book_words = [nls.count_words(text[s:e]) for s, e in book_spans]
+    assert len(book_words) == 5
+    assert all(w > 20_000 for w in book_words)
+
+    seg = nls.segment_text(text)
+    check_invariants(seg, text)
+    assert seg.tier != "chapter_heading"        # descended past BOOK
+    assert seg.n_segments >= 14
+    assert all(w <= LIMIT for w in seg.segment_words)
+    assert all(w >= FLOOR for w in seg.segment_words)
+    assert not seg.excluded_spans
+
+
+# ---------------------------------- 4b. a keyword alone is not a heading
+
+@pytest.mark.parametrize("line", [
+    # Codex P3, verbatim: a narrative sentence opening on the keyword.
+    "CHAPTER headings are conventions of the printed book, not of the tale",
+    "BOOK I read yesterday and did not much care for",
+    "PART of the difficulty was that nobody agreed",
+    "STAVE upon stave the cooper fitted, and the barrel took shape",
+    "CHAPTERS were still being written when the money ran out",
+])
+def test_keyword_without_numeral_is_not_a_boundary(line):
+    assert not nls._TIER_PATTERNS[0][1].match(line), line
+
+
+@pytest.mark.parametrize("line", [
+    "CHAPTER 1", "CHAPTER I.", "Chapter 12.", "CHAPTER XIV. THE HOUSE",
+    "STAVE I: MARLEYS GHOST", "BOOK THE FIRST—THE CUP AND THE LIP",
+    "PART TWO", "  BOOK 3 ", "chapter iv,",
+])
+def test_keyword_with_numeral_is_a_boundary(line):
+    assert nls._TIER_PATTERNS[0][1].match(line), line
+
+
+def test_keyword_prose_line_does_not_split_a_work():
+    """End to end: the sentence must not open a segment.
+
+    Two chapters of 2,500 words with a `CHAPTER headings...` sentence sitting
+    mid-body. Under the keyword-only rule that sentence was a third unit
+    start; under keyword+numeral there are exactly two.
+    """
+    prose = ("CHAPTER headings are conventions of the printed book, and "
+             "this one begins a paragraph rather than a chapter.")
+    text = ("CHAPTER I.\n\n" + body(2500, "a") + "\n\n" + prose + "\n\n" +
+            body(2500, "b") + "\n\nCHAPTER II.\n\n" + body(2500, "c") + "\n")
+    starts = nls._unit_starts(text, 0)
+    assert len(starts) == 2                      # offset 0 + "CHAPTER II."
+    assert text.index(prose) not in starts
+
+
 # --------------------------------------------------- 5. oversized single unit
 
 def test_single_paragraph_over_ceiling_is_infeasible():
@@ -360,6 +445,82 @@ def test_params_digest_changes_when_tier_list_changes(monkeypatch):
     before = nls.params_digest(5000)
     monkeypatch.setattr(nls, "_TIER_PATTERNS", nls._TIER_PATTERNS[:-1])
     assert nls.params_digest(5000) != before
+
+
+def test_params_digest_changes_when_only_regex_flags_change(monkeypatch):
+    """Codex P2: `params_digest` bound `p.pattern` and not `p.flags`.
+
+    The shipped chapter tier depends on `re.I`. Recompile the IDENTICAL
+    pattern text without it and `chapter i.` stops being a boundary while the
+    receipt-bound segmenter identity says nothing changed.
+    """
+    name, pattern = nls._TIER_PATTERNS[0]
+    assert pattern.flags & re.I, "fixture assumes the chapter tier is re.I"
+    before = nls.params_digest(5000)
+
+    case_sensitive = re.compile(pattern.pattern, pattern.flags & ~re.I)
+    assert case_sensitive.pattern == pattern.pattern  # text is unchanged
+    monkeypatch.setattr(
+        nls, "_TIER_PATTERNS",
+        ((name, case_sensitive),) + nls._TIER_PATTERNS[1:])
+    assert nls.params_digest(5000) != before
+
+    # ...and the flag really is behavioural, so the digest change is earned.
+    assert pattern.match("chapter i.")
+    assert not case_sensitive.match("chapter i.")
+
+
+def test_params_digest_changes_when_word_pattern_flags_change(monkeypatch):
+    before = nls.params_digest(5000)
+    monkeypatch.setattr(
+        nls, "_WORD", re.compile(nls._WORD.pattern, re.ASCII))
+    assert nls.params_digest(5000) != before
+
+
+# ------------------------------------------- 7b. framed digest domains
+
+def test_framed_digest_construction_and_domain_registry():
+    # Every frozen domain is ASCII, LF-terminated, and unique — a domain
+    # reused across two payload schemas is the whole failure mode.
+    assert len(set(nls.FROZEN_DOMAINS)) == len(nls.FROZEN_DOMAINS)
+    for domain in nls.FROZEN_DOMAINS:
+        assert isinstance(domain, bytes)
+        assert domain.isascii() and domain.endswith(b"\n")
+    # The construction is pinned independently of the implementation.
+    assert nls.framed_digest(nls.DOMAIN_SEGMENT_CONTENT, b"abc") == \
+        expected_framed(nls.DOMAIN_SEGMENT_CONTENT, b"abc")
+    # An unregistered domain has no payload schema and is refused.
+    with pytest.raises(nls.DomainError):
+        nls.framed_digest(b"setec-not-a-registered-domain-v1\n", b"abc")
+    with pytest.raises(nls.DomainError):
+        nls.framed_digest(nls.DOMAIN_SEGMENT_CONTENT, "abc")
+
+
+def test_same_bytes_under_two_schemas_do_not_collide():
+    """Codex P2, the demonstrated collision.
+
+    The source text `[[0,7]]` and the one-segment boundary-offsets payload
+    `[[0,7]]` are the SAME BYTES. Under raw sha256 the content hash and the
+    boundary hash of that segmentation were identical, so a receipt could not
+    say which schema it had hashed.
+    """
+    text = "[[0,7]]"
+    seg = nls.segment_text(text)
+    assert seg.n_segments == 1
+    assert (seg.segments[0].start, seg.segments[0].end) == (0, 7)
+    offsets = json.dumps([[0, 7]], separators=(",", ":")).encode()
+    assert offsets == text.encode("utf-8")  # the collision precondition
+
+    assert seg.segments[0].content_sha256 != seg.boundary_offsets_sha256
+    # ...and each is the framed digest under its OWN domain.
+    assert seg.segments[0].content_sha256 == expected_framed(
+        nls.DOMAIN_SEGMENT_CONTENT, offsets)
+    assert seg.boundary_offsets_sha256 == expected_framed(
+        nls.DOMAIN_BOUNDARY_OFFSETS, offsets)
+    # The raw digest they used to share is emitted nowhere.
+    raw = "sha256:" + hashlib.sha256(offsets).hexdigest()
+    assert raw not in (seg.segments[0].content_sha256,
+                       seg.boundary_offsets_sha256, seg.params_sha256)
 
 
 def test_params_digest_changes_when_a_tier_pattern_changes(monkeypatch):
