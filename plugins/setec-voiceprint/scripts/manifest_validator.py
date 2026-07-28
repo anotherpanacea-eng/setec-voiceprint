@@ -818,6 +818,11 @@ def validate_entry(
             f"Unknown register '{register}'. "
             f"Known values: {', '.join(sorted(ALLOWED_REGISTER))}.",
         ))
+    elif register is not None and not isinstance(register, str):
+        issues.append(Issue(
+            "error", lineno, entry_id, "register",
+            f"Register must be a string, got {type(register).__name__}.",
+        ))
     split = entry.get("split")
     if isinstance(split, str) and split not in ALLOWED_SPLIT:
         issues.append(Issue(
@@ -876,12 +881,21 @@ def validate_entry(
             ))
         else:
             for u in use:
-                if u not in ALLOWED_USE:
+                if not isinstance(u, str):
+                    issues.append(Issue(
+                        "error", lineno, entry_id, "use",
+                        f"Use tag must be a string, got {type(u).__name__}.",
+                    ))
+                elif u not in ALLOWED_USE:
                     issues.append(Issue(
                         "warning", lineno, entry_id, "use",
                         f"Unknown use tag '{u}'. "
                         f"Known: {', '.join(sorted(ALLOWED_USE))}.",
                     ))
+    # Set operations below hash their operands. A non-string tag is already
+    # reported above, so drop it here rather than let it reach a hash and
+    # abort the run on the malformed input this validator exists to report.
+    use_tags = [u for u in use if isinstance(u, str)] if isinstance(use, list) else None
 
     # use/split contradictions per ROADMAP "Phase 1 -> Phase 2
     # operational sequence" guidance. validation cannot live in baseline
@@ -900,7 +914,14 @@ def validate_entry(
                 f"Entry tagged 'use: baseline' but 'split: {split}'. "
                 "Baseline use typically sits in 'split: baseline'.",
             ))
-    if register in PROFILE_ONLY_REGISTERS and isinstance(use, list) and "baseline" in use:
+    # isinstance before the frozenset test: membership hashes its left
+    # operand, so an unhashable register aborted the whole run here.
+    if (
+        isinstance(register, str)
+        and register in PROFILE_ONLY_REGISTERS
+        and isinstance(use, list)
+        and "baseline" in use
+    ):
         issues.append(Issue(
             "error", lineno, entry_id, "use",
             f"{register} is a profile-only private-dyadic register and must "
@@ -914,8 +935,8 @@ def validate_entry(
     # is not consent for a voice-cloning source.
     voiceprint_uses = {"voice_profile", "idiolect"}
     found_voiceprint_uses = (
-        sorted(voiceprint_uses.intersection(use))
-        if isinstance(use, list)
+        sorted(voiceprint_uses.intersection(use_tags))
+        if use_tags is not None
         else []
     )
     if found_voiceprint_uses:
@@ -1132,7 +1153,7 @@ def validate_entry(
         "baseline", "voice_profile", "voice_validation",
         "idiolect", "voice_impostor",
     }
-    use_set = set(use) if isinstance(use, list) else set()
+    use_set = set(use_tags) if use_tags is not None else set()
     if (
         effective_role == "identity_baseline"
         and era is None
