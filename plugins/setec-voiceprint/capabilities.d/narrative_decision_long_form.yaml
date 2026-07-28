@@ -1,0 +1,84 @@
+# Drop-in capability fragment — spec 79 M1 (StoryScope long-form extension).
+#
+# Deliberately carries NO `min_setec_version` and NO `json_delivery`:
+# `setec_run.consumer_entries()` promotes on `json_delivery`, and the drift
+# linter's R1-bundle rule makes `min_setec_version` all-or-nothing with it —
+# M1 emits only suppressed (unlicensed) work-level aggregates, so it must not
+# become a live consumer surface until M2 produces a validation receipt.
+entries:
+  - id: narrative_decision_long_form
+    script_path: plugins/setec-voiceprint/scripts/narrative_decision_long_form.py
+    surface: narrative_decision_long_form
+    status: experimental
+    handoff: experimental
+    consumers: []
+    family: narrative-decision
+    purpose: >
+      Score a work ABOVE the narrative-decision audit's 25,000-word ceiling by
+      deterministic segmentation (chapter/scene/blank-line/paragraph tiers,
+      greedy packing) plus per-segment scoring with the unchanged base audit.
+      M1 emits per-segment raw responses only: every work-level aggregate is
+      suppressed as provisional_unvalidated until a validation receipt exists
+      (spec 79 M2). Not a provenance verdict; reducing per-segment values to a
+      work-level scalar is derivable but outside the claim license.
+    registers:
+      - long_form_fiction
+    use_when:
+      - "Target is long-form fiction ABOVE 25,000 words (novels)"
+      - "You want per-segment narrative-decision distributions across a book"
+      - "Calibration segment emission for the spec 79/78 agreement studies"
+    do_not_use_when:
+      - "Target is within the base audit's 2,000-25,000 word range (use narrative_decision_audit)"
+      - "You want a licensed work-level aggregate (none exists until M2's receipt)"
+      - "You want an AI/human provenance verdict (never licensed by this surface)"
+    inputs:
+      - flag: target
+        type: path
+        required: true
+      - flag: --segment-target-words
+        type: int
+        required: false
+      - flag: --calibration-emit-segments
+        type: bool
+        required: false
+      - flag: --cache-dir
+        type: path
+        required: false
+      - flag: --judge
+        type: enum
+        required: false
+        values: [manifest, mock, anthropic, openai, gemini, agent_host]
+      - flag: --judge-manifest
+        type: path
+        required: false
+      - flag: --judge-model
+        type: string
+        required: false
+      - flag: --json
+        type: bool
+        required: false
+      - flag: --out
+        type: path
+        required: false
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .narrative_long_form.json
+    dependencies:
+      python: []
+      python_optional: []
+    compute:
+      tier: api_llm
+      cost_note: >
+        Per-segment judge multiplier dominates: a novel at the default
+        5,000-word target is roughly 20-80 segments, i.e. 20-80 judge calls
+        per audit (vs 1 for the base audit). Free with a precomputed
+        per-segment manifest (keyed by segment content hash), which is also
+        the only licensable path today. Content-hash+judge-identity cache
+        makes reruns cheap.
+      length_floor_words: 25001
+    examples:
+      - "python3 plugins/setec-voiceprint/scripts/narrative_decision_long_form.py novel.txt --judge manifest --judge-manifest segments.json --json"
+    references:
+      - "specs/79-storyscope-long-form-extension.md"
+      - "Russell et al. 2026 (StoryScope, arXiv:2604.03136v4)"
