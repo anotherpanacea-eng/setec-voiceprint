@@ -1,5 +1,11 @@
 # 78-storyscope-polarity-extension
 
+> **⏸ PARKED 2026-07-27 (owner ruling, terminal round 5):** five review rounds
+> (v1–v5) each returned NEEDS-REWORK; under the pre-agreed terminal-round rule
+> this spec is parked at v5. Verdicts + revisit triggers:
+> fleet-coordination `specs/voiceprint-78-storyscope-polarity-REVIEW-v5-PARKED-2026-07-27.md`.
+> Do not build. Earlier banners below are provenance.
+
 > **Review 2026-07-27:** v2 NEEDS-REWORK (six-lens swarm, 10 P1 / 10 P2; verdict
 > recorded in fleet-coordination `voiceprint-78-storyscope-polarity-REVIEW-2026-07-27.md`).
 > Do not build from v2.
