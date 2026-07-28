@@ -19,6 +19,15 @@
 # fragment (it did — that broke the dropin test in CI). Re-include the whole
 # golden dir; these are frozen manifest snapshots, never a real corpus.
 !plugins/setec-voiceprint/scripts/tests/_golden_capabilities/*.json
+# Same exception for the drop-in register-tier registry (one frozen
+# <leaf>.json per register). This dir's whole subject is privacy, so it is the
+# likeliest place to add a leaf named like `message.private_dm` — which would
+# match the *private* glob above and be dropped silently. A dropped fragment
+# is not a visible failure: the leaf resolves to None, falls out of
+# PROFILE_ONLY_REGISTERS, and the pooled-reference guard reads None as benign.
+# These fragments are a two-field policy mapping (register + tier), never a
+# corpus. The pinned leaf set in register_taxonomy.py is the backstop.
+!plugins/setec-voiceprint/register_tiers.d/*.json
 
 # Claude Code agent harness state. The .claude/worktrees/ directory holds
 # temporary git worktrees the agent harness manages during sub-agent runs;
