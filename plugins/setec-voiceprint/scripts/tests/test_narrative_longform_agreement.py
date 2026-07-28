@@ -1106,7 +1106,7 @@ def test_register_cli_happy_path(tmp_path):
 
 
 @pytest.mark.parametrize("protected", ["thresholds", "manifest"])
-@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
 def test_register_output_cannot_alias_an_input(
     tmp_path, protected, alias_kind
 ):
@@ -1120,6 +1120,9 @@ def test_register_output_cannot_alias_an_input(
     if alias_kind == "symlink":
         out = tmp_path / f"{protected}-link"
         out.symlink_to(protected_path)
+    elif alias_kind == "hardlink":
+        out = tmp_path / f"{protected}-hardlink"
+        out.hardlink_to(protected_path)
     proc = run_cli([
         "--register", "--manifest", str(d), "--thresholds", str(t),
         "--out", str(out), "--date", DATE,
@@ -1171,7 +1174,7 @@ def test_evaluate_refuses_work_id_drift(tmp_path):
 @pytest.mark.parametrize(
     "protected", ["thresholds", "registration", "manifest"],
 )
-@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
 def test_evaluate_output_cannot_alias_an_input(
     tmp_path, protected, alias_kind
 ):
@@ -1182,6 +1185,9 @@ def test_evaluate_output_cannot_alias_an_input(
     if alias_kind == "symlink":
         out = tmp_path / f"{protected}-link"
         out.symlink_to(protected_path)
+    elif alias_kind == "hardlink":
+        out = tmp_path / f"{protected}-hardlink"
+        out.hardlink_to(protected_path)
     proc = run_cli([
         "--evaluate", "--manifest", str(paths["manifest"]),
         "--thresholds", str(paths["thresholds"]),
@@ -1430,9 +1436,11 @@ def test_verify_cli(tmp_path):
         "--registration", str(paths["registration"]),
         "--out", str(receipt_path),
     ]
+    receipt_bytes = receipt_path.read_bytes()
     proc = run_cli(base + ["--date", DATE])
     assert proc.returncode == 0, proc.stderr
     assert "verified" in proc.stdout
+    assert receipt_path.read_bytes() == receipt_bytes
     # --verify without --date refuses rather than trusting the receipt.
     proc = run_cli(base)
     assert proc.returncode == 2

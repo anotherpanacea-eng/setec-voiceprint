@@ -682,7 +682,7 @@ def test_calibration_mock_allowed_any_length(tmp_path):
     ndlf.assert_no_work_level_reduction(results)
 
 
-@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
 def test_output_cannot_alias_the_source_text(tmp_path, alias_kind):
     target = tmp_path / "source.txt"
     original = _make_text(4).encode("utf-8")
@@ -691,6 +691,9 @@ def test_output_cannot_alias_the_source_text(tmp_path, alias_kind):
     if alias_kind == "symlink":
         out = tmp_path / "source-link.txt"
         out.symlink_to(target)
+    elif alias_kind == "hardlink":
+        out = tmp_path / "source-hardlink.txt"
+        out.hardlink_to(target)
     rc = ndlf.main([
         str(target), "--judge", "mock",
         "--calibration-emit-segments", "--out", str(out),
@@ -699,7 +702,7 @@ def test_output_cannot_alias_the_source_text(tmp_path, alias_kind):
     assert target.read_bytes() == original
 
 
-@pytest.mark.parametrize("alias_kind", ["direct", "symlink"])
+@pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
 def test_output_cannot_alias_the_judge_manifest(
     long_case, tmp_path, alias_kind
 ):
@@ -710,12 +713,29 @@ def test_output_cannot_alias_the_judge_manifest(
     if alias_kind == "symlink":
         out = tmp_path / "judge-link.json"
         out.symlink_to(manifest)
+    elif alias_kind == "hardlink":
+        out = tmp_path / "judge-hardlink.json"
+        out.hardlink_to(manifest)
     rc = ndlf.main([
         str(long_case["target"]), "--judge", "manifest",
         "--judge-manifest", str(manifest), "--out", str(out),
     ])
     assert rc == 1
     assert manifest.read_bytes() == original
+
+
+def test_default_output_cannot_alias_the_judge_manifest(long_case):
+    out = long_case["target"].with_suffix(
+        long_case["target"].suffix + ".narrative_long_form.json"
+    )
+    original = long_case["manifest"].read_bytes()
+    out.write_bytes(original)
+    rc = ndlf.main([
+        str(long_case["target"]), "--judge", "manifest",
+        "--judge-manifest", str(out),
+    ])
+    assert rc == 1
+    assert out.read_bytes() == original
 
 
 def test_calibration_mock_long_text_exempt_from_tripwire(
