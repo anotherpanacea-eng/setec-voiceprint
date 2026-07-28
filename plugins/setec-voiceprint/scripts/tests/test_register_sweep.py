@@ -7487,10 +7487,18 @@ def test_docs_freshness_is_green() -> None:
 
 
 def test_changelog_fragment_names_the_capability_id_verbatim() -> None:
+    """The shipped changelog record names the capability id verbatim.
+
+    A `changelog.d/` fragment is transient by design: a release folds it into
+    `CHANGELOG.md` and deletes it. Pinning only the fragment path therefore
+    fails on the first release cut after this test lands, which is what
+    happened at v1.127.0. Follow the record to wherever it currently lives.
+    """
     fragment = (
         REPO_ROOT / "changelog.d" / "feat-register-composition-sweep-encoders.md"
-    ).read_text(encoding="utf-8")
-    assert "register_composition_sweep" in fragment
+    )
+    record = fragment if fragment.exists() else REPO_ROOT / "CHANGELOG.md"
+    assert "register_composition_sweep" in record.read_text(encoding="utf-8")
 
 
 def test_script_is_executable_as_a_module_entry_point() -> None:
