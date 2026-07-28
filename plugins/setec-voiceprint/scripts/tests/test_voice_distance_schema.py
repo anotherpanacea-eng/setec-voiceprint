@@ -54,6 +54,13 @@ def _fake_result() -> dict:
             "mean_words": 2750,
             "min_words": 1200,
             "max_words": 5400,
+            "register_tier_counts": {
+                "private_composed": 0,
+                "private_dyadic": 0,
+                "public_composed": 8,
+                "public_responsive": 0,
+            },
+            "unresolved_register_count": 0,
         },
         "overall": {
             "weighted_delta": 1.4,
@@ -114,6 +121,15 @@ class TestTargetAndBaseline:
         assert envelope["baseline"]["mean_words"] == 2750
         assert envelope["baseline"]["min_words"] == 1200
         assert envelope["baseline"]["max_words"] == 5400
+
+    def test_baseline_carries_register_tier_composition(self, envelope):
+        assert envelope["baseline"]["register_tier_counts"] == {
+            "private_composed": 0,
+            "private_dyadic": 0,
+            "public_composed": 8,
+            "public_responsive": 0,
+        }
+        assert envelope["baseline"]["unresolved_register_count"] == 0
 
 
 class TestResultsPayload:

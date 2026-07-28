@@ -48,6 +48,13 @@ def _fake_profile() -> dict:
             "mean_words": 2083,
             "min_words": 400,
             "max_words": 6000,
+            "register_tier_counts": {
+                "private_composed": 12,
+                "private_dyadic": 0,
+                "public_composed": 0,
+                "public_responsive": 0,
+            },
+            "unresolved_register_count": 0,
         },
         "preprocessing": {
             "opt_out": False,
@@ -124,6 +131,7 @@ class TestResultsPayload:
     def test_results_carries_profile_data(self, envelope):
         r = envelope["results"]
         assert "baseline_summary" in r
+        assert r["baseline_summary"]["register_tier_counts"]["private_composed"] == 12
         assert "selected_features" in r
         assert "families" in r
 

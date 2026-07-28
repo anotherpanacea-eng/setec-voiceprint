@@ -23,7 +23,11 @@ import manifest_validator as mv  # type: ignore
         "professional_letter",
         "teaching",
         "message.imessage",
-        "social_media_facebook",
+        "message.facebook_messenger",
+        "social_media_twitter",
+        "forum_metafilter",
+        "social_media_facebook_posts",
+        "social_media_facebook_comments",
     ],
 )
 def test_owner_approved_register_is_known_without_warning(tmp_path: Path, register: str):
@@ -46,7 +50,12 @@ def test_owner_approved_register_is_known_without_warning(tmp_path: Path, regist
     assert result["summary"]["by_register"] == {register: 1}
 
 
-def test_message_imessage_baseline_use_is_rejected(tmp_path: Path):
+@pytest.mark.parametrize(
+    "register", ["message.imessage", "message.facebook_messenger"]
+)
+def test_private_dyadic_baseline_use_is_rejected(
+    tmp_path: Path, register: str
+):
     source = tmp_path / "message.txt"
     source.write_text("A private conversational-register fixture.", encoding="utf-8")
     entry = {
@@ -54,7 +63,7 @@ def test_message_imessage_baseline_use_is_rejected(tmp_path: Path):
         "path": source.name,
         "ai_status": "pre_ai_human",
         "use": ["baseline", "voice_profile"],
-        "register": "message.imessage",
+        "register": register,
         "privacy": "private",
     }
     manifest = tmp_path / "corpus_manifest.jsonl"
@@ -70,7 +79,12 @@ def test_message_imessage_baseline_use_is_rejected(tmp_path: Path):
     )
 
 
-def test_message_imessage_voice_profile_only_is_accepted(tmp_path: Path):
+@pytest.mark.parametrize(
+    "register", ["message.imessage", "message.facebook_messenger"]
+)
+def test_private_dyadic_voice_profile_only_is_accepted(
+    tmp_path: Path, register: str
+):
     source = tmp_path / "message.txt"
     source.write_text("A private conversational-register fixture.", encoding="utf-8")
     entry = {
@@ -78,7 +92,7 @@ def test_message_imessage_voice_profile_only_is_accepted(tmp_path: Path):
         "path": source.name,
         "ai_status": "pre_ai_human",
         "use": ["voice_profile"],
-        "register": "message.imessage",
+        "register": register,
         "privacy": "private",
     }
     manifest = tmp_path / "corpus_manifest.jsonl"
@@ -90,8 +104,17 @@ def test_message_imessage_voice_profile_only_is_accepted(tmp_path: Path):
     assert not any(issue["field"] == "register" for issue in result["issues"])
 
 
-def test_social_media_facebook_is_h2_admissible_and_declares_unknown(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    "register",
+    [
+        "social_media_twitter",
+        "forum_metafilter",
+        "social_media_facebook_posts",
+        "social_media_facebook_comments",
+    ],
+)
+def test_new_public_leaf_is_h2_admissible_and_declares_unknown(
+    tmp_path: Path, register: str,
 ) -> None:
     """The Spec 73 projection admits the register, and H1's receipt-bound
     mapping resolves it to the "unknown" declared family (it is not in
@@ -106,7 +129,7 @@ def test_social_media_facebook_is_h2_admissible_and_declares_unknown(
         "path": source.name,
         "ai_status": "pre_ai_human",
         "use": ["baseline"],
-        "register": "social_media_facebook",
+        "register": register,
     }
     manifest = tmp_path / "corpus_manifest.jsonl"
     data = (json.dumps(row) + "\n").encode("utf-8")
@@ -114,8 +137,8 @@ def test_social_media_facebook_is_h2_admissible_and_declares_unknown(
         data, manifest_path=manifest
     )
     assert projection.input_rows == 1
-    assert projection.rows[0].register == "social_media_facebook"
-    assert rc.resolve_family("social_media_facebook") == "unknown"
+    assert projection.rows[0].register == register
+    assert rc.resolve_family(register) == "unknown"
     # And the projected row frames cleanly through the H2 encoder.
     rs.projected_row_binding(
         {
@@ -123,8 +146,35 @@ def test_social_media_facebook_is_h2_admissible_and_declares_unknown(
             "manifest_ordinal": 0,
             "path": source.name,
             "persona": None,
-            "register": "social_media_facebook",
+            "register": register,
             "split": None,
             "use": ["baseline"],
         }
     )
+
+
+def test_retired_social_media_facebook_is_a_hard_error(tmp_path: Path):
+    source = tmp_path / "post.txt"
+    source.write_text("A synthetic retired-register fixture.", encoding="utf-8")
+    entry = {
+        "id": "post-1",
+        "path": source.name,
+        "ai_status": "pre_ai_human",
+        "use": ["validation"],
+        "register": "social_media_facebook",
+    }
+    manifest = tmp_path / "corpus_manifest.jsonl"
+    manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+    result = mv.validate_manifest(manifest)
+
+    issues = [issue for issue in result["issues"] if issue["field"] == "register"]
+    assert len(issues) == 1
+    assert issues[0]["severity"] == "error"
+    assert "Retired register" in issues[0]["message"]
+
+    with pytest.raises(mv.BadInput):
+        mv.project_register_sweep_manifest_bytes(
+            (json.dumps(entry) + "\n").encode("utf-8"),
+            manifest_path=manifest,
+        )

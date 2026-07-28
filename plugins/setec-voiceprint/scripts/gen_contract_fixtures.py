@@ -320,6 +320,13 @@ def _build_voice_distance() -> dict[str, Any]:
             "min_words": 5000,
             "max_words": 12000,
             "registers": ["personal"],
+            "register_tier_counts": {
+                "private_composed": 6,
+                "private_dyadic": 0,
+                "public_composed": 0,
+                "public_responsive": 0,
+            },
+            "unresolved_register_count": 0,
             "personas": [],
             "privacy_values": [],
             "files": [
@@ -382,6 +389,13 @@ def _build_voice_profile() -> dict[str, Any]:
             "min_words": 5000,
             "max_words": 12000,
             "registers": ["literary_fiction"],
+            "register_tier_counts": {
+                "private_composed": 0,
+                "private_dyadic": 0,
+                "public_composed": 6,
+                "public_responsive": 0,
+            },
+            "unresolved_register_count": 0,
             "personas": [],
             "privacy_values": [],
             "files": [
