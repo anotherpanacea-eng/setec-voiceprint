@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from types import MappingProxyType
 
 import pytest
 
@@ -152,8 +153,53 @@ def test_registry_is_exact_total_and_has_no_default():
         "message.imessage",
         "message.facebook_messenger",
     }
+    # The happy path is otherwise only covered transitively (through the
+    # str-subclass seam test and the whole-mapping comparison above), so pin
+    # the one lookup the pooled-reference guard actually makes.
+    assert rt.resolve_register_tier("message.imessage") == "private_dyadic"
+    assert rt.resolve_register_tier("blog_essay") == "public_composed"
     assert rt.resolve_register_tier(None) is None
     assert rt.resolve_register_tier("not.registered") is None
+
+
+def test_register_to_tier_is_an_immutable_process_wide_singleton():
+    """The registry is a shared singleton, so it must not be writable.
+
+    ``REGISTER_TO_TIER`` is built once at import and then read for the life of
+    the process by ``resolve_register_tier`` — which is what
+    ``stylometry_core``'s private-dyadic pooling guard consults. A plain
+    ``dict`` would let any importer run
+    ``REGISTER_TO_TIER["message.imessage"] = "public_composed"`` and disarm the
+    guard for every later caller, with both import-time pins already satisfied
+    and nothing left to re-check. Container type is the control here: the
+    ``dict(...)``/``set(...)`` comparisons elsewhere in this file read the same
+    either way, so they are blind to it.
+    """
+    assert isinstance(rt.REGISTER_TO_TIER, MappingProxyType)
+    with pytest.raises(TypeError):
+        rt.REGISTER_TO_TIER["message.imessage"] = "public_composed"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        del rt.REGISTER_TO_TIER["message.imessage"]  # type: ignore[attr-defined]
+    assert rt.REGISTER_TO_TIER["message.imessage"] == "private_dyadic"
+    assert rt.resolve_register_tier("message.imessage") == "private_dyadic"
+
+
+def test_loader_returns_an_immutable_mapping(tmp_path: Path):
+    """The proxy must come from the loader, not from a wrapper at the call."""
+    _fragment(tmp_path, "message.demo", "private_dyadic")
+    loaded = rt.load_register_tiers(tmp_path)
+    assert isinstance(loaded, MappingProxyType)
+    with pytest.raises(TypeError):
+        loaded["message.demo"] = "public_composed"  # type: ignore[index]
+
+
+def test_profile_only_registers_is_a_genuine_frozenset():
+    """The profile-only set gates ``use: baseline``; it must not be a ``set``."""
+    assert type(rt.PROFILE_ONLY_REGISTERS) is frozenset
+    assert type(rt.REGISTER_TIERS) is frozenset
+    assert type(rt.EXPECTED_REGISTER_LEAVES) is frozenset
+    with pytest.raises(AttributeError):
+        rt.PROFILE_ONLY_REGISTERS.add("blog_essay")  # type: ignore[attr-defined]
 
 
 def test_closure_rejects_added_but_unmapped_and_extra_cells():
@@ -208,9 +254,44 @@ def test_loader_rejects_symlink_fragment(tmp_path: Path):
         rt.load_register_tiers(registry)
 
 
+def test_max_fragment_bytes_is_pinned_to_its_literal_value():
+    """The cap's VALUE has to be pinned, not just its existence.
+
+    Every other size assertion in this file sizes its fixture off
+    ``rt.MAX_FRAGMENT_BYTES``, so raising the cap raises the fixtures with it
+    and the suite stays green — a 1024x widening would read as a no-op. The
+    constant appears nowhere else in the repo, so this literal is the only
+    place the bound is stated twice.
+    """
+    assert rt.MAX_FRAGMENT_BYTES == 1024
+
+
 def test_loader_rejects_oversized_fragment(tmp_path: Path):
     target = tmp_path / "message.demo.json"
     target.write_text(" " * (rt.MAX_FRAGMENT_BYTES + 1), encoding="utf-8")
+    with pytest.raises(ValueError, match="too large"):
+        rt.load_register_tiers(tmp_path)
+
+
+def test_loader_rejects_an_oversized_fragment_that_is_valid_json(tmp_path: Path):
+    """The realistic oversized payload parses; only the cap can stop it.
+
+    ``test_loader_rejects_oversized_fragment`` writes 1025 spaces, which is not
+    JSON — with the size checks deleted it still raises, just from
+    ``json.JSONDecodeError`` with a different message, so that test is coupled
+    to the message rather than to the cap. This fixture is well-formed,
+    correctly named, correctly tiered JSON that loads silently once size
+    enforcement is gone, and its 2000-byte body is an absolute size that does
+    NOT track ``rt.MAX_FRAGMENT_BYTES``.
+    """
+    payload = '{"register":"message.demo",' + " " * 2000 + '"tier":"private_dyadic"}'
+    # Sanity: the only thing wrong with this fragment is how big it is.
+    assert json.loads(payload) == {
+        "register": "message.demo",
+        "tier": "private_dyadic",
+    }
+    assert len(payload.encode("utf-8")) > 2000
+    (tmp_path / "message.demo.json").write_text(payload, encoding="utf-8")
     with pytest.raises(ValueError, match="too large"):
         rt.load_register_tiers(tmp_path)
 
@@ -277,12 +358,34 @@ def test_resolve_normalizes_a_str_subclass_instead_of_failing_open():
     assert rt.resolve_register_tier(None) is None
 
 
-def test_loader_rejects_duplicate_json_keys(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("payload", "key"),
+    [
+        pytest.param(
+            '{"register":"message.demo","register":"message.other",'
+            '"tier":"private_dyadic"}',
+            "register",
+            id="duplicate-register",
+        ),
+        pytest.param(
+            '{"register":"message.demo","tier":"private_dyadic",'
+            '"tier":"public_composed"}',
+            "tier",
+            id="duplicate-tier",
+        ),
+    ],
+)
+def test_loader_rejects_duplicate_json_keys(tmp_path: Path, payload: str, key: str):
+    """Only the duplicate ``tier`` case actually exercises this hook.
+
+    A duplicate ``register`` is caught independently by the filename-stem
+    check, so removing ``object_pairs_hook`` merely changes that case's
+    message. A duplicate ``tier`` has no second line of defence: last-wins
+    parsing hands back ``public_composed`` for a correctly named
+    ``message.demo.json``, every other check passes, and the fragment loads
+    with the privacy tier stripped.
+    """
     target = tmp_path / "message.demo.json"
-    target.write_text(
-        '{"register":"message.demo","register":"message.other",'
-        '"tier":"private_dyadic"}',
-        encoding="utf-8",
-    )
-    with pytest.raises(ValueError, match="duplicate JSON key"):
+    target.write_text(payload, encoding="utf-8")
+    with pytest.raises(ValueError, match=f"duplicate JSON key '{key}'"):
         rt.load_register_tiers(tmp_path)

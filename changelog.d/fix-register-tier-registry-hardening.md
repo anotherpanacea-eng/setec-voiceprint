@@ -55,6 +55,33 @@ reintroduce the fail-open. The raised `ValueError` reports the offending
 leaves, the surviving `private_dyadic` set, and a paste-ready replacement
 digest, so updating a pin needs no separate tool.
 
+**Mutation-tested guards.** A mutation audit of the taxonomy found two
+behaviours that nothing in the 8,940-test suite pinned; both are now covered.
+(a) `MAX_FRAGMENT_BYTES` was pinned only by its *existence*. Every size test
+sized its fixture as `MAX_FRAGMENT_BYTES + 1`, so raising the cap 1024x to
+1 MiB raised the fixtures with it and the suite stayed green. The value is now
+asserted literally, and a second fixture uses an absolute 2 KiB body that does
+not track the constant — and, unlike the 1025-spaces fixture (not valid JSON,
+so it still raised from the parser with size enforcement deleted, making that
+kill message-coupled), it is well-formed, correctly named, correctly tiered
+JSON that loads silently once the cap is gone. (b) `REGISTER_TO_TIER`'s
+`MappingProxyType` wrapper could be replaced with the bare `dict` without
+failing anything, because the existing assertions read through
+`dict(...)`/`set(...)`, which is blind to container type. The registry is a
+process-wide singleton feeding the pooling guard, so any importer could have
+run `REGISTER_TO_TIER["message.imessage"] = "public_composed"` and disarmed
+that guard for the rest of the process with both import-time pins already
+satisfied and nothing left to re-check. Immutability of the module singleton,
+of `load_register_tiers`' return value, and of `PROFILE_ONLY_REGISTERS` (a
+real `frozenset` — also unpinned) is now asserted directly. Two narrower gaps
+closed alongside: the duplicate-JSON-key test only duplicated `register`,
+which the filename-stem check catches independently, so the case with no
+second line of defence went untested — a duplicate `tier` resolves under
+last-wins parsing to `public_composed` on a correctly named
+`message.demo.json`, stripping the privacy tier with every other check
+passing; and `resolve_register_tier`'s happy path had no direct positive
+assertion.
+
 Also: `.gitignore`'s `*private*` privacy glob would have silently swallowed a
 future fragment named like `message.private_dm.json`. No shipped fragment
 matched, but `register_tiers.d/` is the one drop-in directory whose whole
