@@ -219,7 +219,10 @@ def paired_shift(values: list[float]) -> tuple[float, float] | None:
 def derive_polarity_verdict(*, arm: str, availability: tuple[float,float], availability_floor: float, support: tuple[int,int], min_support: int, bridge_support: tuple[int,int], min_bridge: int, response_class: str, min_class_n: int, bridge: tuple[tuple[float,float],tuple[float,float]] | None, ceiling: float, degenerate: bool, interval: tuple[float,float] | None, threshold: float, corpus_ok: bool = True) -> tuple[str,int]:
     if min(availability) < availability_floor: return "judge_answer_absent", 1
     if not corpus_ok or min(support) < min_support or min(bridge_support) < min_bridge: return "insufficient_support", 2
-    assert bridge is not None
+    # evaluate() never reaches here with an unformed bridge (the support floor
+    # is >= 2, the minimum paired_shift needs), but this is an exported entry
+    # point: refuse rather than rely on an assert that -O strips.
+    if bridge is None: return "insufficient_support", 2
     states = [("artifact" if p >= ceiling else "inconclusive" if u >= ceiling else "pass") for p,u in bridge]
     if "artifact" in states: return ("fragment_artifact_confounded" if arm == "segment_regime" else "subfloor_artifact_confounded"), 3
     if "inconclusive" in states: return "bridge_inconclusive", 3
@@ -377,18 +380,29 @@ def _round(v: Any) -> Any:
     if isinstance(v,dict): return {k:_round(x) for k,x in v.items()}
     return v
 
+_DISCLOSURE_BAD_KEYS = frozenset({"text_id","work_id","source_work_id","segment_id","content_sha256","source_envelope_sha256","score","aggregate","aggregate_score","rank","ranking","per_text","per_work","work_value","provenance_verdict"})
+# Each "*" stands for exactly one path segment -- a signal id, a
+# "<label>.<role>" class key, or a list index.  Signal ids and class keys
+# contain dots of their own, so paths are matched segment-wise against these
+# split patterns; joining the path into one string would splice a single key
+# into several segments and reject every real receipt.
+_DISCLOSURE_ALLOWED = tuple(tuple(p.split(".")) for p in ("per_signal.*.statistics.*.value","per_signal.*.statistics.*.threshold","per_signal.*.ci.lo","per_signal.*.ci.hi","per_signal.*.ci.z","per_signal.*.availability_by_class.*","per_signal.*.bridge.value","per_signal.*.bridge.value_response_units","per_signal.*.bridge.ci_upper","per_signal.*.bridge.threshold","per_signal.*.bridge.by_class.*","per_signal.*.bridge.ci_upper_by_class.*","class_counts.*.max_share_single_work","class_counts.*.segment_count_stats.median","covered_length_range.median_words","covered_source_work_range.median_words","floors_applied.*"))
+
+def _float_leaf_allowed(path: tuple[str,...]) -> bool:
+    return any(
+        len(pattern) == len(path) and all(p == "*" or p == seg for p, seg in zip(pattern, path))
+        for pattern in _DISCLOSURE_ALLOWED
+    )
+
 def assert_no_per_text_disclosure(node: Any, path: tuple[str,...] = ()) -> None:
-    bad = {"text_id","work_id","source_work_id","segment_id","content_sha256","source_envelope_sha256","score","aggregate","aggregate_score","rank","ranking","per_text","per_work","work_value","provenance_verdict"}
-    allowed = {"per_signal.*.statistics.*.value","per_signal.*.statistics.*.threshold","per_signal.*.ci.lo","per_signal.*.ci.hi","per_signal.*.ci.z","per_signal.*.availability_by_class.*","per_signal.*.bridge.value","per_signal.*.bridge.value_response_units","per_signal.*.bridge.ci_upper","per_signal.*.bridge.threshold","per_signal.*.bridge.by_class.*","per_signal.*.bridge.ci_upper_by_class.*","class_counts.*.max_share_single_work","class_counts.*.segment_count_stats.median","covered_length_range.median_words","covered_source_work_range.median_words","floors_applied.*"}
     if isinstance(node,dict):
         for k,v in node.items():
-            if k in bad or any(x in k for x in ("per_text","per_work","text_id","work_value","ranking")): raise ValueError("per-text disclosure")
+            if k in _DISCLOSURE_BAD_KEYS or any(x in k for x in ("per_text","per_work","text_id","work_value","ranking")): raise ValueError("per-text disclosure")
             assert_no_per_text_disclosure(v,path+(k,))
     elif isinstance(node,list):
-        for v in node: assert_no_per_text_disclosure(v,path+("*",))
+        for i,v in enumerate(node): assert_no_per_text_disclosure(v,path+(str(i),))
     elif isinstance(node,float):
-        pattern=".".join(path); pattern=re.sub(r"\.\d+(?=\.|$)", ".*", pattern)
-        if pattern not in allowed: raise ValueError(f"unlisted float leaf: {pattern}")
+        if not _float_leaf_allowed(path): raise ValueError("unlisted float leaf: " + ".".join(path))
 
 def _aliases(out: Path, inputs: Iterable[Path]) -> bool:
     if out.exists(): out_s = out.stat()
@@ -432,7 +446,7 @@ def _class_counts(rows: list[dict[str, Any]], dropped: Counter, arm: str) -> dic
                 "max_share_single_work":(max(counts)/len(group) if group and role == "primary" else None),
                 "segment_count_stats":({"min":min(counts),"max":max(counts),"median":float(statistics.median(counts))} if arm == "segment_regime" and counts else None),
                 "tier_counts":(dict(sorted(tiers.items())) if arm == "segment_regime" else None),
-                "dropped_by_reason":{reason:dropped[(label,reason)] for reason in sorted(DROP_REASONS)},
+                "dropped_by_reason":{reason:dropped[(label,role,reason)] for reason in sorted(DROP_REASONS)},
             }
     return out
 
@@ -486,14 +500,14 @@ def evaluate(*, arm: str, manifest: Path, thresholds: Path, registration: Path, 
         elif r["n_words"]>band["max_words"]: why="above_length_band"
         elif r["content_sha256"] in seen[r["label"]]: why="duplicate_content_sha256"
         elif arm=="segment_regime" and r["role"]=="primary" and isinstance(r["segmenter"], dict) and r["segmenter"].get("tier")=="whole_text": why="whole_text_tier"
-        if why: dropped[(r["label"],why)]+=1
+        if why: dropped[(r["label"],r["role"],why)]+=1
         else: kept.append(r); seen[r["label"]].add(r["content_sha256"])
     if arm=="segment_regime":
         counts=Counter((r["label"],r["source_work_id"]) for r in kept if r["role"]=="primary")
         too={x for x,n in counts.items() if n<th["floors"]["min_segment_count_by_work"]}
         kept2=[]
         for r in kept:
-            if r["role"]=="primary" and (r["label"],r["source_work_id"]) in too: dropped[(r["label"],"single_segment_work")]+=1
+            if r["role"]=="primary" and (r["label"],r["source_work_id"]) in too: dropped[(r["label"],r["role"],"single_segment_work")]+=1
             else: kept2.append(r)
         kept=kept2
     primary=[r for r in kept if r["role"]=="primary"]
@@ -541,7 +555,6 @@ def evaluate(*, arm: str, manifest: Path, thresholds: Path, registration: Path, 
         else:
             est=hedges_g(ai,human,LEANING_BY_SIGNAL_ID[sid]); deg=est is None
             if est: interval=(est[0]-1.96*est[1],est[0]+1.96*est[1]); raw=auc_mannwhitney(ai,human); da=direction_aware_auc(raw,LEANING_BY_SIGNAL_ID[sid]) if raw is not None else None; stats=[{"name":"hedges_g","value":est[0],"threshold":th["floors"]["effect_threshold_numeric"],"direction":"absolute_interval","role":"verdict_bearing","estimand":"per_source_work"},{"name":"direction_aware_auc","value":da,"threshold":None,"direction":"comparison_only","role":"comparison_only","estimand":"per_source_work"}]
-        bridge_pair=tuple(s for s in shifts if s is not None)
         bridge_for_verdict=(shifts[0],shifts[1]) if all(shifts) else None
         verdict,step=derive_polarity_verdict(arm=arm,availability=availability,availability_floor=th["floors"]["min_availability_rate"],support=support,min_support=th["floors"]["min_signal_support"],bridge_support=(len(bvals["pre_ai_human"]),len(bvals["ai_generated"])),min_bridge=th["floors"]["min_bridge_works"],response_class=rc,min_class_n=th["floors"]["min_class_n"],bridge=bridge_for_verdict,ceiling=th["floors"]["fragment_shift_ceiling"] if arm=="segment_regime" else th["floors"]["subfloor_shift_ceiling"],degenerate=deg,interval=interval,threshold=th["floors"]["effect_threshold_numeric"],corpus_ok=corpus_ok)
         operator=OPERATOR_TABLE[(next(f.key for f,i,s in iter_signals() if signal_id_for(f,s)==sid),SIGNAL_SPECS[sid].option)]
