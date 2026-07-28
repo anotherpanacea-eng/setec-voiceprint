@@ -31,7 +31,7 @@
     "length_floor_words": 150
   },
   "registers": [
-    "personal"
+    "message.imessage"
   ],
   "dependencies": {
     "python": []

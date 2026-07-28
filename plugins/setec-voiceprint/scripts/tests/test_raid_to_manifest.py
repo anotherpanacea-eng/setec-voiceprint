@@ -18,6 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CALIB_DIR = ROOT / "calibration"
 if str(CALIB_DIR) not in sys.path:
     sys.path.insert(0, str(CALIB_DIR))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import register_taxonomy as _rt  # type: ignore  # noqa: E402
 
 try:
     import pytest  # type: ignore
@@ -224,12 +228,37 @@ class TestRegisterMapping:
             {"domain": "abstracts"}
         ) == "academic_philosophy"
 
-    def test_reddit_maps_to_personal(self):
+    def test_reddit_maps_to_a_public_responsive_forum(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
         assert rt._register_for_row(
             {"domain": "reddit"}
-        ) == "personal"
+        ) == "forum_metafilter"
+
+    def test_no_domain_claims_a_private_register_tier(self):
+        """RAID is third-party public web text.
+
+        A private-tier leaf here poisons `register_tier_counts` on every
+        RAID-derived calibration manifest and misdescribes public forum
+        prose as the author's own private writing.
+        """
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        for domain, register in rt._DOMAIN_TO_REGISTER.items():
+            if register is None:
+                continue
+            tier = _rt.resolve_register_tier(register)
+            assert tier is not None, (domain, register)
+            assert tier.startswith("public_"), (domain, register, tier)
+
+    def test_every_mapped_leaf_is_in_the_registered_vocabulary(self):
+        """The map cannot drift out of the closed leaf registry."""
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        for domain, register in rt._DOMAIN_TO_REGISTER.items():
+            if register is None:
+                continue
+            assert register in _rt.REGISTER_TO_TIER, (domain, register)
 
     def test_code_returns_none(self):
         # Code has no register match in the validator's vocabulary.

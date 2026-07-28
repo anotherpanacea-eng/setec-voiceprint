@@ -23,6 +23,12 @@ from typing import Any, Callable, Mapping, Sequence
 import warnings
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from register_taxonomy import (
+    PRIVATE_DYADIC_TIER,
+    PROFILE_ONLY_REGISTERS,
+    resolve_register_tier,
+)
+
 if os.name == "nt":  # native handle-relative backend; never imported elsewhere
     import windows_descriptor_io as _winio
 
@@ -18985,7 +18991,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id")
     parser.add_argument("--persona")
     parser.add_argument("--author")
-    parser.add_argument("--register")
+    parser.add_argument(
+        "--register",
+        help=(
+            "Required conversational register leaf. Must resolve to the "
+            f"{PRIVATE_DYADIC_TIER} tier; validated before any sealing."
+        ),
+    )
     parser.add_argument("--since", type=_date_argument)
     parser.add_argument("--until", type=_date_argument)
     parser.add_argument("--max-messages", type=int, default=250_000)
@@ -19003,6 +19015,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--smoke-run-receipt", type=Path)
     parser.add_argument("--receipt-out", type=Path)
     return parser
+
+
+def validated_cli_register(value: object) -> str:
+    """Refuse any register outside the profile-only tier, before any sealing.
+
+    ``--register`` is copied verbatim into every emitted row and bound into the
+    sealed run's source-config fingerprint, and completed-run bindings are
+    immutable once closed. A merely *unknown* value is caught downstream by the
+    manifest validator, but a valid-but-wrong leaf such as ``blog_essay`` is
+    not: the mislabel would be frozen into the run. The gate therefore lives at
+    option-parse time. It deliberately does not touch
+    ``semantic_options_payload``, so the fingerprint composition of every
+    already-sealed run is unchanged and such runs still revalidate.
+    """
+    tier = resolve_register_tier(value)
+    if tier != PRIVATE_DYADIC_TIER:
+        allowed = ", ".join(sorted(PROFILE_ONLY_REGISTERS))
+        raise SystemExit(
+            f"{TOOL_NAME}: --register must name a {PRIVATE_DYADIC_TIER} "
+            f"register leaf; {value!r} resolves to {tier!r}. "
+            f"Allowed: {allowed}."
+        )
+    return str(value)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -19044,6 +19079,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if missing:
         action = 'offline approved import' if args.offline_approved_import else 'live acquisition'
         parser.error(action + ' requires ' + ', '.join(missing))
+    register = validated_cli_register(args.register)
     if args.offline_approved_import:
         key = load_offline_approved_hmac_key(
             args.hmac_key,
@@ -19059,7 +19095,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_db=(args.archive_equivalence_db if args.offline_approved_import else args.source_db),
         output_root=args.output_root,
         run_id=args.run_id, persona=args.persona, author=args.author,
-        register=args.register, since=args.since, until=args.until,
+        register=register, since=args.since, until=args.until,
         include_group_chats=args.include_group_chats,
         apple_date_unit=args.apple_date_unit, timezone_name=args.timezone,
         max_messages=args.max_messages, max_retained=args.max_retained,

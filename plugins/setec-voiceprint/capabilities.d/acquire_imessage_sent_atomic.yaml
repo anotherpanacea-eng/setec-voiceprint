@@ -40,7 +40,7 @@ entries:
       model, API, or GPU
     length_floor_words: 0
   registers:
-  - personal
+  - message.imessage
   dependencies:
     python: []
   examples: []

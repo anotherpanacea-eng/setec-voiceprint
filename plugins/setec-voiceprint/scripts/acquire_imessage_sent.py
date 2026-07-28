@@ -38,6 +38,13 @@ TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_imessage_sent"
 SCRAPER_VERSION = "1.0"
 
+# Private dyadic conversation, not `personal`. Every profile-only guard keys on
+# the `private_dyadic` tier of `register_taxonomy` -- the validator's rejection
+# of `baseline` use and `stylometry_core.assert_personal_register_isolated`.
+# `personal` is `private_composed`, so a row stamped with it is silently
+# poolable with essay references. This is the acquirer's only register.
+REGISTER = "message.imessage"
+
 COCOA_EPOCH_OFFSET_SECONDS = 978_307_200
 NANOSECONDS_CUTOFF = 10_000_000_000
 OBJECT_REPLACEMENT = "\ufffc"
@@ -637,7 +644,7 @@ def process_item(
         title=title,
         author=options.author,
         persona=options.persona,
-        register="personal",
+        register=REGISTER,
         date_written=date,
         source_url="imessage_local",
         cleaned_text=cleaned,
@@ -1172,7 +1179,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--persona", default="joshua", help="Persona slug (default: joshua).")
     parser.add_argument("--author", help="Display author (default: persona).")
-    parser.add_argument("--register", choices=["personal"], default="personal")
+    parser.add_argument("--register", choices=[REGISTER], default=REGISTER)
     parser.add_argument("--since", help="Inclusive local date, YYYY-MM-DD.")
     parser.add_argument("--until", help="Inclusive local date, YYYY-MM-DD.")
     parser.add_argument(
