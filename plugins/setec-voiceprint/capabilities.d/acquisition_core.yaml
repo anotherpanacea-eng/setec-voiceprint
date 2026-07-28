@@ -4,7 +4,31 @@ entries:
   surface: voice_coherence_acquisition
   status: todo
   handoff: none
-  consumers: []
+  # consumers: shared acquisition library — all 22 in-repo importers; also surfaced by
+  # skill: corpus-acquisition.
+  consumers:
+  - acquire_blog
+  - acquire_blogger_takeout
+  - acquire_corpus_template
+  - acquire_courtlistener
+  - acquire_epub
+  - acquire_everycrsreport
+  - acquire_gmail_sent
+  - acquire_govinfo_chrg
+  - acquire_imessage_sent
+  - acquire_imessage_sent_atomic
+  - acquire_magazine
+  - acquire_manuscript
+  - acquire_mirrulations
+  - acquire_openalex_core
+  - acquire_pdf_urls
+  - author_corpus_export
+  - fetch_pan24_voightkampff
+  - general_imposters
+  - generate_voice_report
+  - gmail_locator_map
+  - pdf_extract
+  - pdf_inventory
   family: TODO
   purpose: shared helpers for impostor-corpus acquisition.
   use_when:

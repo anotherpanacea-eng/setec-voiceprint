@@ -4,7 +4,8 @@ entries:
   surface: validation
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - gecscore_audit
   family: TODO
   purpose: linguistic-background caution surface (paired-release schedule Release
     9, Trustworthiness Tier 1).

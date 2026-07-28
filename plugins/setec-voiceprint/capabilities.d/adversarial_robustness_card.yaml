@@ -4,7 +4,9 @@ entries:
   surface: validation
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - pan_replay
+  - paraphrase_ladder
   family: TODO
   purpose: per-signal robustness card.
   use_when:

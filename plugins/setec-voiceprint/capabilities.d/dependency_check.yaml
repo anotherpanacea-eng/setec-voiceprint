@@ -4,7 +4,10 @@ entries:
   surface: setup
   status: heuristic
   handoff: internal
-  consumers: []
+  # consumers: voice_fingerprint's error path routes operators here; also surfaced by
+  # skills: setec, setup.
+  consumers:
+  - voice_fingerprint
   family: setup
   purpose: 'Survey the SETEC framework''s five dependency tiers (core, acquisition,
     ocr, calibration, surprisal) plus the optional power-ups tier. Reports what''s

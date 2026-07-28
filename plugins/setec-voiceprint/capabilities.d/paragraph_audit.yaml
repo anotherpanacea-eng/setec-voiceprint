@@ -4,7 +4,8 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - confounder_audit
   family: TODO
   purpose: paragraph-level distributional diagnostic.
   use_when:

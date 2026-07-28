@@ -5,7 +5,10 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "manuscript_bigram_diff",
+    "restoration_packet"
+  ],
   "dependencies": {
     "python": []
   },

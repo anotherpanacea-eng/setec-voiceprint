@@ -4,7 +4,8 @@ entries:
   surface: set_level_diversity
   status: heuristic
   handoff: none
-  consumers: []
+  consumers:
+  - cross_doc_argument_consistency
   family: set-level-diversity
   purpose: 'Per-feature cross-document novelty PROFILE (GENIE axis, arXiv:2606.12790): for ONE
     target document against a supplied reference POOL, reports — per reused stdlib stylometry feature

@@ -4,7 +4,9 @@ entries:
   surface: calibration
   status: todo
   handoff: none
-  consumers: []
+  # consumers: replication/pipeline.py (StoryScope replication stage).
+  consumers:
+  - pipeline
   family: TODO
   purpose: Stage C1 (binary) + C2 (multiclass).
   use_when:

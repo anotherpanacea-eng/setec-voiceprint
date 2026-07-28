@@ -7439,7 +7439,8 @@ def test_capability_fragment_and_golden_agree() -> None:
     assert entry == golden
     assert entry["surface"] == rs.TASK_SURFACE == "validation"
     assert entry["status"] == "heuristic"
-    assert entry["consumers"] == []
+    # `manifest_validator` imports this surface; the registry records that.
+    assert entry["consumers"] == ["manifest_validator"]
     assert entry["script_path"] == (
         "plugins/setec-voiceprint/scripts/register_sweep.py"
     )
@@ -7473,7 +7474,7 @@ def test_no_orphan_script_or_surface_drift_for_this_capability() -> None:
         SCRIPTS.parent / "capabilities.d" / "register_composition_sweep.yaml"
     ).read_text(encoding="utf-8")
     assert "surface: validation" in fragment
-    assert "consumers: []" in fragment
+    assert "- manifest_validator" in fragment
     assert "status: heuristic" in fragment
 
 

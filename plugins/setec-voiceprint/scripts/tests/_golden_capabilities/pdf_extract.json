@@ -5,7 +5,10 @@
     "length_floor_words": null,
     "tier": "ocr"
   },
-  "consumers": [],
+  "consumers": [
+    "acquisition_core",
+    "pdf_inventory"
+  ],
   "dependencies": {
     "python": [
       "ocrmypdf",

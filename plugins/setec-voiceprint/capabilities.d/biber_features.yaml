@@ -4,7 +4,10 @@ entries:
   surface: voice_coherence
   status: heuristic
   handoff: none
-  consumers: []
+  consumers:
+  - stylometry_core
+  - voice_distance
+  - voice_profile
   family: register-panel
   purpose: 'Descriptive Biber lexico-grammatical register panel: a fixed 96-feature
     panel of Biber register rates (past-tense verbs, nominalizations, attributive

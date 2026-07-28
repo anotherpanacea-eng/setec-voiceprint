@@ -4,7 +4,9 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - argmove_profile
+  - confounder_audit
   family: TODO
   purpose: agency-loss / abstraction-drift detector.
   use_when:

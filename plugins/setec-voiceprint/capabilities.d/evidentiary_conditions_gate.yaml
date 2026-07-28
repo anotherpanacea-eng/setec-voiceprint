@@ -4,7 +4,11 @@ entries:
   surface: validation
   status: todo
   handoff: none
-  consumers: []
+  # consumers: the SHIPPED mimicry_cosplay_audit claim_license names "the
+  # evidentiary-conditions gate" as a required pairing in does_not_license. Pinned by
+  # test_contract_fixtures.py::test_mimicry_fixture_pairing_is_registered.
+  consumers:
+  - mimicry_cosplay_audit
   family: TODO
   purpose: front-door evidentiary posture.
   use_when:

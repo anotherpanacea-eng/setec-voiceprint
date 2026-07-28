@@ -135,6 +135,61 @@ def test_pov_manifest_path_normalized():
     assert env["results"]["inputs"]["manifest"] == gen.PATH_SENTINEL
 
 
+def test_mimicry_fixture_pairings_are_registered():
+    """The SHIPPED mimicry_cosplay_audit golden names five companion surfaces
+    in prose — `confounder_audit` + "the evidentiary-conditions gate" in
+    ``does_not_license``, and `before_after_restoration` /
+    `surface_disagreement_resolver` / `semantic_preservation_check` in
+    ``additional_caveats``. That prose is a contract statement vendored into
+    apodictic and setec-voicewright, but nothing pinned it to the registry, so
+    a companion surface could be renamed or retired while the fixture kept
+    naming it (the FM-4 finding).
+
+    Pin both directions: the fixture prose must still name each pairing, AND
+    each named capability must record `mimicry_cosplay_audit` in its
+    `consumers`. Retiring one of these five now fails here instead of leaving
+    the shipped fixture pointing at a capability that no longer exists.
+    """
+    import capabilities as cap  # type: ignore
+
+    env = json.loads(
+        (FIXTURES_DIR / "mimicry_cosplay_audit.json").read_text(encoding="utf-8")
+    )
+    license_ = env["claim_license"]
+    caveats = " ".join(license_["additional_caveats"])
+    does_not = license_["does_not_license"]
+
+    # (1) The prose still names each pairing.
+    assert "confounder_audit" in caveats
+    assert "the confounder audit" in does_not
+    assert "the evidentiary-conditions gate" in does_not
+    for surface in (
+        "before_after_restoration",
+        "surface_disagreement_resolver",
+        "semantic_preservation_check",
+    ):
+        assert surface in caveats, f"{surface} no longer named in the fixture prose"
+
+    # (2) The registry records the pairing, so `consumers` is not silently
+    # wrong about who reads these surfaces.
+    manifest = cap.load_manifest(
+        Path(__file__).resolve().parents[2] / "capabilities.d"
+    )
+    entries = {e["id"]: e for e in manifest["entries"]}
+    for surface in (
+        "confounder_audit",
+        "evidentiary_conditions_gate",
+        "before_after_restoration",
+        "surface_disagreement_resolver",
+        "semantic_preservation_check",
+    ):
+        assert surface in entries, f"{surface} named by the shipped fixture is not registered"
+        assert "mimicry_cosplay_audit" in (entries[surface].get("consumers") or []), (
+            f"{surface} is named by the shipped mimicry_cosplay_audit "
+            f"claim_license but does not record it in `consumers`"
+        )
+
+
 # ---- (c) fake_setec.py -------------------------------------------------
 
 def _run_fake(*args: str) -> subprocess.CompletedProcess:

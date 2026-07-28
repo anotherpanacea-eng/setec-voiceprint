@@ -4,7 +4,9 @@ entries:
   surface: voice_coherence_acquisition
   status: todo
   handoff: none
-  consumers: []
+  # consumers: also surfaced by skills: corpus-acquisition, setup.
+  consumers:
+  - pdf_extract
   family: TODO
   purpose: classify PDFs in a library for impostor-corpus inclusion.
   use_when:

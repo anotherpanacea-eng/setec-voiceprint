@@ -4,7 +4,9 @@
   "surface": "voice_coherence_acquisition",
   "status": "todo",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "gmail_locator_map"
+  ],
   "family": "acquisition",
   "purpose": "ingest the user's own sent Gmail prose (Google Takeout mbox, sent only) as an identity-baseline corpus, one entry per email, for the personal voice_profile baseline (not the impostor pool); the keyboard-composed counterpart to acquire_imessage_sent.",
   "use_when": [

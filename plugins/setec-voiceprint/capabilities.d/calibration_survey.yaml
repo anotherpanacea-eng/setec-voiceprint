@@ -4,7 +4,9 @@ entries:
   surface: smoothing_diagnosis_calibration
   status: todo
   handoff: none
-  consumers: []
+  # consumers: shard_runner's named default `task`; also surfaced by skill: setup.
+  consumers:
+  - shard_runner
   family: TODO
   purpose: survey every COMPRESSION_HEURISTICS signal.
   use_when:

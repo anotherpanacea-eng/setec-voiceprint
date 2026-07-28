@@ -4,7 +4,9 @@ entries:
   surface: validation
   status: heuristic
   handoff: none
-  consumers: []
+  # consumers: also gated in CI by tools/check_register_sweep_h1_gate.py.
+  consumers:
+  - manifest_validator
   family: validation
   purpose: 'Aggregate register-family count inventory for an explicitly scoped slice
     of a private corpus manifest. Runs the receipt-bound H1 register classifier over

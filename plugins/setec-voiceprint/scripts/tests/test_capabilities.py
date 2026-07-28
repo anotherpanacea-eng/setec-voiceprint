@@ -225,10 +225,14 @@ def test_show_omits_consumers_when_empty():
     m = _manifest()
     entry = next(
         e for e in m["entries"]
-        if e["id"] == "dependency_check"
+        if e["id"] == "setec_run_set"
     )
+    # setec_run_set is the stable choice for this case: its `consumers: []` is
+    # empty BY DESIGN (`handoff: none` is what holds the orchestrator out of
+    # `setec_run.py --list`), so the registry-truth pass that filled in the
+    # manifest's real consumer edges deliberately left this one empty.
+    assert entry["consumers"] == []
     md = cap.render_show(entry)
-    # dependency_check is handoff: internal, consumers: []
     assert "named consumers" not in md.lower()
 
 

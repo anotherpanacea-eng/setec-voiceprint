@@ -4,7 +4,8 @@ entries:
   surface: voice_coherence
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - function_word_adjacency_audit
   family: TODO
   purpose: function-word sequence grammar.
   use_when:

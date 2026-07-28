@@ -5,7 +5,11 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "restoration_packet",
+    "task_surfaces",
+    "validation_harness"
+  ],
   "dependencies": {
     "python": []
   },
