@@ -7159,11 +7159,14 @@ def _register_cli(tmp_path: Path, register: str) -> list[str]:
     ]
 
 
-@pytest.mark.parametrize("register", ["blog_essay", "personal", "no_such_leaf"])
-def test_main_refuses_a_non_private_dyadic_register_before_sealing(
+@pytest.mark.parametrize(
+    "register",
+    ["blog_essay", "personal", "message.facebook_messenger", "no_such_leaf"],
+)
+def test_main_refuses_a_non_imessage_register_before_sealing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, register: str,
 ) -> None:
-    """An iMessage run must not be sealable under a non-dyadic register.
+    """An iMessage run must not be sealable under another source's register.
 
     ``--register`` is copied verbatim into every emitted row and bound into
     the run's source-config fingerprint, and completed-run bindings are
@@ -7179,6 +7182,7 @@ def test_main_refuses_a_non_private_dyadic_register_before_sealing(
         A.main(_register_cli(tmp_path, register))
     message = str(caught.value)
     assert "--register" in message
+    assert A.IMESSAGE_REGISTER in message
     assert rt.PRIVATE_DYADIC_TIER in message
     assert loaded == []
     assert not _register_output_root(tmp_path).exists()
@@ -7204,15 +7208,14 @@ def test_sealed_run_fingerprint_surface_is_unaffected_by_the_cli_gate() -> None:
         A.validated_cli_register("personal")
 
 
-@pytest.mark.parametrize("register", sorted(rt.PROFILE_ONLY_REGISTERS))
-def test_main_accepts_every_private_dyadic_register(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, register: str,
+def test_main_accepts_the_exact_imessage_register(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """The option gate passes profile-only leaves through to acquisition."""
+    """The option gate passes the iMessage leaf through to acquisition."""
     monkeypatch.setattr(A, "load_hmac_key", lambda _path: KEY)
     monkeypatch.setattr(A.sys, "platform", "win32")
     with pytest.raises(A.AtomicAcquisitionError, match="only on the macOS host"):
-        A.main(_register_cli(tmp_path, register))
+        A.main(_register_cli(tmp_path, A.IMESSAGE_REGISTER))
 
 
 def test_sqlite_backup_includes_committed_wal_state(tmp_path: Path) -> None:

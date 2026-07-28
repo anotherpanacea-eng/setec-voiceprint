@@ -21,8 +21,10 @@ fingerprint, and completed-run bindings are immutable — so an operator could
 seal an iMessage run as `--register blog_essay` and freeze the mislabel. The
 validator only warns on an *unknown* value and said nothing about a
 valid-but-wrong leaf. `main()` now refuses, at option-parse time, any
-`--register` that does not resolve to tier `private_dyadic`, before the HMAC
-key is loaded and before any run state is written. The gate is deliberately
+`--register` other than the exact `message.imessage` leaf, before the HMAC key
+is loaded and before any run state is written. A tier-only gate is insufficient:
+`message.facebook_messenger` is also `private_dyadic`, but would falsely stamp
+iMessage source material as Messenger provenance. The gate is deliberately
 CLI-only: `semantic_options_payload` is untouched, so every already-sealed run
 keeps its exact fingerprint and still revalidates.
 

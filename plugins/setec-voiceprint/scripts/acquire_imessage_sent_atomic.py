@@ -25,7 +25,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from register_taxonomy import (
     PRIVATE_DYADIC_TIER,
-    PROFILE_ONLY_REGISTERS,
     resolve_register_tier,
 )
 
@@ -60,6 +59,7 @@ TOOL_NAME = "acquire_imessage_sent_atomic"
 TOOL_VERSION = "1.0"
 CAPABILITY_ID = "imessage_sent_atomic"
 TASK_SURFACE = "voice_coherence_acquisition"
+IMESSAGE_REGISTER = "message.imessage"
 APPLE_UNIX_EPOCH_SECONDS = 978_307_200
 NANOSECONDS_PER_SECOND = 1_000_000_000
 AI_BOUNDARY_DATE = _dt.date(2024, 7, 1)
@@ -18994,8 +18994,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--register",
         help=(
-            "Required conversational register leaf. Must resolve to the "
-            f"{PRIVATE_DYADIC_TIER} tier; validated before any sealing."
+            f"Required register leaf. Must be exactly {IMESSAGE_REGISTER!r} "
+            f"(tier {PRIVATE_DYADIC_TIER}); validated before any sealing."
         ),
     )
     parser.add_argument("--since", type=_date_argument)
@@ -19018,26 +19018,29 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def validated_cli_register(value: object) -> str:
-    """Refuse any register outside the profile-only tier, before any sealing.
+    """Require the exact iMessage leaf, before any sealing.
 
     ``--register`` is copied verbatim into every emitted row and bound into the
     sealed run's source-config fingerprint, and completed-run bindings are
     immutable once closed. A merely *unknown* value is caught downstream by the
-    manifest validator, but a valid-but-wrong leaf such as ``blog_essay`` is
-    not: the mislabel would be frozen into the run. The gate therefore lives at
-    option-parse time. It deliberately does not touch
+    manifest validator, but a valid leaf for another messaging source shares the
+    same privacy tier and would pass a tier-only gate. Requiring the exact source
+    leaf prevents either class of permanent provenance mislabel. This deliberately
+    does not touch
     ``semantic_options_payload``, so the fingerprint composition of every
     already-sealed run is unchanged and such runs still revalidate.
     """
-    tier = resolve_register_tier(value)
-    if tier != PRIVATE_DYADIC_TIER:
-        allowed = ", ".join(sorted(PROFILE_ONLY_REGISTERS))
+    tier = resolve_register_tier(IMESSAGE_REGISTER)
+    if (
+        type(value) is not str
+        or value != IMESSAGE_REGISTER
+        or tier != PRIVATE_DYADIC_TIER
+    ):
         raise SystemExit(
-            f"{TOOL_NAME}: --register must name a {PRIVATE_DYADIC_TIER} "
-            f"register leaf; {value!r} resolves to {tier!r}. "
-            f"Allowed: {allowed}."
+            f"{TOOL_NAME}: --register must be exactly {IMESSAGE_REGISTER!r} "
+            f"(tier {PRIVATE_DYADIC_TIER}); received {value!r}."
         )
-    return str(value)
+    return IMESSAGE_REGISTER
 
 
 def main(argv: Sequence[str] | None = None) -> int:
