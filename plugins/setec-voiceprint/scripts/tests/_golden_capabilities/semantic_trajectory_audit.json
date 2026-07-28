@@ -5,7 +5,10 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "cosine_explanation",
+    "voice_fingerprint"
+  ],
   "dependencies": {
     "python": [
       "numpy"

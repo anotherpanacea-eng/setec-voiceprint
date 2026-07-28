@@ -4,7 +4,11 @@
   "surface": "voice_coherence",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "stylometry_core",
+    "voice_distance",
+    "voice_profile"
+  ],
   "family": "register-panel",
   "purpose": "Descriptive Biber lexico-grammatical register panel: a fixed 96-feature panel of Biber register rates (past-tense verbs, nominalizations, attributive adjectives, first-person pronouns, agentless passives, hedges, amplifiers, ...) for a target passage, computed via the Neurobiber neural tagger (arXiv:2502.18590 \u2014 ~56x faster than rule-based Biber taggers, AV-competitive). Adds one new optional family (biber_features) to the stylometry_core per-document family pipeline alongside pos_trigrams/dependency_ngrams, emitted ONLY when include_biber=True is passed (default OFF \u2014 existing voice_distance/voice_profile envelopes are byte-identical). On the comparative path (compare_to_baseline / build_profile) reports per-feature z-deviations, Burrows-delta, cosine distances, and the standard provisional band \u2014 no verdict, no authorship or AI/human call. On the standalone path (biber_features.py) emits the full 96-rate panel plus calibration_status: provisional. Dual-use: Biber features separate human-vs-LLM AND LLM-vs-LLM (arXiv:2410.16107) \u2014 that inference is REFUSED; the claim license explicitly names that paper and refuses model-family attribution, AI/human provenance, and authorship. M1 (this build): model-free CI over an injected/stub tagger; M2 (deferred): the real Neurobiber tagger behind a lazy torch/transformers import.\n",
   "use_when": [

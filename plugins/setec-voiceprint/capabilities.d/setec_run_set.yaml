@@ -4,6 +4,9 @@ entries:
   surface: validation
   status: heuristic
   handoff: none
+  # consumers: EMPTY BY DESIGN. `handoff: none` keeps this orchestrator out of
+  # `setec_run.py --list`; it is live and surfaced by skills: setec,
+  # smoothing-diagnosis.
   consumers: []
   family: cross-surface-interpretation
   purpose: 'Multi-surface run-set runner (the decision loop): executes a named preset

@@ -4,7 +4,8 @@ entries:
   surface: voice_coherence
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - argmove_profile
   family: TODO
   purpose: typed stance / modality / epistemic posture.
   use_when:

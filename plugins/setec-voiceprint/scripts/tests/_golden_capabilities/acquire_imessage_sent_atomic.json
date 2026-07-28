@@ -4,7 +4,11 @@
   "surface": "voice_coherence_acquisition",
   "status": "todo",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "author_corpus_export",
+    "compose_imessage_review_bursts",
+    "windows_portable_tree"
+  ],
   "family": "acquisition",
   "purpose": "WIP contract for a fail-closed private acquisition path for one outgoing iMessage/SMS event per stable message GUID, preserving atomic authorship identity instead of bundling a contact-day transcript. It is not an operator-ready corpus acquisition or export surface.",
   "use_when": [

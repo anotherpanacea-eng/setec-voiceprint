@@ -4,7 +4,10 @@
   "surface": "validation",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "mimicry_cosplay_audit",
+    "setec_run_set"
+  ],
   "family": "cross-surface-interpretation",
   "purpose": "Cross-surface interpretation meta-layer: reads any subset of audit JSONs (smoothing variance, voice distance, General Imposters, idiolect preservation, AIC pattern density, paragraph macro-rhythm, discourse scaffolding, agency/abstraction) and surfaces interpretable DISAGREEMENT patterns \u2014 e.g. high smoothing + low voice drift = edited authorial voice; low smoothing + high voice drift = register shift / impostor / collaboration. Returns the differential, never a verdict: multiple interpretations are typically jointly compatible and the framework declines to pick one (the meta-version of the confounder audit's stance). The pattern catalog is heuristic and curated, not labeled-corpus-validated.\n",
   "use_when": [

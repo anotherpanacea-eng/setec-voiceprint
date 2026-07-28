@@ -4,7 +4,10 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  # consumers: also surfaced by skill: setup.
+  consumers:
+  - diveye_signals
+  - variance_audit
   family: TODO
   purpose: standalone causal-LM surprisal audit.
   use_when:

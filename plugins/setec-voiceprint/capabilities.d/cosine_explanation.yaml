@@ -4,7 +4,8 @@ entries:
   surface: embedding_explanation
   status: literature_anchored
   handoff: experimental
-  consumers: []
+  consumers:
+  - embedding_attribution
   family: embedding-explanation
   purpose: 'Make the opaque authorship_embedding LUAR cosine (from voice_fingerprint)
     human-checkable by placing it side by side with SETEC''s named interpretable stylometric

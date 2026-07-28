@@ -4,7 +4,10 @@ entries:
   surface: voice_coherence_acquisition
   status: todo
   handoff: none
-  consumers: []
+  # consumers: also surfaced by skills: corpus-acquisition, setup.
+  consumers:
+  - acquisition_core
+  - pdf_inventory
   family: TODO
   purpose: extract plain text from a filtered PDF inventory.
   use_when:

@@ -5,7 +5,9 @@
     "length_floor_words": 300,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "argument_decision_audit"
+  ],
   "dependencies": {
     "python": []
   },

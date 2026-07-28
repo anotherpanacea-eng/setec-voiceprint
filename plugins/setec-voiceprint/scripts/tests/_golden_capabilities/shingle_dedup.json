@@ -4,7 +4,10 @@
   "surface": "voice_coherence_acquisition",
   "status": "heuristic",
   "handoff": "none",
-  "consumers": [],
+  "consumers": [
+    "shingle_dedup_checkpoint",
+    "shingle_dedup_validate"
+  ],
   "family": "acquisition",
   "purpose": "Deterministic, exact 8-token shingle-overlap measurement for locally staged documents. Builds a sealed SQLite inverted index, queries one document, or writes a deterministic same-draft cross-stage candidate report using directional containment and Jaccard diagnostics. The 0.35 and 0.60 containment tiers are operational, uncalibrated review thresholds; this tool neither calls a pair a duplicate nor makes an authorship, provenance, quality, or AI/human claim.",
   "use_when": [

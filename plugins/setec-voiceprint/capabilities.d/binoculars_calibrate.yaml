@@ -4,7 +4,10 @@ entries:
   surface: calibration
   status: todo
   handoff: none
-  consumers: []
+  # consumers: threshold source — emits the operating point operators pass to
+  # binoculars_audit. Also surfaced by skills: setec, setup.
+  consumers:
+  - binoculars_audit
   family: TODO
   purpose: Binoculars threshold calibration.
   use_when:

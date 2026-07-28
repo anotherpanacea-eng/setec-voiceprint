@@ -5,7 +5,9 @@
     "length_floor_words": null,
     "tier": "core"
   },
-  "consumers": [],
+  "consumers": [
+    "restoration_packet"
+  ],
   "dependencies": {
     "python": []
   },

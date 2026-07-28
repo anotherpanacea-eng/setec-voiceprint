@@ -4,7 +4,9 @@
   "surface": "embedding_explanation",
   "status": "literature_anchored",
   "handoff": "experimental",
-  "consumers": [],
+  "consumers": [
+    "embedding_attribution"
+  ],
   "family": "embedding-explanation",
   "purpose": "Make the opaque authorship_embedding LUAR cosine (from voice_fingerprint) human-checkable by placing it side by side with SETEC's named interpretable stylometric features (burstiness, MATTR, MTLD, function-word ratio, dependency distance) and marking, per feature, whether the named lens TRACKS or DIVERGES from the embedding. An interpretation aid (Residualized Similarity arXiv:2510.05362 / Latent-Space Interpretation arXiv:2409.07072): the divergences are where the operator must inspect the neural signal on its own terms. Emits NO same-author / AI verdict (inherits authorship_embedding's refusals) and NO fabricated explained/residual number \u2014 you cannot partition a neural cosine without a fit, so a numeric split appears only under --fit-baseline (corpus-relative OLS). A diverging feature is an inspection pointer, never a suspicion score.\n",
   "use_when": [

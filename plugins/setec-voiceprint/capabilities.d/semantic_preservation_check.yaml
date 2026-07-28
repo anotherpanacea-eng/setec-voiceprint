@@ -4,7 +4,10 @@ entries:
   surface: craft_restoration
   status: todo
   handoff: none
-  consumers: []
+  # consumers: named in the SHIPPED mimicry_cosplay_audit claim_license contract
+  # fixture.
+  consumers:
+  - mimicry_cosplay_audit
   family: TODO
   purpose: semantic guardrails over the before / after restoration pair (paired-release
     schedule Release 8, Trustworthiness Tier 3).

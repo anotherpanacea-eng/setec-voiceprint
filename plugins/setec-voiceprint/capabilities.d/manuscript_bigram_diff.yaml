@@ -4,7 +4,10 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  # consumers: restoration_packet's --bigram-json accepts this surface's JSON. Also
+  # surfaced by skills: metric-targeted-restoration, smoothing-diagnosis.
+  consumers:
+  - restoration_packet
   family: TODO
   purpose: 'manuscript_bigram_diff.py Per-bigram POS-bigram diff: corpus A aggregate
     vs. corpus B aggregate.'

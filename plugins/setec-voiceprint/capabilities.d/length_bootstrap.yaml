@@ -4,7 +4,9 @@ entries:
   surface: smoothing_diagnosis
   status: todo
   handoff: none
-  consumers: []
+  consumers:
+  - variance_audit
+  - voice_distance
   family: TODO
   purpose: Length-matched bootstrap helpers (Phase 1 step 3 of the validation spine).
   use_when:
