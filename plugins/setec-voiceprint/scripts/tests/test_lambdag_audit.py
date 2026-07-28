@@ -555,3 +555,83 @@ def test_conditional_distribution_normalizes_over_closed_upos_support():
     for ctx in [("NOUN",), ("VERB",), ("<s>",), ("ZZZ",)]:  # seen, seen, BOS-context, unseen
         total = sum(math.exp(lm.log_prob(ctx, t)) for t in support)
         assert abs(total - 1.0) < 1e-9, (ctx, total)
+
+
+# --- register-tier isolation (#369 private-dyadic policy) ------------------
+#
+# `_entries_to_sentences` concatenates the POS streams of every document in a
+# corpus into ONE reference-author grammar LM the query is scored against. That
+# is a pooled author reference in a different feature alphabet, not a different
+# kind of object, so the private-dyadic profile-only rule applies to it. Both
+# corpora are guarded: the background LM is equally a pooled reference, for
+# whoever wrote it.
+
+
+def _register_manifest(tmp_path, registers, *, use="reference"):
+    rows = []
+    for i, register in enumerate(registers):
+        f = tmp_path / f"{use}_{i}.txt"
+        f.write_text(
+            "The committee met and the members considered the question. " * 6,
+            encoding="utf-8",
+        )
+        rows.append({
+            "id": f"{use}_{i}", "path": f"{use}_{i}.txt",
+            "use": [use], "register": register,
+        })
+    m = tmp_path / f"{use}_manifest.jsonl"
+    m.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return m
+
+
+def _load(manifest, register=None):
+    return lg._load_corpus(
+        label="reference", directory=None, manifest=str(manifest),
+        persona=None, split=None, register=register, use="reference",
+        ai_status=None,
+    )
+
+
+def test_load_corpus_refuses_a_register_tier_mixture(tmp_path):
+    manifest = _register_manifest(
+        tmp_path, ["message.imessage", "blog_essay", "blog_essay"],
+    )
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        _load(manifest)
+
+
+def test_load_corpus_refuses_a_dyadic_entry_pooled_with_a_registerless_one(tmp_path):
+    """A MISSING register fails closed against a private-dyadic one: an
+    unlabelled document cannot be shown to share the tier."""
+    rows = [
+        {"id": "a", "path": "a.txt", "use": ["reference"],
+         "register": "message.facebook_messenger"},
+        {"id": "b", "path": "b.txt", "use": ["reference"]},
+    ]
+    for row in rows:
+        (tmp_path / row["path"]).write_text(
+            "The committee met and the members considered the question. " * 6,
+            encoding="utf-8",
+        )
+    manifest = tmp_path / "mixed.jsonl"
+    manifest.write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="private-dyadic.*profile-only"):
+        _load(manifest)
+
+
+def test_load_corpus_allows_a_same_tier_messaging_reference(tmp_path):
+    """Negative control: a reference composed only of private-dyadic leaves is
+    allowed, and the two messaging leaves may appear together."""
+    manifest = _register_manifest(
+        tmp_path, ["message.imessage", "message.facebook_messenger"],
+    )
+    entries = _load(manifest)
+    assert len(entries) == 2
+
+
+def test_load_corpus_allows_an_ordinary_public_reference(tmp_path):
+    manifest = _register_manifest(tmp_path, ["blog_essay", "policy_brief"])
+    entries = _load(manifest)
+    assert len(entries) == 2

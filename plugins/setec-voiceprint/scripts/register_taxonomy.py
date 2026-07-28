@@ -25,6 +25,20 @@ module — ``test_register_taxonomy.py`` alone is enough — and copy the
 ``actual`` values out of the raised ``ValueError``. It reports the offending
 leaves and the replacement digest verbatim, in paste-ready form, so no
 separate tool is needed to recompute a pin.
+
+``assert_personal_register_isolated`` lives here, beside the registry, rather
+than in ``stylometry_core``. That is deliberate and load-bearing: importing
+``stylometry_core`` pulls in spaCy and NLTK and costs seconds, so the pooling
+surfaces that ship their own lightweight featurizers for exactly that reason
+(``general_imposters``) structurally could not reach the guard while it lived
+there — which is how the guard fell behind its own call sites. This module is
+stdlib-only and must stay that way, so any pooled-reference builder can afford
+to import it. ``stylometry_core`` re-exports the guard, so every existing
+``from stylometry_core import assert_personal_register_isolated`` still binds
+the one implementation.
+
+The complete map of which surfaces call it, and why each of the others does
+not, is pinned by ``tests/test_register_isolation_coverage.py``.
 """
 
 from __future__ import annotations
@@ -54,9 +68,9 @@ MAX_FRAGMENT_BYTES = 1024
 # ``glob("*.json")`` is case-sensitive while APFS is not), or retiered leaves a
 # registry that is internally consistent and merely SHORT or WRONG. A leaf that
 # drops out resolves to ``None``, disappears from ``PROFILE_ONLY_REGISTERS``,
-# and the pooled-reference guard in ``stylometry_core`` reads ``None`` as
-# benign — so private-dyadic material pools with essay prose and nothing
-# raises.
+# and the pooled-reference guard below (re-exported by ``stylometry_core``)
+# reads ``None`` as benign — so private-dyadic material pools with essay prose
+# and nothing raises.
 #
 # ``validate_registry_closure`` cannot close that on its own: it runs as an
 # import-time side effect of ``manifest_validator``, and most
@@ -254,6 +268,52 @@ def resolve_register_tier(register: object) -> str | None:
     # ``isinstance`` lookup would let an overridden ``__hash__``/``__eq__``
     # choose which tier the leaf resolves to.
     return REGISTER_TO_TIER.get(str.__str__(register))
+
+
+def entry_register(entry: Mapping[str, Any]) -> str | None:
+    """Resolve the two supported register locations and reject conflicts.
+
+    A manifest row's register may sit at the entry's top level or inside its
+    ``metadata`` sub-dict depending on which loader produced it. Declaring both
+    with different values is a contradiction the caller must fix, not something
+    to silently resolve in one direction.
+    """
+    metadata = entry.get("metadata")
+    nested_present = isinstance(metadata, dict) and "register" in metadata
+    top_present = "register" in entry
+    nested = metadata.get("register") if nested_present else None
+    top = entry.get("register") if top_present else None
+    if nested_present and top_present and nested != top:
+        raise ValueError(
+            "conflicting top-level and metadata register declarations"
+        )
+    value = nested if nested_present else top
+    return value if isinstance(value, str) and value else None
+
+
+def assert_personal_register_isolated(
+    baseline_entries: "list[Mapping[str, Any]]",
+) -> None:
+    """Refuse a private-dyadic/non-dyadic mixture before prose processing.
+
+    Call this on the entries that compose a **pooled author reference** — a
+    multi-document stylometric object that stands in for a writer and that
+    something else is scored against, or that is emitted as a voiceprint.
+
+    A reference composed only of private-dyadic leaves is allowed (both
+    messaging leaves may appear together); a mixture is not, and a MISSING or
+    unregistered register counts as non-dyadic so an unlabelled document fails
+    closed rather than being assumed same-tier.
+    """
+    registers = [entry_register(entry) for entry in baseline_entries]
+    tiers = [resolve_register_tier(value) for value in registers]
+    if PRIVATE_DYADIC_TIER in tiers and any(
+        tier != PRIVATE_DYADIC_TIER for tier in tiers
+    ):
+        raise ValueError(
+            "private-dyadic registers are profile-only and cannot be pooled "
+            "with a non-private-dyadic or missing register"
+        )
 
 
 def validate_registry_closure(allowed_registers: AbstractSet[str]) -> None:

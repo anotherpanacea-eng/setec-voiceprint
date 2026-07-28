@@ -20,8 +20,9 @@ from typing import Any
 
 from preprocessing import aggregate_preprocessing_metadata, strip_non_prose
 from register_taxonomy import (
-    PRIVATE_DYADIC_TIER,
     REGISTER_TIERS,
+    assert_personal_register_isolated,
+    entry_register as _entry_register,
     resolve_register_tier,
 )
 
@@ -493,34 +494,12 @@ def _matches_filter(value: Any, expected: str | None) -> bool:
     return str(value) == expected
 
 
-def _entry_register(entry: dict[str, Any]) -> str | None:
-    """Resolve the two supported register locations and reject conflicts."""
-    metadata = entry.get("metadata")
-    nested_present = isinstance(metadata, dict) and "register" in metadata
-    top_present = "register" in entry
-    nested = metadata.get("register") if nested_present else None
-    top = entry.get("register") if top_present else None
-    if nested_present and top_present and nested != top:
-        raise ValueError(
-            "conflicting top-level and metadata register declarations"
-        )
-    value = nested if nested_present else top
-    return value if isinstance(value, str) and value else None
-
-
-def assert_personal_register_isolated(
-    baseline_entries: list[dict[str, Any]],
-) -> None:
-    """Refuse a private-dyadic/non-dyadic mixture before prose processing."""
-    registers = [_entry_register(entry) for entry in baseline_entries]
-    tiers = [resolve_register_tier(value) for value in registers]
-    if PRIVATE_DYADIC_TIER in tiers and any(
-        tier != PRIVATE_DYADIC_TIER for tier in tiers
-    ):
-        raise ValueError(
-            "private-dyadic registers are profile-only and cannot be pooled "
-            "with a non-private-dyadic or missing register"
-        )
+# `_entry_register` and `assert_personal_register_isolated` now live in the
+# stdlib-only `register_taxonomy` module and are imported above. They moved so
+# that lightweight pooled-reference builders — `general_imposters` ships its own
+# featurizer precisely to avoid this module's spaCy/NLTK import cost — can reach
+# the guard without taking on that cost. They stay bound here, so every existing
+# `from stylometry_core import assert_personal_register_isolated` is unchanged.
 
 
 def load_entries_from_manifest(

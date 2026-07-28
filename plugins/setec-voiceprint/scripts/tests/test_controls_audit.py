@@ -315,6 +315,96 @@ class TestEmptyPostFilterBaseline:
         assert rc == 0
 
 
+# --- register-tier isolation (#369 private-dyadic policy) ------------------
+#
+# `--baseline-dir` / `--manifest` entries are pooled into ONE function-word
+# baseline mean, and the questioned text plus both controls are scored against
+# it — the same pooled author reference `voice_distance` guards. `load_entries`
+# is a bare loader with no guard of its own, and this surface drops the entry
+# metadata at the `baseline_texts` step, so the refusal has to happen while the
+# entries are still intact.
+#
+# Fixtures use `use: ["voice_profile"]` rather than `["baseline"]` because the
+# manifest validator rejects `baseline` on a private-dyadic leaf outright. That
+# keeps these cases about the POOLING rule specifically: the rows are ones a
+# validated manifest may legitimately contain, and the refusal is still correct.
+
+
+def _register_manifest(tmp_path: Path, registers: list[str]) -> Path:
+    rows = []
+    for i, register in enumerate(registers):
+        f = tmp_path / f"base_{i}.txt"
+        f.write_text(_BASELINE_TEXTS[i % len(_BASELINE_TEXTS)], encoding="utf-8")
+        rows.append({
+            "id": f"base_{i}", "path": f"base_{i}.txt",
+            "use": ["voice_profile"], "privacy": "private",
+            "register": register, "ai_status": "pre_ai_human",
+        })
+    m = tmp_path / "corpus_manifest.jsonl"
+    m.write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8",
+    )
+    return m
+
+
+class TestRegisterTierIsolation:
+    def test_refuses_a_baseline_that_mixes_private_dyadic_with_public(
+        self, tmp_path, capsys,
+    ):
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        manifest = _register_manifest(
+            tmp_path, ["message.imessage", "blog_essay", "blog_essay"],
+        )
+        out_path = tmp_path / "out.json"
+
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--manifest", str(manifest), "--use", "voice_profile",
+            "--json", "--out", str(out_path),
+        ])
+
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert "private-dyadic" in err and "profile-only" in err
+        assert not out_path.exists(), (
+            "a refused run must not leave a report behind"
+        )
+
+    def test_a_same_tier_messaging_baseline_is_not_refused(self, tmp_path):
+        """Negative control: a reference composed only of private-dyadic leaves
+        is allowed, and both messaging leaves may appear together."""
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        manifest = _register_manifest(
+            tmp_path,
+            ["message.imessage", "message.facebook_messenger", "message.imessage"],
+        )
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--manifest", str(manifest), "--use", "voice_profile",
+            "--json", "--out", str(tmp_path / "out.json"),
+        ])
+        assert rc == 0
+
+    def test_a_directory_baseline_is_unaffected(self, tmp_path):
+        """A directory input declares no register at all, so every entry
+        resolves to a missing tier and the guard is inert — the same
+        manifest-path limit `pool_guard.py` names for its own scan."""
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        for i, text in enumerate(_BASELINE_TEXTS):
+            (baseline_dir / f"b{i}.txt").write_text(text, encoding="utf-8")
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--baseline-dir", str(baseline_dir),
+            "--json", "--out", str(tmp_path / "out.json"),
+        ])
+        assert rc == 0
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
