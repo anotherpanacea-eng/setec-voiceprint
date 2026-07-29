@@ -32,6 +32,8 @@ import io
 import json
 import sqlite3
 import stat
+import shutil
+import subprocess
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -194,6 +196,81 @@ def test_base_import_is_pure():
     assert "near_dup_dedup" in sys.modules
     # The shingle helper is stdlib and works regardless of datasketch.
     assert ndd.shingles("stdlib only path", k=2)
+
+
+def _strict_record(identifier: str, text_path: str) -> dict[str, object]:
+    """A smallest closed Voicewright source row for the additive Spec-80 path."""
+    return {
+        "schema": "voicewright-author-corpus/1", "id": identifier,
+        "persona": "owner", "register": "personal.letter", "role": "source",
+        "text_path": text_path, "source_entry_fingerprint": "src:hmac-sha256:" + "f" * 64,
+        "source_group": "g", "conversation_id": "c", "date": "2026-01-01",
+        "unit_kind": "document", "unit_index": 0, "unit_count": 1,
+        "corpus_role": "author", "use": "private", "consent_status": "owner",
+        "ai_status": "human", "source_kind": "document_local",
+        "content_sha256": "sha256:" + "a" * 64,
+        "normalized_text_sha256": "sha256:" + "b" * 64,
+    }
+
+
+def test_spec80_strict_tokenizer_is_additive_and_legacy_report_is_stable(tmp_path):
+    """No strict switch means the pre-Spec-80 report serialization remains unchanged."""
+    manifest = tmp_path / "legacy.jsonl"
+    manifest.write_text(json.dumps({"id": "x", "text": "Alpha beta."}) + "\n")
+    one = ndd.analyze_passages(manifest, stages=["b"], checkpoint_path=None)[0]
+    two = ndd.analyze_passages(
+        manifest, stages=["b"], checkpoint_path=None, strict_spec80=False,
+    )[0]
+    assert json.dumps(one, indent=2, sort_keys=True) == json.dumps(two, indent=2, sort_keys=True)
+    assert "spec80_tokenizer" not in one
+
+
+def test_spec80_publication_requires_committed_producer_and_binds_three_artifacts(tmp_path, monkeypatch):
+    """Synthetic committed-repo e2e: strict output uses frozen tokens and receipt-last package."""
+    if not _datasketch_available:
+        pytest.skip("strict producer requires Stage A's optional dependency")
+    root = tmp_path / "root"; root.mkdir()
+    (root / "entry.txt").write_text("ALPHA beta gamma delta epsilon zeta eta theta iota kappa.\n\nAlpha beta gamma delta epsilon zeta eta theta iota kappa.")
+    manifest = tmp_path / "manifest.jsonl"
+    ident = "sha256:" + "1" * 64
+    manifest.write_text(json.dumps(_strict_record(ident, "entry.txt"), separators=(",", ":")) + "\n")
+    repo = tmp_path / "repo"; repo.mkdir()
+    producer = repo / "near_dup_dedup.py"
+    shutil.copy2(Path(ndd.__file__), producer)
+    subprocess.run(["git", "init", "--object-format=sha1", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "near_dup_dedup.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "producer"], check=True)
+    args = type("Args", (), {
+        "manifest": manifest, "source_root": root, "report_out": tmp_path / "inventory.json",
+        "commitment_out": tmp_path / "commitment.json", "receipt_out": tmp_path / "receipt.json",
+        "threshold": 0.8, "num_perm": 128, "shingle_size": 5, "min_passage_words": 10,
+        "span_shingle_k": 8, "min_span_words": 20,
+    })()
+    report, _passages, _rows = ndd.analyze_passages(
+        manifest, strict_spec80=True, source_root=root, stages=["a", "b"],
+    )
+    inventory = json.dumps(report, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode() + b"\n"
+    monkeypatch.setattr(ndd, "SCRIPT_DIR", repo)
+    monkeypatch.setattr(ndd, "__file__", str(producer))
+    ndd._publish_spec80_package(args, inventory)
+    commitment = json.loads(args.commitment_out.read_text())
+    receipt = json.loads(args.receipt_out.read_text())
+    assert receipt["inventory_sha256"] == "sha256:" + hashlib.sha256(inventory).hexdigest()
+    assert receipt["commitment_sha256"] == commitment["commitment_sha256"]
+    assert commitment["algorithm_parameters"]["stage_a"]["tokenization"] == "setec_frozen_unicode_word_lower_v1"
+    assert commitment["sources"][0]["source_doc_id"] == ident
+    assert report["spec80_tokenizer"]["schema"] == "setec-frozen-unicode-word-lower/1"
+
+
+def test_spec80_strict_refuses_dirty_producer_identity(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"; repo.mkdir()
+    producer = repo / "near_dup_dedup.py"; producer.write_text("original\n")
+    subprocess.run(["git", "init", "--object-format=sha1", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "near_dup_dedup.py"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "producer"], check=True)
+    producer.write_text("changed\n")
+    with pytest.raises(ndd.source_commitment.CommitmentError):
+        ndd.source_commitment.committed_producer_identity(repository=repo, script=producer)
 
 
 # =====================================================================
