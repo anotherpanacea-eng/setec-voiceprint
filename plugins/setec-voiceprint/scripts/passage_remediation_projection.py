@@ -7,6 +7,7 @@ the responsibility of the future transaction wrapper.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from passage_lineage_crosswalk import LineageError, LineageProjection, _semantic_sha
@@ -19,6 +20,8 @@ class RemediationError(ValueError):
 @dataclass(frozen=True)
 class RemediationProjection:
     projected_population_rows: list[dict[str, Any]]
+    passages: list[dict[str, Any]]
+    crosswalk_projection: list[dict[str, Any]]
     evidence: list[dict[str, Any]]
     units: list[dict[str, Any]]
     pair_exclusion_projection: list[dict[str, Any]]
@@ -70,15 +73,115 @@ def _normalize_masks(intervals: list[list[int]], length: int) -> list[list[int]]
     return [[0, length]] if result == [[0, length]] else result
 
 
-def _passage_by_id(inventory: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    result: dict[str, dict[str, Any]] = {}
-    for cluster in inventory["provenance"]["passage_clusters"]:
-        for passage in cluster["passages"]:
-            passage_id = passage["passage_id"]
-            if passage_id in result and result[passage_id] != passage:
-                raise RemediationError("passage collision")
-            result[passage_id] = passage
-    return result
+_PASSAGE_KEYS = {
+    "passage_id", "source_doc_id", "source_manifest", "ordinal",
+    "char_start", "char_end", "n_words", "sha256",
+}
+_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def _complete_passage_partition(
+    inventory: dict[str, Any],
+    stage_a_passages: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    """Return the complete Spec-80 §9 Stage-A partition.
+
+    The complete passage list is a live frozen-verifier output, not something
+    the itemized cluster report can reconstruct.  Requiring it explicitly
+    prevents count-only noncluster inference.
+    """
+    if type(stage_a_passages) is not list:
+        raise RemediationError("complete passage partition required")
+    passages: dict[str, dict[str, Any]] = {}
+    for row in stage_a_passages:
+        if (
+            type(row) is not dict
+            or set(row) != _PASSAGE_KEYS
+            or type(row["passage_id"]) is not str
+            or not row["passage_id"]
+            or type(row["source_doc_id"]) is not str
+            or not _DIGEST.fullmatch(row["source_doc_id"])
+            or type(row["source_manifest"]) is not str
+            or type(row["ordinal"]) is not int
+            or isinstance(row["ordinal"], bool)
+            or row["ordinal"] < 0
+            or type(row["char_start"]) is not int
+            or isinstance(row["char_start"], bool)
+            or type(row["char_end"]) is not int
+            or isinstance(row["char_end"], bool)
+            or row["char_start"] < 0
+            or row["char_start"] >= row["char_end"]
+            or type(row["n_words"]) is not int
+            or isinstance(row["n_words"], bool)
+            or row["n_words"] <= 0
+            or type(row["sha256"]) is not str
+            or len(row["sha256"]) != 64
+            or any(char not in "0123456789abcdef" for char in row["sha256"])
+            or row["passage_id"] in passages
+        ):
+            raise RemediationError("complete passage partition invalid")
+        passages[row["passage_id"]] = row
+
+    clustered: dict[str, tuple[int, str]] = {}
+    clusters = inventory["provenance"]["passage_clusters"]
+    for cluster_index, cluster in enumerate(clusters):
+        if (
+            type(cluster) is not dict
+            or set(cluster) != {"representative", "dropped", "passages"}
+            or type(cluster["representative"]) is not str
+            or type(cluster["dropped"]) is not list
+            or type(cluster["passages"]) is not list
+        ):
+            raise RemediationError("cluster partition invalid")
+        member_ids = [row.get("passage_id") for row in cluster["passages"]]
+        expected_ids = [cluster["representative"], *cluster["dropped"]]
+        if (
+            member_ids != expected_ids
+            or len(member_ids) != len(set(member_ids))
+            or any(type(value) is not str for value in expected_ids)
+        ):
+            raise RemediationError("cluster partition invalid")
+        for member, passage_id in zip(cluster["passages"], member_ids):
+            if passage_id not in passages or member != passages[passage_id]:
+                raise RemediationError("cluster passage not in complete partition")
+            if passage_id in clustered:
+                raise RemediationError("duplicate clustered passage")
+            disposition = (
+                "representative"
+                if passage_id == cluster["representative"]
+                else "nonrepresentative"
+            )
+            clustered[passage_id] = (cluster_index, disposition)
+
+    declared_count = inventory.get("n_passages")
+    if (
+        declared_count is not None
+        and (
+            type(declared_count) is not int
+            or isinstance(declared_count, bool)
+            or declared_count != len(passages)
+        )
+    ):
+        raise RemediationError("complete passage partition invalid")
+
+    partition = []
+    for passage_id, row in passages.items():
+        cluster = clustered.get(passage_id)
+        partition.append({
+            "source_doc_id": row["source_doc_id"],
+            "passage_id": passage_id,
+            "char_start": row["char_start"],
+            "char_end": row["char_end"],
+            "n_words": row["n_words"],
+            "raw_text_sha256": _prefixed(row["sha256"]),
+            "partition": "cluster_member" if cluster is not None else "noncluster",
+            "disposition": cluster[1] if cluster is not None else "not_assessed",
+        })
+    partition.sort(key=lambda row: (
+        row["source_doc_id"], row["char_start"], row["char_end"],
+        row["passage_id"],
+    ))
+    return passages, partition
 
 
 def _project_interval(
@@ -164,6 +267,7 @@ def project_remediation(
     inventory: dict[str, Any],
     inventory_sha256: str,
     lineage_projection: LineageProjection,
+    stage_a_passages: list[dict[str, Any]],
 ) -> RemediationProjection:
     """Project all itemized Stage-A drops and Stage-B occurrences onto units."""
     try:
@@ -203,7 +307,9 @@ def project_remediation(
     evidence_refs: dict[str, set[str]] = {unit_id: set() for unit_id in by_unit}
     evidence: list[dict[str, Any]] = []
     new_edge_groups: list[list[str]] = []
-    passages = _passage_by_id(inventory)
+    passages, passage_partition = _complete_passage_partition(
+        inventory, stage_a_passages,
+    )
 
     for cluster_index, cluster in enumerate(clusters):
         cluster_units: set[str] = set()
@@ -347,6 +453,11 @@ def project_remediation(
         units.append({
             "unit_id": unit_id,
             "content_sha256": input_row["content_sha256"],
+            "evaluation_partition": input_row["evaluation_partition"],
+            "register": metadata[unit_id]["register"],
+            "source_kind": metadata[unit_id]["source_kind"],
+            "source_group": input_row["source_group"],
+            "document_family": input_row["document_family"],
             "input_duplicate_component": input_row["duplicate_component"],
             "input_loss_mask_intervals": input_row["loss_mask_intervals"],
             "projected_duplicate_component": projected_component[unit_id],
@@ -364,6 +475,10 @@ def project_remediation(
 
     return RemediationProjection(
         projected_population_rows=projected_rows,
+        passages=passage_partition,
+        crosswalk_projection=[
+            dict(row) for row in lineage_projection.crosswalk["rows"]
+        ],
         evidence=sorted(
             evidence,
             key=lambda row: (
@@ -374,6 +489,8 @@ def project_remediation(
                 row["evidence_id"],
             ),
         ),
-        units=units,
-        pair_exclusion_projection=exclusions,
+        units=sorted(units, key=lambda row: row["unit_id"].encode()),
+        pair_exclusion_projection=sorted(
+            exclusions, key=lambda row: row["unit_id"].encode(),
+        ),
     )

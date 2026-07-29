@@ -140,11 +140,23 @@ def _inventory(clusters: list[dict], spans: list[dict]) -> dict:
     }
 
 
-def _project(inventory: dict, projection: lineage.LineageProjection):
+def _project(
+    inventory: dict,
+    projection: lineage.LineageProjection,
+    *,
+    stage_a_passages: list[dict] | None = None,
+):
+    if stage_a_passages is None:
+        stage_a_passages = [
+            passage
+            for cluster in inventory["provenance"]["passage_clusters"]
+            for passage in cluster["passages"]
+        ]
     return remediation.project_remediation(
         inventory=inventory,
         inventory_sha256=_digest("inventory"),
         lineage_projection=projection,
+        stage_a_passages=stage_a_passages,
     )
 
 
@@ -204,6 +216,94 @@ def test_stage_a_representative_is_grouped_but_not_masked():
         for row in result.pair_exclusion_projection
     }
     assert exclusions == {"abcdefghij": False, "klmnopqrst": True}
+
+
+def test_complete_stage_a_partition_itemizes_noncluster_and_inverse_refs():
+    projection, source = _lineage([("abcdefghij", "a"), ("klmnopqrst", "b")])
+    representative = _passage(source["abcdefghij"], 0, 3, "representative")
+    dropped = _passage(source["klmnopqrst"], 0, 3, "dropped")
+    noncluster = _passage(source["abcdefghij"], 4, 8, "noncluster")
+    inventory = _inventory([{
+        "dropped": ["dropped"],
+        "passages": [representative, dropped],
+        "representative": "representative",
+    }], [])
+    inventory["n_passages"] = 3
+
+    result = _project(
+        inventory,
+        projection,
+        stage_a_passages=[noncluster, dropped, representative],
+    )
+
+    assert result.crosswalk_projection == projection.crosswalk["rows"]
+    assert {
+        row["passage_id"]: (row["partition"], row["disposition"])
+        for row in result.passages
+    } == {
+        "representative": ("cluster_member", "representative"),
+        "dropped": ("cluster_member", "nonrepresentative"),
+        "noncluster": ("noncluster", "not_assessed"),
+    }
+    evidence_to_units = {
+        row["evidence_id"]: set(row["unit_refs"]) for row in result.evidence
+    }
+    unit_to_evidence = {
+        row["unit_id"]: set(row["evidence_refs"]) for row in result.units
+    }
+    assert all(
+        (unit_id in refs) == (evidence_id in unit_to_evidence[unit_id])
+        for evidence_id, refs in evidence_to_units.items()
+        for unit_id in unit_to_evidence
+    )
+
+
+def test_complete_stage_a_partition_refuses_missing_noncluster():
+    projection, source = _lineage([("abcdefghij", "a")])
+    clustered = _passage(source["abcdefghij"], 0, 3, "clustered")
+    inventory = _inventory([{
+        "dropped": [],
+        "passages": [clustered],
+        "representative": "clustered",
+    }], [])
+    inventory["n_passages"] = 2
+
+    with pytest.raises(
+        remediation.RemediationError,
+        match="complete passage partition invalid",
+    ):
+        _project(
+            inventory,
+            projection,
+            stage_a_passages=[clustered],
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source_doc_id", "not-a-digest"),
+        ("n_words", 0),
+    ],
+)
+def test_complete_stage_a_partition_refuses_invalid_scalars(
+    field: str,
+    value: object,
+):
+    projection, source = _lineage([("abcdefghij", "a")])
+    passage = _passage(source["abcdefghij"], 0, 3, "passage")
+    passage[field] = value
+    inventory = _inventory([{
+        "dropped": [],
+        "passages": [passage],
+        "representative": "passage",
+    }], [])
+
+    with pytest.raises(
+        remediation.RemediationError,
+        match="complete passage partition invalid",
+    ):
+        _project(inventory, projection, stage_a_passages=[passage])
 
 
 def test_single_unit_repetition_preserves_component_but_adds_mask():
