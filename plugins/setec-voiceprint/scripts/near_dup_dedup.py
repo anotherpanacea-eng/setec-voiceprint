@@ -82,6 +82,7 @@ import re
 import shutil
 import sqlite3
 import stat
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -96,6 +97,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 import pool_guard  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import passage_source_population_commitment as source_commitment  # noqa: E402
+import passage_tokenizer_v1  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 
@@ -262,7 +265,12 @@ class _RecoveryStore:
 # --------------- Shingling (stdlib) -------------------------------
 
 
-def shingles(text: str, *, k: int = DEFAULT_SHINGLE_SIZE) -> set[str]:
+def shingles(
+    text: str,
+    *,
+    k: int = DEFAULT_SHINGLE_SIZE,
+    tokenizer: Callable[[str], list[str]] | None = None,
+) -> set[str]:
     """Return the set of overlapping word ``k``-gram shingles of ``text``.
 
     Tokenized on word characters and lowercased so near-duplicates that differ
@@ -271,7 +279,9 @@ def shingles(text: str, *, k: int = DEFAULT_SHINGLE_SIZE) -> set[str]:
     very short piece is still comparable (rather than yielding an empty set,
     which would make it a near-duplicate of every other empty-shingle piece).
     """
-    tokens = [t.lower() for t in _WORD_RE.findall(text)]
+    tokens = tokenizer(text) if tokenizer is not None else [
+        t.lower() for t in _WORD_RE.findall(text)
+    ]
     if len(tokens) < k:
         return {" ".join(tokens)} if tokens else set()
     return {" ".join(tokens[i : i + k]) for i in range(len(tokens) - k + 1)}
@@ -622,7 +632,7 @@ def chunk_document(doc_id: str, text: str) -> list[Passage]:
     return out
 
 
-def _passage_provenance(p: Passage, source_manifest: str) -> dict[str, Any]:
+def _passage_provenance(p: Passage, source_manifest: str, tokenizer: Callable[[str], list[str]] = _norm_tokens) -> dict[str, Any]:
     """The provenance record spec 36 pins for every itemized passage.
 
     ``sha256`` is of the EXACT raw slice — no case folding, no punctuation
@@ -636,7 +646,7 @@ def _passage_provenance(p: Passage, source_manifest: str) -> dict[str, Any]:
         "ordinal": p.ordinal,
         "char_start": p.char_start,
         "char_end": p.char_end,
-        "n_words": len(_norm_tokens(p.text)),
+        "n_words": len(tokenizer(p.text)),
         "sha256": _sha256_hex(p.text),
     }
 
@@ -680,6 +690,7 @@ def stage_a_clusters(
     min_passage_words: int = DEFAULT_MIN_PASSAGE_WORDS,
     progress: Callable[[str], None] | None = None,
     recovery: _RecoveryStore | None = None,
+    tokenizer: Callable[[str], list[str]] = _norm_tokens,
 ) -> dict[str, Any]:
     """Cluster near-duplicate passage *units*; return kept / dropped / clusters.
 
@@ -718,7 +729,7 @@ def stage_a_clusters(
     short_keys: dict[tuple[str, str], list[str]] = {}
     long_ids: list[str] = []
     for p in passages:
-        tokens = _norm_tokens(p.text)
+        tokens = tokenizer(p.text)
         if len(tokens) < min_passage_words:
             key = (
                 ("tokens", " ".join(tokens))
@@ -744,7 +755,11 @@ def stage_a_clusters(
             sset = (
                 set(cached)
                 if isinstance(cached, list)
-                else shingles(texts[pid], k=shingle_size)
+                else (
+                    shingles(texts[pid], k=shingle_size)
+                    if tokenizer is _norm_tokens
+                    else shingles(texts[pid], k=shingle_size, tokenizer=tokenizer)
+                )
             )
             shingle_sets[pid] = sset
             if recovery and cached is None:
@@ -896,6 +911,7 @@ def stage_b_spans(
     min_span_words: int = DEFAULT_MIN_SPAN_WORDS,
     progress: Callable[[str], None] | None = None,
     recovery: _RecoveryStore | None = None,
+    tokenizer: Callable[[str], list[tuple[str, int, int]]] | None = None,
 ) -> dict[str, Any]:
     """Exact inverted-index scan for contiguous verbatim spans repeated >= 2x.
 
@@ -929,10 +945,10 @@ def stage_b_spans(
         tokens[doc_id] = (
             [tuple(item) for item in cached]
             if isinstance(cached, list)
-            else [
+            else (tokenizer(text) if tokenizer is not None else [
                 (m.group(0).lower(), m.start(), m.end())
                 for m in _WORD_RE.finditer(text)
-            ]
+            ])
         )
         if recovery and cached is None:
             recovery.put("stage_b_tokens", shard_key, tokens[doc_id])
@@ -1258,6 +1274,31 @@ def _load_documents(
     return out, skipped
 
 
+def _load_strict_spec80_documents(
+    manifest_path: Path, source_root: Path,
+) -> list[tuple[str, str, dict[str, Any]]]:
+    """Load the no-repair, file-backed population required by Spec 80."""
+    try:
+        loaded = source_commitment.load_strict_sources(manifest_path, source_root)
+        return [
+            (row["id"], payload.decode("utf-8"), row)
+            for _line, _raw, row, payload in loaded
+        ]
+    except (source_commitment.CommitmentError, UnicodeDecodeError) as exc:
+        raise PassageModeError("strict Spec-80 source population") from exc
+
+
+def _strict_token_words(text: str) -> list[str]:
+    return [item["normalized_token"] for item in passage_tokenizer_v1.tokenize(text)]
+
+
+def _strict_token_spans(text: str) -> list[tuple[str, int, int]]:
+    return [
+        (item["normalized_token"], item["char_start"], item["char_end"])
+        for item in passage_tokenizer_v1.tokenize(text)
+    ]
+
+
 def parse_stages(raw: str) -> list[str]:
     """``"a,b"`` -> ``["a", "b"]``. Unknown or empty selections refuse."""
     stages = [s.strip().lower() for s in raw.split(",") if s.strip()]
@@ -1399,6 +1440,8 @@ def analyze_passages(
     checkpoint_path: Path | None = None,
     resume: bool = False,
     progress: Callable[[str], None] | None = None,
+    strict_spec80: bool = False,
+    source_root: Path | None = None,
 ) -> tuple[dict[str, Any], list[Passage], dict[str, dict[str, Any]]]:
     """Run passage mode over a staged manifest.
 
@@ -1411,6 +1454,8 @@ def analyze_passages(
     re-dedups; a rerun starts from the source document manifest.
     """
     stages = list(stages) if stages else ["a", "b"]
+    if strict_spec80 and (stages != ["a", "b"] or source_root is None):
+        raise PassageModeError("strict Spec-80 mode requires stages a,b and --source-root")
     marked = pool_guard.scan_manifest_for_passage_dedup(manifest_path)
     if marked:
         raise PassageModeError(
@@ -1420,7 +1465,11 @@ def analyze_passages(
             "rerun passage mode from the SOURCE document manifest."
         )
 
-    documents, skipped_input_rows = _load_documents(manifest_path)
+    if strict_spec80:
+        documents = _load_strict_spec80_documents(manifest_path, source_root)
+        skipped_input_rows: list[str] = []
+    else:
+        documents, skipped_input_rows = _load_documents(manifest_path)
     if progress:
         progress(f"loaded {len(documents)} documents")
     source_manifest = manifest_path.name
@@ -1445,6 +1494,7 @@ def analyze_passages(
         "min_passage_words": min_passage_words,
         "span_shingle_k": span_shingle_k,
         "min_span_words": min_span_words,
+        "tokenization": "setec_frozen_unicode_word_lower_v1" if strict_spec80 else "unicode_word_lower_v1",
     }
     binding = _analysis_binding(manifest_path, documents, config)
     checkpoint_state: dict[str, Any] = {
@@ -1497,6 +1547,7 @@ def analyze_passages(
                         shingle_size=shingle_size,
                         min_passage_words=min_passage_words,
                         progress=progress, recovery=recovery,
+                        tokenizer=_strict_token_words if strict_spec80 else _norm_tokens,
                     )
             else:
                 stage_a_detail = stage_a_clusters(
@@ -1504,6 +1555,7 @@ def analyze_passages(
                     shingle_size=shingle_size,
                     min_passage_words=min_passage_words,
                     progress=progress,
+                    tokenizer=_strict_token_words if strict_spec80 else _norm_tokens,
                 )
             checkpoint_state["stage_a_detail"] = stage_a_detail
             if checkpoint_path is not None:
@@ -1543,6 +1595,7 @@ def analyze_passages(
                         span_shingle_k=span_shingle_k,
                         min_span_words=min_span_words,
                         progress=progress, recovery=recovery,
+                        tokenizer=_strict_token_spans if strict_spec80 else None,
                     )
             else:
                 stage_b_detail = stage_b_spans(
@@ -1550,6 +1603,7 @@ def analyze_passages(
                     span_shingle_k=span_shingle_k,
                     min_span_words=min_span_words,
                     progress=progress,
+                    tokenizer=_strict_token_spans if strict_spec80 else None,
                 )
             checkpoint_state["stage_b_detail"] = stage_b_detail
             if checkpoint_path is not None:
@@ -1589,7 +1643,10 @@ def analyze_passages(
             provenance["passage_clusters"].append({
                 "representative": rep,
                 "dropped": list(others),
-                "passages": [_passage_provenance(by_id[m], source_manifest) for m in members],
+                "passages": [_passage_provenance(
+                    by_id[m], source_manifest,
+                    _strict_token_words if strict_spec80 else _norm_tokens,
+                ) for m in members],
             })
             for pid in others:
                 _affected(by_id[pid].doc_id)["passages_dropped"].append(pid)
@@ -1638,6 +1695,7 @@ def analyze_passages(
             "threshold": threshold,
             "num_perm": num_perm,
             "min_passage_words": min_passage_words,
+            "tokenization": "setec_frozen_unicode_word_lower_v1" if strict_spec80 else "unicode_word_lower_v1",
             "chunking": "raw paragraphs, never coalesced and never split",
             "confirmation": (
                 "complete frequency-ordered Jaccard prefix filtering with "
@@ -1655,6 +1713,7 @@ def analyze_passages(
             "run": "b" in stages,
             "span_shingle_k": span_shingle_k,
             "min_span_words": min_span_words,
+            "tokenization": "setec_frozen_unicode_word_lower_v1" if strict_spec80 else "unicode_word_lower_v1",
             "detection_guarantee": (
                 "every verbatim repeated span with L >= max(span_shingle_k, "
                 "min_span_words) tokens is reported, exactly and deterministically"
@@ -1695,6 +1754,18 @@ def analyze_passages(
             _PASSAGE_CLAIM_LICENSE, task_surface=TASK_SURFACE,
         ).to_dict(),
     }
+    if strict_spec80:
+        _ranges, _mappings, tokenizer_data = passage_tokenizer_v1.load_data()
+        report["spec80_tokenizer"] = {
+            "schema": "setec-frozen-unicode-word-lower/1",
+            "implementation_sha256": "sha256:" + hashlib.sha256(
+                Path(__file__).with_name("passage_tokenizer_v1.py").read_bytes()
+            ).hexdigest(),
+            "data_sha256": "sha256:" + hashlib.sha256(
+                passage_tokenizer_v1.DATA_FILE.read_bytes()
+            ).hexdigest(),
+            "data_commitment_sha256": tokenizer_data["data_commitment_sha256"],
+        }
     return report, passages, rows_by_doc
 
 
@@ -1979,6 +2050,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     g.add_argument("--report-out", type=Path, default=None,
                    help="Write the passage-mode JSON report here.")
     g.add_argument(
+        "--strict-spec80", action="store_true",
+        help=(
+            "Use the additive, file-backed Spec-80 producer profile. Requires both "
+            "stages plus --source-root, --report-out, --commitment-out, and --receipt-out."
+        ),
+    )
+    g.add_argument("--source-root", type=Path, default=None,
+                   help="Pinned private root for strict Spec-80 source text files.")
+    g.add_argument("--commitment-out", type=Path, default=None,
+                   help="New strict Spec-80 source-population commitment output.")
+    g.add_argument("--receipt-out", type=Path, default=None,
+                   help="New strict Spec-80 source-population receipt output (commit marker).")
+    g.add_argument(
         "--checkpoint",
         type=Path,
         default=None,
@@ -2000,6 +2084,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
+    if getattr(args, "strict_spec80", False) and not getattr(args, "passages", False):
+        sys.stderr.write("[near_dup_dedup] --strict-spec80 requires --passages.\n")
+        return 2
     if getattr(args, "passages", False):
         return _run_passages(args)
     result = dedup_manifest(
@@ -2069,6 +2156,19 @@ def _run_passages(args: argparse.Namespace) -> int:
         )
         return 2
 
+    strict = bool(getattr(args, "strict_spec80", False))
+    if strict and (
+        not args.report_out or not args.source_root or not args.commitment_out
+        or not args.receipt_out or args.out or args.passage_dir or args.resume
+    ):
+        sys.stderr.write(
+            "[near_dup_dedup] --strict-spec80 requires --source-root, --report-out, "
+            "--commitment-out, and --receipt-out; it forbids export and resume.\n"
+        )
+        return 2
+    if strict and parse_stages(args.stages) != ["a", "b"]:
+        sys.stderr.write("[near_dup_dedup] --strict-spec80 requires --stages a,b.\n")
+        return 2
     try:
         stages = parse_stages(args.stages)
         checkpoint_path = args.checkpoint or _default_passage_checkpoint(args.manifest)
@@ -2089,13 +2189,24 @@ def _run_passages(args: argparse.Namespace) -> int:
             checkpoint_path=checkpoint_path,
             resume=args.resume,
             progress=progress,
+            strict_spec80=strict,
+            source_root=args.source_root if strict else None,
         )
     except PassageModeError as e:
         sys.stderr.write(f"[near_dup_dedup] {e}\n")
         return 2
 
-    text = json.dumps(report, indent=2, sort_keys=True)
-    if args.report_out:
+    text = (
+        json.dumps(report, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        if strict else json.dumps(report, indent=2, sort_keys=True)
+    )
+    if strict:
+        try:
+            _publish_spec80_package(args, text.encode("utf-8") + b"\n")
+        except (PassageModeError, source_commitment.CommitmentError, OSError, ValueError) as exc:
+            sys.stderr.write(f"[near_dup_dedup] strict Spec-80 publication refused: {exc}\n")
+            return 2
+    elif args.report_out:
         args.report_out.parent.mkdir(parents=True, exist_ok=True)
         args.report_out.write_text(text + "\n", encoding="utf-8")
     if args.json:
@@ -2120,6 +2231,95 @@ def _run_passages(args: argparse.Namespace) -> int:
             f"(passage files under {args.passage_dir}).\n"
         )
     return 0
+
+
+def _strict_algorithm_parameters(args: argparse.Namespace) -> dict[str, Any]:
+    if (
+        type(args.num_perm) is not int or args.num_perm <= 0
+        or type(args.shingle_size) is not int or args.shingle_size <= 0
+        or type(args.min_passage_words) is not int or args.min_passage_words <= 0
+        or type(args.span_shingle_k) is not int or args.span_shingle_k <= 0
+        or type(args.min_span_words) is not int or args.min_span_words <= 0
+        or not (0 < args.threshold <= 1)
+    ):
+        raise PassageModeError("strict Spec-80 parameters must be positive finite values")
+    decimal = repr(args.threshold)
+    if (
+        "e" in decimal
+        or "E" in decimal
+        or float(decimal) != args.threshold
+    ):
+        raise PassageModeError("strict Spec-80 threshold must have a non-exponent decimal")
+    return {
+        "mode": "passages",
+        "stages": ["a", "b"],
+        "stage_a": {
+            "threshold_decimal": decimal,
+            "num_perm": args.num_perm,
+            "shingle_size": args.shingle_size,
+            "min_passage_words": args.min_passage_words,
+            "chunking": "raw_paragraphs_never_coalesced_never_split",
+            "tokenization": "setec_frozen_unicode_word_lower_v1",
+        },
+        "stage_b": {
+            "span_shingle_k": args.span_shingle_k,
+            "min_span_words": args.min_span_words,
+            "tokenization": "setec_frozen_unicode_word_lower_v1",
+        },
+        "manifest_loader": "strict_file_backed_jsonl_v1",
+    }
+
+
+def _publish_spec80_package(args: argparse.Namespace, inventory_bytes: bytes) -> None:
+    """Publish inventory, commitment, receipt in one run; receipt is marker."""
+    outputs = (args.report_out, args.commitment_out, args.receipt_out)
+    output_keys = {
+        unicodedata.normalize("NFC", str(path.resolve(strict=False))).casefold()
+        for path in outputs
+    }
+    if len(output_keys) != len(outputs):
+        raise PassageModeError("strict Spec-80 outputs must be distinct")
+    if any(path.exists() or path.is_symlink() for path in outputs):
+        raise PassageModeError("strict Spec-80 outputs must all be new")
+    try:
+        repository = Path(subprocess.check_output(
+            ["git", "-C", str(SCRIPT_DIR), "rev-parse", "--show-toplevel"], text=True
+        ).strip())
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PassageModeError("strict Spec-80 requires a Git worktree") from exc
+    revision, blob, committed_script = source_commitment.committed_producer_identity(
+        repository=repository, script=Path(__file__),
+    )
+    commitment = source_commitment.build_commitment(
+        manifest=args.manifest,
+        inventory_bytes=inventory_bytes,
+        producer_revision=revision,
+        producer_blob_oid=blob,
+        producer_script_bytes=committed_script,
+        algorithm_parameters=_strict_algorithm_parameters(args),
+        source_kind_by_id={},
+        root=args.source_root,
+    )
+    commitment_bytes = source_commitment._canonical(commitment)
+    receipt = source_commitment.build_receipt(
+        commitment, inventory_bytes=inventory_bytes, commitment_bytes=commitment_bytes,
+    )
+    payloads = (inventory_bytes, commitment_bytes, source_commitment._canonical(receipt))
+    staged: list[Path] = []
+    try:
+        for destination, payload in zip(outputs, payloads):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            fd, raw = tempfile.mkstemp(prefix=f".{destination.name}.staging-", dir=destination.parent)
+            os.close(fd)
+            temp = Path(raw)
+            temp.write_bytes(payload)
+            staged.append(temp)
+        # Receipt last: before it exists the package is intentionally incomplete.
+        for temp, destination in zip(staged, outputs):
+            os.replace(temp, destination)
+    finally:
+        for temp in staged:
+            temp.unlink(missing_ok=True)
 
 
 def _write_human_stdout(text: str) -> None:
