@@ -50,6 +50,7 @@ if str(ROOT) not in sys.path:
 import manifest_validator as mv  # type: ignore  # noqa: E402
 import near_dup_dedup as ndd  # type: ignore  # noqa: E402
 import pool_guard  # type: ignore  # noqa: E402
+import author_corpus_export as ace  # type: ignore  # noqa: E402
 
 _datasketch_available = True
 try:
@@ -198,19 +199,37 @@ def test_base_import_is_pure():
     assert ndd.shingles("stdlib only path", k=2)
 
 
-def _strict_record(identifier: str, text_path: str) -> dict[str, object]:
-    """A smallest closed Voicewright source row for the additive Spec-80 path."""
-    return {
-        "schema": "voicewright-author-corpus/1", "id": identifier,
-        "persona": "owner", "register": "personal.letter", "role": "source",
-        "text_path": text_path, "source_entry_fingerprint": "src:hmac-sha256:" + "f" * 64,
-        "source_group": "g", "conversation_id": "c", "date": "2026-01-01",
+def _strict_record(payload: bytes, fingerprint_digit: str = "f") -> dict[str, object]:
+    """A valid closed Voicewright source row for the additive Spec-80 path."""
+    content_sha256 = ace._sha(payload)
+    normalized_sha256 = ace._sha(
+        ace._normalize_text(payload.decode("utf-8")).encode("utf-8")
+    )
+    content_hex = content_sha256.removeprefix("sha256:")
+    record: dict[str, object] = {
+        "schema": "voicewright-author-corpus/1", "id": "",
+        "persona": "owner", "register": "personal.letter", "role": "author",
+        "text_path": f"texts/{content_hex[:2]}/{content_hex[2:4]}/{content_hex}.txt",
+        "source_entry_fingerprint": "src:hmac-sha256:" + fingerprint_digit * 64,
+        "source_group": "grp:hmac-sha256:" + "a" * 64,
+        "conversation_id": None, "date": "2026-01-01",
         "unit_kind": "document", "unit_index": 0, "unit_count": 1,
-        "corpus_role": "author", "use": "private", "consent_status": "owner",
-        "ai_status": "human", "source_kind": "document_local",
-        "content_sha256": "sha256:" + "a" * 64,
-        "normalized_text_sha256": "sha256:" + "b" * 64,
+        "corpus_role": "identity_baseline", "use": ["voice_profile"],
+        "consent_status": "author_consent",
+        "ai_status": "pre_ai_human", "source_kind": "document_local",
+        "content_sha256": content_sha256,
+        "normalized_text_sha256": normalized_sha256,
     }
+    record["id"] = ace._record_id(record)
+    return record
+
+
+def _write_strict_source(root: Path, payload: bytes) -> dict[str, object]:
+    record = _strict_record(payload)
+    target = root / str(record["text_path"])
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(payload)
+    return record
 
 
 def test_spec80_strict_tokenizer_is_additive_and_legacy_report_is_stable(tmp_path):
@@ -230,10 +249,13 @@ def test_spec80_publication_requires_committed_producer_and_binds_three_artifact
     if not _datasketch_available:
         pytest.skip("strict producer requires Stage A's optional dependency")
     root = tmp_path / "root"; root.mkdir()
-    (root / "entry.txt").write_text("ALPHA beta gamma delta epsilon zeta eta theta iota kappa.\n\nAlpha beta gamma delta epsilon zeta eta theta iota kappa.")
+    payload = (
+        "ALPHA beta gamma delta epsilon zeta eta theta iota kappa.\n\n"
+        "Alpha beta gamma delta epsilon zeta eta theta iota kappa."
+    ).encode()
+    record = _write_strict_source(root, payload)
     manifest = tmp_path / "manifest.jsonl"
-    ident = "sha256:" + "1" * 64
-    manifest.write_text(json.dumps(_strict_record(ident, "entry.txt"), separators=(",", ":")) + "\n")
+    manifest.write_text(json.dumps(record, separators=(",", ":")) + "\n")
     repo = tmp_path / "repo"; repo.mkdir()
     producer = repo / "near_dup_dedup.py"
     shutil.copy2(Path(ndd.__file__), producer)
@@ -258,7 +280,7 @@ def test_spec80_publication_requires_committed_producer_and_binds_three_artifact
     assert receipt["inventory_sha256"] == "sha256:" + hashlib.sha256(inventory).hexdigest()
     assert receipt["commitment_sha256"] == commitment["commitment_sha256"]
     assert commitment["algorithm_parameters"]["stage_a"]["tokenization"] == "setec_frozen_unicode_word_lower_v1"
-    assert commitment["sources"][0]["source_doc_id"] == ident
+    assert commitment["sources"][0]["source_doc_id"] == record["id"]
     assert report["spec80_tokenizer"]["schema"] == "setec-frozen-unicode-word-lower/1"
 
 
@@ -271,6 +293,148 @@ def test_spec80_strict_refuses_dirty_producer_identity(tmp_path, monkeypatch):
     producer.write_text("changed\n")
     with pytest.raises(ndd.source_commitment.CommitmentError):
         ndd.source_commitment.committed_producer_identity(repository=repo, script=producer)
+
+
+def test_spec80_refuses_invalid_author_row_before_source_open(tmp_path, monkeypatch):
+    root = tmp_path / "root"; root.mkdir()
+    row = _strict_record(b"private source")
+    row["role"] = "source"
+    row["text_path"] = "../outside.txt"
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    opened = False
+
+    def unexpected_open(*_args, **_kwargs):
+        nonlocal opened
+        opened = True
+        raise AssertionError("source bytes opened before metadata validation")
+
+    monkeypatch.setattr(ndd.source_commitment.os, "open", unexpected_open)
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="record metadata"):
+        ndd.source_commitment.load_strict_sources(manifest, root)
+    assert not opened
+
+
+def test_spec80_refuses_hardlinked_source(tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    payload = b"private source"
+    row = _strict_record(payload)
+    outside = tmp_path / "outside.txt"; outside.write_bytes(payload)
+    target = root / str(row["text_path"])
+    target.parent.mkdir(parents=True)
+    target.hardlink_to(outside)
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
+        ndd.source_commitment.load_strict_sources(manifest, root)
+
+
+def test_spec80_refuses_symlinked_source_ancestor(tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    payload = b"private source"
+    row = _strict_record(payload)
+    outside = tmp_path / "outside"; outside.mkdir()
+    (root / "texts").symlink_to(outside, target_is_directory=True)
+    target = outside.joinpath(*str(row["text_path"]).split("/")[1:])
+    target.parent.mkdir(parents=True)
+    target.write_bytes(payload)
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
+        ndd.source_commitment.load_strict_sources(manifest, root)
+
+
+def test_spec80_refuses_source_tree_swap_after_preflight(tmp_path, monkeypatch):
+    root = tmp_path / "root"; root.mkdir()
+    payload = b"private source"
+    row = _write_strict_source(root, payload)
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    original_preflight = ndd.source_commitment._preflight_sources
+
+    def preflight_then_swap(manifest_path, source_root):
+        planned = original_preflight(manifest_path, source_root)
+        moved = tmp_path / "moved-texts"
+        (root / "texts").rename(moved)
+        outside = tmp_path / "outside-texts"
+        outside_target = outside.joinpath(*str(row["text_path"]).split("/")[1:])
+        outside_target.parent.mkdir(parents=True)
+        outside_target.write_bytes(payload)
+        (root / "texts").symlink_to(outside, target_is_directory=True)
+        return planned
+
+    monkeypatch.setattr(
+        ndd.source_commitment, "_preflight_sources", preflight_then_swap,
+    )
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
+        ndd.source_commitment.load_strict_sources(manifest, root)
+
+
+def test_spec80_refuses_root_swap_during_atomic_pin(tmp_path, monkeypatch):
+    root = tmp_path / "root"; root.mkdir()
+    outside = tmp_path / "outside"; outside.mkdir()
+    moved = tmp_path / "moved-root"
+    original_fstat = ndd.source_commitment.os.fstat
+    swapped = False
+
+    def fstat_then_swap(descriptor):
+        nonlocal swapped
+        metadata = original_fstat(descriptor)
+        if not swapped:
+            root.rename(moved)
+            root.symlink_to(outside, target_is_directory=True)
+            swapped = True
+        return metadata
+
+    monkeypatch.setattr(ndd.source_commitment.os, "fstat", fstat_then_swap)
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="source root"):
+        ndd.source_commitment._pin_source_root(root)
+
+
+def test_spec80_missing_source_refuses_without_raw_filesystem_error(tmp_path):
+    root = tmp_path / "root"; root.mkdir()
+    row = _strict_record(b"missing private source")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
+        ndd.source_commitment.load_strict_sources(manifest, root)
+
+
+def test_spec80_commitment_helper_has_no_standalone_minting_cli():
+    assert not hasattr(ndd.source_commitment, "main")
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="parameter schema"):
+        ndd.source_commitment._validate_algorithm_parameters({})
+
+
+def test_spec80_refuses_aliased_output_destinations(tmp_path):
+    shared = tmp_path / "shared.json"
+    args = type("Args", (), {
+        "report_out": shared,
+        "commitment_out": shared,
+        "receipt_out": tmp_path / "receipt.json",
+    })()
+    with pytest.raises(ndd.PassageModeError, match="outputs must be distinct"):
+        ndd._publish_spec80_package(args, b"{}\n")
+    assert not shared.exists()
+
+
+def test_spec80_threshold_commitment_round_trips_exact_float():
+    threshold = 0.12345678901234566
+    args = type("Args", (), {
+        "threshold": threshold, "num_perm": 128, "shingle_size": 5,
+        "min_passage_words": 10, "span_shingle_k": 8, "min_span_words": 20,
+    })()
+    parameters = ndd._strict_algorithm_parameters(args)
+    decimal = parameters["stage_a"]["threshold_decimal"]
+    assert decimal == repr(threshold)
+    assert float(decimal) == threshold
+
+
+def test_spec80_manifest_refuses_crlf_framing(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_bytes(b'{"schema":"voicewright-author-corpus/1"}\r\n')
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="jsonl framing"):
+        ndd.source_commitment._strict_jsonl(manifest)
 
 
 # =====================================================================

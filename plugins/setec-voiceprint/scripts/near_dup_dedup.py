@@ -1278,24 +1278,14 @@ def _load_strict_spec80_documents(
     manifest_path: Path, source_root: Path,
 ) -> list[tuple[str, str, dict[str, Any]]]:
     """Load the no-repair, file-backed population required by Spec 80."""
-    documents: list[tuple[str, str, dict[str, Any]]] = []
-    seen: set[str] = set()
-    for _line, _raw, row in source_commitment._strict_jsonl(manifest_path):
-        if row.get("schema") != source_commitment.RECORD_SCHEMA or set(row) != source_commitment._RECORD_KEYS:
-            raise PassageModeError("strict Spec-80 manifest row schema")
-        ident, rel = row.get("id"), row.get("text_path")
-        if not isinstance(ident, str) or ident in seen or not isinstance(rel, str):
-            raise PassageModeError("strict Spec-80 manifest identity")
-        target = source_root / rel
-        if target.is_symlink() or not target.is_file():
-            raise PassageModeError("strict Spec-80 source file")
-        try:
-            text = target.read_bytes().decode("utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            raise PassageModeError("strict Spec-80 source UTF-8") from exc
-        seen.add(ident)
-        documents.append((ident, text, row))
-    return documents
+    try:
+        loaded = source_commitment.load_strict_sources(manifest_path, source_root)
+        return [
+            (row["id"], payload.decode("utf-8"), row)
+            for _line, _raw, row, payload in loaded
+        ]
+    except (source_commitment.CommitmentError, UnicodeDecodeError) as exc:
+        raise PassageModeError("strict Spec-80 source population") from exc
 
 
 def _strict_token_words(text: str) -> list[str]:
@@ -2253,8 +2243,12 @@ def _strict_algorithm_parameters(args: argparse.Namespace) -> dict[str, Any]:
         or not (0 < args.threshold <= 1)
     ):
         raise PassageModeError("strict Spec-80 parameters must be positive finite values")
-    decimal = format(args.threshold, ".15g")
-    if "e" in decimal or "E" in decimal:
+    decimal = repr(args.threshold)
+    if (
+        "e" in decimal
+        or "E" in decimal
+        or float(decimal) != args.threshold
+    ):
         raise PassageModeError("strict Spec-80 threshold must have a non-exponent decimal")
     return {
         "mode": "passages",
@@ -2279,6 +2273,12 @@ def _strict_algorithm_parameters(args: argparse.Namespace) -> dict[str, Any]:
 def _publish_spec80_package(args: argparse.Namespace, inventory_bytes: bytes) -> None:
     """Publish inventory, commitment, receipt in one run; receipt is marker."""
     outputs = (args.report_out, args.commitment_out, args.receipt_out)
+    output_keys = {
+        unicodedata.normalize("NFC", str(path.resolve(strict=False))).casefold()
+        for path in outputs
+    }
+    if len(output_keys) != len(outputs):
+        raise PassageModeError("strict Spec-80 outputs must be distinct")
     if any(path.exists() or path.is_symlink() for path in outputs):
         raise PassageModeError("strict Spec-80 outputs must all be new")
     try:

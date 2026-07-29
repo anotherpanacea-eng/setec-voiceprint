@@ -1172,14 +1172,12 @@ def _exact_counter(value: Any, label: str) -> dict[str, int]:
     return result
 
 
-def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
-                    receipt: dict[str, Any], *, hmac_key: bytes | None = None,
-                    config_hash: str | None = None,
-                    producer_revision: str | None = None) -> str:
+def _verify_record_population_metadata(
+    records: list[dict[str, Any]],
+) -> tuple[list[str], set[str]]:
+    """Verify the authoritative closed record schema without opening source text."""
     if type(records) is not list or not records:
         raise ValueError("package records must be a non-empty list")
-    if type(texts) is not dict or not texts:
-        raise ValueError("package texts must be a non-empty object")
     ids: list[str] = []
     fingerprints: list[str] = []
     expected_text_keys: set[str] = set()
@@ -1229,15 +1227,6 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
             raise ValueError("record text_path is not bound to content_sha256")
         if record["id"] != _record_id(record):
             raise ValueError("record id binding failed verification")
-        text_bytes = texts.get(record["content_sha256"])
-        if type(text_bytes) is not bytes or _sha(text_bytes) != record["content_sha256"]:
-            raise ValueError("record exact text bytes failed content verification")
-        try:
-            normalized = _normalize_text(text_bytes.decode("utf-8")).encode("utf-8")
-        except UnicodeError as exc:
-            raise ValueError("record text is not strict UTF-8") from exc
-        if _sha(normalized) != record["normalized_text_sha256"]:
-            raise ValueError("record normalized text hash failed verification")
         ids.append(record["id"])
         fingerprints.append(record["source_entry_fingerprint"])
         expected_text_keys.add(record["content_sha256"])
@@ -1245,8 +1234,6 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
         raise ValueError("record ids must be sorted and unique")
     if len(set(fingerprints)) != len(fingerprints):
         raise ValueError("source-entry fingerprints must be unique")
-    if set(texts) != expected_text_keys:
-        raise ValueError("text object contains missing or unreferenced content")
 
     by_group: dict[str, list[dict[str, Any]]] = {}
     for record in records:
@@ -1275,6 +1262,36 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
         count = group[0]["unit_count"]
         if len(group) != count or {row["unit_index"] for row in group} != set(range(count)):
             raise ValueError("source group unit order is incomplete or ambiguous")
+    return ids, expected_text_keys
+
+
+def _verify_record_population_texts(
+    records: list[dict[str, Any]], texts: dict[str, bytes],
+) -> None:
+    """Verify exact and normalized text bindings for metadata-verified rows."""
+    if type(texts) is not dict or not texts:
+        raise ValueError("package texts must be a non-empty object")
+    expected_text_keys = {record["content_sha256"] for record in records}
+    for record in records:
+        text_bytes = texts.get(record["content_sha256"])
+        if type(text_bytes) is not bytes or _sha(text_bytes) != record["content_sha256"]:
+            raise ValueError("record exact text bytes failed content verification")
+        try:
+            normalized = _normalize_text(text_bytes.decode("utf-8")).encode("utf-8")
+        except UnicodeError as exc:
+            raise ValueError("record text is not strict UTF-8") from exc
+        if _sha(normalized) != record["normalized_text_sha256"]:
+            raise ValueError("record normalized text hash failed verification")
+    if set(texts) != expected_text_keys:
+        raise ValueError("text object contains missing or unreferenced content")
+
+
+def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
+                    receipt: dict[str, Any], *, hmac_key: bytes | None = None,
+                    config_hash: str | None = None,
+                    producer_revision: str | None = None) -> str:
+    ids, _expected_text_keys = _verify_record_population_metadata(records)
+    _verify_record_population_texts(records, texts)
 
     if type(receipt) is not dict or set(receipt) != RECEIPT_KEYS:
         raise ValueError("producer receipt does not match the closed schema")
