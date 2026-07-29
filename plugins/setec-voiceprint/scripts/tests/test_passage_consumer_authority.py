@@ -461,7 +461,12 @@ def test_default_validate_refuses_missing_reviewed_profile_before_private_root(
         consumer.AuthorityError,
         match="^authority_profile_refused$",
     ):
-        consumer.run(_args(tmp_path / "absent"))
+        # platform pinned: this test's subject is profile-refusal-before-
+        # private-root ordering; the platform gate that precedes it in §15
+        # order has its own test above, and the sys.platform default made
+        # this assertion host-dependent (Linux CI saw platform_refused
+        # first).
+        consumer.run(_args(tmp_path / "absent"), platform="darwin")
 
 
 def test_profile_byte_drift_refuses_before_private_root(tmp_path: Path):
