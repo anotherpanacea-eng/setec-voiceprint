@@ -7,6 +7,29 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.128.0] - 2026-08-02
+
+### Added
+
+**`s5_distance` — locked six-family normalized Burrows-Delta surface.** Adds a
+deterministic, hash-echoing Voicewright handoff over precomputed feature entries,
+with frozen family caps and no parser/model/network or threshold/verdict path.
+
+### Fixed
+
+**A test pinned a transient `changelog.d/` fragment path, so it broke on the
+first release cut.** `changelog.d/` fragments are transient by design — a
+release folds each one into `CHANGELOG.md` and deletes it — but
+`test_changelog_fragment_names_the_capability_id_verbatim` read
+`feat-register-composition-sweep-encoders.md` by name and raised
+`FileNotFoundError` once v1.127.0 consumed it. The assertion now follows the
+record to wherever it currently lives (the fragment before a release,
+`CHANGELOG.md` after), so it keeps its teeth without pinning a path guaranteed
+to disappear. Swept: this was the only test reading a real `changelog.d/`
+fragment by name; the neighbouring capability assertions read
+`capabilities.d/*.yaml`, which is permanent, and the assembler's own tests
+build fragments under `tmp_path`.
+
 ## [1.127.0] - 2026-07-28
 
 ### Added
