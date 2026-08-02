@@ -174,6 +174,7 @@ def test_filter_by_consumer_setec_voicewright():
         "voice_fingerprint", "voice_distance", "idiolect_detector",
         "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
         "narrative_decision_audit", "variance_audit",
+        "s5_distance",
     }
     assert ids == expected, (
         f"--consumer setec-voicewright mismatch: "

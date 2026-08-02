@@ -1,0 +1,52 @@
+entries:
+- id: s5_distance
+  script_path: plugins/setec-voiceprint/scripts/s5_distance.py
+  surface: voice_coherence
+  status: empirically_oriented
+  handoff: stable
+  consumers:
+  - setec-voicewright
+  min_setec_version: "1.128.0"
+  json_delivery: stdout
+  family: voice-distance
+  purpose: >-
+    Locked S5 measurement for beat-matched parallel rendering. Accepts normalized,
+    hash-bound feature entries and reports exactly six Burrows-Delta values
+    (character 3/4/5-grams, POS trigrams, dependency n-grams, punctuation) plus
+    their unweighted mean. Reuses the established family_distance primitive and
+    frozen 200/200/200/300/300/all feature caps. No threshold, verdict, or
+    selection key; no text, corpus, parser/model, or network path.
+  use_when:
+  - A consumer already has normalized six-family target and baseline feature entries
+  - You need the frozen S5 measurement and binding hashes for a beat-matched render experiment
+  do_not_use_when:
+  - You need feature extraction from raw text (this surface accepts normalized entries only)
+  - You need an authorship, AI/human, quality, ranking, or selection judgment
+  inputs:
+  - flag: request
+    type: path
+    required: true
+  - flag: --json
+    type: bool
+    required: false
+  - flag: --out
+    type: path
+    required: false
+  outputs:
+    schema_version: "1.0"
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib-only arithmetic over caller-supplied normalized feature maps; no text, corpus, model, or network access
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+  examples:
+  - description: Compute the locked six-family S5 measurement
+    cmd: python3 plugins/setec-voiceprint/scripts/s5_distance.py request.json --json
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
