@@ -56,6 +56,7 @@ EXPECTED_TASK_SURFACE = {
     "argument_decision_audit": "argument_decision_audit",
     "position_pair_register": "position_pair_register",
     "agd_move_scan": "agd_move_scan",
+    "s5_distance": "voice_coherence",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({

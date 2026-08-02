@@ -1029,6 +1029,16 @@ def _build_agd_move_scan() -> dict[str, Any]:
     )
 
 
+def _build_s5_distance() -> dict[str, Any]:
+    import s5_distance as m  # type: ignore
+
+    request_path = SCRIPTS_DIR / "tests" / "fixtures" / "s5_distance_request.json"
+    envelope = m._run(str(request_path))
+    if not envelope.get("available"):
+        raise RuntimeError(f"s5_distance contract fixture failed: {envelope.get('reason')}")
+    return envelope
+
+
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "author_corpus_export": _build_author_corpus_export,
     "variance_audit": _build_variance_audit,
@@ -1047,6 +1057,7 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "argument_decision_audit": _build_argument_decision_audit,
     "position_pair_register": _build_position_pair_register,
     "agd_move_scan": _build_agd_move_scan,
+    "s5_distance": _build_s5_distance,
 }
 
 

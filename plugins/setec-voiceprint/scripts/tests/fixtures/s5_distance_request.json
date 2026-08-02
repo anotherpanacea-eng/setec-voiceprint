@@ -1,0 +1,62 @@
+{
+  "schema": "setec-s5-distance-request/1",
+  "target": {
+    "id": "target",
+    "content_sha256": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "word_count": 100,
+    "features": {
+      "char_ngrams_3": {"aaa": 3.0},
+      "char_ngrams_4": {"aaaa": 3.0},
+      "char_ngrams_5": {"aaaaa": 3.0},
+      "pos_trigrams": {"NOUN VERB NOUN": 3.0},
+      "dependency_ngrams": {"nsubj>ROOT>dobj": 3.0},
+      "punctuation": {"comma": 3.0}
+    }
+  },
+  "baseline": {
+    "manifest_sha256": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "content_inventory_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "entries": [
+      {
+        "id": "baseline-0",
+        "content_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "word_count": 100,
+        "features": {
+          "char_ngrams_3": {"aaa": 0.0},
+          "char_ngrams_4": {"aaaa": 0.0},
+          "char_ngrams_5": {"aaaaa": 0.0},
+          "pos_trigrams": {"NOUN VERB NOUN": 0.0},
+          "dependency_ngrams": {"nsubj>ROOT>dobj": 0.0},
+          "punctuation": {"comma": 0.0}
+        }
+      },
+      {
+        "id": "baseline-1",
+        "content_sha256": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "word_count": 100,
+        "features": {
+          "char_ngrams_3": {"aaa": 1.0},
+          "char_ngrams_4": {"aaaa": 1.0},
+          "char_ngrams_5": {"aaaaa": 1.0},
+          "pos_trigrams": {"NOUN VERB NOUN": 1.0},
+          "dependency_ngrams": {"nsubj>ROOT>dobj": 1.0},
+          "punctuation": {"comma": 1.0}
+        }
+      },
+      {
+        "id": "baseline-2",
+        "content_sha256": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "word_count": 100,
+        "features": {
+          "char_ngrams_3": {"aaa": 2.0},
+          "char_ngrams_4": {"aaaa": 2.0},
+          "char_ngrams_5": {"aaaaa": 2.0},
+          "pos_trigrams": {"NOUN VERB NOUN": 2.0},
+          "dependency_ngrams": {"nsubj>ROOT>dobj": 2.0},
+          "punctuation": {"comma": 2.0}
+        }
+      }
+    ]
+  },
+  "parser_inventory_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+}

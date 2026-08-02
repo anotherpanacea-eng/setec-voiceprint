@@ -738,6 +738,14 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
 
 ## Related references
 
+- `s5_distance` (`voice-distance`) — the locked six-family S5 measurement used
+  by beat-matched parallel rendering: Burrows Delta for character 3/4/5-grams,
+  POS trigrams, dependency n-grams, and punctuation, followed by their unweighted
+  mean. It operates only on caller-supplied normalized feature entries and echoes
+  the target, baseline-manifest, baseline-content-inventory, parser-inventory,
+  and implementation hashes. It adds no new per-text signal to this inventory;
+  it freezes a no-threshold, no-verdict aggregation of the existing Burrows-Delta
+  primitive for a cross-repository contract.
 - `nonprose_sweep` (`validation`) — bounded corpus-hygiene screening over a B2
   descriptor: exact VTT structure, speaker-label density, closed-lexicon
   disfluency density, short-line density, and an exact

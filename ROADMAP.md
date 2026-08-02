@@ -2,6 +2,16 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-08-02)
+
+- **Locked normalized S5 producer surface for Voicewright Spec 82.**
+  `s5_distance` accepts only explicit, hash-bound normalized feature entries and
+  emits the frozen six Burrows-Delta family values plus their unweighted mean.
+  It reuses the established distance primitive through a feature-extraction-free
+  module, so the dispatcher path loads no parser/model and performs no corpus or
+  network access. The cross-repository handoff is `stable`, with a deterministic
+  synthetic contract fixture and no threshold, verdict, ranking, or selection key.
+
 ## Status reconciliation (2026-07-21)
 
 - **Manifest conflict-copy tripwire (Spec 69, B5; implementation review GO, draft PR pending).** The existing
