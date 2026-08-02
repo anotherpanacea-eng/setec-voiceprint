@@ -21,7 +21,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import from_legacy  # noqa: E402
-from output_schema import build_error_output, build_output  # noqa: E402
+from output_schema import OutputValidityError, build_error_output, build_output  # noqa: E402
 from stylometry_distance import family_distance  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
@@ -137,6 +137,23 @@ def _implementation_sha256() -> str:
     return f"sha256:{digest.hexdigest()}"
 
 
+def _canonical_sha256(value: Any) -> str:
+    data = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f"duplicate JSON key: {key}")
+        value[key] = item
+    return value
+
+
 def compute_s5(request: dict[str, Any]) -> dict[str, Any]:
     target, baseline, entries = validate_request(request)
     values: dict[str, float] = {}
@@ -148,17 +165,26 @@ def compute_s5(request: dict[str, Any]) -> dict[str, Any]:
         if not math.isfinite(value):
             raise ValueError(f"computed non-finite Burrows Delta for {family}")
         values[family] = value
+    mean = sum(values.values()) / len(FAMILY_ORDER)
+    if not math.isfinite(mean):
+        raise ValueError("computed non-finite S5 unweighted mean")
+    feature_inventory = {
+        "target": target,
+        "baseline_entries": entries,
+    }
     return {
         "method": "unweighted mean of six family Burrows-Delta values",
         "family_order": list(FAMILY_ORDER),
         "family_limits": FAMILY_LIMITS,
         "selected_feature_counts": feature_counts,
         "family_burrows_delta": values,
-        "s5_unweighted_mean": sum(values.values()) / len(FAMILY_ORDER),
+        "s5_unweighted_mean": mean,
         "target_content_sha256": target["content_sha256"],
         "baseline_manifest_sha256": baseline["manifest_sha256"],
         "baseline_content_inventory_sha256": baseline["content_inventory_sha256"],
         "parser_inventory_sha256": request["parser_inventory_sha256"],
+        "normalized_feature_inventory_sha256": _canonical_sha256(feature_inventory),
+        "request_sha256": _canonical_sha256(request),
         "implementation_sha256": _implementation_sha256(),
     }
 
@@ -180,10 +206,32 @@ def _claim_license() -> dict[str, str]:
 def _run(request_path: str) -> dict[str, Any]:
     path = Path(request_path)
     try:
-        request = json.loads(path.read_text(encoding="utf-8"))
+        request = json.loads(
+            path.read_text(encoding="utf-8"),
+            object_pairs_hook=_reject_duplicate_keys,
+        )
         target, baseline, entries = validate_request(request)
         results = compute_s5(request)
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        return build_output(
+            task_surface=TASK_SURFACE,
+            tool=TOOL_NAME,
+            version=SCRIPT_VERSION,
+            target_path=path,
+            target_words=target["word_count"],
+            target_extra={"content_sha256": target["content_sha256"], "entry_id": target["id"]},
+            baseline={
+                "n_files": len(entries),
+                "words": sum(item["word_count"] for item in entries),
+                "manifest_sha256": baseline["manifest_sha256"],
+                "content_inventory_sha256": baseline["content_inventory_sha256"],
+            },
+            results=results,
+            claim_license=from_legacy(_claim_license(), task_surface=TASK_SURFACE),
+        )
+    except (
+        OSError, UnicodeError, json.JSONDecodeError, ValueError,
+        OutputValidityError,
+    ) as exc:
         return build_error_output(
             task_surface=TASK_SURFACE,
             tool=TOOL_NAME,
@@ -192,22 +240,6 @@ def _run(request_path: str) -> dict[str, Any]:
             reason=str(exc),
             reason_category="bad_input",
         )
-    return build_output(
-        task_surface=TASK_SURFACE,
-        tool=TOOL_NAME,
-        version=SCRIPT_VERSION,
-        target_path=path,
-        target_words=target["word_count"],
-        target_extra={"content_sha256": target["content_sha256"], "entry_id": target["id"]},
-        baseline={
-            "n_files": len(entries),
-            "words": sum(item["word_count"] for item in entries),
-            "manifest_sha256": baseline["manifest_sha256"],
-            "content_inventory_sha256": baseline["content_inventory_sha256"],
-        },
-        results=results,
-        claim_license=from_legacy(_claim_license(), task_surface=TASK_SURFACE),
-    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -226,7 +258,10 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     if args.json or not args.out:
         print(rendered)
-    return 0 if envelope.get("available") else 3
+    # The normalized dispatcher parses this structured envelope from stdout;
+    # a nonzero child status would make it discard the closed refusal as an
+    # internal error before parsing. Availability lives in the envelope.
+    return 0
 
 
 if __name__ == "__main__":
