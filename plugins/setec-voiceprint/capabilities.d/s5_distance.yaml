@@ -13,7 +13,8 @@ entries:
     Locked S5 measurement for beat-matched parallel rendering. Accepts normalized,
     hash-bound feature entries and reports exactly six Burrows-Delta values
     (character 3/4/5-grams, POS trigrams, dependency n-grams, punctuation) plus
-    their unweighted mean. Reuses the established family_distance primitive and
+    their unweighted mean, with producer-computed canonical request and normalized
+    feature-inventory digests. Reuses the established family_distance primitive and
     frozen 200/200/200/300/300/all feature caps. No threshold, verdict, or
     selection key; no text, corpus, parser/model, or network path.
   use_when:

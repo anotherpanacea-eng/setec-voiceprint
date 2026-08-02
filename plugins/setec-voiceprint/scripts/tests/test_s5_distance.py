@@ -58,7 +58,24 @@ def test_envelope_echoes_all_binding_hashes():
     assert results["baseline_manifest_sha256"] == request["baseline"]["manifest_sha256"]
     assert results["baseline_content_inventory_sha256"] == request["baseline"]["content_inventory_sha256"]
     assert results["parser_inventory_sha256"] == request["parser_inventory_sha256"]
+    assert results["normalized_feature_inventory_sha256"].startswith("sha256:")
+    assert results["request_sha256"].startswith("sha256:")
     assert results["implementation_sha256"].startswith("sha256:")
+
+
+def test_feature_inventory_digest_binds_the_values_that_determine_s5():
+    request = _request()
+    original = s5.compute_s5(request)
+    mutated = copy.deepcopy(request)
+    mutated["target"]["features"]["punctuation"]["comma"] = 10.0
+    changed = s5.compute_s5(mutated)
+    assert changed["target_content_sha256"] == original["target_content_sha256"]
+    assert changed["s5_unweighted_mean"] != original["s5_unweighted_mean"]
+    assert (
+        changed["normalized_feature_inventory_sha256"]
+        != original["normalized_feature_inventory_sha256"]
+    )
+    assert changed["request_sha256"] != original["request_sha256"]
 
 
 @pytest.mark.parametrize("mutation", ["missing_family", "extra_key", "unsorted", "overlap", "nan"])
@@ -140,6 +157,45 @@ def test_huge_integer_is_a_normalized_bad_input(tmp_path):
 
     envelope = s5._run(str(request_path))
 
+    assert envelope["available"] is False
+    assert envelope["reason_category"] == "bad_input"
+
+
+def test_duplicate_json_key_is_a_normalized_bad_input(tmp_path):
+    raw = FIXTURE.read_text(encoding="utf-8")
+    raw = raw.replace(
+        '"parser_inventory_sha256":',
+        '"parser_inventory_sha256": "sha256:' + 'e' * 64 + '",\n  '
+        '"parser_inventory_sha256":',
+        1,
+    )
+    request_path = tmp_path / "duplicate-key.json"
+    request_path.write_text(raw, encoding="utf-8")
+    envelope = s5._run(str(request_path))
+    assert envelope["available"] is False
+    assert envelope["reason_category"] == "bad_input"
+    assert "duplicate JSON key" in envelope["reason"]
+    assert s5.main([str(request_path), "--json"]) == 0
+
+
+def test_family_mean_overflow_refuses_closed(monkeypatch):
+    monkeypatch.setattr(
+        s5, "family_distance",
+        lambda *_args, **_kwargs: {"burrows_delta": 1e308},
+    )
+    with pytest.raises(ValueError, match="non-finite S5 unweighted mean"):
+        s5.compute_s5(_request())
+
+
+def test_dispatcher_preserves_structured_bad_input_envelope(tmp_path, capsys):
+    import setec_run  # type: ignore
+
+    missing = tmp_path / "missing.json"
+    rc = setec_run.dispatch(
+        "s5_distance", [str(missing)], observed_version="1.128.0",
+    )
+    assert rc == setec_run.EXIT_CONTRACT == 3
+    envelope = json.loads(capsys.readouterr().out)
     assert envelope["available"] is False
     assert envelope["reason_category"] == "bad_input"
 

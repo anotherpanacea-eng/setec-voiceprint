@@ -743,7 +743,9 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
   POS trigrams, dependency n-grams, and punctuation, followed by their unweighted
   mean. It operates only on caller-supplied normalized feature entries and echoes
   the target, baseline-manifest, baseline-content-inventory, parser-inventory,
-  and implementation hashes. It adds no new per-text signal to this inventory;
+  normalized-feature-inventory, canonical-request, and implementation hashes.
+  The two added digests bind the actual feature values that determine S5 instead
+  of merely echoing caller-supplied source identifiers. It adds no new per-text signal to this inventory;
   it freezes a no-threshold, no-verdict aggregation of the existing Burrows-Delta
   primitive for a cross-repository contract.
 - `nonprose_sweep` (`validation`) — bounded corpus-hygiene screening over a B2
