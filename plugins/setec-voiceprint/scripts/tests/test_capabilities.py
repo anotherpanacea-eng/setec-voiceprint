@@ -173,7 +173,7 @@ def test_filter_by_consumer_setec_voicewright():
         "author_corpus_export",
         "voice_fingerprint", "voice_distance", "idiolect_detector",
         "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
-        "narrative_decision_audit", "variance_audit",
+        "narrative_decision_audit", "variance_audit", "s5_distance",
     }
     assert ids == expected, (
         f"--consumer setec-voicewright mismatch: "
@@ -495,6 +495,7 @@ _R1_CONSUMER_SURFACES = [
     "narrative_decision_audit",
     "voice_fingerprint", "mimicry_cosplay_audit",
     "general_imposters", "binoculars_audit",
+    "s5_distance",
 ]
 
 # Per-surface version floors (R1 Step B for the apodictic nine;
@@ -506,6 +507,7 @@ _R1_FLOOR_EXCEPTIONS = {
     "mimicry_cosplay_audit": "1.115.0",
     "general_imposters": "1.115.0",
     "binoculars_audit": "1.115.0",
+    "s5_distance": "1.128.0",
 }
 
 

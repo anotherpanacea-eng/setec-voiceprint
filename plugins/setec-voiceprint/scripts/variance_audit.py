@@ -76,11 +76,13 @@ try:
     try:
         nltk.data.find("tokenizers/punkt")
     except LookupError:
-        try:
-            nltk.download("punkt", quiet=True)
-        except Exception:
-            pass
-    HAS_NLTK = True
+        # Importing an audit module must never initiate a network operation.
+        # Punkt is optional; when it is not already installed, use the frozen
+        # stdlib regex splitter below. Operators may install data explicitly,
+        # outside an audit run.
+        HAS_NLTK = False
+    else:
+        HAS_NLTK = True
 except ImportError:
     HAS_NLTK = False
 

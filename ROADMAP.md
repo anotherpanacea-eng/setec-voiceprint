@@ -2,6 +2,18 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-08-02)
+
+### In reviewed build for 1.128.0
+
+- **Locked six-family S5 distance for Voicewright N10.** `s5_distance.py` adds
+  the normalized `setec run s5_distance --request ... --json` surface over a
+  hash-bound target and closed sanitized-baseline manifest. It reports the
+  existing character 3/4/5-gram, POS-trigram, dependency-ngram, and punctuation
+  Burrows-Delta distances plus their equal unweighted mean. The envelope echoes
+  input, parser, and implementation hashes and ships no verdict, threshold,
+  authorship/provenance claim, or training-objective license.
+
 ## Status reconciliation (2026-07-21)
 
 - **Manifest conflict-copy tripwire (Spec 69, B5; implementation review GO, draft PR pending).** The existing

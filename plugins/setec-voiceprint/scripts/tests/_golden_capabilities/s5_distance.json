@@ -1,0 +1,64 @@
+{
+  "id": "s5_distance",
+  "script_path": "plugins/setec-voiceprint/scripts/s5_distance.py",
+  "surface": "voice_coherence",
+  "status": "empirically_oriented",
+  "handoff": "stable",
+  "consumers": [
+    "setec-voicewright"
+  ],
+  "min_setec_version": "1.128.0",
+  "json_delivery": "stdout",
+  "family": "voice-distance",
+  "purpose": "Locked six-family S5 distance for beat-matched evaluation: validates a hash-bound target and sanitized baseline manifest beneath one private root, then reports existing stylometry_core Burrows-Delta values for character 3/4/5-grams, POS trigrams, dependency n-grams, and punctuation plus their equal unweighted mean. Descriptive measurement only; no verdict, threshold, or training objective.\n",
+  "use_when": [
+    "A consumer needs the exact N10 six-family S5 instrument over a hash-bound target and sanitized baseline",
+    "The caller can provide the closed setec-s5-distance-request/1 request and pinned parser inventory"
+  ],
+  "do_not_use_when": [
+    "You want an authorship, AI/human, quality, plagiarism, or identity verdict",
+    "You want an unbound baseline directory, a different feature family set, or a training objective"
+  ],
+  "inputs": [
+    {
+      "flag": "--request",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope with closed setec-s5-distance/1 results"
+    ]
+  },
+  "compute": {
+    "tier": "model_cpu",
+    "cost_note": "spaCy en_core_web_sm POS/dependency parse on the target and sanitized baseline; no network or API calls",
+    "length_floor_words": null
+  },
+  "registers": [
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [
+      "spacy",
+      "en_core_web_sm"
+    ],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Normalized locked S5 distance call",
+      "cmd": "setec run s5_distance --request request.json --json"
+    }
+  ],
+  "references": [
+    "anotherpanacea-eng/setec-voicewright spec 82 (N10 beat-matched parallel render)"
+  ]
+}

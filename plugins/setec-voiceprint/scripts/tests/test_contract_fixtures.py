@@ -56,6 +56,7 @@ EXPECTED_TASK_SURFACE = {
     "argument_decision_audit": "argument_decision_audit",
     "position_pair_register": "position_pair_register",
     "agd_move_scan": "agd_move_scan",
+    "s5_distance": "voice_coherence",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({
@@ -115,11 +116,13 @@ def test_every_golden_is_a_valid_envelope(surface):
     assert env["claim_license_rendered"]
     # Volatile fields are normalized.
     assert env["version"] == gen.VERSION_SENTINEL
-    if surface == "author_corpus_export":
+    if surface in {"author_corpus_export", "s5_distance"}:
         assert env["target"]["path"] is None
+    if surface == "author_corpus_export":
         assert env["results"]["producer_receipt"]["source_persona_aliases"] == {}
     else:
-        assert env["target"]["path"] == gen.PATH_SENTINEL
+        if surface != "s5_distance":
+            assert env["target"]["path"] == gen.PATH_SENTINEL
 
 
 def test_normalization_sentinels_applied_for_narrative():

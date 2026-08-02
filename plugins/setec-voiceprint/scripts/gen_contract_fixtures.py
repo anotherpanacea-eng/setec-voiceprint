@@ -387,6 +387,38 @@ def _build_voice_distance() -> dict[str, Any]:
     return m.build_audit_payload(result, target_path="<fixture>")
 
 
+def _build_s5_distance() -> dict[str, Any]:
+    import s5_distance as m  # type: ignore
+
+    family_scores = {
+        "char_ngrams_3": 0.7685640174233851,
+        "char_ngrams_4": 1.0044851936786767,
+        "char_ngrams_5": 0.6535687882965725,
+        "pos_trigrams": 1.3292546070740199,
+        "dependency_ngrams": 0.6034521845761506,
+        "punctuation": 0.8392607421034265,
+    }
+    results = {
+        "schema": m.RESULT_SCHEMA,
+        "implementation_sha256": "1" * 64,
+        "target_sha256": "2" * 64,
+        "baseline_manifest_sha256": "3" * 64,
+        "baseline_content_inventory_sha256": "4" * 64,
+        "parser_name": m.PARSER_NAME,
+        "parser_version": "fixture-parser-1",
+        "parser_inventory_sha256": "5" * 64,
+        "sentence_splitter_id": m.SENTENCE_SPLITTER_ID,
+        "family_scores": family_scores,
+        "s5_score": sum(family_scores.values()) / len(family_scores),
+    }
+    return m.build_envelope(
+        results,
+        target_words=24,
+        baseline_files=3,
+        baseline_words=78,
+    )
+
+
 def _build_voice_profile() -> dict[str, Any]:
     import voice_profile as m  # type: ignore
 
@@ -1035,6 +1067,7 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "manuscript_audit": _build_manuscript_audit,
     "repetition_audit": _build_repetition_audit,
     "voice_distance": _build_voice_distance,
+    "s5_distance": _build_s5_distance,
     "voice_profile": _build_voice_profile,
     "pov_voice_profile": _build_pov_voice_profile,
     "punctuation_cadence_audit": _build_punctuation_cadence_audit,

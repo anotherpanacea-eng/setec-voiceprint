@@ -16,7 +16,7 @@ import re
 import statistics
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import AbstractSet, Any, Callable
 
 from preprocessing import aggregate_preprocessing_metadata, strip_non_prose
 from register_taxonomy import (
@@ -380,22 +380,39 @@ def pos_tag_sentences(text: str) -> list[list[str]]:
     return [[t.pos_ for t in sent if not t.is_space] for sent in doc.sents]
 
 
-def pos_trigram_features(text: str) -> dict[str, float]:
-    if not HAS_SPACY or _NLP is None:
+def _pos_tag_sentences_with_parser(text: str, nlp: Any) -> list[list[str]]:
+    doc = nlp(text)
+    return [[t.pos_ for t in sent if not t.is_space] for sent in doc.sents]
+
+
+def pos_trigram_features(text: str, *, nlp: Any | None = None) -> dict[str, float]:
+    parser = _NLP if nlp is None else nlp
+    if parser is None or (nlp is None and not HAS_SPACY):
         return {}
     counts: Counter[str] = Counter()
     total = 0
-    for tags in pos_tag_sentences(text):
+    tag_streams = (
+        pos_tag_sentences(text)
+        if nlp is None
+        else _pos_tag_sentences_with_parser(text, parser)
+    )
+    for tags in tag_streams:
         for a, b, c in zip(tags, tags[1:], tags[2:]):
             counts[f"pos:{a}-{b}-{c}"] += 1
             total += 1
     return frequencies(counts, total)
 
 
-def dependency_ngram_features(text: str, ns: tuple[int, ...] = (2, 3)) -> dict[str, float]:
-    if not HAS_SPACY or _NLP is None:
+def dependency_ngram_features(
+    text: str,
+    ns: tuple[int, ...] = (2, 3),
+    *,
+    nlp: Any | None = None,
+) -> dict[str, float]:
+    parser = _NLP if nlp is None else nlp
+    if parser is None or (nlp is None and not HAS_SPACY):
         return {}
-    doc = _NLP(text)
+    doc = parser(text)
     counts: Counter[str] = Counter()
     total = 0
     for sent in doc.sents:
@@ -417,6 +434,9 @@ def extract_features(
     allow_non_prose: bool = False,
     strip_rules: "str | list[str] | None" = None,
     strip_aggressive: bool = False,
+    sentence_splitter: Callable[[str], list[str]] | None = None,
+    nlp: Any | None = None,
+    families: AbstractSet[str] | None = None,
 ) -> "dict[str, Any]":
     text, preprocessing = strip_non_prose(
         text,
@@ -425,27 +445,43 @@ def extract_features(
         strip_aggressive=strip_aggressive,
     )
     words = word_tokens(text)
-    sentences = split_sentences(text)
+    sentences = (sentence_splitter or split_sentences)(text)
     paras = paragraphs(text)
-    features: dict[str, dict[str, float]] = {
-        "function_words": function_word_features(words),
-        "punctuation": punctuation_features(text, words, sentences),
-        "paragraph_dialogue": paragraph_dialogue_features(text, words, paras),
-        "pronoun_modal_negation": pronoun_modal_negation_features(text, words),
-    }
+    requested = set(families) if families is not None else None
+    features: dict[str, dict[str, float]] = {}
+    if requested is None or "function_words" in requested:
+        features["function_words"] = function_word_features(words)
+    if requested is None or "punctuation" in requested:
+        features["punctuation"] = punctuation_features(text, words, sentences)
+    if requested is None or "paragraph_dialogue" in requested:
+        features["paragraph_dialogue"] = paragraph_dialogue_features(text, words, paras)
+    if requested is None or "pronoun_modal_negation" in requested:
+        features["pronoun_modal_negation"] = pronoun_modal_negation_features(text, words)
     # char_ngram_features returns one sub-family per n-value. Flatten
     # them into the top-level features dict so each n participates in
     # selection, distance, and weighting independently.
-    for family_name, family_features in char_ngram_features(text).items():
+    char_ns = tuple(
+        n for n in CHAR_NGRAM_NS
+        if requested is None or char_ngram_family_name(n) in requested
+    )
+    for family_name, family_features in char_ngram_features(text, ns=char_ns).items():
         features[family_name] = family_features
     if include_spacy:
-        pos = pos_trigram_features(text)
-        dep = dependency_ngram_features(text)
-        if pos:
+        pos = (
+            pos_trigram_features(text, nlp=nlp)
+            if requested is None or "pos_trigrams" in requested
+            else {}
+        )
+        dep = (
+            dependency_ngram_features(text, nlp=nlp)
+            if requested is None or "dependency_ngrams" in requested
+            else {}
+        )
+        if pos and (requested is None or "pos_trigrams" in requested):
             features["pos_trigrams"] = pos
-        if dep:
+        if dep and (requested is None or "dependency_ngrams" in requested):
             features["dependency_ngrams"] = dep
-    if include_biber:
+    if include_biber and (requested is None or "biber_features" in requested):
         if biber_vector is None and biber_tagger is None:
             # Fail-loud: opt-in requested but nothing to derive the vector from.
             # Never a silent no-op — that would let the family vanish unnoticed.
@@ -462,7 +498,7 @@ def extract_features(
             "n_words_original": preprocessing.get("input_tokens_before", len(words)),
             "n_sentences": len(sentences),
             "n_paragraphs": len(paras),
-            "spacy_available": HAS_SPACY,
+            "spacy_available": bool(nlp is not None or HAS_SPACY),
             "preprocessing_applied": preprocessing.get("applied", False),
         },
         "features": features,
@@ -590,6 +626,9 @@ def extract_entry_features(
     allow_non_prose: bool = False,
     strip_rules: "str | list[str] | None" = None,
     strip_aggressive: bool = False,
+    sentence_splitter: Callable[[str], list[str]] | None = None,
+    nlp: Any | None = None,
+    families: AbstractSet[str] | None = None,
 ) -> list[dict[str, Any]]:
     out = []
     for entry in entries:
@@ -616,6 +655,9 @@ def extract_entry_features(
             allow_non_prose=allow_non_prose,
             strip_rules=strip_rules,
             strip_aggressive=strip_aggressive,
+            sentence_splitter=sentence_splitter,
+            nlp=nlp,
+            families=families,
         )
         out.append({
             "id": entry["id"],

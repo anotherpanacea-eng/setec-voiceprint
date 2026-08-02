@@ -72,6 +72,7 @@ EXPECTED_SURFACES = {
     "voice_verifier": ("voice_verifier.py", "stdout"),
     "position_pair_register": ("position_pair_register.py", "stdout"),
     "agd_move_scan": ("agd_move_scan.py", "stdout"),
+    "s5_distance": ("s5_distance.py", "stdout"),
 }
 
 

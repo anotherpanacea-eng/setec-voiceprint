@@ -738,6 +738,13 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
 
 ## Related references
 
+- `s5_distance` (`voice_coherence`) — the locked Voicewright N10 instrument:
+  six existing per-family Burrows-Delta measurements (character 3/4/5-grams,
+  POS trigrams, dependency n-grams, and punctuation) plus their equal
+  unweighted mean over a hash-bound sanitized baseline. It adds no new
+  underlying per-text signal to this inventory, so the totals above are
+  unchanged. The normalized envelope is descriptive only: no threshold, band,
+  verdict, authorship/provenance claim, or training-objective license.
 - `nonprose_sweep` (`validation`) — bounded corpus-hygiene screening over a B2
   descriptor: exact VTT structure, speaker-label density, closed-lexicon
   disfluency density, short-line density, and an exact

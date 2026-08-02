@@ -268,6 +268,18 @@ CLASSIFICATION: dict[str, dict] = {
             "LM is equally a pooled reference, for whoever wrote it"
         ),
     },
+    "s5_distance": {
+        "sweeps": ("A", "B"),
+        "guard": GUARDED,
+        "via": DIRECT,
+        "rationale": (
+            "the six-family S5 instrument pools the request-bound baseline into "
+            "one Burrows-Delta reference against which the target is scored. Its "
+            "closed v1 manifest currently requires register null, but it also "
+            "calls the shared isolation guard directly so a future schema change "
+            "cannot admit a private-dyadic/non-dyadic mixture silently"
+        ),
+    },
     # ---------------- exempt ----------------
     "voice_validation_harness": {
         "sweeps": ("B",),

@@ -1,0 +1,63 @@
+{
+  "ai_status": null,
+  "available": true,
+  "baseline": {
+    "n_files": 3,
+    "words": 78
+  },
+  "claim_license": {
+    "additional_caveats": [
+      "Distances are descriptive and baseline-dependent; the normalized surface ships no threshold, band, or verdict."
+    ],
+    "comparison_set": {
+      "baseline_files": 3,
+      "families": [
+        "char_ngrams_3",
+        "char_ngrams_4",
+        "char_ngrams_5",
+        "pos_trigrams",
+        "dependency_ngrams",
+        "punctuation"
+      ]
+    },
+    "confidence_interval_95": null,
+    "does_not_license": "Does not license an authorship, AI/human provenance, quality, plagiarism, or identity verdict; a threshold or calibrated operating point; or use of S5 as a training objective. The caller owns its preregistered paired comparison and all downstream decisions.",
+    "fpr_target": null,
+    "language_match": [],
+    "length_range_words": null,
+    "licenses": "Reports six descriptive Burrows-Delta distances from one target to the request-bound baseline (character 3/4/5-grams, POS trigrams, dependency n-grams, and punctuation) and their equal, unweighted mean.",
+    "references": [],
+    "register_match": [],
+    "task_surface": "voice_coherence"
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** Reports six descriptive Burrows-Delta distances from one target to the request-bound baseline (character 3/4/5-grams, POS trigrams, dependency n-grams, and punctuation) and their equal, unweighted mean.\n\n**Does NOT report:** Does not license an authorship, AI/human provenance, quality, plagiarism, or identity verdict; a threshold or calibrated operating point; or use of S5 as a training objective. The caller owns its preregistered paired comparison and all downstream decisions.\n\n### Comparison context\n\n- **baseline files:** 3\n- **families:** ['char_ngrams_3', 'char_ngrams_4', 'char_ngrams_5', 'pos_trigrams', 'dependency_ngrams', 'punctuation']\n\n### Caveats\n\n- Distances are descriptive and baseline-dependent; the normalized surface ships no threshold, band, or verdict.",
+  "results": {
+    "baseline_content_inventory_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "baseline_manifest_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "family_scores": {
+      "char_ngrams_3": 0.7685640174233851,
+      "char_ngrams_4": 1.0044851936786767,
+      "char_ngrams_5": 0.6535687882965725,
+      "dependency_ngrams": 0.6034521845761506,
+      "pos_trigrams": 1.3292546070740199,
+      "punctuation": 0.8392607421034265
+    },
+    "implementation_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "parser_inventory_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+    "parser_name": "en_core_web_sm",
+    "parser_version": "fixture-parser-1",
+    "s5_score": 0.8664309221920385,
+    "schema": "setec-s5-distance/1",
+    "sentence_splitter_id": "n10-regex-sentences/1",
+    "target_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "schema_version": "1.0",
+  "target": {
+    "path": null,
+    "words": 24
+  },
+  "task_surface": "voice_coherence",
+  "tool": "s5_distance",
+  "version": "<fixture>",
+  "warnings": []
+}
