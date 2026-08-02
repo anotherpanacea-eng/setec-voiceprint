@@ -7,6 +7,14 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.128.1] - 2026-08-02
+
+### Fixed
+
+- `s5_distance`: bind the normalized feature values and canonical request in
+  producer-computed digests, reject duplicate JSON keys, and preserve structured
+  bad-input envelopes through the normalized dispatcher.
+
 ## [1.128.0] - 2026-08-02
 
 ### Added
