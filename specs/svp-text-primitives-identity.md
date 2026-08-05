@@ -1,8 +1,8 @@
 # SVP Text-Primitives Registry — byte-identical ownership and imports
 
-**Status:** BUILD-READY (v4, independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
-**Provenance:** modularization audit, two adversarial six-lens reviews, and an independent round-3 review. This revision removes the unneeded envelope-identity system and keeps only registry, inventory, narrow characterization, and import consolidation.
-**Round-4 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the independent review; no remaining P1/P2 within the authorized increment.
+**Status:** BUILD-READY (v5, exact-head independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
+**Provenance:** modularization audit, two adversarial six-lens reviews, and two exact-head independent reviews. This revision keeps only registry, inventory, narrow characterization, and import consolidation.
+**Round-5 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the final repair; no remaining P1/P2 within the authorized increment.
 **Depends on:** `specs/svp-packaging-conversion.md` for the `scripts/setec` package home and for the final relocation of each primitive owner before its ID is minted.
 
 ## Outcome and cut line
@@ -90,7 +90,16 @@ mutant:
   expected: comparator-specific JSON value
 ```
 
-The runner imports both named callables, calls each with fresh deep-copied `args`/`kwargs`, follows `result_path`, and applies the named comparator. `float_hex_exact` compares `float.hex()` values; `set_exact` compares sorted scalar members; `exception_exact` compares exact exception type and message. No implicit coercion, tolerance, default argument, environment-derived input, or free-form comparator is allowed.
+The runner imports both named callables, calls each with fresh deep-copied `args`/`kwargs`, follows `result_path`, and applies the named comparator. The JSON encoding of `expected` is closed:
+
+- `json_exact`: any valid JSON value; compare exact canonical bytes from `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)` so scalar types remain distinct;
+- `sequence_exact`: a JSON array in exact order, with each element compared by `json_exact`;
+- `set_exact`: a JSON array of unique JSON scalars, sorted lexicographically by each scalar's canonical JSON encoding;
+- `bytes_hex_exact`: the exact one-key object `{ "hex": "..." }`, whose value is a lowercase, even-length hexadecimal string;
+- `float_hex_exact`: the exact string returned by `float.hex()`;
+- `exception_exact`: the exact object `{ "type": "module.QualName", "message": "exact str(exception)" }` with no additional keys.
+
+The same comparator-specific encoding applies to `mutant.expected`. No implicit coercion, numeric tolerance, omitted default argument, environment-derived input, or free-form comparator is allowed.
 
 `mutant` is a second explicit input case chosen so at least one output or exception differs from the primary row. The runner first proves both implementations equal `expected`, then proves both equal the mutant expectation and that the comparator distinguishes primary from mutant. This establishes that the row has teeth without inventing a replacement algorithm or coupling characterization to envelope fields.
 

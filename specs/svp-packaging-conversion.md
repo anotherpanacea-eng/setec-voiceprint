@@ -1,8 +1,8 @@
 # SVP Packaging Conversion — flat launchers to a zero-install package
 
-**Status:** BUILD-READY (v4, independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
-**Provenance:** modularization audit plus two adversarial six-lens reviews. Round 2 returned NEEDS-REWORK (8 P1 / 9 P2); this revision incorporates every verified P1 and the prioritized P2 fixes.
-**Round-4 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the independent review; no remaining P1/P2 within the authorized increment.
+**Status:** BUILD-READY (v5, exact-head independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
+**Provenance:** modularization audit, two adversarial six-lens reviews, and two exact-head independent reviews. Round 2 returned NEEDS-REWORK (8 P1 / 9 P2); every accepted finding is folded here.
+**Round-5 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the final repair; no remaining P1/P2 within the authorized increment.
 **Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; after P2 it also supplies the exact producer-client home scripts/setec/consumer_client.py required by `setec-consumer-client-contract`.
 
 ## Outcome and governing rule
@@ -17,7 +17,7 @@ All inventories and migration gates are derived from the fetched merge base and 
 
 - `capabilities.d/*.yaml` records exact `script_path` launchers. Most are top-level, but live entries also dispatch into `scripts/calibration/`, `scripts/external_mirror/`, and `scripts/replication/`. Those subdirectory entry points do not get a directory alias; each retains an executable per-file launcher.
 - `plugins/setec-voiceprint/scripts/setec_run.py` executes the selected file path in a subprocess. Voicewright and APODICTIC consume the copied plugin without installing a Python distribution.
-- `output_schema.build_output` rejects an unknown task surface. That existing boundary, plus non-zero registry/path checks after each move, remains the fail-closed mechanism. This spec does **not** change `claim_license._load_surface_labels` from its tested missing-directory behavior and does not introduce an import-time exception across its importer graph.
+- `output_schema.build_output` rejects an unknown task surface but intentionally permits surface-specific top-level extensions; `build_error_output` adds structured-error keys. Exact root sets belong only to named sealed-success validators such as register sweep and the consumer S5/author-corpus paths. This packaging spec changes none of those semantics. The existing boundary, plus non-zero registry/path checks after each move, remains fail-closed. This spec also leaves `claim_license._load_surface_labels` at its tested missing-directory behavior and introduces no import-time exception across its importer graph.
 - The contract-fixture generator executes registered builders and includes a live `s5_distance` path; it is not a hand-transcribed-only oracle. Its inventory is `gen_contract_fixtures.surfaces()`, never a typed count.
 - `tools/` programs resolve the repository root. Plugin runtime modules resolve the plugin root. These are different jobs and must not share one resolver.
 - `tools/spec_anchor_lint.py` recursively indexes source except its explicit `_SKIP_DIRS`; it has no implicit “top-level only” boundary.
@@ -32,7 +32,7 @@ plugins/setec-voiceprint/
       paths.py                 # plugin-root and stay-put data paths
       contract/                # output_schema, claim_license, capabilities
       core/                    # libraries that pass the L1 predicate
-      surfaces/                # capability-bearing and shared surface modules
+      surfaces/                # capability-bearing whole modules
       calibration/             # implementations behind calibration launchers
       external_mirror/         # implementations behind mirror launchers
       replication/             # implementations behind replication launchers
@@ -49,7 +49,7 @@ Resolved defaults for this revision:
 1. Package location is `scripts/setec/`; no `src/` layout and no install step.
 2. Tests stay at `plugins/setec-voiceprint/scripts/tests/`. The repo-root `pytest.ini` remains the sole pytest configuration owner.
 3. This spec owns `pytest.ini` and the per-test-file `sys.path` codemod only. `fleet-coordination/specs/setec-test-consolidation.md` Part A creates `scripts/tests/conftest.py` and owns all shared fixtures, clone collapse, markers, and its own baselines after the packaging locations it observes have landed.
-4. The shared-surface tier starts with `variance_audit`, `manifest_validator`, `originality_audit`, `repetition_audit`, `manuscript_audit`, `voice_fingerprint`, `acquisition_core`, and `check_corpus`. The live AST graph plus committed exceptional-edge baseline, not a prose count, is the enforcement input.
+4. Surface relocation moves whole modules without extracting common CLI, envelope, report, or claim-license boilerplate. Cohorts are derived from `capabilities.d` and the live AST graph; prose counts are never enforcement input.
 5. Compatibility launchers remain for the life of schema 1.x. Removing them requires a major-contract spec and consumer migration.
 
 ## 1. Root resolution before moves
@@ -95,17 +95,19 @@ Their existing “add `scripts/` to `sys.path`” bootstraps are load-bearing un
 
 ## 3. Claim-license Deficit Lock
 
-This gate lands in P1, before any mass codemod or harness work.
+This gate lands in P1, before any mass codemod or relocation.
 
 `tools/check_claim_license_guard.py` compares the candidate against the fetched merge base using Git objects (`git merge-base` + `git show`), never against a baseline regenerated in the PR. The candidate commits `packaging_move_map.json` with exact top-level keys `{schema,moves,path_rewrites}`. A `moves` row is `{old_path,new_path,old_symbol,new_symbol,phase}`. A `path_rewrites` row is `{old_path,old_ast,new_path,new_ast,plugin_relative_target}` and exists only for a relocation-forced data-anchor rewrite such as `claim_license_surfaces/`. The checker requires a one-to-one move map, requires every old object at the merge base and every new object in the candidate, and rejects an unlisted deletion or second destination. For each path rewrite it requires an exact normalized-AST match and proves in scratch copies that old and new expressions resolve the same `plugin_relative_target` and byte-identical data.
 
-For each `_claim_license` definer and direct `ClaimLicense(...)` emission site, the checker builds a closed dependency graph from the defining function body, all transitively referenced plugin-local functions/classes, and the defining assignments for referenced module constants. Imports, aliases, and qualified names are resolved statically. The comparison form is `ast.dump(..., include_attributes=False)` after only these normalizations: remove docstrings; rewrite paths and qualified symbols through the explicit move map; and normalize an import of a moved symbol to its mapped name. String/bytes/numeric literals, operators, calls, keyword names and values, collection order, control flow, and default arguments are not normalized away. The closure therefore includes every value capable of reaching the rendered license block, `additional_caveats`, or `ai_status`, even when the value is computed rather than literal.
+The protected set is deliberately whole-module and conservative. Seed it with every production module whose AST defines or calls a name matching `_claim_license*`, plus every module that directly calls `ClaimLicense`. Resolve the names and arguments at those call sites only far enough to identify plugin-local imported modules that supply a referenced callable, constant, class attribute, or constructor argument; add each such supplier module in full. Repeat over newly added suppliers until the module set closes. Stdlib/builtin values and the unchanged `ClaimLicense` class are terminals.
 
-The gate fails closed on star imports, dynamic `getattr`/`globals` lookup, an unresolved binding, ambiguous aliases, a non-stdlib dependency outside plugin source, a changed closure member not explained by `moves`/`path_rewrites`, or any non-relocation AST delta. Stdlib/builtin calls and the unchanged `ClaimLicense` constructor are terminal bindings, not unresolved edges. It prints the first old/new symbol and normalized-node difference. A moved-but-identical closure passes; changing only an import/qualified symbol or data anchor exactly as declared and verified by the move map passes. Existing live contract builders remain a second oracle where they exist, but fixture coverage is not misrepresented as universal.
+For every protected merge-base module, compare the normalized **whole-module** AST with its mapped candidate module. The comparison is `ast.dump(..., include_attributes=False)`; it retains docstrings, literals, operators, calls, keyword names/values, collection order, defaults, and control flow. Normalization permits only the exact file/symbol relocation, import path or qualified-name rewrite declared in `moves`, and the exact verified data-anchor substitution declared in `path_rewrites`. This broad comparison catches caller-side argument changes such as a changed `model_id` even when `_claim_license` itself is untouched.
+
+There is no claim of general semantic or interprocedural dataflow analysis. On a star import, dynamic `getattr`/`globals` lookup, ambiguous alias, or other unresolved provenance, the checker adds the entire identifiable plugin-local source module to the protected set; if it cannot identify a unique source module, it fails closed. It also fails on a missing merge base, an unlisted deletion/destination, or any protected-module delta not explained exactly by `moves`/`path_rewrites`, and prints the first module and normalized-node difference. Existing live contract builders remain a second oracle where they exist, but fixture coverage is not misrepresented as universal.
 
 **No semantic claim-license change is authorized by this packaging spec.** Any canonical change fails CI with no override. A genuine content change must be a later, separately reviewed PR under its own contract. This is both stronger and smaller than an owner-signature mechanism, a regenerable snapshot, or a new approval-artifact format. CI also fails if the merge base is unavailable. PR-body prose is irrelevant.
 
-`setec.surfaces.harness` owns only CLI grouping, envelope plumbing, and report layout. It has no defaults for `licenses`, `does_not_license`, `comparison_set`, `additional_caveats`, or `ai_status`; a surface supplies its own existing values. The migration target excludes claim-license content from boilerplate reduction. No “unique/non-empty text” heuristic is presented as a semantic Deficit Lock.
+This packet withdraws `setec.surfaces.harness` and all surface-boilerplate consolidation. P4 relocates whole modules only. Any future shared CLI/envelope/report harness is a separate specification and independent review after the relocation settles; it cannot enter as a packaging cleanup.
 
 ## 4. Layering and movement predicates
 
@@ -113,11 +115,11 @@ The migration checker derives module shapes and anchors directly from the candid
 
 - L0 contract modules may not import another internal layer.
 - L1 core modules have no capability fragment, CLI entry, or envelope emission and may import only L0/L1.
-- L2 contains capability-bearing modules and the resolved shared-surface tier. L2 may import L0/L1 and only the generated sanctioned L2 edges.
+- L2 contains capability-bearing modules. L2 may import L0/L1 and only the generated sanctioned L2 edges.
 
 `stylometry_distance.py` is present on `origin/main` and is an L1 candidate. `stylometry_core.py` is **not** moved to L1 while it imports `variance_audit`; it stays in L2/stay-put inventory until `svp-text-primitives-identity` removes that dependency. No module is typed into L1 merely because its name sounds library-like.
 
-`tools/check_layering.py` derives the live graph itself. The initial exceptional edge file is generated once from the merge-base graph, committed, and exact-diff reviewed; nobody types an approximate seed. New edges are errors. Existing exceptional edges may only disappear. Shared-tier cycles are errors. Layer exemptions use the same migration-exemptions file; `--strict` treats expired or unmatched rows as errors.
+`tools/check_layering.py` derives the live graph itself. The initial exceptional edge file is generated once from the merge-base graph, committed, and exact-diff reviewed; nobody types an approximate seed. New edges are errors. Existing exceptional edges may only disappear. L2 cycles are errors. Layer exemptions use the same migration-exemptions file; `--strict` treats expired or unmatched rows as errors.
 
 ## 5. Drift, reachability, and truthful degradation
 
@@ -144,7 +146,7 @@ The existing Windows private-writer deselect is grandfathered. No new deselect m
 
 | Boundary | This spec owns | Companion owns | Order |
 |---|---|---|---|
-| `fleet-coordination/specs/setec-consumer-client-contract.md` | P2 relocation plus compatibility shims for `output_schema.py` and `capabilities.py`; no semantic contract edits | shared client, capabilities manifest `contract` block, committed warning-phrase fixture, consumer-side reliability floor, contract fixtures, and vendoring | consumer C2 starts after packaging P2; it does not block P4 because the 12-key envelope and producer warning emission stay unchanged |
+| `fleet-coordination/specs/setec-consumer-client-contract.md` | P2 relocation plus compatibility shims for `output_schema.py` and `capabilities.py`; generic builders remain extensible and named sealed-success exact sets remain unchanged | shared client; capabilities contract; separate `warning_classifier_coverage.json` and `warning_producer_emissions.json` fixtures; consumer-side reliability floor; contract fixtures; vendoring | consumer C2 starts after packaging P2; it does not block relocation-only P4 because it changes neither generic envelope behavior nor sealed-success exact sets |
 | `fleet-coordination/specs/setec-test-consolidation.md` | P1 `pytest.ini` and per-file `sys.path` codemod; final module locations | creates `scripts/tests/conftest.py`; shared fixtures, clone collapse, markers, CI-tier consolidation, and its baselines | conftest work may follow P1; location-derived baselines wait for the relevant moves |
 | `specs/svp-text-primitives-identity.md` | package home, launchers, and layer rules | primitive registry, characterization, and byte-identical import consolidation; no envelope stamps | each primitive receives its final owning location before its registry ID is minted |
 
@@ -156,7 +158,7 @@ If two companion changes would edit the same file, relocation lands first as a s
 - **P1 — guards and zero-install skeleton, no production moves.** Land `scripts/setec/`, plugin path resolver, migration checker + one exemptions file, no-change claim-license guard, `pytest.ini` plus per-file pytest bootstrap conversion, hermetic backend mode/cases, and scratch-copy gates. Do not create `conftest.py`.
 - **P2 — L0 contract.** Move `output_schema.py`, `claim_license.py`, and `capabilities.py` behind pinned compatibility launchers. Do not change missing-directory or envelope semantics. Contract fixtures and stay-put path checks remain identical.
 - **P3 — eligible L1 core.** Move only modules that satisfy the live predicate. Break cycles by explicit dependency inversion; modules that still import L2 remain stay-put/L2. `stylometry_distance.py` is included when it satisfies the predicate.
-- **P4 — surfaces family by family.** Land package-aware drift discovery and launcher conformance with the first family. Then add the layout-only harness. Each family is a separate PR. Nested capability paths receive per-file launchers, never directory aliases. The claim-license no-change guard remains mandatory. Consumer C2 may proceed independently after P2 because it does not change producer envelope or warning emission.
+- **P4 — relocate whole surfaces family by family.** Land package-aware drift discovery and launcher conformance with the first family. Each family is a separate, relocation-only PR: no boilerplate extraction, harness, output-builder edit, or claim-license edit. Nested capability paths receive per-file launchers, never directory aliases. The claim-license no-change guard remains mandatory. Consumer C2 may proceed independently after P2 because it does not change generic envelope behavior or sealed-success exact sets.
 - **P5 — enforcement required.** Turn on layering, anchor, shim, reachability, and remaining `sys.path` ratchets in CI; audit already-fragmented `acquisition_core`, `length_bootstrap`, and `register_composition_sweep` rather than minting duplicate fragments.
 
 Every phase is independently mergeable and keeps the full existing suite green.
@@ -178,7 +180,7 @@ All new checkers use the repository convention: violations are errors and exit n
 | Risk | Mechanical defense |
 |---|---|
 | A nested launcher loses its scripts-root bootstrap | derive nested paths from `capabilities.d`; permanent exact-path lint exemption; scratch-copy direct-execution gate |
-| A relocation changes claim-license severity or honesty | merge-base canonical AST/emission diff; any semantic change is out of scope and fails with no override |
+| A relocation changes claim-license severity or honesty | protected whole-module AST diff from merge base; any non-relocation change fails with no override |
 | A launcher is treated as a second module by a file loader | ordinary `sys.modules` alias contract; convert the five named loaders; lint moved paths out of file-loader APIs |
 | Optional backends make hermetic CI meaningless | one deterministic backend mode, pinned `ai_status`, generated consumer-case table, no unlisted skip |
 | Tools are incorrectly retargeted to plugin-root discovery | tools remain fixed repo-root owners; tool-root tests cover the existing marker/layout |
@@ -191,3 +193,4 @@ All new checkers use the repository convention: violations are errors and exit n
 - Numeric/text-primitive convergence (owned by `svp-text-primitives-identity`).
 - Internal decomposition of large modules beyond the import-cycle cuts needed to satisfy layering.
 - Removing schema-1.x compatibility launchers.
+- Shared surface boilerplate, CLI/envelope/report harnesses, or partial extraction from P4 modules; any future proposal requires its own spec and independent review.
