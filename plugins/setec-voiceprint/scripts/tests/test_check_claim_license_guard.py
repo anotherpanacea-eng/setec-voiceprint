@@ -1,0 +1,257 @@
+#!/usr/bin/env python3
+"""Tests for tools/check_claim_license_guard.py — the no-change
+claim-license deficit lock (specs/svp-packaging-conversion.md §3).
+
+Pins:
+
+  * The real repo's protected set, self-compared (merge-base HEAD vs.
+    HEAD, no network required), passes with an empty move map.
+  * A synthetic protected-module edit with NO declared move is caught
+    (fail-before: this is the semantic-change class the gate exists to
+    block).
+  * A synthetic file MOVE that IS declared in `moves` (old_path ->
+    new_path, symbol rewritten) passes — relocation is authorized.
+  * `load_move_map` rejects a non-one-to-one map (two moves claiming
+    the same `new_path` — an unlisted second destination) and a
+    malformed row (missing required keys).
+  * A missing `packaging_move_map.json` fails closed.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+TOOLS = REPO_ROOT / "tools"
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
+
+import check_claim_license_guard as clg  # type: ignore  # noqa: E402
+
+
+def test_real_repo_protected_set_passes_self_comparison():
+    """merge-base HEAD vs. HEAD is always identical, so this proves the
+    protected-set construction + normalized-AST comparison machinery
+    runs clean end-to-end on the real tree with no network dependency."""
+    passed, report = clg.run(base_ref="HEAD")
+    assert passed, report["deltas"]
+    assert report["protected_module_count"] > 0
+    assert "plugins/setec-voiceprint/scripts/claim_license.py" in (
+        report["protected_modules"]
+    )
+
+
+def _git(repo: Path, *args: str) -> str:
+    proc = subprocess.run(
+        ["git", *args], cwd=repo, capture_output=True, text=True, check=True,
+    )
+    return proc.stdout
+
+
+def _init_fake_plugin_repo(tmp_path: Path) -> Path:
+    """A minimal synthetic checkout with the same relative layout
+    check_claim_license_guard expects: <repo>/plugins/setec-voiceprint/
+    scripts/{claim_license.py, an_audit.py}."""
+    repo = tmp_path / "fake_repo"
+    scripts = repo / "plugins" / "setec-voiceprint" / "scripts"
+    scripts.mkdir(parents=True)
+
+    (scripts / "claim_license.py").write_text(
+        "class ClaimLicense:\n"
+        "    def __init__(self, licenses):\n"
+        "        self.licenses = licenses\n",
+        encoding="utf-8",
+    )
+    (scripts / "an_audit.py").write_text(
+        "from claim_license import ClaimLicense\n\n"
+        "def _claim_license():\n"
+        "    return ClaimLicense(licenses='reports X')\n",
+        encoding="utf-8",
+    )
+    (repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json").write_text(
+        json.dumps({"schema": 1, "moves": [], "path_rewrites": []}),
+        encoding="utf-8",
+    )
+
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "test")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base")
+    return repo
+
+
+@pytest.fixture
+def fake_repo(tmp_path, monkeypatch):
+    repo = _init_fake_plugin_repo(tmp_path)
+    monkeypatch.setattr(clg, "REPO_ROOT", repo)
+    monkeypatch.setattr(clg, "PLUGIN_ROOT", repo / "plugins" / "setec-voiceprint")
+    monkeypatch.setattr(clg, "SCRIPTS_ROOT", repo / "plugins" / "setec-voiceprint" / "scripts")
+    monkeypatch.setattr(
+        clg, "MOVE_MAP_PATH",
+        repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json",
+    )
+    return repo
+
+
+def test_unlisted_semantic_edit_is_caught(fake_repo):
+    audit = fake_repo / "plugins" / "setec-voiceprint" / "scripts" / "an_audit.py"
+    audit.write_text(
+        "from claim_license import ClaimLicense\n\n"
+        "def _claim_license():\n"
+        "    return ClaimLicense(licenses='reports Y')\n",  # X -> Y, no move declared
+        encoding="utf-8",
+    )
+    passed, report = clg.run(base_ref="HEAD")
+    assert not passed
+    paths = {d["path"] for d in report["deltas"]}
+    assert "plugins/setec-voiceprint/scripts/an_audit.py" in paths
+
+
+def test_declared_move_with_symbol_rewrite_passes(fake_repo):
+    scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
+    old = scripts / "an_audit.py"
+    content = old.read_text(encoding="utf-8")
+    old.unlink()
+    new_dir = scripts / "setec" / "surfaces"
+    new_dir.mkdir(parents=True)
+    new = new_dir / "an_audit.py"
+    # Relocation-only rewrite: the function name is the ONLY thing that
+    # changes, and it is declared in `moves` below.
+    new.write_text(content.replace("_claim_license", "_claim_license_v2"), encoding="utf-8")
+
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [{
+            "old_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "new_path": "plugins/setec-voiceprint/scripts/setec/surfaces/an_audit.py",
+            "old_symbol": "_claim_license",
+            "new_symbol": "_claim_license_v2",
+            "phase": "P4",
+        }],
+        "path_rewrites": [],
+    }), encoding="utf-8")
+
+    passed, report = clg.run(base_ref="HEAD")
+    assert passed, report["deltas"]
+
+
+def test_load_move_map_rejects_duplicate_new_path(fake_repo, monkeypatch):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [
+            {
+                "old_path": "a.py", "new_path": "c.py",
+                "old_symbol": "x", "new_symbol": "x", "phase": "P4",
+            },
+            {
+                "old_path": "b.py", "new_path": "c.py",
+                "old_symbol": "y", "new_symbol": "y", "phase": "P4",
+            },
+        ],
+        "path_rewrites": [],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="second destination"):
+        clg.load_move_map(move_map_path)
+
+
+def test_load_move_map_rejects_malformed_row(fake_repo):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [{"old_path": "a.py"}],  # missing required keys
+        "path_rewrites": [],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="exactly keys"):
+        clg.load_move_map(move_map_path)
+
+
+def test_missing_move_map_fails_closed(fake_repo):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.unlink()
+    with pytest.raises(clg.GuardError, match="is missing"):
+        clg.load_move_map(move_map_path)
+
+
+def test_supplier_closure_scopes_to_the_referenced_symbol_not_whole_module(
+    tmp_path, monkeypatch,
+):
+    """Regression: a seed module that references ONE specific function
+    from a bare-imported utility module (`import helpers; ...
+    helpers.used_fn(...)`) must pull in only `used_fn`'s own
+    definition for further closure — NOT the whole utility module's
+    body. Otherwise an UNRELATED function in that utility module
+    (`unused_fn`, which itself imports a third module) would falsely
+    drag the third module into the protected set too. This is the
+    exact shape that over-broadly pulled judge_backends.py into the
+    protected set via narrative_judge.py's UNRELATED `build_judge()`
+    helper (fixed 2026-08 — see git history) when the real link was
+    narrative_judge.fingerprint_prompt(), referenced from a
+    ClaimLicense call site's comparison_set."""
+    monkeypatch.setattr(clg, "REPO_ROOT", tmp_path)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    # _module_path_for_import resolves plugin-local imports against the
+    # module-global SCRIPTS_ROOT (not the scripts_root passed to
+    # build_protected_set — that parameter only controls which files get
+    # SEED-scanned), so it must be patched too for this synthetic tree's
+    # imports to resolve as plugin-local.
+    monkeypatch.setattr(clg, "SCRIPTS_ROOT", scripts)
+    (scripts / "an_audit.py").write_text(
+        "from claim_license import ClaimLicense\n"
+        "import helpers\n\n"
+        "def _claim_license():\n"
+        "    return ClaimLicense(\n"
+        "        licenses=helpers.used_fn(),\n"
+        "    )\n",
+        encoding="utf-8",
+    )
+    (scripts / "claim_license.py").write_text(
+        "class ClaimLicense:\n"
+        "    def __init__(self, licenses):\n"
+        "        self.licenses = licenses\n",
+        encoding="utf-8",
+    )
+    (scripts / "helpers.py").write_text(
+        "import unrelated_third_module\n\n"
+        "def used_fn():\n"
+        "    return 'x'\n\n"
+        "def unused_fn():\n"
+        "    return unrelated_third_module.thing()\n",
+        encoding="utf-8",
+    )
+    (scripts / "unrelated_third_module.py").write_text(
+        "def thing():\n    return 1\n",
+        encoding="utf-8",
+    )
+
+    protected = clg.build_protected_set(scripts_root=scripts)
+    paths = {p.path for p in protected}
+    assert "scripts/helpers.py" in paths
+    assert "scripts/unrelated_third_module.py" not in paths
+
+
+def test_claim_license_surfaces_accessor_name_is_not_a_false_seed(tmp_path, monkeypatch):
+    """Regression: a public accessor merely NAMED after the
+    claim_license_surfaces/ directory (e.g. setec.paths'
+    claim_license_surfaces_dir()) must not be swept into the protected
+    set by a bare substring match on "claim_license" — only a name
+    STARTING WITH `_claim_license` (the spec's literal `_claim_license*`
+    glob) or a direct `ClaimLicense(...)` call qualifies."""
+    monkeypatch.setattr(clg, "REPO_ROOT", tmp_path)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "paths_like.py").write_text(
+        "def claim_license_surfaces_dir(start=None):\n"
+        "    return start\n",
+        encoding="utf-8",
+    )
+    protected = clg.build_protected_set(scripts_root=scripts)
+    assert protected == []
