@@ -1,125 +1,176 @@
-# SVP Text-Primitives Identity — one tokenizer, versioned measurement primitives
+# SVP Text-Primitives Identity — versioned primitives without seal drift
 
-**Status:** DRAFT v2 (post-swarm-review) · **Date:** 2026-08-05 · **Repos:** `setec-voiceprint` (primary), `setec-voicewright` (naming/documentation half)
-**Provenance:** three-agent modularization audit, Cowork session 2026-08-05 (voiceprint audit §2.4; cross-repo analysis §2a–2c, §4b–4e)
-**Review round 1:** NEEDS-REWORK (adversarial swarm review, 2026-08-05) — 7 P1 / 8 P2 findings, all addressed below. Pre-review draft preserved at `svp-text-primitives-identity.pre-swarm-review-20260805.md`.
-**Depends on:** `svp-packaging-conversion` P1–P3 (package home) — **and, as a hard prerequisite, not a see-also, `setec-consumer-client-contract` C1 and C3** (T2 cannot ship until voicewright's exact-set envelope check is presence-based; §2, Risks). Independent of P4.
-**Cross-spec note:** packaging is being reworked to place the package at `plugins/setec-voiceprint/scripts/setec/` (no `src/` layout); every path below assumes that landing point.
+**Status:** BUILD-READY (v3, round-2 findings folded; round-3 sequential six-lens self-check clear) · **Date:** 2026-08-05
+**Repos:** `setec-voiceprint` (registry, policy, stamps) and `setec-voicewright` (consumer seal tests only)
+**Provenance:** modularization audit plus two adversarial six-lens reviews. Round 2 returned NEEDS-REWORK (9 P1 / 8 P2); this revision incorporates every verified P1 and the prioritized P2 fixes.
+**Round-3 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately; no remaining P1/P2 within the authorized increment.
+**Depends on:** `specs/svp-packaging-conversion.md` P1 for the scripts/setec package home. It does **not** depend on a consumer relaxing an evidence seal. `fleet-coordination/specs/setec-consumer-client-contract.md` keeps the S5/G1 and author-corpus paths exact-set closed.
 
-## Problem
+## Outcome and cut line
 
-The framework's most basic measurement primitives are defined many times, differently, and the differences reach reported numbers:
+Create one registry for tokenizers, splitters, function-word sets, quantiles, fingerprints, and preprocessing rules; make primitive identity observable only when runtime can support the claim; and eliminate duplicate implementations without changing their outputs.
 
-- **`count_words` is defined 23 times, backed by 9+ distinct word regexes** (`[A-Za-z']+` ×14, `\b\w[\w'-]*\b` ×7, `\b\w+\b` ×6, `\w+` unicode, `\S+`, four one-offs). `target_words` — in **every** schema-1.0 envelope, gating every length floor — means different things per surface.
-- **`_quantile`-family functions are defined 9 times, not 8** (verified sites: `homogeneity_audit.py:173`, `distinct_diversity_audit.py:189`, `voice_fingerprint.py:626`, `within_doc_segmentation.py:433`, `voice_validation_harness.py:272`, `validation_harness.py:434`, `calibrate_thresholds.py:99`, a nested `corpus_novelty_audit.py:60` closure, and `paragraph_audit.py:211`'s `_quantiles` — a different signature, `Sequence[float] -> dict[str, float]`), three edge-case behaviors (`0.0`/`None`/clamp-to-last), two docstrings *admitting* clean-room copies.
-- **17 `_content_fingerprint` definitions**, each a different normalization contract, no registry of what means what.
-- **Cross-repo drift, corrected counts:** voiceprint `FUNCTION_WORDS` has **135** entries (`variance_audit.py:117` — not 137), voicewright's has **53** (`voicediff.py (line 32)` — not 55) — not comparable even before counting **voiceprint's third, independent 89-entry set** (`dialogue_voice_audit.py:128`, docstring: "mirrors variance_audit.FUNCTION_WORDS but kept local"). Voiceprint's splitter prefers NLTK (`variance_audit.py:155-163`, falls back to regex `_SENT_RE` on any exception) and handles abbreviations only on that path; voicewright's `_SENT = r"[.!?]+"` breaks on `Dr.` and recurs at **7 sites**, not 4 (`voicediff.py (line 41)`, `voice_sheet.py (line 85)`, `rag.py (line 244)`, `qlora/distmatch.py (line 281)`, `qlora/spin.py (line 83)`, `qlora/reward.py (line 49)`, plus `contamination.py (line 114)` — a *different* pattern used to locate a split offset, not enumerate sentences, and excluded from any collapse). **"Burstiness" names two formulas** — Goh–Barabási in voiceprint vs shifted CV in voicewright's flatness.py — both can appear in one voicewright run, since it also consumes `variance_audit`.
-- Voiceprint has already built the right endgame artifact once: **`passage_tokenizer_v1.py`** — frozen, table-driven, hash-bound, no host-runtime Unicode classification. Verified: ships from `release/v1.128.0`/`v1.128.1` (commit `585c05f`, spec-80) and **is absent from local HEAD** (`agent/author-corpus-export-pr` @ v1.126.1 — staleness `svp-packaging-conversion` P0 and `setec-consumer-client-contract` finding 7 already flag). This spec makes its *pattern*, not its universal application, the registry's frozen-tier member.
+This spec permits **no numeric or token-boundary behavior change**. A migration must be byte/value equivalent on the committed characterization rows. Calibrated and hash-bound primitives stay pinned. Convergence and recalibration are out of scope and require a later reviewed spec. This removes the prior unimplementable “empty thresholds diff / flag rate / owner ruling” gate rather than replacing it with another proxy.
 
-## Non-negotiable constraint: calibrated numbers must not silently move
+The minimum new machinery is one registry module, one AST inventory/check tool, one characterization fixture, and one policy file. Existing contract-fixture and consumer gates are extended; there is no second ID ledger, signal-path graph, receipt format, or convergence-change artifact.
 
-Thresholds in `calibration/` and recorded baseline artifacts were computed under each surface's *current* tokenization. Blindly unifying regexes silently shifts MATTR/MTLD/FKGL/sentence-length stats against frozen baselines — corrupting the calibration receipts the framework exists to protect. **Observability first, unification second, recalibration where required.**
+## Verified constraints at fetched `origin/main`
 
-## Firewall risk (why round 1 failed)
+- `plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py` exists with frozen data and tests. No `specs/80-*.md` exists, so this spec cites the implementation rather than a phantom spec number.
+- Voicewright `src/voicewright/beat_matched.py:validate_s5_envelope` closes the S5 root to twelve keys and `results` to thirteen. `bind_g1_evidence` hashes normalized verification records containing the whole raw envelope and compares the digest with the banked analysis freeze.
+- Producer `register_sweep.py:validate_success_envelope` independently closes its success envelope. An additive root key breaks this producer path even if no consumer sees it.
+- Producer `s5_distance._implementation_sha256` binds the surface's source bytes. Editing that file changes evidence identity even when its numeric result does not.
+- Voicewright author-corpus ingestion closes the dispatcher envelope and exact target/result shapes. Nesting a stamp under `target` is not an escape.
+- `gen_contract_fixtures.py` uses normal builders and a live `s5_distance` execution builder. Goldens are contract/shape oracles, not a universal tokenizer-value oracle.
+- `preprocessing.strip_non_prose` changes input before tokenization; equal tokenizer IDs alone do not make outputs comparable.
+- `stylometry_core.py` currently imports function words, splitting, and spaCy backend state from `variance_audit.py`. This spec removes the function-word/splitter ownership collision, but packaging keeps `stylometry_core` in L2 until its remaining spaCy dependency is separately inverted.
 
-An identity stamp that isn't provably true is worse than no stamp: it is fabricated evidence laundered through machine-readable metadata, and every downstream consumer will trust it without re-deriving it. Round 1's design let a stamp be **declared, not derived** — nothing bound the string a caller wrote into a `textprims` block to the tokenizer that actually ran, and every named enforcement mechanism (goldens, gate 3's tool, the AST lint, golden regeneration) was structurally incapable of catching a false stamp. §2–§3 rebuild the design so the stamp is mechanically true or explicitly provisional; nothing here claims comparability it can't back.
+## Firewall rule
 
-## Design
+An identity stamp is evidence. It may report only one mechanically distinct state:
 
-### 1. `setec.core.textprims` — versioned primitive registry, rebuilt from an inventory, not asserted
+- `handle-derived`: registered handles actually ran in this invocation;
+- `provisional-unverified`: the inventory identifies the inline implementation, but runtime use is not yet bound;
+- `no-tokenizer-ran`: the surface is pass-through/non-tokenizing or failed before tokenization.
 
-Round 1 named 4 tokenizer IDs against a live pattern count the swarm review's grep-level check put at 11 (case-folding alone splits the count: `stylometry_core.word_tokens` lowercases, several `count_words` sites don't). A hand-authored list undercounts by construction and gate 1 is arithmetically unsatisfiable against it. Fix: **T1 ships a committed, re-runnable inventory script** (tools/gen_textprims_inventory.py, shaped like `gen_calibration_readiness.py` but walking source, not the manifest) that AST-scans `setec.surfaces` for every `re.compile`/inline `re.findall`/`re.split` word-shaped pattern and every function-word/sentence/paragraph/fingerprint definition, emitting the registry skeleton plus a diff against the last run. The registry is authored *from* that output:
+No caller types an ID or digest into an envelope. No presence-only test upgrades provisional metadata into runtime provenance. No sealed envelope receives a root or nested stamp in this increment. Future admission is a seal migration with regenerated exact sets and re-banked hashes, never an exemption.
 
-```python
-TOKENIZERS = {
-  "letters-apostrophe-v1":       ...,  # [A-Za-z']+, no case-fold (variance_audit._WORD_RE)
-  "letters-apostrophe-lower-v1": ...,  # [A-Za-z']+ + .lower()    (stylometry_core.WORD_RE — DIFFERENT id)
-  "unicode-w-lower-v1":          ...,  # \w+ lower (shingle_dedup lineage; spec-71 owns, §Ownership)
-  "word-boundary-v1":            ...,  # \b\w[\w'-]*\b (second-largest cohort)
-  "passage-v1":                  ...,  # frozen table (passage_tokenizer_v1; spec-80; NOT ON LOCAL MAIN)
-  # ...remaining IDs from the T1 inventory run, 1:1 with its pattern list — not hand-picked.
+## 1. Inventory, registry, and ownership
+
+T1 adds gen_textprims_inventory.py under tools/. It AST-scans voiceprint production source for compiled and inline word/split patterns, word/sentence/paragraph/passage/fingerprint functions, function-word literals and re-exports, quantile implementations, preprocessing calls, and output builders. Its `--check` mode compares the live discoveries directly with the registry and policy; it does not write a second inventory artifact. CI runs it from T1 onward.
+
+The new scripts/setec/core/textprims module exposes immutable handles from `TOKENIZERS`, `SENTENCE_SPLITTERS`, `PARAGRAPH_SPLITTERS`, `FUNCTION_WORD_SETS`, `QUANTILES`, `FINGERPRINTS`, and `PREPROCESSORS`. Every closed registry row contains:
+
+```
+id
+family: tokenizer | sentence_splitter | paragraph_splitter |
+        function_words | quantile | fingerprint | preprocessor
+pattern_sha256: sha256 of pattern/table bytes, or null
+case_policy: preserve | lower | casefold | not_applicable
+unicode_normalization: none | NFC | NFKC | frozen_table | not_applicable
+implementation_ref: repo-relative module:symbol
+implementation_sha256: sha256 of defining source/table bytes
+contract_sha256: sha256 of all preceding canonical fields
+allowed_backends: closed list, empty for deterministic rows
+```
+
+Runtime records the resolved backend and version. Punkt and regex fallback are distinct identities. Multi-primitive use is a list from day one. Existing shipped IDs are retained. A newly discovered row uses `<family>-<12-hex-contract-prefix>-v1`, so the inventory—not a builder's naming guess—determines it. IDs are immutable: the check tool compares candidate rows with the merge-base row of the same ID; changed behavior or table bytes require a new versioned ID.
+
+Resolved ownership:
+
+- `passage_tokenizer_v1.py` plus its frozen data/tests remains canonical; textprims wraps and re-exports it.
+- `specs/71-shingle-dedup-library.md` and `shingle_dedup.py` retain their logical-seal identity; textprims re-exports it.
+- `specs/36-passage-level-corpus-hygiene.md` and `near_dup_dedup.split_passages` retain offset-preserving passage ownership.
+- `preprocessing.py` owns prose transformations and its `r"\S+"` corpus-hygiene unit. Preprocessing is a separate stamped family; that token count is excluded from convergence.
+- Voiceprint function-word data exposed by `variance_audit` and `dialogue_voice_audit` moves byte-for-byte into core registry rows; those modules re-export established names. `stylometry_core` imports these core handles, but remains classified L2 while its independent spaCy-state import from `variance_audit` exists. Voicewright's set stays independent; no subset/comparability claim is made.
+- `variance_audit.split_sentences` becomes a thin branch-selecting wrapper over distinct punkt and regex-fallback handles; the executed branch is recorded.
+
+## 2. Characterization exists before the first stamp
+
+T1 commits `references/textprims/characterization.json`. It is the single value oracle and contains:
+
+- one row per inventory site: repo-relative module, symbol, family, current registry ID, fixture input, and exact output;
+- project-authored synthetic inputs covering empty text, digits, hyphens, straight/curly apostrophes, non-ASCII and normalization forms, abbreviations, ellipses, and paragraph boundaries;
+- an explicit license statement for those synthetic strings.
+
+The check tool executes both the current implementation and its registered handle on each row. A T3 handle initially delegates to the exact existing regex/function/table object; T3 changes ownership/imports, not the algorithm. Reimplementing or “equivalent-looking” cleanup is out of scope. Characterization is a regression oracle on top of that structural identity, not a claim that a finite corpus proves arbitrary regex equivalence. The per-family mutation test is causal: replace the handle used by a surface, run it, and require both the stamp digest and the surface's affected result field to change in the direction predicted by the characterization row. An AST check also refuses a `handle-derived` policy while a reachable legacy inline primitive still computes that field. Editing a policy ID while an inline regex still computes the number does not pass.
+
+## 3. Literal stamp schema and runtime binding
+
+For an output identity allowed to carry it, `textprims` is a root object with exactly:
+
+```json
+{
+  "schema": "setec-textprims-stamp/1",
+  "state": "handle-derived | provisional-unverified | no-tokenizer-ran",
+  "entries": [{
+    "family": "closed family enum",
+    "id": "registry id",
+    "contract_sha256": "sha256:<64 lowercase hex>",
+    "pattern_sha256": "sha256:<64 lowercase hex> | null",
+    "case_policy": "preserve | lower | casefold | not_applicable",
+    "unicode_normalization": "none | NFC | NFKC | frozen_table | not_applicable",
+    "resolved_backend": "backend-and-version | null"
+  }],
+  "reason": "inline-implementation-not-handle-bound | surface-does-not-tokenize | error-before-tokenization | pass-through-envelope | null"
 }
 ```
 
-Identity is a **contract**, not a bare regex: `(pattern, case_policy, unicode_normalization) -> tokenize(text) -> list[str]`. Host-dependent entries stamp the *resolved* backend, not the family: `sentences-nltk-v1` is retired as a single ID (verified: `variance_audit.split_sentences` tries `nltk.sent_tokenize`, falls back to regex `_SENT_RE` on **any** exception — a fresh environment without `punkt` silently produces a different tokenizer under the same name) and replaced by `sentences-nltk-punkt-v1` / `sentences-regex-fallback-v1`, chosen and stamped at call time by which branch executed, plus the punkt/NLTK version when it runs (same discipline `shingle_dedup.py`'s `_logical_seal` already applies — verified `TOKENIZER_ID`/`unicode_version` at `shingle_dedup.py:336-337`). Multi-tokenizer calls stamp a list, not a scalar — value type `str | list[str]` from day one, not a T4-time schema break.
+The bars show enum alternatives, not literal combined strings. `handle-derived` requires non-empty entries and null reason. `provisional-unverified` requires non-empty inventory-derived entries and its one matching reason. `no-tokenizer-ran` requires empty entries and one non-provisional reason.
 
-Same registry shape for `SENTENCE_SPLITTERS`, `PARAGRAPH_SPLITTERS` (adopt `near_dup_dedup.split_passages`, the only one returning char offsets), `FUNCTION_WORDS` (§Ownership), quantile (§4), and a documented `FINGERPRINTS` registry naming all 17 content-fingerprint contracts.
+A context-local usage collector is opened at the CLI boundary. Handles record their immutable row only when their operation executes. `output_schema.build_output` accepts only the collector's sealed usage token; strings, dicts, unsealed tokens, and tokens from another invocation are rejected. The token's canonical rows and digest are recomputed and checked on every builder call—there is no cache keyed by Python object identity. Before handle migration, `output_schema` reads provisional entries from policy, never caller arguments. Error/pass-through paths can select only the closed no-tokenizer reasons.
 
-### 2. Identity stamping — non-forgeable, additive, correctly placed
+Entries are unique and sorted by `(family, id, contract_sha256, resolved_backend)` before hashing/emission. The single `references/textprims/policy.yaml` is keyed by the envelope's AST-derived `(tool, task_surface)` identity. The inventory check refuses a duplicate identity with different primitive behavior; such a collision must first receive a distinct tool identity. Every row has one mode:
 
-**The stamp must be derived, not typed.** `textprims.tokenizer(id)` returns a handle (compiled pattern/table + metadata), not a bare string; `build_output`/`build_baseline_metadata` accept only handles via a new `textprims=` parameter and derive the envelope block from the handle's own `.stamp()` — a bare string is a `TypeError`, not silently trusted. This closes the gap where `build_baseline_metadata` was a plain trust-the-caller dict builder (verified: `output_schema.py:422-462` takes `n_files`, `words`, `register`, `split`, and an open `extra` dict, no validation of what tokenizer ran). A per-family **mutation test** ships in the same PR: swap the handle a surface uses, assert both the stamp changes and the T3 characterization test (§3) for that surface fails.
+- `stamp_allowed`, with its permitted initial/final states;
+- `sealed_exempt`, with producer/consumer validator symbols and the sealed fields;
+- `not_applicable`, which emits `no-tokenizer-ran` only on operational normalized envelopes.
 
-**Placement:** `beat_matched.validate_s5_envelope` performs exact root-key set equality (`set(envelope) != root_keys`, verified at `beat_matched.py (line 1637–1642)`) against a fixed 11-key set excluding `textprims`. A root-level block is a hard refusal on the frozen N10/N11 evaluation surface the day T2 ships — exactly the `s5_distance` surface C1–C3 exists to fix. Until `beat_matched` moves to presence-based validation (C3), `textprims` nests under `target.textprims`/`baseline.textprims` (paths the exact-set check doesn't enumerate), not at root. **T2 gate: a stamped envelope must pass every vendored consumer contract test — including `beat_matched`'s S5 fixture — before any golden regenerates.** T2 does not start until C3 lands or the nested workaround is verified against current `beat_matched.py`.
+Missing or duplicate output identities fail `--check`. The known minimum sealed rows are `s5_distance`, `author_corpus_export`, and `register_composition_sweep`; the AST scan of producer exact-key validators and the companion consumer tests can only add rows, never silently omit them.
 
-Otherwise unchanged from round 1: additive-only (schema stays 1.0), every surface stamps what it used. Comparability is now checkable by inspecting matching handles, not asserted as already true.
+Operational stamped outputs remain schema 1.0 because the existing operational contract is additive. The policy is the per-output allowlist; the general builder does not add a stamp to a sealed or unknown identity.
 
-### 3. Cohort migration (T3) — a real oracle, not a shape fixture
+## 4. Seal preservation and consumer proof
 
-Round 1's "byte-identical envelope goldens" don't exist as a behavior oracle. Verified: `gen_contract_fixtures.py`'s docstring states **"No heavy audit is run (no spaCy / torch / scipy / sentence-transformers)"** (line 31) — every numeric field, including `n_words: 2480` (line 163), is a **hand-typed literal**, never a tokenizer's output. The generator covers **17 surfaces** against **112 files / ~142 call sites** calling `build_output` and **23** `count_words` definitions — of those 23, only **4** sites live inside a golden-covered surface (`narrative_decision_audit`, `binoculars_audit`, `argument_decision_audit`, `agd_move_scan`, verified by grep). A tokenizer swap elsewhere goes green by construction — the goldens never call a tokenizer.
+T2 leaves every `sealed_exempt` envelope byte-identical to merge base and recursively free of `textprims`. It does not edit `s5_distance.py`, its implementation digest, the author-corpus target/results, or register-sweep success shape.
 
-**Replacement oracle, both parts required before any T3 migration PR:**
+The companion voicewright PR adds committed tests that run the exact candidate plugin through the real `validate_s5_envelope`, a fixed `bind_g1_evidence` analysis-freeze fixture, and author-corpus extraction. APODICTIC's existing contract suite runs against every candidate root-stamped surface it consumes. Hosted check metadata records the exact producer and consumer SHAs; no self-referential receipt file is introduced. A producer golden write alone is not proof.
 
-1. **Per-site characterization table**, committed before migration starts: one row per `count_words` site (and the splitter/quantile inventory from T1) = `{module, callable, committed fixture input, exact expected output, current regex/ID}` — a fixture *of the tokenizer*, independent of envelope shape.
-2. **Token-level differential harness**: old inline regex vs new `textprims.tokenizer(id)` handle over a fixed adversarial corpus (digits, hyphens, curly vs straight apostrophes, non-ASCII letters, `Dr.`/`e.g.`, empty string), asserting identical output per migrated site.
+Any later sealed-surface stamp belongs to `fleet-coordination/specs/setec-consumer-client-contract.md` as a separate reviewed migration: schema bump, regenerated producer/consumer exact sets, independent pins, regenerated fixtures, re-banked S5 verification/analysis-freeze hashes, and before/after refusal tests. The current companion spec intentionally leaves the twelve-key envelope untouched.
 
-`gen_contract_fixtures.py`'s goldens are **demoted to shape-oracle status**, documented as such in its own docstring and here: they catch envelope-key drift, not tokenizer-value drift.
+## 5. Goldens and migration
 
-### 4. Convergence (T4) — full quantile contract, gated per surface
+For a stamped golden, `gen_contract_fixtures` invokes the same usage/policy path as production. `check_all()` re-resolves every entry against the live registry and requires the policy-allowed state. A builder cannot supply a free-form stamp.
 
-Only after stamping and the T3 oracle exist: surfaces migrate to a canonical tokenizer per family, one surface per PR, each PR either (a) shows no calibrated thresholds/frozen baselines downstream, or (b) ships recalibrated thresholds + regenerated baseline metadata, with numeric before/after `signal_path` deltas recorded in the PR body and `changelog.d`. Priority: the 6 `\b\w+\b` and 7 `\b\w[\w'-]*\b` sites converging onto `letters-apostrophe-v1`/`-lower-v1`/`passage-v1`; the four one-offs get keep-or-kill rulings.
+Goldens remain contract/shape oracles; characterization owns primitive values. `s5_distance` remains the live-execution carve-out: its golden and source-derived implementation digest are byte-identical in T2, and the companion voicewright test proves it still reaches evidence admission.
 
-**Quantile contract, specified in full (round 1 named one axis of a four-axis problem and undercounted the sites — corrected to 9, §Problem):** `quantile(xs, q, *, empty: Literal["none","zero","raise"])`, always sorts its input internally, implements exactly one pinned interpolation formula (linear, matching `numpy.percentile`'s default `"linear"` method, written out in the module docstring), returns `float | None` per the `empty` policy — never a silently different type per branch. Sites whose formula doesn't match the pinned one reclassify from T3 to **T4, behavior-changing**, same recalibration-receipt requirement. `paragraph_audit._quantiles` (verified: `Sequence[float] -> dict[str,float]`, several quantiles from one sorted pass) doesn't fit the single-value signature and registers as a distinct `quantile-linear-multi-v1` wrapper over the same formula.
+T3 migrates one cohort per PR. Every changed site must remain exact on all characterization rows. Any difference is a hard failure with no exemption in this spec. Therefore no threshold-diff, private corpus, severity-rate, recalibration receipt, or owner-override gate is needed.
 
-### 5. Voicewright half (VW1) — split by behavior change, correct blast radius
+Quantile migrations use the existing site's exact behavior. A future convergence spec may propose a canonical formula, but this increment does not silently convert the existing empty/interpolation policies.
 
-Round 1's risk table claimed a 5-module blast radius (`anticentroid`, `authenticity`, `content_distance`, `flatness`, `voice_sheet`) for the `flatness._burstiness` rename. Verified: **none of `anticentroid.py`, `authenticity.py`, `content_distance.py`, or `voice_sheet.py` reference `flatness`/`burstiness` at all.** The real reader set: `__init__.py`, `bakeoff.py`, `cli.py` (imports `_cmd_flatness`), `cli_cmds/output_audits.py` (calls `machine_flatness_report`), `tests/test_flatness.py`.
+## Cross-spec ownership and order
 
-Split by risk:
-
-- **VW1a — rename, no behavior change.** `flatness._burstiness` → `_sentence_length_cv`; field `burstiness_gap` (`flatness.py (line 151)`) → `sentence_length_cv_gap`; `norm_scales` key (`flatness.py (line 326)`) → `norm_scales.sentence_length_cv`. Changelog fragment + capability doc note. Lands with T1/T2 — no number changes.
-- **VW1b — splitter upgrade.** The naive `_SENT = r"[.!?]+"` sites: verified **6**, not 4 (`voicediff.py (line 41)`, `voice_sheet.py (line 85)`, `rag.py (line 244)`, `qlora/distmatch.py (line 281)`, `qlora/spin.py (line 83)`, `qlora/reward.py (line 49)`). `contamination.py (line 114)`'s visually similar `r"[.!?]+\s+"` locates a prefix/continuation split offset, not sentences, and is **excluded** from the collapse — folding it in changes M2 split points. The 6 true sites get a shared helper; upgrading is allowed since nothing calibrated sits downstream directly — but flatness.py's `machine_flatness`/band/abstain counts and the bakeoff that consumes them are threshold-gated (`_MIN_SENTENCES`). VW1b ships **before/after `machine_flatness`/band/abstain counts on a fixed probe corpus**, same discipline as a T4 PR, despite landing independently.
-
-`voicediff.FUNCTION_WORDS` (53) gets ID `fw-53-vw-v1` and a docstring on non-comparability with voiceprint's `fw-135-v1`. No forced convergence — honest labeling, per the fleet's deferral architecture.
-
-## Ownership
-
-Named because round 1's registry design would have silently redefined constants owned elsewhere:
-
-1. **`unicode-w-lower-v1` is owned by spec-71** (`specs/71-shingle-dedup-library.md`; verified `TOKENIZER_ID`/`unicode_version` already feed `shingle_dedup._logical_seal`'s hash preimage). `textprims` **re-exports**, doesn't redefine.
-2. **`passage-v1` is owned by spec-80** (`passage_tokenizer_v1.py`, verified shipping from `release/v1.128.0`/commit `585c05f`, absent from local HEAD). No surface migrates onto it until the checkout reaches v1.128.0+ (shared precondition with `svp-packaging-conversion` P0 and `setec-consumer-client-contract` D).
-3. **`MachineFlatnessReport` field names (incl. `burstiness_gap`) are owned by voicewright spec-39** (`voicewright's spec-39 (imitation-distance-machine-flatness)`). VW1a's PR must touch voicewright spec-39's doc, not just the code.
-4. **`stylometry_core.py` is the de facto primitives module round 1 never mentioned** — verified: `WORD_RE = re.compile(r"[A-Za-z']+")`, `word_tokens()` (lowercases), `paragraphs()`, **40 importers**. `textprims` must either absorb its tokenizer and re-export as `letters-apostrophe-lower-v1`, or declare `stylometry_core` canonical owner and import from it (Owner decision 2). Either is acceptable; silence is not — 40 importers is the largest blast radius in this spec if gotten wrong.
+| Boundary | This spec owns | Companion owns | Order |
+|---|---|---|---|
+| `specs/svp-packaging-conversion.md` | registry, policy, characterization, identity stamps | package home, relocation, shims, layering, pytest/bootstrap | T1 starts after packaging P1; edits to a relocated module follow its packaging move |
+| `fleet-coordination/specs/setec-consumer-client-contract.md` | keeping sealed surfaces unchanged; producer policy | shared client/capabilities contract and committed consumer seal tests; envelope remains unchanged | no seal migration in either increment |
+| `fleet-coordination/specs/setec-test-consolidation.md` | primitive characterization and causal tests | shared pytest fixtures/parametrization/markers | consolidation may hoist tests only if every characterization row remains collected |
 
 ## Phases
 
-- **T1** — `textprims` module + registry (from the committed inventory script, §1) + tests (pure addition).
-- **Increment 1 (T1 + T2 + VW1a)** — additive only, zero numeric behavior change. Ships together; doesn't need C3 first if the nested placement (§2) is used.
-- **T3 — Increment 2.** Cohort migration, behavior-preserving, gated on the characterization table + differential harness (§3) existing *before* the first migration PR. Cohort: the 23 `count_words` sites, splitter sites, 9 quantile sites (pinned-formula subset — non-matching sites defer to T4).
-- **T4 — deferred behind Owner decisions 1 and 3.** Default if unruled: **pinned-forever** — calibrated surfaces keep their tokenizer; only uncalibrated surfaces converge. A third dependent class branch (a) cannot wave through: **hash-bound identity domains** — `shingle_dedup` index digests, spec-36 passage manifests — where the tokenizer is baked into a stored SHA-256 preimage, not a threshold, but needs the same recalibration-receipt discipline.
-- **VW1b** — naive-splitter upgrade (independent, any time after VW1a; before/after `machine_flatness` requirement in §5).
+- **T0 — exact-base preflight.** Fetch producer and consumer `origin/main`; record SHAs and lock files; never use stale checkouts as factual evidence.
+- **T1 — additions and byte-identical ownership inversion.** Registry, inventory/check tool, characterization, policy, tests, and compatibility re-exports. No envelope or primitive behavior changes.
+- **T2 — honest observation, after packaging P2.** Edit the relocated output-schema implementation. Add root stamps only on operational `stamp_allowed`/`not_applicable` outputs. Sealed outputs stay byte-identical. Goldens use production stamp paths; consumer companion tests run on the exact candidate.
+- **T3 — behavior-preserving migration.** One cohort per PR; exact characterization equality; provisional becomes handle-derived only after causal proof.
 
 ## Acceptance gates
 
-1. **After T3, decidable, not aspirational:** a committed denylist of exact literal regex patterns (covering `re.compile(...)` and inline `re.findall`/`re.split` — the T1 inventory found inline tokenization an AST-walk for `re.compile` alone would miss) plus function-word **list/set/tuple** literals matching known cardinalities (135, 53, 89 — any new word-shaped literal collection over ~20 entries trips the lint). A counted `# textprims-exempt: <reason>` escape hatch. Scoped to paths existing at T3 time (`plugins/setec-voiceprint/scripts/**`, pre-P4 layout).
-2. **After T2:** every envelope carries a `textprims` block (nested per §2 until C3 lands, root-level after); `gen_contract_fixtures` goldens regenerated exactly once, consumers' vendored fixtures re-synced via `sync_setec.py`; **the regenerated envelope passes `beat_matched.validate_s5_envelope` and every other vendored consumer contract test before the golden write is done** — a golden `--write` accepts but a real consumer refuses is not passing.
-3. **T4 PRs, rebuilt around real artifacts, not `gen_calibration_readiness.py`.** Verified: that tool derives its matrix entirely from `capabilities.d/*.yaml` fields — it never opens `thresholds_calibrated.json` or any baseline artifact, so it's dropped as the drift instrument. Replacement: diff `thresholds_calibrated.json` per PR — empty diff licenses branch (a); non-empty diff requires re-running the recorded `harness_command` with numeric before/after `signal_path` values on a fixed probe corpus. **Severity-direction rule:** a recalibration that *lowers* a flag rate requires a recorded owner ruling — quieter needs human confirmation.
-4. VW1a: no output key/field named `burstiness`/`burstiness_gap` from `flatness`; both readers updated in the same PR. VW1b: before/after `machine_flatness`/band/abstain counts attached; voicewright full suite + `gate_all.py` green.
+1. Inventory `--check` is wired into CI at T1; live sites, registry rows, policy rows, and output identities are complete and non-duplicated.
+2. Characterization passes before T2; every handle-derived family passes the causal mutation test.
+3. Stamp schema/state rules reject caller-supplied or unused-handle identity.
+4. All sealed-policy outputs are byte-identical and stamp-free; committed voicewright tests exercise `validate_s5_envelope`, `bind_g1_evidence`, and author-corpus extraction on the exact candidate SHA.
+5. `gen_contract_fixtures.check_all()` re-resolves stamp rows; `s5_distance` golden and implementation digest remain unchanged.
+6. Every T3 site is exact on characterization rows. Any difference fails; no behavior-change exemption exists.
+7. Producer full suite, relevant APODICTIC contract suite, voicewright full suite, and voicewright `gate_all.py` pass at fetched SHAs.
+8. The legacy-primitive lint uses the inventory tool's exact discovered site set and a shrink-only exemption section in policy. It has no size heuristic and no voicewright literals counted under a voiceprint threshold.
 
-## Risks
+## Risks and mechanical defenses
 
-| Risk | Mitigation |
+| Risk | Mechanical defense |
 |---|---|
-| False/stale stamp trusted as ground truth (round-1 firewall risk) | stamp derived from a `textprims.tokenizer(id)` handle, never a bare string; per-family mutation test proves the oracle catches a swapped handle |
-| T2 hard-breaks `beat_matched.validate_s5_envelope` on N10/N11 | C1/C3 promoted to hard `Depends-on`; nested `target/baseline.textprims` as interim workaround, verified against current `beat_matched.py` |
-| Silent metric shift vs frozen baselines | hard T3/T4 separation; characterization table + differential harness as the real T3 oracle; recalibration receipts gated on `thresholds_calibrated.json` diffs, not `gen_calibration_readiness.py` |
-| Golden churn noise in T2 | single deliberate regeneration PR, gated on passing vendored consumer tests, not just `--write` |
-| Registry underdetermines behavior (4 IDs vs 11 patterns) | T1 ships a re-runnable inventory script; registry authored from its output; case-folding and host-dependent backends get distinct IDs |
-| `textprims` silently redefines a constant owned elsewhere | Ownership section: spec-71, spec-80, voicewright spec-39, `stylometry_core.py` (40 importers) |
-| VW1 rename/collapse touches an unnamed reader or number | verified reader list replaces the unverified 5-module claim; VW1b requires before/after counts; `contamination.py (line 114)` excluded |
+| An inline regex is mislabeled as runtime-derived | provisional state; usage token only records an executed handle; causal mutation test |
+| Object-identity caching lets an in-place metadata mutation reuse a seal | no identity cache; canonical rows/digest recomputed on every builder call |
+| A stamp breaks S5/G1, author corpus, or register sweep | sealed rows, merge-base byte equality, committed real consumer tests, no nested workaround |
+| A registry ID changes in place | candidate row compared with merge-base row; behavior change requires a new ID |
+| Golden builders invent identity | production usage/policy path plus live registry re-resolution |
+| Same tokenizer receives differently preprocessed text | preprocessing is a separate stamped family; comparability requires the complete entry list |
+| Consolidation silently shifts calibrated/hash-bound values | no behavior change permitted; exact characterization is the gate |
+| Function-word/splitter ownership keeps growing inside L2 | byte-identical core ownership plus compatibility re-exports; `stylometry_core` honestly stays L2 until its separate spaCy dependency is inverted |
 
-## Owner decision points
+## Resolved defaults
 
-1. **T4 convergence target:** `letters-apostrophe-v1`/`-lower-v1` (largest calibrated cohort) vs `passage-v1` (frozen contract-grade, not yet on local main — spec-80 dependency). **Default if unruled: pinned-forever** — calibrated surfaces never move; only uncalibrated surfaces converge.
-2. **Function-word set ownership:** absorb `stylometry_core.py`'s tokenizer/word-list machinery (40 importers, never named in round 1) into `textprims` with re-export, or declare `stylometry_core` canonical owner? Should `fw-135-v1` absorb voicewright's `fw-53-v1` as a derived subset, or stay independent (and what about `dialogue_voice_audit`'s third 89-entry set)?
-3. **Recalibration budget:** T4 is open-ended; is partial convergence (calibrated pinned forever, uncalibrated converge) an acceptable **permanent** end state, or does it need a revisit date? (Default: permanent, until overridden.)
-4. **Severity-direction ruling rule (new):** per gate 3, any T4 recalibration lowering a flag rate needs a recorded owner ruling, not just a clean diff. Does that extend to VW1b's before/after `machine_flatness` counts, or is VW1b's independent-landing status sufficient?
+1. Calibrated and hash-bound primitives stay pinned permanently; convergence is not part of this spec.
+2. Core textprims owns voiceprint function-word data and the `stylometry_core` tokenizer contract; established modules re-export names. Voicewright remains independent.
+3. Recalibration budget is zero because no behavior-changing migration is authorized.
+4. The sealed twelve-key envelope remains untouched. There is no “after C3” root transition.
+5. Voicewright flatness-field renaming and splitter upgrades are unrelated schema/behavior changes and are deferred to their own spec.
