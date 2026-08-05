@@ -45,8 +45,6 @@ from typing import Any
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import manifest_validator as mv  # type: ignore
 import register_sweep as rs  # type: ignore

@@ -37,10 +37,6 @@ from unittest import mock
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import semantic_trajectory_audit as sta  # type: ignore
 import embedding_backend as eb  # type: ignore
 

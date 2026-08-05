@@ -16,10 +16,6 @@ from pathlib import Path
 import numpy as np  # type: ignore
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
-
 import intrinsic_dimension_audit as ida  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 from claim_license import TASK_SURFACE_LABELS  # type: ignore  # noqa: E402

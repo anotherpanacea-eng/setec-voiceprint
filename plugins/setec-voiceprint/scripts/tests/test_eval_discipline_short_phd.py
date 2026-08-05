@@ -14,10 +14,6 @@ from pathlib import Path
 
 import numpy as np  # type: ignore
 
-SCRIPTS = Path(__file__).resolve().parents[1]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
-
 import intrinsic_dimension_audit as ida  # type: ignore  # noqa: E402
 
 

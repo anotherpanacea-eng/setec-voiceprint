@@ -8,10 +8,6 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1]
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
 import author_corpus_export as ace  # noqa: E402
 import passage_lineage_crosswalk as lineage  # noqa: E402
 import passage_remediation_projection as remediation  # noqa: E402

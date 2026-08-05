@@ -15,8 +15,6 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 ROOT = Path(__file__).resolve().parents[4]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import nonprose_sweep as N  # noqa: E402
 

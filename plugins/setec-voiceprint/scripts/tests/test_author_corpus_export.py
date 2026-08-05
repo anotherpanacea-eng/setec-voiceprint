@@ -14,10 +14,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import author_corpus_export as E  # type: ignore
 import acquire_imessage_sent_atomic as A  # type: ignore
 import setec_run  # type: ignore

@@ -17,8 +17,6 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 SCRIPT = SCRIPTS / "passage_remediation.py"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 import passage_remediation as pr  # noqa: E402
 
 

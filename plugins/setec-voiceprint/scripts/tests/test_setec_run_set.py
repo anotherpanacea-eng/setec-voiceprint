@@ -43,10 +43,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]  # scripts/
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import capabilities  # type: ignore  # noqa: E402
 import setec_run_set  # type: ignore  # noqa: E402
 

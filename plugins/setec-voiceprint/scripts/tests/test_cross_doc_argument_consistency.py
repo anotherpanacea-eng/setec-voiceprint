@@ -16,9 +16,6 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SCRIPTS_ROOT))
-
 import cross_doc_argument_consistency as cdac  # noqa: E402
 import cross_doc_consistency_judge as cjudge  # noqa: E402
 import cross_doc_consistency_schema as schema  # noqa: E402

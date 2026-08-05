@@ -29,10 +29,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import voice_fingerprint as vf  # type: ignore
 
 # Capture the genuine loader BEFORE any fixture patches it, so the

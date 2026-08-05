@@ -14,10 +14,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import acquire_manuscript as am  # type: ignore  # noqa: E402
 import acquisition_core as ac  # type: ignore  # noqa: E402
 

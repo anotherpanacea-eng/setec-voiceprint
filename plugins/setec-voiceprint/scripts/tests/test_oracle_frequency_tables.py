@@ -25,8 +25,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ORACLE = ROOT / "oracle"
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 if str(ORACLE) not in sys.path:
     sys.path.insert(0, str(ORACLE))
 

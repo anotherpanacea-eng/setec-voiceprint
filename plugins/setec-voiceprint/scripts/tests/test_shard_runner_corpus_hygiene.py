@@ -35,8 +35,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "calibration") not in sys.path:
     sys.path.insert(0, str(ROOT / "calibration"))
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import shard_runner as sr  # type: ignore
 import shard_state as ss  # type: ignore

@@ -19,9 +19,6 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SCRIPTS_ROOT))
-
 import argument_certainty_calibration as acc  # noqa: E402
 import argument_certainty_judge as cjudge  # noqa: E402
 import argument_certainty_calibration_schema as schema  # noqa: E402

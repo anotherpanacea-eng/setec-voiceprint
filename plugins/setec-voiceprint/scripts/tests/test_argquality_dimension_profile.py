@@ -24,10 +24,6 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parent.parent
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
-
 import argument_judge  # type: ignore
 import argquality_dimension_profile as aqp  # type: ignore
 import argquality_judge  # type: ignore

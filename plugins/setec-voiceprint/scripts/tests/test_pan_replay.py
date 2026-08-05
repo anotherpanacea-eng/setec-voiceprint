@@ -18,8 +18,6 @@ import sys
 from pathlib import Path
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
-if str(SCRIPTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_ROOT))
 CALIBRATION_DIR = SCRIPTS_ROOT / "calibration"
 if str(CALIBRATION_DIR) not in sys.path:
     sys.path.insert(0, str(CALIBRATION_DIR))

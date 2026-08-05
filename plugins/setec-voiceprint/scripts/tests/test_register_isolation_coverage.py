@@ -95,8 +95,6 @@ from pathlib import Path
 import pytest  # type: ignore
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import register_taxonomy as rt  # type: ignore  # noqa: E402
 

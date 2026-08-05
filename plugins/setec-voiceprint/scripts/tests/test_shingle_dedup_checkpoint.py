@@ -12,9 +12,6 @@ import types
 import pytest
 
 
-SCRIPTS = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(SCRIPTS))
-
 import shingle_dedup_checkpoint as checkpoint
 import shingle_dedup_io as secure_io
 

@@ -15,8 +15,6 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 SCRIPT = SCRIPTS / "reconstructibility_probe_set.py"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import originality_audit as oa  # noqa: E402
 import reconstructibility_probe_set as probe  # noqa: E402
