@@ -1,9 +1,9 @@
 # SVP Packaging Conversion — flat launchers to a zero-install package
 
-**Status:** BUILD-READY (v3, round-2 findings folded; round-3 sequential six-lens self-check clear) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
+**Status:** BUILD-READY (v4, independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
 **Provenance:** modularization audit plus two adversarial six-lens reviews. Round 2 returned NEEDS-REWORK (8 P1 / 9 P2); this revision incorporates every verified P1 and the prioritized P2 fixes.
-**Round-3 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately; no remaining P1/P2 within the authorized increment.
-**Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; it does not block `setec-consumer-client-contract`, whose producer client remains in the existing scripts/consumer destination specified by that companion contract.
+**Round-4 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the independent review; no remaining P1/P2 within the authorized increment.
+**Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; after P2 it also supplies the exact producer-client home scripts/setec/consumer_client.py required by `setec-consumer-client-contract`.
 
 ## Outcome and governing rule
 
@@ -48,7 +48,7 @@ Resolved defaults for this revision:
 
 1. Package location is `scripts/setec/`; no `src/` layout and no install step.
 2. Tests stay at `plugins/setec-voiceprint/scripts/tests/`. The repo-root `pytest.ini` remains the sole pytest configuration owner.
-3. This spec owns `pytest.ini` and the per-test-file `sys.path` codemod only. `fleet-coordination/specs/setec-test-consolidation.md` Part A creates `scripts/tests/conftest.py` and owns all shared fixtures, clone collapse, and markers after P1 and the P4 content-authority ruling are complete.
+3. This spec owns `pytest.ini` and the per-test-file `sys.path` codemod only. `fleet-coordination/specs/setec-test-consolidation.md` Part A creates `scripts/tests/conftest.py` and owns all shared fixtures, clone collapse, markers, and its own baselines after the packaging locations it observes have landed.
 4. The shared-surface tier starts with `variance_audit`, `manifest_validator`, `originality_audit`, `repetition_audit`, `manuscript_audit`, `voice_fingerprint`, `acquisition_core`, and `check_corpus`. The live AST graph plus committed exceptional-edge baseline, not a prose count, is the enforcement input.
 5. Compatibility launchers remain for the life of schema 1.x. Removing them requires a major-contract spec and consumer migration.
 
@@ -75,7 +75,9 @@ The migration generator classifies every top-level Python file by the pair `(has
 | no | yes | static `TASK_SURFACE` import and alias; no main call |
 | no | no | alias only |
 
-Every template saves the original module name and `__main__` state, imports the package implementation, copies all implementation attributes except import metadata into the launcher globals, and then aliases the original name in `sys.modules`. The globals copy is required because file-path loaders keep the module object they created even after a `sys.modules` replacement. Tests exercise ordinary import, `runpy`, and `importlib.util.spec_from_file_location`, then patch a public constant and a private helper through the legacy object and assert the package implementation sees both.
+Each template is an ordinary alias launcher: it imports the package implementation as `_mod` and statically re-exports `TASK_SURFACE` when present so manifest tooling can follow it. Its final branch is exact: under `__main__`, call `_mod.main()` only for a `has_main` shape and never replace `sys.modules["__main__"]`; under an ordinary import, assign `sys.modules[__name__] = _mod`. It does not copy implementation globals and does not promise write-through behavior for a separately created file-loader module object. Ordinary legacy imports must return the package module object, so reads and monkeypatches have normal single-module identity.
+
+The five current script-loader call sites are converted to package imports when their targets move: `_mirror_gate.py` in `test_mirror_gate.py`; `prepare_author_document_adapter.py` in its test; both `apply_owner_corrections.py` and `normalize_author_registry.py` loads in `test_apply_owner_corrections.py`; and `normalize_author_registry.py` in its own test. Their behavioral assertions remain; only their loading mechanism changes. `test_register_sweep_h1_gate.py` loads a repo-root tool, not a migrated plugin script, so it remains a tool-loader test. The migration checker refuses a remaining production or test `spec_from_file_location`/`SourceFileLoader` target for a moved legacy launcher. Direct file execution and `runpy.run_path(..., run_name="__main__")` remain launcher contracts; arbitrary file-loader attribute identity is not.
 
 `setec_run.py` and `capabilities.py` are explicit generated-shim exclusions: they remain dedicated launchers until their own L0 move. Any additional exclusion is a row in the single migration-exemptions file; the generator fails on an unlisted fifth shape.
 
@@ -95,7 +97,11 @@ Their existing “add `scripts/` to `sys.path`” bootstraps are load-bearing un
 
 This gate lands in P1, before any mass codemod or harness work.
 
-`tools/check_claim_license_guard.py` compares the candidate against the fetched merge base using Git objects (`git merge-base` + `git show`), never against a baseline regenerated in the PR. It AST-discovers every `_claim_license` definer, the transitive plugin-local constants/helpers they reference across imports, and every emission argument that can affect the full rendered block, `additional_caveats`, or `ai_status`; it canonicalizes that closure independent of file relocation. Unchanged canonical closures pass; moved-but-semantically-identical closures also pass. Existing live contract builders remain a second oracle where they exist, but fixture coverage is not misrepresented as universal.
+`tools/check_claim_license_guard.py` compares the candidate against the fetched merge base using Git objects (`git merge-base` + `git show`), never against a baseline regenerated in the PR. The candidate commits `packaging_move_map.json` with exact top-level keys `{schema,moves,path_rewrites}`. A `moves` row is `{old_path,new_path,old_symbol,new_symbol,phase}`. A `path_rewrites` row is `{old_path,old_ast,new_path,new_ast,plugin_relative_target}` and exists only for a relocation-forced data-anchor rewrite such as `claim_license_surfaces/`. The checker requires a one-to-one move map, requires every old object at the merge base and every new object in the candidate, and rejects an unlisted deletion or second destination. For each path rewrite it requires an exact normalized-AST match and proves in scratch copies that old and new expressions resolve the same `plugin_relative_target` and byte-identical data.
+
+For each `_claim_license` definer and direct `ClaimLicense(...)` emission site, the checker builds a closed dependency graph from the defining function body, all transitively referenced plugin-local functions/classes, and the defining assignments for referenced module constants. Imports, aliases, and qualified names are resolved statically. The comparison form is `ast.dump(..., include_attributes=False)` after only these normalizations: remove docstrings; rewrite paths and qualified symbols through the explicit move map; and normalize an import of a moved symbol to its mapped name. String/bytes/numeric literals, operators, calls, keyword names and values, collection order, control flow, and default arguments are not normalized away. The closure therefore includes every value capable of reaching the rendered license block, `additional_caveats`, or `ai_status`, even when the value is computed rather than literal.
+
+The gate fails closed on star imports, dynamic `getattr`/`globals` lookup, an unresolved binding, ambiguous aliases, a non-stdlib dependency outside plugin source, a changed closure member not explained by `moves`/`path_rewrites`, or any non-relocation AST delta. Stdlib/builtin calls and the unchanged `ClaimLicense` constructor are terminal bindings, not unresolved edges. It prints the first old/new symbol and normalized-node difference. A moved-but-identical closure passes; changing only an import/qualified symbol or data anchor exactly as declared and verified by the move map passes. Existing live contract builders remain a second oracle where they exist, but fixture coverage is not misrepresented as universal.
 
 **No semantic claim-license change is authorized by this packaging spec.** Any canonical change fails CI with no override. A genuine content change must be a later, separately reviewed PR under its own contract. This is both stronger and smaller than an owner-signature mechanism, a regenerable snapshot, or a new approval-artifact format. CI also fails if the merge base is unavailable. PR-body prose is irrelevant.
 
@@ -132,15 +138,15 @@ The hermetic gate runs from a scratch copy, empty `PYTHONPATH`, outside-repo cwd
 
 The existing Windows private-writer deselect is grandfathered. No new deselect may appear, and no phase may repair a red focused job by expanding it. Bare `python -m pytest` from repo root and every workflow invocation form must collect the same node IDs for their intended selectors.
 
-`fleet-coordination/specs/setec-test-consolidation.md` Part A creates `scripts/tests/conftest.py` and owns domain-fixture hoisting, clone collapse, and marker registration. A1–A3 sequence after packaging P1 and after P4's content-authority ruling has landed; they do not alter package launchers or own pytest configuration. This resolves the prior two-spec ownership conflict.
+`fleet-coordination/specs/setec-test-consolidation.md` Part A creates `scripts/tests/conftest.py` and owns domain-fixture hoisting, clone collapse, marker registration, and consolidation baselines. A1 can start after packaging P1; inventory/baseline work that records module locations waits until the relevant relocation phases have landed. It does not alter package launchers or own pytest configuration.
 
 ## 7. Companion-spec sequencing and file ownership
 
 | Boundary | This spec owns | Companion owns | Order |
 |---|---|---|---|
 | `fleet-coordination/specs/setec-consumer-client-contract.md` | P2 relocation plus compatibility shims for `output_schema.py` and `capabilities.py`; no semantic contract edits | shared client, capabilities manifest `contract` block, committed warning-phrase fixture, consumer-side reliability floor, contract fixtures, and vendoring | consumer C2 starts after packaging P2; it does not block P4 because the 12-key envelope and producer warning emission stay unchanged |
-| `fleet-coordination/specs/setec-test-consolidation.md` | P1 `pytest.ini` and per-file `sys.path` codemod; P4 claim-license content-authority ruling | creates `scripts/tests/conftest.py`; shared fixtures, clone collapse, markers, CI-tier consolidation | test A1–A3 start only after both named packaging prerequisites |
-| `specs/svp-text-primitives-identity.md` | package home, launchers, and layer rules | primitive registry, identity policy/stamps, characterization, strict no-behavior-change gate | text T1 may start after packaging P1; any moved-module edits follow the owning packaging phase |
+| `fleet-coordination/specs/setec-test-consolidation.md` | P1 `pytest.ini` and per-file `sys.path` codemod; final module locations | creates `scripts/tests/conftest.py`; shared fixtures, clone collapse, markers, CI-tier consolidation, and its baselines | conftest work may follow P1; location-derived baselines wait for the relevant moves |
+| `specs/svp-text-primitives-identity.md` | package home, launchers, and layer rules | primitive registry, characterization, and byte-identical import consolidation; no envelope stamps | each primitive receives its final owning location before its registry ID is minted |
 
 If two companion changes would edit the same file, relocation lands first as a semantics-preserving commit; the semantic owner then edits the relocated implementation in a later PR. A packaging PR never folds semantic consumer-contract changes into a move.
 
@@ -150,7 +156,7 @@ If two companion changes would edit the same file, relocation lands first as a s
 - **P1 — guards and zero-install skeleton, no production moves.** Land `scripts/setec/`, plugin path resolver, migration checker + one exemptions file, no-change claim-license guard, `pytest.ini` plus per-file pytest bootstrap conversion, hermetic backend mode/cases, and scratch-copy gates. Do not create `conftest.py`.
 - **P2 — L0 contract.** Move `output_schema.py`, `claim_license.py`, and `capabilities.py` behind pinned compatibility launchers. Do not change missing-directory or envelope semantics. Contract fixtures and stay-put path checks remain identical.
 - **P3 — eligible L1 core.** Move only modules that satisfy the live predicate. Break cycles by explicit dependency inversion; modules that still import L2 remain stay-put/L2. `stylometry_distance.py` is included when it satisfies the predicate.
-- **P4 — surfaces family by family.** Land package-aware drift discovery and launcher conformance with the first family. Then add the layout-only harness. Each family is a separate PR. Nested capability paths receive per-file launchers, never directory aliases. The claim-license guard and content-authority ruling are required before test-consolidation A1–A3. Consumer C2 may proceed independently after P2 because it does not change producer envelope or warning emission.
+- **P4 — surfaces family by family.** Land package-aware drift discovery and launcher conformance with the first family. Then add the layout-only harness. Each family is a separate PR. Nested capability paths receive per-file launchers, never directory aliases. The claim-license no-change guard remains mandatory. Consumer C2 may proceed independently after P2 because it does not change producer envelope or warning emission.
 - **P5 — enforcement required.** Turn on layering, anchor, shim, reachability, and remaining `sys.path` ratchets in CI; audit already-fragmented `acquisition_core`, `length_bootstrap`, and `register_composition_sweep` rather than minting duplicate fragments.
 
 Every phase is independently mergeable and keeps the full existing suite green.
@@ -163,7 +169,7 @@ All new checkers use the repository convention: violations are errors and exit n
 2. `gen_contract_fixtures.py --check` passes over `gen_contract_fixtures.surfaces()`; no acceptance rule embeds a fixture count.
 3. Claim-license merge-base guard, capability drift, docs freshness, calibration readiness, packaging migration checker, and existing tool-root tests pass.
 4. Scratch-copy reachability and consumer-case execution pass for the runtime-derived manifest sets, including every nested script-path class.
-5. Legacy import, direct execution, `runpy`, and file-path-load launcher tests prove identity/mutation transparency for all four templates.
+5. Legacy import, direct execution, and `runpy` launcher tests cover all four templates. Ordinary imports prove module-object identity and monkeypatch visibility. The five former file-loader tests use package imports, and the migration checker finds no independent file-loader target for a moved launcher.
 6. Layering inventory and shrink-only exceptional-edge file pass.
 7. Voicewright and APODICTIC contract checks run against the candidate plugin at their recorded lock floors; any consumer fixture change is a coordinated consumer PR, not an exemption.
 
@@ -173,11 +179,11 @@ All new checkers use the repository convention: violations are errors and exit n
 |---|---|
 | A nested launcher loses its scripts-root bootstrap | derive nested paths from `capabilities.d`; permanent exact-path lint exemption; scratch-copy direct-execution gate |
 | A relocation changes claim-license severity or honesty | merge-base canonical AST/emission diff; any semantic change is out of scope and fails with no override |
-| A launcher works by import but fails through file loaders | globals copy plus ordinary/runpy/spec-loader conformance tests |
+| A launcher is treated as a second module by a file loader | ordinary `sys.modules` alias contract; convert the five named loaders; lint moved paths out of file-loader APIs |
 | Optional backends make hermetic CI meaningless | one deterministic backend mode, pinned `ai_status`, generated consumer-case table, no unlisted skip |
 | Tools are incorrectly retargeted to plugin-root discovery | tools remain fixed repo-root owners; tool-root tests cover the existing marker/layout |
 | A typed inventory goes stale | all sets generated from source/manifests with `--check`; narrative counts are non-gating |
-| Packaging and test consolidation edit the same ownership seam | packaging owns `pytest.ini`/per-file bootstrap only; consolidation creates `conftest.py` and sequences after the named P1/P4 prerequisites |
+| Packaging and test consolidation edit the same ownership seam | packaging owns `pytest.ini`/per-file bootstrap only; consolidation creates `conftest.py` and records module baselines only after the relevant moves |
 
 ## Out of scope
 
