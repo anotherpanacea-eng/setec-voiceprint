@@ -1,0 +1,7 @@
+[
+  {
+    "case_id": "text_too_short_reliability",
+    "text": "text too short",
+    "producer_test": "plugins/setec-voiceprint/scripts/tests/test_surprisal_audit_schema.py::TestUnavailable::test_unavailable_audit"
+  }
+]
