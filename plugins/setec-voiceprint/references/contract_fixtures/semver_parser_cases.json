@@ -241,5 +241,20 @@
     "input": "1.2.3-alpha_beta",
     "result": null,
     "error": "malformed prerelease identifier 'alpha_beta' in '1.2.3-alpha_beta'"
+  },
+  {
+    "input": "١٢٣.0.0",
+    "result": null,
+    "error": "non-numeric release component '١٢٣' in '١٢٣.0.0'"
+  },
+  {
+    "input": "1.2.3\n",
+    "result": null,
+    "error": "non-numeric release component '3\\n' in '1.2.3\\n'"
+  },
+  {
+    "input": "1.2.3-rc\n",
+    "result": null,
+    "error": "malformed prerelease identifier 'rc\\n' in '1.2.3-rc\\n'"
   }
 ]

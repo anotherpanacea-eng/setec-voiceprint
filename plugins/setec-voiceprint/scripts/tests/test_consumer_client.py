@@ -112,20 +112,57 @@ PRODUCER_EMISSIONS = _load("warning_producer_emissions.json")
     "row", CLASSIFIER_COVERAGE, ids=lambda r: r["case_id"],
 )
 def test_warning_classifier_coverage_fixture(row):
-    assert cc.classify_warning(row["text"]) == row["expected_consumer_tier"]
+    classification = cc.classify_warning(row["text"])
+    assert classification == row["expected_classification"]
+    assert cc.classification_tier(classification) == row["expected_consumer_tier"]
     assert row["producer_disposition"] in ("live_emission", "classifier_only")
 
 
 def test_unmatched_warning_fails_upward_to_reliability():
-    """C1.2's core semantic change: an unmatched success-warning is
-    'reliability', not the pre-C1.2 'cosmetic' default."""
-    assert cc.classify_warning("a completely novel sentence with no pattern") == "reliability"
+    """C1.2's core semantic change: an unmatched success-warning tiers
+    'reliability', not the pre-C1.2 'cosmetic' default. classify_warning()
+    itself returns the fine-grained 'unmatched_reliability' — see
+    classification_tier() for the tier mapping."""
+    classification = cc.classify_warning("a completely novel sentence with no pattern")
+    assert classification == cc.UNMATCHED_RELIABILITY
+    assert cc.classification_tier(classification) == "reliability"
 
 
 def test_classifier_coverage_has_all_eleven_branches_plus_unmatched():
     assert len(cc.RELIABILITY_PATTERNS) == 11
     matched_case_ids = {r["case_id"] for r in CLASSIFIER_COVERAGE}
     assert len(matched_case_ids) == 12, "expect 11 branch cases + 1 unmatched case"
+    matched_rows = [r for r in CLASSIFIER_COVERAGE if r["expected_classification"] == cc.MATCHED_RELIABILITY]
+    unmatched_rows = [r for r in CLASSIFIER_COVERAGE if r["expected_classification"] == cc.UNMATCHED_RELIABILITY]
+    assert len(matched_rows) == 11
+    assert len(unmatched_rows) == 1
+
+
+def test_deleting_all_patterns_changes_classification():
+    """F4 regression: classify_warning must NOT be a constant function. If
+    every pattern in RELIABILITY_PATTERNS were deleted, a currently-matched
+    row's classification would flip from 'matched_reliability' to
+    'unmatched_reliability' — this test proves that flip is OBSERVABLE, by
+    reimplementing classify_warning's loop against an EMPTY pattern tuple
+    and asserting every matched-fixture row's classification changes."""
+    matched_texts = [
+        r["text"] for r in CLASSIFIER_COVERAGE
+        if r["expected_classification"] == cc.MATCHED_RELIABILITY
+    ]
+    assert matched_texts, "fixture has no matched rows to regression-test"
+    for text in matched_texts:
+        with_patterns = cc.classify_warning(text)
+        assert with_patterns == cc.MATCHED_RELIABILITY
+
+        without_patterns = cc.UNMATCHED_RELIABILITY
+        for pattern in ():  # the "all patterns deleted" state
+            if pattern.search(text):  # pragma: no cover - empty loop
+                without_patterns = cc.MATCHED_RELIABILITY
+        assert with_patterns != without_patterns, (
+            f"classify_warning({text!r}) does not distinguish a real pattern "
+            f"match from none matching at all — the classifier would be a "
+            f"constant function"
+        )
 
 
 def test_every_live_emission_coverage_row_is_bound_to_a_real_emission():
@@ -135,7 +172,7 @@ def test_every_live_emission_coverage_row_is_bound_to_a_real_emission():
             assert (row["case_id"], row["text"]) in emission_keys, row
 
     for row in PRODUCER_EMISSIONS:
-        assert cc.classify_warning(row["text"]) == "reliability"
+        assert cc.classification_tier(cc.classify_warning(row["text"])) == "reliability"
         assert isinstance(row["producer_test"], str) and "::" in row["producer_test"]
 
 

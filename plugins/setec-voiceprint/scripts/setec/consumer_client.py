@@ -61,12 +61,22 @@ class VersionParseError(ValueError):
     """
 
 
-_NUMERIC_RE = re.compile(r"^\d+$")
-_IDENTIFIER_RE = re.compile(r"^[0-9A-Za-z-]+$")
+# F9: `\d` matches Unicode digits (`int("١٢٣") == 123`), not just ASCII —
+# `re.ASCII` closes that. And a `$`-anchored `.match()` treats a string
+# ending in "\n" as matching (Python's `$` matches immediately before a
+# trailing newline, not only at the true end), so a version string with
+# trailing-newline noise could pass validation invisibly — a "precedence
+# inversion" risk (two strings that render identically but differ only in
+# trailing whitespace would both validate and could compare equal/adjacent
+# in ways the SemVer grammar never intended). `re.fullmatch` on an
+# UNANCHORED pattern requires the ENTIRE string, trailing newline included,
+# so neither gap exists.
+_NUMERIC_RE = re.compile(r"[0-9]+", re.ASCII)
+_IDENTIFIER_RE = re.compile(r"[0-9A-Za-z-]+", re.ASCII)
 
 
 def _validate_release_component(component: str, version_str: str) -> int:
-    if not _NUMERIC_RE.match(component):
+    if not _NUMERIC_RE.fullmatch(component):
         raise VersionParseError(
             f"non-numeric release component {component!r} in {version_str!r}"
         )
@@ -79,7 +89,7 @@ def _validate_release_component(component: str, version_str: str) -> int:
 
 
 def _validate_prerelease_identifier(ident: str, version_str: str) -> "str | int":
-    if ident == "" or not _IDENTIFIER_RE.match(ident):
+    if ident == "" or not _IDENTIFIER_RE.fullmatch(ident):
         raise VersionParseError(
             f"malformed prerelease identifier {ident!r} in {version_str!r}"
         )
@@ -94,7 +104,7 @@ def _validate_prerelease_identifier(ident: str, version_str: str) -> "str | int"
 
 
 def _validate_build_identifier(ident: str, version_str: str) -> None:
-    if ident == "" or not _IDENTIFIER_RE.match(ident):
+    if ident == "" or not _IDENTIFIER_RE.fullmatch(ident):
         raise VersionParseError(
             f"malformed build-metadata identifier {ident!r} in {version_str!r}"
         )
@@ -219,17 +229,46 @@ RELIABILITY_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+MATCHED_RELIABILITY = "matched_reliability"
+UNMATCHED_RELIABILITY = "unmatched_reliability"
+
+# Both fine-grained results TIER as "reliability" for a caller that only
+# wants the tier (see `_classify_warnings`/`tier_envelope` below). They are
+# kept DISTINCT at the classify_warning() return-value level specifically so
+# a test can observe which branch fired — a classifier whose two branches
+# return the same literal is unfalsifiable-by-construction: deleting every
+# pattern in RELIABILITY_PATTERNS would not change classify_warning's
+# return value at all, and no fixture or test could catch that regression.
+# `test_deleting_all_patterns_changes_classification` below is exactly that
+# regression test.
+_RESULT_TIER = {
+    MATCHED_RELIABILITY: "reliability",
+    UNMATCHED_RELIABILITY: "reliability",
+}
+
+
 def classify_warning(warning: str) -> str:
-    """Classify a SUCCESS-envelope warning string. Every matched pattern
-    tiers as 'reliability'; per C1.2 the UNMATCHED fallback is now also
-    'reliability' (fail-upward default — unmatched producer prose is never
-    presumed harmless / 'cosmetic'). The permanent classifier is retained
-    (not deleted) precisely so a MATCHED warning stays distinguishable from
-    an unmatched one in callers that care (e.g. coverage fixtures)."""
+    """Classify a SUCCESS-envelope warning string against the permanent
+    11-pattern classifier. Returns 'matched_reliability' if a pattern
+    matched, 'unmatched_reliability' otherwise — NOT the tier itself. Per
+    C1.2 both currently TIER as 'reliability' (fail-upward default:
+    unmatched producer prose is never presumed harmless / 'cosmetic'), but
+    the two outcomes stay distinguishable at this layer so a caller (or a
+    coverage fixture, or a future tier change) can tell a KNOWN reliability
+    caveat from an unrecognized one. Callers that only want the tier use
+    `classification_tier()`."""
     for pattern in RELIABILITY_PATTERNS:
         if pattern.search(warning):
-            return "reliability"
-    return "reliability"
+            return MATCHED_RELIABILITY
+    return UNMATCHED_RELIABILITY
+
+
+def classification_tier(classification: str) -> str:
+    """Map a `classify_warning()` result to its tier ('reliability').
+    Isolated from `classify_warning` itself so the TIER MAPPING (which may
+    one day distinguish the two) lives at the call site, not baked into the
+    classifier's return value."""
+    return _RESULT_TIER[classification]
 
 
 # ============================================================================
@@ -308,11 +347,13 @@ def _tier_for_reason_category(reason_category: "str | None") -> str:
 
 
 def _classify_warnings(warnings: list[str]) -> tuple[list[str], list[str]]:
-    """Return (reliability, cosmetic) for a SUCCESS envelope's warnings."""
+    """Return (reliability, cosmetic) for a SUCCESS envelope's warnings.
+    Tier mapping (both classify_warning() outcomes currently tier
+    'reliability') happens HERE, at the call site — see classification_tier()."""
     reliability: list[str] = []
     cosmetic: list[str] = []
     for w in warnings:
-        if classify_warning(w) == "reliability":
+        if classification_tier(classify_warning(w)) == "reliability":
             reliability.append(w)
         else:
             cosmetic.append(w)
