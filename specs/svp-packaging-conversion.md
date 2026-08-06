@@ -3,7 +3,7 @@
 **Status:** BUILD-READY (v5, exact-head independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
 **Provenance:** modularization audit, two adversarial six-lens reviews, and two exact-head independent reviews. Round 2 returned NEEDS-REWORK (8 P1 / 9 P2); every accepted finding is folded here.
 **Round-5 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the final repair; no remaining P1/P2 within the authorized increment.
-**Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; after P2 it also supplies the exact producer-client home scripts/setec/consumer_client.py required by `setec-consumer-client-contract`.
+**Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; after P1 it also supplies the stay-put producer-client home `scripts/setec/consumer_client.py` required by `setec-consumer-client-contract`. P2 later relocates those final bytes behind compatibility shims.
 
 ## Outcome and governing rule
 

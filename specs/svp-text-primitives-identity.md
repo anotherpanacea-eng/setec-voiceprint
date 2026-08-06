@@ -118,7 +118,7 @@ Calibrated and hash-bound primitives remain behavior-pinned. Quantile imports re
 | Boundary | This spec owns | Companion owns | Order |
 |---|---|---|---|
 | `specs/svp-packaging-conversion.md` | final primitive ownership moves, registry, inventory, characterization, compatibility re-exports | package home, launcher/module relocation, layering, pytest/bootstrap | packaging relocates an owner first; this spec consolidates its exact object and then mints the ID |
-| `fleet-coordination/specs/setec-consumer-client-contract.md` | no envelope/client work | shared client and capability contract | independent after packaging P2; neither spec changes normalized envelopes |
+| `fleet-coordination/specs/setec-consumer-client-contract.md` | no envelope/client work | shared client and capability contract | independent after packaging P1 at the stay-put paths; packaging P2 later relocates the same bytes; neither spec changes normalized envelopes |
 | `fleet-coordination/specs/setec-test-consolidation.md` | primitive characterization | shared pytest fixtures/parametrization/markers | consolidation may hoist a fixture only if every characterization row remains collected |
 
 ## Phases
