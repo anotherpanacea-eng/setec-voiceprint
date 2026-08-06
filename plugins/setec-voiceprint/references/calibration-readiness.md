@@ -82,7 +82,7 @@ each licenses before you bring your own labeled corpus:
 
 <!-- BEGIN GENERATED: tools/gen_calibration_readiness.py — do not edit by hand -->
 
-_Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readiness.py`. Do not edit this region by hand._
+_Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readiness.py`. Do not edit this region by hand._
 
 ### Evidence surfaces (run on a draft)
 

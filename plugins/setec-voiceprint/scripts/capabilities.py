@@ -58,6 +58,7 @@ Usage examples
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -630,6 +631,176 @@ def render_recommend(
 
 # ---------- emit (R1 query envelope) -------------------------------
 
+# `setec-consumer-client-contract.md` C2.1: manifest_schema_version 0.4.0
+# adds a required, closed `contract` block. This is the plugin version of
+# the FIRST release that carries it — a named constant, not a duplicated
+# literal, so producer CI can assert `plugin.json`'s version equals this at
+# release. Consumers use it to decide whether a legacy (pre-0.4.0, no
+# `contract`) manifest is still a legitimate transitional read.
+CONTRACT_BLOCK_MIN_SETEC_VERSION = "1.129.0"
+
+# The manifest schema version AT OR ABOVE which `emit` carries `contract`.
+# A future 0.4.1/0.5.0 manifest schema still carries it — the gate is a
+# floor, not an exact-equality trap that would silently stop emitting the
+# block the moment the schema version moves again (F5/F10: unify producer
+# emission on a floor so it agrees with the floor rule both consumers gate
+# `contract`-required on, rather than three different conditions).
+CONTRACT_MANIFEST_SCHEMA_VERSION = "0.4.0"
+_CONTRACT_MANIFEST_SCHEMA_FLOOR = (0, 4, 0)
+
+CLIENT_RELATIVE_PATH = "scripts/setec/consumer_client.py"
+
+
+def _manifest_schema_meets_contract_floor(manifest_schema_version: Any) -> bool:
+    """True if `manifest_schema_version` is at/above 0.4.0 (a FLOOR
+    comparison via the shared parser, not `== "0.4.0"` — an exact-equality
+    gate would silently stop emitting `contract` the moment the schema
+    version moves to 0.4.1/0.5.0)."""
+    if not isinstance(manifest_schema_version, str) or not manifest_schema_version:
+        return False
+    from setec import consumer_client as _cc  # local: avoid a hard module-level dep
+    try:
+        return _cc.meets_floor(manifest_schema_version, _CONTRACT_MANIFEST_SCHEMA_FLOOR)
+    except _cc.VersionParseError:
+        return False
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    return _sha256_bytes(path.read_bytes())
+
+
+def canonical_contract_bytes(value: Any) -> bytes:
+    """The canonical byte serialization for the `contract` block (and its
+    exemplar fixture): sorted keys, compact separators, no NaN, UTF-8, a
+    single trailing newline. This is the SAME convention `client_sha256` and
+    the fixture hashes use for their own source bytes (plain SHA-256 over
+    exact file bytes) — this function is only for hashing/comparing the
+    `contract` dict itself, never for `s5_verification_sha256` (unchanged,
+    out of scope)."""
+    return (
+        json.dumps(
+            value, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False, allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
+
+
+def _s5_probe_entry(entry_id: str, digit: str) -> dict[str, Any]:
+    return {
+        "id": entry_id,
+        "content_sha256": f"sha256:{digit * 64}",
+        "word_count": 100,
+        "features": {
+            "char_ngrams_3": {"aaa": float(digit)},
+            "char_ngrams_4": {"aaaa": float(digit)},
+            "char_ngrams_5": {"aaaaa": float(digit)},
+            "pos_trigrams": {"NOUN VERB NOUN": float(digit)},
+            "dependency_ngrams": {"nsubj>ROOT>dobj": float(digit)},
+            "punctuation": {"comma": float(digit)},
+        },
+    }
+
+
+# F12: a minimal, VALID s5_distance request, inline — not read from
+# `scripts/tests/fixtures/`. Used only to probe compute_s5()'s live
+# `method` string (see build_contract_block below); the values are
+# arbitrary placeholders satisfying s5_distance.validate_request's shape
+# (>= 2 baseline entries, all six feature families present, sha256-shaped
+# hash fields), never real content.
+_S5_METHOD_PROBE_REQUEST: dict[str, Any] = {
+    "schema": "setec-s5-distance-request/1",
+    "target": _s5_probe_entry("target", "9"),
+    "baseline": {
+        "manifest_sha256": f"sha256:{'b' * 64}",
+        "content_inventory_sha256": f"sha256:{'c' * 64}",
+        "entries": [_s5_probe_entry("baseline-0", "0"), _s5_probe_entry("baseline-1", "1")],
+    },
+    "parser_inventory_sha256": f"sha256:{'d' * 64}",
+}
+
+
+def build_contract_block(*, plugin_root: Path = PLUGIN_ROOT) -> dict[str, Any]:
+    """Build the closed `contract` block added to the R1 `emit` envelope at
+    manifest_schema_version 0.4.0 (C2.1). Every value is read live from its
+    own source of truth — never a second hand-typed copy:
+
+      * `output_schema_version` / `reason_categories` <- output_schema.py
+      * `s5_identity` <- s5_distance.py's live FAMILY_ORDER/FAMILY_LIMITS, and
+        `method` read off a REAL `compute_s5()` result rather than a second
+        constant added to `s5_distance.py` — that module's source bytes feed
+        `_implementation_sha256()`, which is embedded in the SEALED S5
+        envelope; editing it for a contract-block convenience would drift
+        `implementation_sha256` (and downstream `s5_verification_sha256`),
+        which is out of scope (acceptance gate 2). Reading `method` off a
+        real computed result keeps this field live without that edit. The
+        request fed to `compute_s5()` is an INLINE literal
+        (`_S5_METHOD_PROBE_REQUEST`, module-level below), not a read off
+        `scripts/tests/fixtures/`: a bare copied plugin subtree (what
+        actually ships to a consumer — the packaging spec's own zero-install
+        contract) has no `tests/` tree, and `emit` is a production R1 query
+        surface that must work there too.
+      * `client.sha256` <- the actual bytes of the vendored client source
+      * `fixtures.*_sha256` <- the actual bytes of the three C1 fixtures
+
+    Unordered values project to sorted lists (`output_key_policy.*_required`,
+    `reason_categories`)."""
+    scripts_dir = plugin_root / "scripts"
+    sys_path_added = str(scripts_dir) not in sys.path
+    if sys_path_added:
+        sys.path.insert(0, str(scripts_dir))
+    try:
+        import output_schema  # type: ignore  # noqa: E402
+        import s5_distance  # type: ignore  # noqa: E402
+    finally:
+        if sys_path_added:
+            sys.path.remove(str(scripts_dir))
+
+    client_path = scripts_dir / "setec" / "consumer_client.py"
+    fixtures_dir = plugin_root / "references" / "contract_fixtures"
+
+    s5_method = s5_distance.compute_s5(_S5_METHOD_PROBE_REQUEST)["method"]
+
+    return {
+        "output_schema_version": output_schema.SCHEMA_VERSION,
+        "output_key_policy": {
+            "common_required": sorted([
+                "ai_status", "available", "baseline", "claim_license",
+                "claim_license_rendered", "results", "schema_version",
+                "target", "task_surface", "tool", "version", "warnings",
+            ]),
+            "success_extensions": "surface_specific_allowed",
+            "error_required": sorted(["reason", "reason_category"]),
+            "error_extensions": "surface_specific_allowed",
+            "reserved_collision_refused": True,
+        },
+        "reason_categories": sorted(output_schema.REASON_CATEGORIES),
+        "contract_block_min_setec_version": CONTRACT_BLOCK_MIN_SETEC_VERSION,
+        "s5_identity": {
+            "method": s5_method,
+            "family_order": list(s5_distance.FAMILY_ORDER),
+            "family_limits": dict(s5_distance.FAMILY_LIMITS),
+        },
+        "client": {
+            "relative_path": CLIENT_RELATIVE_PATH,
+            "sha256": _sha256_file(client_path),
+        },
+        "fixtures": {
+            "semver_parser_sha256": _sha256_file(fixtures_dir / "semver_parser_cases.json"),
+            "warning_classifier_coverage_sha256": _sha256_file(
+                fixtures_dir / "warning_classifier_coverage.json"
+            ),
+            "warning_producer_emissions_sha256": _sha256_file(
+                fixtures_dir / "warning_producer_emissions.json"
+            ),
+        },
+    }
+
+
 def _project_calibration_status(entry: dict[str, Any]) -> dict[str, Any]:
     """Return a shallow copy of `entry` with `calibration_status` projected
     from the entry's `status`.
@@ -648,22 +819,28 @@ def build_emit_envelope(
     manifest: dict[str, Any],
     *,
     version: str | None = None,
+    plugin_root: Path = PLUGIN_ROOT,
 ) -> dict[str, Any]:
     """Build the R1 `emit` envelope: top-level `setec_version` (from
     plugin.json, the SOT) + `manifest_schema_version` (the manifest's
     `schema_version`, distinct from the per-surface output envelope's 1.0) +
+    `contract` (required at manifest_schema_version >= 0.4.0; C2.1) +
     `entries[]` with a projected `calibration_status` on every entry.
 
     `version` defaults to `setec_version()` (plugin.json); callers can inject
     one to avoid a second file read."""
     sv = version if version is not None else setec_version()
-    return {
+    manifest_schema_version = manifest.get("schema_version")
+    envelope: dict[str, Any] = {
         "setec_version": sv,
-        "manifest_schema_version": manifest.get("schema_version"),
-        "entries": [
-            _project_calibration_status(e) for e in entries(manifest)
-        ],
+        "manifest_schema_version": manifest_schema_version,
     }
+    if _manifest_schema_meets_contract_floor(manifest_schema_version):
+        envelope["contract"] = build_contract_block(plugin_root=plugin_root)
+    envelope["entries"] = [
+        _project_calibration_status(e) for e in entries(manifest)
+    ]
+    return envelope
 
 
 # ---------- CLI ----------------------------------------------------

@@ -67,6 +67,21 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
 
 ALL_SURFACES = sorted(EXPECTED_TASK_SURFACE)
 
+# `setec-consumer-client-contract.md` C1/C2 test-contract fixtures that also
+# live in contract_fixtures/ alongside the per-surface goldens: closed
+# arrays / a worked exemplar, never a `schema_version: 1.0` envelope, no
+# prose/voice content. Kept in sync with fake_setec.py's own
+# NON_GOLDEN_FIXTURES via test_fake_setec_non_golden_set_matches below —
+# duplicated (not imported) because fake_setec.py is a standalone,
+# dependency-free file each consumer vendors verbatim; this test file must
+# not become an import dependency of it.
+NON_GOLDEN_FIXTURE_STEMS = frozenset({
+    "consumer_contract",
+    "semver_parser_cases",
+    "warning_classifier_coverage",
+    "warning_producer_emissions",
+})
+
 
 def test_generator_knows_every_surface():
     assert gen.surfaces() == ALL_SURFACES
@@ -83,13 +98,30 @@ def test_fixtures_dir_holds_only_known_goldens():
     """Privacy defense-in-depth: the .gitignore negation re-includes every
     ``*.json`` under contract_fixtures/, escaping the ``*_voice_profile.json``
     privacy ratchet. Assert the directory contains ONLY the known,
-    sentinelized goldens, so a stray real voice-clone artifact dropped here
+    sentinelized goldens (plus the named C1/C2 test-contract fixtures below,
+    which are producer-owned test data, not surface envelopes, and carry no
+    prose/voice content), so a stray real voice-clone artifact dropped here
     can never be committed past the ratchet."""
     present = sorted(p.stem for p in FIXTURES_DIR.glob("*.json"))
-    assert present == ALL_SURFACES, (
+    expected = sorted(ALL_SURFACES + list(NON_GOLDEN_FIXTURE_STEMS))
+    assert present == expected, (
         "unexpected .json under contract_fixtures/ (privacy-ratchet escape "
-        f"risk): {sorted(set(present) ^ set(ALL_SURFACES))}"
+        f"risk): {sorted(set(present) ^ set(expected))}"
     )
+
+
+def test_fake_setec_non_golden_set_matches():
+    """Keep this file's NON_GOLDEN_FIXTURE_STEMS and fake_setec.py's
+    NON_GOLDEN_FIXTURES in sync (see the module docstring above for why
+    they're duplicated rather than imported)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_fake_setec_for_test", FIXTURES_DIR / "fake_setec.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    assert module.NON_GOLDEN_FIXTURES == NON_GOLDEN_FIXTURE_STEMS
 
 
 def test_generator_check_passes_on_committed_tree():

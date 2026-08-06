@@ -81,7 +81,7 @@ def test_aggregate_matches_golden_by_id():
 def test_meta_carries_schema_version():
     meta = _CAP_DIR / "_meta.yaml"
     assert meta.exists()
-    assert cap.load_manifest(_CAP_DIR)["schema_version"] == "0.3.0"
+    assert cap.load_manifest(_CAP_DIR)["schema_version"] == "0.4.0"
 
 
 def test_one_fragment_per_entry_bijection():

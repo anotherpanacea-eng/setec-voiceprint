@@ -36,7 +36,7 @@ def test_manifest_loads_and_has_entries():
     # Schema v0.3.0 added handoff posture (stable / experimental /
     # internal / none) + consumers free-list to make the consumer-
     # pinning contract explicit and queryable.
-    assert m.get("schema_version") == "0.3.0"
+    assert m.get("schema_version") == "0.4.0"
     assert isinstance(m.get("entries"), list)
     assert len(m["entries"]) > 30
 
@@ -517,20 +517,48 @@ def test_setec_version_matches_plugin_json():
 
 def test_emit_has_expected_top_level_fields():
     """(a) `emit --json` carries top-level setec_version (== plugin.json
-    version), manifest_schema_version (== _meta schema_version), and
+    version), manifest_schema_version (== _meta schema_version), the C2.1
+    `contract` block (required at manifest_schema_version 0.4.0), and
     entries[]."""
     m = _manifest()
     env = cap.build_emit_envelope(m)
     assert set(env.keys()) == {
-        "setec_version", "manifest_schema_version", "entries",
+        "setec_version", "manifest_schema_version", "contract", "entries",
     }
     plugin_json = json.loads(
         cap.PLUGIN_JSON_PATH.read_text(encoding="utf-8")
     )
     assert env["setec_version"] == plugin_json["version"]
-    assert env["manifest_schema_version"] == m["schema_version"] == "0.3.0"
+    assert env["manifest_schema_version"] == m["schema_version"] == "0.4.0"
     assert isinstance(env["entries"], list)
     assert len(env["entries"]) == len(m["entries"])
+
+
+def test_emit_carries_contract_at_manifest_schema_version_above_0_4_0():
+    """F5/F10: the gate is a FLOOR (>= 0.4.0), not an exact-equality trap
+    that would stop emitting `contract` the moment the schema version moves
+    past 0.4.0. A future 0.4.1/0.5.0 manifest must still carry it."""
+    for schema_version in ("0.4.1", "0.5.0", "1.0.0"):
+        m = dict(_manifest())
+        m["schema_version"] = schema_version
+        env = cap.build_emit_envelope(m)
+        assert "contract" in env, f"schema_version {schema_version} did not carry contract"
+
+
+def test_emit_omits_contract_below_0_4_0():
+    m = dict(_manifest())
+    m["schema_version"] = "0.3.0"
+    env = cap.build_emit_envelope(m)
+    assert "contract" not in env
+
+
+def test_manifest_schema_meets_contract_floor_rejects_malformed_and_missing():
+    assert cap._manifest_schema_meets_contract_floor(None) is False
+    assert cap._manifest_schema_meets_contract_floor("") is False
+    assert cap._manifest_schema_meets_contract_floor("garbage") is False
+    assert cap._manifest_schema_meets_contract_floor("0.3.0") is False
+    assert cap._manifest_schema_meets_contract_floor("0.4.0") is True
+    assert cap._manifest_schema_meets_contract_floor("0.5.0") is True
 
 
 def test_emit_projects_calibration_status_on_every_entry():

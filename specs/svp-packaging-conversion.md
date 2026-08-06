@@ -3,7 +3,7 @@
 **Status:** BUILD-READY (v5, exact-head independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
 **Provenance:** modularization audit, two adversarial six-lens reviews, and two exact-head independent reviews. Round 2 returned NEEDS-REWORK (8 P1 / 9 P2); every accepted finding is folded here.
 **Round-5 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the final repair; no remaining P1/P2 within the authorized increment.
-**Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; after P2 it also supplies the exact producer-client home scripts/setec/consumer_client.py required by `setec-consumer-client-contract`.
+**Depends on:** nothing. It supplies the package home used by `svp-text-primitives-identity`; after P1 it also supplies the stay-put producer-client home `plugins/setec-voiceprint/scripts/setec/consumer_client.py` (reachable at runtime via the repo-root scripts/ symlink) required by `setec-consumer-client-contract`. P2 later relocates those final bytes behind compatibility shims.
 
 ## Outcome and governing rule
 
@@ -54,7 +54,7 @@ Resolved defaults for this revision:
 
 ## 1. Root resolution before moves
 
-`scripts/setec/paths.py` provides a typed `find_plugin_root(start=None)` that walks upward for `.claude-plugin/plugin.json`, refuses zero or multiple matches, and exposes named paths for `capabilities.d/`, `.claude-plugin/plugin.json`, `claim_license_surfaces/`, `register_tiers.d/`, `references/`, and `data/`.
+`plugins/setec-voiceprint/scripts/setec/paths.py` (reachable at runtime via the repo-root scripts/ symlink) provides a typed `find_plugin_root(start=None)` that walks upward for `.claude-plugin/plugin.json`, refuses zero or multiple matches, and exposes named paths for `capabilities.d/`, `.claude-plugin/plugin.json`, `claim_license_surfaces/`, `register_tiers.d/`, `references/`, and `data/`.
 
 Before a module moves, tools/check_packaging_migration.py AST-scans **every** `__file__`-relative anchor, including `.parent`, `.parents[...]`, chained `with_name`, and helper aliases. Each plugin-runtime anchor is either converted to `setec.paths` or listed in the single `packaging_migration_exemptions.yaml` file with path, symbol, reason, and removal phase. `claim_license.py`'s `.parent / "claim_license_surfaces"` anchor is explicitly covered.
 
