@@ -18,11 +18,19 @@ attribute to a declared move — fails CI with NO override.
 
 Protected-set construction (spec §3):
 
-  1. Seed: every plugin-runtime module whose AST defines a function or
-     assigns a name matching `_claim_license*` (substring match,
-     case-sensitive — covers `_claim_license`, `_claim_license_dict`,
-     `_claim_license_block`, `_structured_claim_license`, ...), OR
-     directly calls `ClaimLicense(...)`.
+  1. Seed: every plugin-runtime module whose AST (a) defines a
+     function or assigns a name matching the spec's literal
+     `_claim_license*` glob — a PREFIX match, case-sensitive:
+     `_claim_license`, `_claim_license_dict`, `_claim_license_block`,
+     ... — OR (b) directly calls `ClaimLicense(...)`. A name that
+     merely CONTAINS "claim_license" without STARTING with it (e.g.
+     `_structured_claim_license`, or setec.paths'
+     `claim_license_surfaces_dir`) does not satisfy (a) alone — a bare
+     substring search here previously produced a false-positive seed
+     (see the regression test pinning that exact name). Such a module
+     is still correctly seeded whenever it ALSO satisfies (b), which
+     `_structured_claim_license` in general_imposters.py does (it
+     calls `ClaimLicense(...)` directly).
   2. Supplier closure: within each seed module's `_claim_license*`
      function bodies and `ClaimLicense(...)` call sites (args +
      keywords), resolve every `Name` load. A name bound by a
@@ -46,10 +54,11 @@ candidate version. This keeps docstrings, literals, operators, calls,
 keyword names/values, collection order, defaults, and control flow —
 so even an unchanged `_claim_license` function whose CALLER passes a
 different `model_id` is caught. Normalization permits only the exact
-relocation declared in `packaging_move_map.json`'s `moves` (a straight
-substitution of `old_path`/`old_symbol` -> `new_path`/`new_symbol`
-throughout the dumped tree) and the exact verified data-anchor
-substitution declared in `path_rewrites`.
+relocation declared in `packaging_move_map.json`'s `moves` — a
+STRUCTURAL `old_symbol -> new_symbol` AST rename (Name/alias/
+FunctionDef/ClassDef/Attribute.attr/ImportFrom.module nodes only,
+never a string Constant — see `_StructuralRename`) — and the exact
+verified data-anchor substitution declared in `path_rewrites`.
 
 Exit codes:
 
@@ -159,14 +168,26 @@ class ProtectedModule:
 
 
 def _module_path_for_import(
-    importing_file: Path, module_dotted: str, level: int
+    importing_file: Path, module_dotted: str, level: int, symbol: str | None = None,
 ) -> Path | None:
     """Best-effort resolution of a plugin-local import target to an
     on-disk `.py` file under SCRIPTS_ROOT. Returns None for anything
     that isn't a plain plugin-local module (stdlib, third-party,
     package-relative we can't resolve, etc.) — the caller treats an
-    unresolved-but-suspicious import conservatively (see
-    `_is_plugin_local_candidate`)."""
+    unresolved-but-suspicious import conservatively.
+
+    Handles the `scripts/setec/` PACKAGE (a directory with
+    `__init__.py`, not a flat `.py` file) — the resolution hole build-
+    review flagged: `from setec import paths` (module_dotted="setec",
+    symbol="paths") used to resolve to the nonexistent `setec.py` and
+    silently fail to resolve at all, missing `setec/paths.py` as a
+    supplier. Resolution order for a dotted path with no flat `.py`
+    match: (1) `<base>.py`; (2) if `<base>` is a package
+    (`<base>/__init__.py` exists) AND `symbol` names a submodule file
+    (`<base>/<symbol>.py`), that submodule — this is the real target
+    of Python's own `from package import submodule` idiom, not
+    `__init__.py`; (3) `<base>/__init__.py` itself (the symbol is
+    presumably defined there directly)."""
     if level > 0:
         # Relative import (`from . import x` / `from .sub import x`).
         # scripts/ is not a real package (no __init__.py at its root),
@@ -177,17 +198,27 @@ def _module_path_for_import(
         for _ in range(level - 1):
             base = base.parent
         parts = module_dotted.split(".") if module_dotted else []
-        candidate = base.joinpath(*parts).with_suffix(".py")
+        base_dir = base.joinpath(*parts)
     else:
         parts = module_dotted.split(".")
-        candidate = SCRIPTS_ROOT.joinpath(*parts).with_suffix(".py")
+        base_dir = SCRIPTS_ROOT.joinpath(*parts)
+
+    flat = base_dir.with_suffix(".py")
     try:
-        candidate.relative_to(SCRIPTS_ROOT)
+        flat.relative_to(SCRIPTS_ROOT)
     except ValueError:
         return None
-    if not candidate.is_file():
-        return None
-    return candidate
+    if flat.is_file():
+        return flat
+
+    package_init = base_dir / "__init__.py"
+    if package_init.is_file():
+        if symbol is not None:
+            submodule = base_dir / f"{symbol}.py"
+            if submodule.is_file():
+                return submodule
+        return package_init
+    return None
 
 
 def _claim_license_relevant_subtrees(tree: ast.AST) -> list[ast.AST]:
@@ -244,28 +275,32 @@ def _build_import_map(tree: ast.AST) -> ImportMap:
     return m
 
 
-def _resolve_symbol_definition(tree: ast.Module, symbol: str) -> ast.AST | None:
-    """The top-level FunctionDef/AsyncFunctionDef/ClassDef/Assign-target
-    named `symbol` in `tree`'s body, or None if not found there (e.g. it
-    is itself re-exported from elsewhere — the caller falls back to
-    whole-module scanning in that case)."""
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if node.name == symbol:
-                return node
-        elif isinstance(node, ast.Assign):
-            for tgt in node.targets:
-                if isinstance(tgt, ast.Name) and tgt.id == symbol:
-                    return node
-        elif isinstance(node, ast.AnnAssign):
-            if isinstance(node.target, ast.Name) and node.target.id == symbol:
-                return node
-    return None
-
-
 def build_protected_set(
     scripts_root: Path | None = None,
 ) -> list[ProtectedModule]:
+    """Spec-literal closure: a seed module's initial resolution is
+    scoped to its OWN `_claim_license*`/`ClaimLicense(...)` call sites
+    ("resolve the names and arguments at those call sites only" — spec
+    §3); every module pulled in as a SUPPLIER is then protected "in
+    full" and its WHOLE MODULE BODY is scanned for one more hop of
+    Name-load resolution ("repeat over newly added suppliers until the
+    module set closes"). This is intentionally broader than tracing
+    only the specific referenced symbol — a prior, narrower revision of
+    this function scoped supplier hops to just the referenced symbol's
+    own definition, which is MORE precise but not what the spec
+    describes, and it silently excluded a real supplier
+    (`judge_backends.py`, reached only through an indirect reference
+    inside another supplier's body) from the protected set. Reverted
+    per build-review P1 finding #4 — the whole-module rule is the
+    conservative, fail-closed reading the spec calls for, and with
+    hermetic backend mode removed from this PR there is no longer any
+    P1 deliverable whose OWN edits collide with that breadth.
+
+    "Memoized rescan": each module's WHOLE-BODY scan happens at most
+    once (the `processed` set below) — reaching the same module through
+    a second call site later re-adds nothing to the scan queue, it is
+    already covered.
+    """
     # A live module-global lookup (not a def-time-bound default), so tests
     # that monkeypatch REPO_ROOT/SCRIPTS_ROOT (module globals referenced
     # below via REPO_ROOT for relative-path math) are honored.
@@ -289,56 +324,46 @@ def build_protected_set(
         file_trees[rel] = tree
         return tree
 
-    # scan_subtrees[rel]: AST subtrees still needing Name-load resolution
-    # for `rel`. A module can be added to `protected` (whole-file, "in
-    # full") once, but revisited here MULTIPLE times as different call
-    # sites reference different symbols from it — each addition only
-    # queues the SPECIFIC referenced symbol's own definition, not the
-    # whole file, so an unrelated function elsewhere in a supplier module
-    # never drags in ITS OWN unrelated imports as false-positive further
-    # suppliers (e.g. narrative_judge.py is a genuine supplier via
-    # `fingerprint_prompt()`, referenced from a ClaimLicense call site's
-    # comparison_set — but narrative_judge.py's UNRELATED `build_judge()`
-    # helper, which happens to import judge_backends, must not itself
-    # drag judge_backends.py into the protected set).
-    scan_subtrees: dict[str, list[ast.AST]] = {}
     queue: list[str] = []
-
-    def _enqueue(rel: str, subtree: ast.AST, reason: str) -> None:
-        if rel not in protected:
-            protected[rel] = ProtectedModule(path=rel, reason=reason)
-        scan_subtrees.setdefault(rel, []).append(subtree)
-        if rel not in queue:
-            queue.append(rel)
 
     # Seed.
     for path in all_files:
         tree = _parse(path)
         if tree is None:
             continue
-        subtrees = _claim_license_relevant_subtrees(tree)
-        if subtrees:
+        if _module_matches_seed(tree):
             rel = path.relative_to(REPO_ROOT).as_posix()
-            for sub in subtrees:
-                _enqueue(
-                    rel, sub,
-                    "seed: defines/calls a _claim_license*/ClaimLicense(...) site",
-                )
+            protected[rel] = ProtectedModule(
+                path=rel,
+                reason="seed: defines/calls a _claim_license*/ClaimLicense(...) site",
+            )
+            queue.append(rel)
 
+    # Supplier closure — memoized: a module's whole-body scan runs once.
+    processed: set[str] = set()
     while queue:
         rel = queue.pop()
-        pending = scan_subtrees.pop(rel, [])
-        if not pending:
+        if rel in processed:
             continue
+        processed.add(rel)
         path = REPO_ROOT / rel
         tree = _parse(path)
         if tree is None:
             continue
         import_map = _build_import_map(tree)
 
+        # Seeds resolve only their own call-site subtrees on this (their
+        # first and only) pass; a module reached purely as a supplier
+        # scans its whole body, per the spec's "repeat ... until the
+        # module set closes."
+        is_seed = _module_matches_seed(tree)
+        subtrees: list[ast.AST] = (
+            _claim_license_relevant_subtrees(tree) if is_seed else [tree]
+        )
+
         if import_map.has_star_import and any(
             n.id not in import_map.bindings
-            for sub in pending
+            for sub in subtrees
             for n in ast.walk(sub)
             if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
         ):
@@ -349,20 +374,7 @@ def build_protected_set(
                 f"the name."
             )
 
-        for sub in pending:
-            # Bare-module attribute access (`import X` then `X.attr`):
-            # resolve to the SPECIFIC attribute, not the whole module —
-            # otherwise every attribute access anywhere in a large
-            # utility module's usage would look identical to "the whole
-            # module matters here."
-            attr_by_name: dict[str, set[str]] = {}
-            for node in ast.walk(sub):
-                if (
-                    isinstance(node, ast.Attribute)
-                    and isinstance(node.value, ast.Name)
-                ):
-                    attr_by_name.setdefault(node.value.id, set()).add(node.attr)
-
+        for sub in subtrees:
             for node in ast.walk(sub):
                 if not (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)):
                     continue
@@ -378,48 +390,20 @@ def build_protected_set(
                 # never merely because something imports the class.
                 if symbol == "ClaimLicense" or module_dotted == "claim_license":
                     continue
-                target = _module_path_for_import(path, module_dotted, level)
+                target = _module_path_for_import(path, module_dotted, level, symbol)
                 if target is None:
                     continue  # not resolvable to a plugin-local file (stdlib/3rd-party)
-                target_tree = _parse(target)
-                if target_tree is None:
-                    continue
                 target_rel = target.relative_to(REPO_ROOT).as_posix()
-
-                # `from X import symbol` gives a concrete symbol directly;
-                # `import X as name` (symbol is None) needs the attribute
-                # access(es) on `name` found above, or — if `name` is used
-                # bare with no attribute access at all — there is no
-                # single symbol to scope to, so fall back to the whole
-                # module (conservative; matches "fails closed" instead of
-                # silently narrowing to nothing).
-                wanted_symbols = (
-                    {symbol} if symbol is not None
-                    else (attr_by_name.get(name) or set())
-                )
-                if not wanted_symbols:
-                    _enqueue(
-                        target_rel, target_tree,
-                        f"supplier: {rel} imports {name!r} from here "
-                        f"(used bare, no specific symbol resolvable — "
-                        f"whole module scanned)",
+                if target_rel not in protected:
+                    protected[target_rel] = ProtectedModule(
+                        path=target_rel,
+                        reason=(
+                            f"supplier: {rel} imports {name!r} "
+                            f"(symbol {symbol!r}) from here"
+                        ),
                     )
-                    continue
-                for wanted in wanted_symbols:
-                    definition = _resolve_symbol_definition(target_tree, wanted)
-                    if definition is None:
-                        _enqueue(
-                            target_rel, target_tree,
-                            f"supplier: {rel} references {name}.{wanted} "
-                            f"from here (symbol not found as a top-level "
-                            f"def/assign — whole module scanned)",
-                        )
-                    else:
-                        _enqueue(
-                            target_rel, definition,
-                            f"supplier: {rel} references {name}.{wanted} "
-                            f"({wanted!r}) from here",
-                        )
+                if target_rel not in processed:
+                    queue.append(target_rel)
 
     return sorted(protected.values(), key=lambda p: p.path)
 

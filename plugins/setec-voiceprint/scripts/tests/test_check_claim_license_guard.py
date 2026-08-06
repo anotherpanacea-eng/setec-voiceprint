@@ -46,6 +46,45 @@ def test_real_repo_protected_set_passes_self_comparison():
     )
 
 
+def test_real_repo_judge_backends_is_a_protected_supplier():
+    """Build-review P1 finding #4's named repro: judge_backends.py must
+    be in the protected set (reached via narrative_judge.py's whole-
+    body scan, itself a supplier through
+    narrative_decision_long_form.py's ClaimLicense comparison_set
+    referencing nj.fingerprint_prompt()). The narrower, symbol-scoped
+    revision of build_protected_set silently excluded it."""
+    protected = clg.build_protected_set()
+    paths = {p.path for p in protected}
+    assert "plugins/setec-voiceprint/scripts/judge_backends.py" in paths
+
+
+def test_module_path_for_import_resolves_setec_package_submodule(tmp_path, monkeypatch):
+    """Build-review P2 finding (d): `from setec import paths` (a bare
+    package-member import, not `from setec.paths import x`) must
+    resolve to `setec/paths.py`, not the nonexistent `setec.py` — the
+    resolution hole that would silently stop tracing supplier
+    provenance once P2 starts routing claim-license-adjacent code
+    through the setec package."""
+    monkeypatch.setattr(clg, "SCRIPTS_ROOT", tmp_path)
+    pkg = tmp_path / "setec"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "paths.py").write_text("def find_plugin_root():\n    return None\n", encoding="utf-8")
+    resolved = clg._module_path_for_import(tmp_path / "an_audit.py", "setec", 0, symbol="paths")
+    assert resolved == pkg / "paths.py"
+
+    # `from setec.paths import find_plugin_root` (module_dotted already
+    # names the submodule) resolves the same way via the flat-.py branch.
+    resolved2 = clg._module_path_for_import(
+        tmp_path / "an_audit.py", "setec.paths", 0, symbol="find_plugin_root",
+    )
+    assert resolved2 == pkg / "paths.py"
+
+    # A package with no matching submodule falls back to __init__.py.
+    resolved3 = clg._module_path_for_import(tmp_path / "an_audit.py", "setec", 0, symbol="nonexistent")
+    assert resolved3 == pkg / "__init__.py"
+
+
 def _git(repo: Path, *args: str) -> str:
     proc = subprocess.run(
         ["git", *args], cwd=repo, capture_output=True, text=True, check=True,
@@ -294,21 +333,22 @@ def test_missing_move_map_fails_closed(fake_repo):
         clg.load_move_map(move_map_path)
 
 
-def test_supplier_closure_scopes_to_the_referenced_symbol_not_whole_module(
+def test_supplier_closure_scans_the_whole_module_body_spec_literal(
     tmp_path, monkeypatch,
 ):
-    """Regression: a seed module that references ONE specific function
-    from a bare-imported utility module (`import helpers; ...
-    helpers.used_fn(...)`) must pull in only `used_fn`'s own
-    definition for further closure — NOT the whole utility module's
-    body. Otherwise an UNRELATED function in that utility module
-    (`unused_fn`, which itself imports a third module) would falsely
-    drag the third module into the protected set too. This is the
-    exact shape that over-broadly pulled judge_backends.py into the
-    protected set via narrative_judge.py's UNRELATED `build_judge()`
-    helper (fixed 2026-08 — see git history) when the real link was
-    narrative_judge.fingerprint_prompt(), referenced from a
-    ClaimLicense call site's comparison_set."""
+    """Build-review P1 finding #4: the closure must implement the
+    spec-literal whole-module-body rule, not a narrower per-symbol
+    scope. A seed module that references ONE function from a bare-
+    imported utility module (`import helpers; ...
+    helpers.used_fn(...)`) pulls the WHOLE utility module in as a
+    supplier "in full" (spec §3) — including an UNRELATED function
+    elsewhere in that module (`unused_fn`), whose own import of a
+    third module is then followed too on the next hop. A prior,
+    narrower revision of this function scoped supplier hops to just
+    the referenced symbol's own definition; that was MORE precise but
+    not what the spec describes, and it silently excluded a real
+    supplier (`judge_backends.py`) from the protected set. Reverted —
+    see build_protected_set's docstring."""
     monkeypatch.setattr(clg, "REPO_ROOT", tmp_path)
     scripts = tmp_path / "scripts"
     scripts.mkdir()
@@ -349,7 +389,7 @@ def test_supplier_closure_scopes_to_the_referenced_symbol_not_whole_module(
     protected = clg.build_protected_set(scripts_root=scripts)
     paths = {p.path for p in protected}
     assert "scripts/helpers.py" in paths
-    assert "scripts/unrelated_third_module.py" not in paths
+    assert "scripts/unrelated_third_module.py" in paths
 
 
 def test_claim_license_surfaces_accessor_name_is_not_a_false_seed(tmp_path, monkeypatch):
