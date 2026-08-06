@@ -631,8 +631,6 @@ _CONTRACT_MANIFEST_SCHEMA_FLOOR = (0, 4, 0)
 
 CLIENT_RELATIVE_PATH = "scripts/setec/consumer_client.py"
 
-_CONTRACT_FIXTURES_SUBDIR = PLUGIN_ROOT / "references" / "contract_fixtures"
-
 
 def _manifest_schema_meets_contract_floor(manifest_schema_version: Any) -> bool:
     """True if `manifest_schema_version` is at/above 0.4.0 (a FLOOR
