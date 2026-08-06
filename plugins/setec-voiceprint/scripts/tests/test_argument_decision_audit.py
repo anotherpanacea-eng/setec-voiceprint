@@ -8,8 +8,6 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import argument_decision_audit as ada  # noqa: E402
 from argument_judge import build_judge  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # noqa: E402

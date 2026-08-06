@@ -13,8 +13,9 @@ the single exemptions file
 Scope: this AST-scans plugin-RUNTIME source only — everything under
 `plugins/setec-voiceprint/scripts/` EXCEPT `scripts/tests/` (test
 files are not runtime anchors; they get their own pytest-bootstrap
-codemod) and `scripts/setec/` (the destination package; `setec/paths.py`
-itself legitimately anchors on `__file__` — it IS the resolver).
+codemod) and the exact resolver `scripts/setec/paths.py`, whose own
+`__file__` anchor is intrinsic. Other relocated `setec/` modules remain
+visible to the migration gate.
 
 `tools/` scripts are a different job (they resolve the REPOSITORY
 root, never the plugin root — see the spec's "Tools do not move"
@@ -64,7 +65,15 @@ from _console import enable_utf8_stdio  # noqa: E402
 
 # Directories under scripts/ that are NOT plugin-runtime anchors for this
 # gate's purpose.
-_EXCLUDED_DIR_PARTS = {"tests", "setec", "__pycache__"}
+_EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
+_RESOLVER_REL_PATH = Path("setec/paths.py")
+# Existing protected module: two byte-preserved bootstraps bind the same name.
+# Claim-license guard forbids changing that module in P1, so pin the exact
+# occurrence pair instead of letting a generic (path, symbol) row cover more.
+_KNOWN_DUPLICATE_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/manuscript_audit.py", "SCRIPT_DIR"):
+        (31, 47),
+}
 
 # Removal-phase classification, per specs/svp-packaging-conversion.md's
 # phase table. Anything not explicitly listed defaults to P4 (whole-surface
@@ -212,7 +221,10 @@ class Anchor:
 
 
 def _is_excluded(path: Path) -> bool:
-    return any(part in _EXCLUDED_DIR_PARTS for part in path.parts)
+    return (
+        path == _RESOLVER_REL_PATH
+        or any(part in _EXCLUDED_DIR_PARTS for part in path.parts)
+    )
 
 
 def find_runtime_scripts() -> list[Path]:
@@ -312,6 +324,7 @@ def _names_in_target(target: ast.expr) -> list[str]:
 
 def _scope_anchors(
     stmts: list[ast.stmt], visible_names: set[str],
+    allowed_duplicates: dict[str, tuple[int, ...]] | None = None,
 ) -> dict[str, ast.stmt]:
     """Anchors found within ONE scope's own flattened statement list.
     `visible_names` are names already known-anchor at an ENCLOSING
@@ -337,6 +350,14 @@ def _scope_anchors(
     for names, value, stmt in local_assigns:
         if _contains_file_dunder(value):
             for name in names:
+                if name in known and known[name] is not stmt and (
+                    allowed_duplicates or {}
+                ).get(name) != (known[name].lineno, stmt.lineno):
+                    raise ValueError(
+                        f"duplicate anchor symbol {name!r} at lines "
+                        f"{known[name].lineno} and {stmt.lineno}; remove the "
+                        "redundant binding or give it a distinct name"
+                    )
                 known[name] = stmt
 
     changed = True
@@ -351,6 +372,14 @@ def _scope_anchors(
             }
             if loaded & (known.keys() | visible_names):
                 for name in names:
+                    if name in known and known[name] is not stmt and (
+                        allowed_duplicates or {}
+                    ).get(name) != (known[name].lineno, stmt.lineno):
+                        raise ValueError(
+                            f"duplicate anchor symbol {name!r} at lines "
+                            f"{known[name].lineno} and {stmt.lineno}; remove "
+                            "the redundant binding or give it a distinct name"
+                        )
                     known[name] = stmt
                 changed = True
     return known
@@ -381,9 +410,17 @@ def find_anchors_in_file(path: Path) -> list[Anchor]:
         return []
 
     rel = path.relative_to(REPO_ROOT).as_posix()
+    allowed_duplicates = {
+        symbol: lines
+        for (known_path, symbol), lines in _KNOWN_DUPLICATE_ANCHORS.items()
+        if known_path == rel
+    }
 
     module_stmts = _flatten_scope_statements(tree.body)
-    module_known = _scope_anchors(module_stmts, visible_names=set())
+    module_known = _scope_anchors(
+        module_stmts, visible_names=set(),
+        allowed_duplicates=allowed_duplicates,
+    )
 
     all_known: dict[str, ast.stmt] = dict(module_known)
     covered_nodes: list[ast.stmt] = list(module_known.values())
@@ -394,22 +431,19 @@ def find_anchors_in_file(path: Path) -> list[Anchor]:
         scope_stmts = _flatten_scope_statements(scope_node.body)
         local_known = _scope_anchors(
             scope_stmts, visible_names=set(module_known.keys()),
+            allowed_duplicates=allowed_duplicates,
         )
         for name, stmt in local_known.items():
-            # A local name that merely re-reads a module-level anchor
-            # (no NEW local binding was actually found — `visible_names`
-            # only makes it usable, `_scope_anchors` only returns names
-            # it bound WITHIN this scope) is naturally excluded already;
-            # this loop only sees genuinely NEW local anchors. If a
-            # DIFFERENT function coincidentally binds the same bare name
-            # as an existing module-level (or another function's) anchor,
-            # the first one found wins the (path, symbol) exemption slot
-            # — a documented simplification of the (path, symbol)
-            # exemption-key granularity, not a scope-blindness bug: both
-            # are still genuine anchors, and the migration checker's key
-            # scheme was never symbol-per-scope to begin with.
-            if name not in all_known:
-                all_known[name] = stmt
+            if name in all_known and all_known[name] is not stmt and (
+                allowed_duplicates.get(name)
+                != (all_known[name].lineno, stmt.lineno)
+            ):
+                raise ValueError(
+                    f"{rel}: duplicate anchor symbol {name!r} at lines "
+                    f"{all_known[name].lineno} and {stmt.lineno}; one "
+                    "(path, symbol) exemption must not cover two bindings"
+                )
+            all_known[name] = stmt
             covered_nodes.append(stmt)
 
     anchors = [
@@ -477,12 +511,13 @@ def check_tools_repo_root() -> list[ToolRootViolation]:
             continue
         rel = path.relative_to(REPO_ROOT).as_posix()
         for node in tree.body:  # module level only
-            if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            assigned = _assign_targets(node)
+            if assigned is None:
                 continue
-            tgt = node.targets[0]
-            if not (isinstance(tgt, ast.Name) and tgt.id == "REPO_ROOT"):
+            names, value = assigned
+            if names != ["REPO_ROOT"]:
                 continue
-            expr = ast.unparse(node.value)
+            expr = ast.unparse(value)
             if expr != "Path(__file__).resolve().parents[1]":
                 violations.append(ToolRootViolation(
                     path=rel,
@@ -633,7 +668,7 @@ def cmd_seed(args: argparse.Namespace) -> int:
             "# Per specs/svp-packaging-conversion.md §1: every "
             "__file__-relative anchor in plugin-runtime code under\n"
             "# plugins/setec-voiceprint/scripts/ (excluding scripts/tests/ "
-            "and scripts/setec/) is either converted to\n"
+            "and exact scripts/setec/paths.py) is either converted to\n"
             "# setec.paths or listed here with path, symbol, reason, owner, "
             "introduced_sha, and removal_phase.\n"
             "#\n"
@@ -756,7 +791,11 @@ def check_ratchet(base_sha: str) -> list[str]:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    anchors = find_all_anchors()
+    try:
+        anchors = find_all_anchors()
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     try:
         rows = load_exemptions()
     except ValueError as exc:

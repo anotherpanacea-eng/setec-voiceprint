@@ -8,8 +8,6 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 import argument_judge as j  # noqa: E402
 from argument_feature_schema import MODE_OPTIONS, ROLE_OPTIONS  # noqa: E402
 

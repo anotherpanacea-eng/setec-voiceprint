@@ -152,7 +152,7 @@ def test_unlisted_semantic_edit_is_caught(fake_repo):
     assert "plugins/setec-voiceprint/scripts/an_audit.py" in paths
 
 
-def test_declared_move_with_symbol_rewrite_passes(fake_repo):
+def test_p1_refuses_declared_move_until_first_real_relocation(fake_repo):
     scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
     old = scripts / "an_audit.py"
     content = old.read_text(encoding="utf-8")
@@ -177,8 +177,8 @@ def test_declared_move_with_symbol_rewrite_passes(fake_repo):
         "path_rewrites": [],
     }), encoding="utf-8")
 
-    passed, report = clg.run(base_ref="HEAD")
-    assert passed, report["deltas"]
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
+        clg.run(base_ref="HEAD")
 
 
 def test_moves_substring_laundering_is_blocked(fake_repo):
@@ -222,10 +222,8 @@ def test_moves_substring_laundering_is_blocked(fake_repo):
         "path_rewrites": [],
     }), encoding="utf-8")
 
-    passed, report = clg.run(base_ref="HEAD")
-    assert not passed
-    paths = {d["path"] for d in report["deltas"]}
-    assert "plugins/setec-voiceprint/scripts/an_audit.py" in paths
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
+        clg.run(base_ref="HEAD")
 
 
 def test_moves_rejects_non_identifier_symbol(fake_repo):
@@ -241,7 +239,7 @@ def test_moves_rejects_non_identifier_symbol(fake_repo):
         }],
         "path_rewrites": [],
     }), encoding="utf-8")
-    with pytest.raises(clg.GuardError, match="not a legal Python identifier"):
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
         clg.load_move_map(move_map_path)
 
 
@@ -258,7 +256,7 @@ def test_moves_rejects_old_path_absent_at_merge_base(fake_repo):
         }],
         "path_rewrites": [],
     }), encoding="utf-8")
-    with pytest.raises(clg.GuardError, match="does not resolve as a real git object"):
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
         clg.run(base_ref="HEAD")
 
 
@@ -275,24 +273,8 @@ def test_moves_rejects_new_path_absent_from_candidate(fake_repo):
         }],
         "path_rewrites": [],
     }), encoding="utf-8")
-    with pytest.raises(clg.GuardError, match="does not resolve to a real file"):
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
         clg.run(base_ref="HEAD")
-
-
-def test_structural_rename_never_touches_string_constants():
-    """Unit-level pin on _StructuralRename directly: a Constant node
-    with a value equal to a renamed symbol's TEXT must be left byte-
-    identical, even though a Name with that same id is renamed."""
-    import ast as ast_mod
-    import copy as copy_mod
-    tree = ast_mod.parse("x = REPORTS\ny = 'REPORTS'\n")
-    renamed = clg._StructuralRename({"REPORTS": "REFUSES"}).visit(
-        copy_mod.deepcopy(tree)
-    )
-    ast_mod.fix_missing_locations(renamed)
-    dumped = ast_mod.dump(renamed, include_attributes=False)
-    assert "id='REFUSES'" in dumped  # the Name was renamed
-    assert "value='REPORTS'" in dumped  # the string Constant was NOT
 
 
 def test_load_move_map_rejects_duplicate_new_path(fake_repo, monkeypatch):
@@ -311,8 +293,42 @@ def test_load_move_map_rejects_duplicate_new_path(fake_repo, monkeypatch):
         ],
         "path_rewrites": [],
     }), encoding="utf-8")
-    with pytest.raises(clg.GuardError, match="second destination"):
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
         clg.load_move_map(move_map_path)
+
+
+def test_p1_refuses_path_rewrite_rows(fake_repo):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [],
+        "path_rewrites": [{
+            "old_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "old_ast": "old",
+            "new_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "new_ast": "new",
+            "plugin_relative_target": "claim_license_surfaces/x.json",
+        }],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
+        clg.load_move_map(move_map_path)
+
+
+def test_candidate_only_protected_module_is_caught(fake_repo):
+    scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
+    (scripts / "new_claim.py").write_text(
+        "from claim_license import ClaimLicense\n"
+        "def _claim_license_new():\n"
+        "    return ClaimLicense(licenses='new')\n",
+        encoding="utf-8",
+    )
+    passed, report = clg.run(base_ref="HEAD")
+    assert not passed
+    assert any(
+        row["path"].endswith("new_claim.py")
+        and "adds a protected" in row["detail"]
+        for row in report["deltas"]
+    )
 
 
 def test_load_move_map_rejects_malformed_row(fake_repo):
@@ -322,7 +338,7 @@ def test_load_move_map_rejects_malformed_row(fake_repo):
         "moves": [{"old_path": "a.py"}],  # missing required keys
         "path_rewrites": [],
     }), encoding="utf-8")
-    with pytest.raises(clg.GuardError, match="exactly keys"):
+    with pytest.raises(clg.GuardError, match="P1 requires empty"):
         clg.load_move_map(move_map_path)
 
 

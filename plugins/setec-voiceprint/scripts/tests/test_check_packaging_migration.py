@@ -123,6 +123,49 @@ def test_wrong_repo_root_depth_is_caught(tmp_path, monkeypatch):
     assert "parents[2]" in violations[0].detail
 
 
+def test_annotated_wrong_repo_root_depth_is_caught(tmp_path, monkeypatch):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "some_tool.py").write_text(
+        "from pathlib import Path\n"
+        "REPO_ROOT: Path = Path(__file__).resolve().parents[99]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cpm, "TOOLS_ROOT", tools_dir)
+    violations = cpm.check_tools_repo_root()
+    assert len(violations) == 1
+    assert "parents[99]" in violations[0].detail
+
+
+def test_duplicate_anchor_symbol_fails_closed(tmp_path, monkeypatch):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "duplicate.py"
+    mod.write_text(
+        "from pathlib import Path\n"
+        "HERE = Path(__file__).parent\n"
+        "HERE = Path(__file__).resolve().parent\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicate anchor symbol"):
+        cpm.find_anchors_in_file(mod)
+
+
+def test_relocated_modules_remain_in_scope_except_exact_paths_resolver(tmp_path, monkeypatch):
+    scripts = tmp_path / "scripts"
+    package = scripts / "setec"
+    package.mkdir(parents=True)
+    (package / "paths.py").write_text(
+        "from pathlib import Path\nHERE = Path(__file__).parent\n", encoding="utf-8")
+    moved = package / "contract.py"
+    moved.write_text(
+        "from pathlib import Path\nHERE = Path(__file__).parent\n", encoding="utf-8")
+    monkeypatch.setattr(cpm, "SCRIPTS_ROOT", scripts)
+    found = cpm.find_runtime_scripts()
+    assert moved in found
+    assert package / "paths.py" not in found
+
+
 @pytest.mark.parametrize("bad_row,expected_fragment", [
     ({"path": "a.py", "symbol": "X", "reason": "r", "owner": "o",
       "introduced_sha": "s"}, "removal_phase"),  # missing field

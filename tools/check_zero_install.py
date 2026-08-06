@@ -23,38 +23,16 @@ parent) and checks:
      zero-install claim that IS true today and stays covered — every
      launcher's own "add scripts/ to sys.path" bootstrap only needs
      its OWN directory, never the two-level `plugins/<name>/` nesting.
-  3. **`setec_run.py` dispatch — a documented, monitored KNOWN GAP,
-     not fixture-shaped away.** `setec_run.py` (and every manifest
-     `script_path` resolution through it) computes
-     `REPO_ROOT = PLUGIN_ROOT.parent.parent` — exactly two levels
-     above the plugin root, matching the real repo's `plugins/<name>/`
-     nesting. A bare copy has no such nesting, so dispatch through
-     `setec_run.py` from a bare copy currently fails (CPython's own
-     "can't open file" when the miscomputed `REPO_ROOT` doesn't
-     contain the expected `plugins/setec-voiceprint/scripts/...`
-     path). This gate does NOT reconstruct a synthetic `plugins/`
-     parent to make that failure disappear (that was the exact defect
-     a prior version of this gate had — the fixture shape, not
-     `setec_run.py`, made dispatch "work"). Instead it runs the
-     dispatch, asserts the failure looks EXACTLY like the documented
-     gap (reason_category `internal_error`, "can't open file" in the
-     reason — see `setec_run.py`'s `_wrap_script_failure`, fixed
-     separately so this exact miss is reported honestly rather than as
-     `policy_refused`), and fails the gate itself if the failure mode
-     ever drifts to something else (a hang, a crash, a different
-     error) — a silent behavior change here is exactly the kind of
-     thing a gate should catch, even one that's pinning a KNOWN gap
-     rather than a passing contract. If `setec_run.py` is ever fixed to
-     dispatch correctly from a bare copy (deferred to P2 per this
-     finding), this check starts passing outright and the docstring
-     above should be updated to say so.
+  3. **`setec_run.py` dispatch.** Run a real normalized surface through
+     the dispatcher from the bare copy. The manifest keeps repository-
+     relative paths, so the dispatcher must strip the stable plugin prefix
+     and resolve from its actual plugin root; reconstructing a synthetic
+     `plugins/` parent is not allowed.
 
 Exit codes:
 
-    0 — checks 1 and 2 pass, and check 3 either passes outright or
-        reproduces the documented known gap exactly
-    1 — check 1 or 2 failed, or check 3's failure drifted to an
-        unexpected shape
+    0 — all checks pass
+    1 — any check fails
     2 — internal error (scratch-copy setup failure)
 
 Usage:
@@ -164,7 +142,21 @@ def check_structural_reachability(bare_root: Path, report: Report) -> None:
             )
             continue
         rel = script_path[len(prefix):]
-        target = bare_root / rel
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            problems.append(
+                f"{entry.get('id')}: script_path {script_path!r} is not a "
+                "closed plugin-relative path"
+            )
+            continue
+        target = (bare_root / rel_path).resolve()
+        try:
+            target.relative_to(bare_root.resolve())
+        except ValueError:
+            problems.append(
+                f"{entry.get('id')}: script_path {script_path!r} escapes the bare copy"
+            )
+            continue
         if not target.is_file():
             problems.append(f"{entry.get('id')}: {target} does not exist in the bare copy")
         elif target.is_symlink():
@@ -209,13 +201,12 @@ def check_launcher_classes(bare_root: Path, outside_cwd: Path, report: Report) -
         )
 
 
-# ---------- check 3: setec_run.py dispatch — documented known gap -------
+# ---------- check 3: setec_run.py dispatch -------------------------------
 
 
 def check_setec_run_bare_dispatch(bare_root: Path, outside_cwd: Path, report: Report) -> None:
-    """See module docstring. This does NOT reconstruct a plugins/
-    wrapper to make dispatch succeed — it runs the real command from
-    the real bare copy and classifies the outcome."""
+    """Run the real command from the real bare copy. This deliberately does
+    not reconstruct a ``plugins/`` wrapper around the copied subtree."""
     script = bare_root / "scripts" / "setec_run.py"
     target = bare_root / "scripts" / "test_data" / "human_sample.txt"
     name = "setec_run_bare_dispatch"
@@ -237,35 +228,27 @@ def check_setec_run_bare_dispatch(bare_root: Path, outside_cwd: Path, report: Re
     except json.JSONDecodeError:
         envelope = None
 
-    if envelope is not None and envelope.get("available") is True:
-        report.add(
-            name, True,
-            "setec_run.py dispatch now succeeds from a bare copy — the "
-            "documented P2 gap appears closed; update this gate's and the "
-            "spec's known-gap note",
-        )
-        return
-
+    expected = {
+        "schema_version": "1.0",
+        "task_surface": "smoothing_diagnosis",
+        "tool": "variance_audit",
+        "available": True,
+    }
     if (
-        envelope is not None
-        and envelope.get("available") is False
-        and envelope.get("reason_category") == "internal_error"
-        and "can't open file" in (envelope.get("reason") or "")
+        proc.returncode == 0
+        and isinstance(envelope, dict)
+        and all(envelope.get(key) == value for key, value in expected.items())
     ):
         report.add(
             name, True,
-            "reproduces the documented known gap exactly: setec_run.py's "
-            "REPO_ROOT resolution assumes the plugins/<name>/ two-level "
-            "nesting a bare copy doesn't have; reason_category is the "
-            "honest internal_error (not policy_refused) — deferred to P2",
+            "setec_run.py dispatched a normalized surface successfully from "
+            "the bare plugin copy",
         )
         return
 
     report.add(
         name, False,
-        f"the bare-copy dispatch failure drifted from the documented shape "
-        f"(expected reason_category=internal_error with \"can't open "
-        f"file\" in reason, or an outright success) — exit={proc.returncode} "
+        f"bare-copy dispatch failed exact envelope check — exit={proc.returncode} "
         f"stdout={proc.stdout[-300:]!r} stderr_tail={proc.stderr[-300:]!r}",
     )
 
@@ -294,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
     enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Zero-install bare-copy gate (structural reachability, "
-                     "direct launcher execution, documented setec_run.py known gap).",
+                     "direct launcher execution, setec_run.py dispatch).",
     )
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--keep-scratch", action="store_true")

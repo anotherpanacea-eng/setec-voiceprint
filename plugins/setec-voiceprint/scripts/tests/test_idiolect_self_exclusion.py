@@ -24,8 +24,6 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 from idiolect_detector import CorpusLoadError, TextEntry, run_idiolect_detector  # noqa: E402
 
 # A target passage with a distinctive repeated phrase ("moral weather").

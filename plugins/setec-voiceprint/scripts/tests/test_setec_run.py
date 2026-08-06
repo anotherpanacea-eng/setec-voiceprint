@@ -224,7 +224,7 @@ def test_script_exit_2_interpreter_launch_failure_wrapped_as_internal_error(
             cmd, 2, stdout="",
             stderr=(
                 "/usr/bin/python3: can't open file "
-                "'/tmp/x/setec-voiceprint/scripts/variance_audit.py': "
+                f"'{cmd[1]}': "
                 "[Errno 2] No such file or directory"
             ),
         )
@@ -237,6 +237,30 @@ def test_script_exit_2_interpreter_launch_failure_wrapped_as_internal_error(
     assert rc == setec_run.EXIT_INTERNAL == 1
     assert env["reason_category"] == "internal_error"
     assert "can't open file" in env["reason"]
+
+
+def test_exit_2_message_about_an_unrelated_file_is_not_launch_failure(
+    manifest, monkeypatch,
+):
+    """Only CPython's error for the exact invoked target gets reclassified."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 2, stdout="",
+            stderr=(
+                "/usr/bin/python3: can't open file '/tmp/unrelated.py': "
+                "[Errno 2] No such file or directory"
+            ),
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_CONTRACT
+    assert env["reason_category"] == "policy_refused"
 
 
 def test_script_exit_2_wrapped_as_policy_refused(manifest, monkeypatch):

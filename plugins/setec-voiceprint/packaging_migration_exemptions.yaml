@@ -1,7 +1,7 @@
 # packaging_migration_exemptions.yaml — the single exemptions file for tools/check_packaging_migration.py
 #
 # Per specs/svp-packaging-conversion.md §1: every __file__-relative anchor in plugin-runtime code under
-# plugins/setec-voiceprint/scripts/ (excluding scripts/tests/ and scripts/setec/) is either converted to
+# plugins/setec-voiceprint/scripts/ (excluding scripts/tests/ and exact scripts/setec/paths.py) is either converted to
 # setec.paths or listed here with path, symbol, reason, owner, introduced_sha, and removal_phase.
 #
 # Regenerate with: python3 tools/check_packaging_migration.py --seed --introduced-sha <sha>
@@ -1962,14 +1962,14 @@ exemptions:
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/setec_run.py
   symbol: PLUGIN_ROOT
-  reason: pending relocation (P2); anchor `PLUGIN_ROOT` at line 64 not yet converted
+  reason: pending relocation (P2); anchor `PLUGIN_ROOT` at line 63 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P2
 - path: plugins/setec-voiceprint/scripts/setec_run.py
-  symbol: REPO_ROOT
-  reason: pending relocation (P2); anchor `REPO_ROOT` at line 67 not yet converted
+  symbol: target
+  reason: pending relocation (P2); anchor `target` at line 165 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17

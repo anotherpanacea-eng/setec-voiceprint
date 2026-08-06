@@ -11,10 +11,10 @@ defines a `_claim_license*`-style helper, plus the plugin-local modules
 that supply names those call sites reference.
 
 **No semantic claim-license change is authorized by this packaging
-spec.** A relocation is fine (see `packaging_move_map.json`'s `moves` /
-`path_rewrites`); a changed license string, a changed `model_id`, a
-changed comparison set — anything the normalized AST doesn't already
-attribute to a declared move — fails CI with NO override.
+spec.** P1 authorizes no relocation row at all; a changed license string,
+a changed `model_id`, a changed comparison set, an addition, or a deletion
+fails CI with NO override. P2 must add narrowly scoped relocation support
+alongside its first real move.
 
 Protected-set construction (spec §3):
 
@@ -48,17 +48,14 @@ Protected-set construction (spec §3):
      (adds nothing silently; the whole run fails so a human resolves
      it) rather than guessing.
 
-Comparison (spec §3): for every protected module, `ast.dump(...,
+Comparison (spec §3): derive the protected closure independently from the
+merge base and candidate. For every merge-base protected module, `ast.dump(...,
 include_attributes=False)` the merge-base version and the mapped
 candidate version. This keeps docstrings, literals, operators, calls,
 keyword names/values, collection order, defaults, and control flow —
 so even an unchanged `_claim_license` function whose CALLER passes a
-different `model_id` is caught. Normalization permits only the exact
-relocation declared in `packaging_move_map.json`'s `moves` — a
-STRUCTURAL `old_symbol -> new_symbol` AST rename (Name/alias/
-FunctionDef/ClassDef/Attribute.attr/ImportFrom.module nodes only,
-never a string Constant — see `_StructuralRename`) — and the exact
-verified data-anchor substitution declared in `path_rewrites`.
+different `model_id` is caught. Candidate-only protected modules and
+base-only protected modules fail too. The P1 move map must remain empty.
 
 Exit codes:
 
@@ -80,11 +77,11 @@ from __future__ import annotations
 
 import argparse
 import ast
-import copy
 import json
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -169,6 +166,7 @@ class ProtectedModule:
 
 def _module_path_for_import(
     importing_file: Path, module_dotted: str, level: int, symbol: str | None = None,
+    scripts_root: Path | None = None,
 ) -> Path | None:
     """Best-effort resolution of a plugin-local import target to an
     on-disk `.py` file under SCRIPTS_ROOT. Returns None for anything
@@ -188,6 +186,8 @@ def _module_path_for_import(
     of Python's own `from package import submodule` idiom, not
     `__init__.py`; (3) `<base>/__init__.py` itself (the symbol is
     presumably defined there directly)."""
+    if scripts_root is None:
+        scripts_root = SCRIPTS_ROOT
     if level > 0:
         # Relative import (`from . import x` / `from .sub import x`).
         # scripts/ is not a real package (no __init__.py at its root),
@@ -201,11 +201,11 @@ def _module_path_for_import(
         base_dir = base.joinpath(*parts)
     else:
         parts = module_dotted.split(".")
-        base_dir = SCRIPTS_ROOT.joinpath(*parts)
+        base_dir = scripts_root.joinpath(*parts)
 
     flat = base_dir.with_suffix(".py")
     try:
-        flat.relative_to(SCRIPTS_ROOT)
+        flat.relative_to(scripts_root)
     except ValueError:
         return None
     if flat.is_file():
@@ -277,6 +277,7 @@ def _build_import_map(tree: ast.AST) -> ImportMap:
 
 def build_protected_set(
     scripts_root: Path | None = None,
+    repo_root: Path | None = None,
 ) -> list[ProtectedModule]:
     """Spec-literal closure: a seed module's initial resolution is
     scoped to its OWN `_claim_license*`/`ClaimLicense(...)` call sites
@@ -306,6 +307,8 @@ def build_protected_set(
     # below via REPO_ROOT for relative-path math) are honored.
     if scripts_root is None:
         scripts_root = SCRIPTS_ROOT
+    if repo_root is None:
+        repo_root = REPO_ROOT
     protected: dict[str, ProtectedModule] = {}
     file_trees: dict[str, ast.Module] = {}
     all_files = sorted(
@@ -314,7 +317,7 @@ def build_protected_set(
     )
 
     def _parse(path: Path) -> ast.Module | None:
-        rel = path.relative_to(REPO_ROOT).as_posix()
+        rel = path.relative_to(repo_root).as_posix()
         if rel in file_trees:
             return file_trees[rel]
         try:
@@ -332,7 +335,7 @@ def build_protected_set(
         if tree is None:
             continue
         if _module_matches_seed(tree):
-            rel = path.relative_to(REPO_ROOT).as_posix()
+            rel = path.relative_to(repo_root).as_posix()
             protected[rel] = ProtectedModule(
                 path=rel,
                 reason="seed: defines/calls a _claim_license*/ClaimLicense(...) site",
@@ -346,7 +349,7 @@ def build_protected_set(
         if rel in processed:
             continue
         processed.add(rel)
-        path = REPO_ROOT / rel
+        path = repo_root / rel
         tree = _parse(path)
         if tree is None:
             continue
@@ -390,10 +393,11 @@ def build_protected_set(
                 # never merely because something imports the class.
                 if symbol == "ClaimLicense" or module_dotted == "claim_license":
                     continue
-                target = _module_path_for_import(path, module_dotted, level, symbol)
+                target = _module_path_for_import(
+                    path, module_dotted, level, symbol, scripts_root=scripts_root)
                 if target is None:
                     continue  # not resolvable to a plugin-local file (stdlib/3rd-party)
-                target_rel = target.relative_to(REPO_ROOT).as_posix()
+                target_rel = target.relative_to(repo_root).as_posix()
                 if target_rel not in protected:
                     protected[target_rel] = ProtectedModule(
                         path=target_rel,
@@ -412,10 +416,6 @@ def build_protected_set(
 
 
 REQUIRED_MOVE_MAP_KEYS = {"schema", "moves", "path_rewrites"}
-REQUIRED_MOVE_ROW_KEYS = {"old_path", "new_path", "old_symbol", "new_symbol", "phase"}
-REQUIRED_REWRITE_ROW_KEYS = {
-    "old_path", "old_ast", "new_path", "new_ast", "plugin_relative_target",
-}
 
 
 def load_move_map(path: Path | None = None) -> dict[str, Any]:
@@ -440,168 +440,16 @@ def load_move_map(path: Path | None = None) -> dict[str, Any]:
     rewrites = data["path_rewrites"]
     if not isinstance(moves, list) or not isinstance(rewrites, list):
         raise GuardError(f"{path}: `moves` and `path_rewrites` must be lists")
-    for i, row in enumerate(moves):
-        if not isinstance(row, dict) or set(row.keys()) != REQUIRED_MOVE_ROW_KEYS:
-            raise GuardError(
-                f"{path}: moves[{i}] must have exactly keys "
-                f"{sorted(REQUIRED_MOVE_ROW_KEYS)}"
-            )
-        # `old_symbol`/`new_symbol` drive a STRUCTURAL AST rename (see
-        # _normalized_dump) — restricting them to legal Python identifiers
-        # is a cheap first fail-closed gate (a non-identifier can never
-        # match a Name/alias/attr node, so it would silently no-op the
-        # row instead of documenting a real rename; reject it instead of
-        # accepting dead data).
-        for key in ("old_symbol", "new_symbol"):
-            value = row.get(key)
-            if not isinstance(value, str) or not value.isidentifier():
-                raise GuardError(
-                    f"{path}: moves[{i}].{key} = {value!r} is not a legal "
-                    f"Python identifier"
-                )
-    for i, row in enumerate(rewrites):
-        if not isinstance(row, dict) or set(row.keys()) != REQUIRED_REWRITE_ROW_KEYS:
-            raise GuardError(
-                f"{path}: path_rewrites[{i}] must have exactly keys "
-                f"{sorted(REQUIRED_REWRITE_ROW_KEYS)}"
-            )
-    # One-to-one: no old_path claimed twice, no new_path claimed twice.
-    old_paths = [r["old_path"] for r in moves]
-    new_paths = [r["new_path"] for r in moves]
-    dupes_old = {p for p in old_paths if old_paths.count(p) > 1}
-    dupes_new = {p for p in new_paths if new_paths.count(p) > 1}
-    if dupes_old:
+    # P1 has no production moves. Rejecting future authorization rows is
+    # intentionally smaller and safer than shipping a generic normalizer
+    # before there is a real relocation to test it against. P2 must extend
+    # this checker in the same PR as its first concrete move.
+    if moves or rewrites:
         raise GuardError(
-            f"{path}: moves is not one-to-one — old_path claimed more than "
-            f"once: {sorted(dupes_old)}"
-        )
-    if dupes_new:
-        raise GuardError(
-            f"{path}: moves is not one-to-one — new_path claimed more than "
-            f"once (an unlisted second destination): {sorted(dupes_new)}"
+            f"{path}: P1 requires empty moves/path_rewrites; add narrowly "
+            "scoped normalization with the first P2 relocation"
         )
     return data
-
-
-def validate_move_map_paths(move_map: dict[str, Any], base_sha: str) -> None:
-    """Both endpoints of every `moves` row must resolve as real git
-    objects — `old_path` at the merge base, `new_path` in the candidate
-    — never a path that merely LOOKS plausible. Without this, a row
-    could name a path that never existed anywhere, and its
-    old_symbol/new_symbol rename would still get applied everywhere
-    that symbol appears across the WHOLE protected set (not just the
-    claimed file), which is its own laundering surface even after the
-    rename is made structural."""
-    for i, row in enumerate(move_map["moves"]):
-        old_path = row["old_path"]
-        if show_file_at(base_sha, old_path) is None:
-            raise GuardError(
-                f"moves[{i}].old_path {old_path!r} does not resolve as a "
-                f"real git object at the merge base {base_sha} — refusing "
-                f"to trust the row"
-            )
-        new_path = row["new_path"]
-        if not (REPO_ROOT / new_path).is_file():
-            raise GuardError(
-                f"moves[{i}].new_path {new_path!r} does not resolve to a "
-                f"real file in the candidate tree — refusing to trust the "
-                f"row"
-            )
-
-
-# ---------- AST normalization + comparison ---------------------------
-
-
-class _StructuralRename(ast.NodeTransformer):
-    """Rename ONLY identifier-bearing AST nodes — `ast.Name`, `ast.arg`,
-    `ast.alias` (`import X` / `import X as Y` / `from M import X as Y`),
-    `FunctionDef`/`AsyncFunctionDef`/`ClassDef.name`, `Attribute.attr`,
-    and `ImportFrom.module` (a dotted module-path string, per the spec's
-    "module-path nodes"). `ast.Constant` — where license PROSE lives —
-    is never visited by name here (NodeTransformer's generic_visit still
-    walks into it, but there is no visit_Constant override, so it is
-    returned unchanged). This is the fix for a real laundering channel:
-    the previous implementation did a raw `str.replace` on the whole
-    `ast.dump()` TEXT, so a `moves` row with `old_symbol="REPORTS"` /
-    `new_symbol="REFUSES"` silently rewrote a `Constant` string
-    containing the substring "REPORTS" too — inverting a refusal
-    sentence while the guard reported a clean structural relocation.
-    Confirmed via a synthetic repro before this fix; regression-tested
-    after it (see test_check_claim_license_guard.py)."""
-
-    def __init__(self, renames: dict[str, str]):
-        self.renames = renames
-
-    def _rename(self, name: str) -> str:
-        return self.renames.get(name, name)
-
-    def visit_Name(self, node: ast.Name) -> ast.AST:
-        self.generic_visit(node)
-        node.id = self._rename(node.id)
-        return node
-
-    def visit_arg(self, node: ast.arg) -> ast.AST:
-        self.generic_visit(node)
-        node.arg = self._rename(node.arg)
-        return node
-
-    def visit_alias(self, node: ast.alias) -> ast.AST:
-        node.name = self._rename(node.name)
-        if node.asname is not None:
-            node.asname = self._rename(node.asname)
-        return node
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
-        self.generic_visit(node)
-        node.name = self._rename(node.name)
-        return node
-
-    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
-
-    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
-        self.generic_visit(node)
-        node.name = self._rename(node.name)
-        return node
-
-    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
-        self.generic_visit(node)
-        node.attr = self._rename(node.attr)
-        return node
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.AST:
-        self.generic_visit(node)
-        if node.module is not None:
-            # Rename a whole-module dotted path only on an exact match —
-            # a partial/segment rename would require splitting on "."
-            # and is not a shape the spec's `moves` rows describe (a
-            # `moves` row relocates one file/symbol, not a package
-            # segment).
-            node.module = self._rename(node.module)
-        return node
-
-
-def _normalized_dump(
-    tree: ast.AST, moves: list[dict[str, Any]], rewrites: list[dict[str, Any]]
-) -> str:
-    """`ast.dump(..., include_attributes=False)` of a STRUCTURALLY
-    renamed copy of `tree` — every `moves` row's `old_symbol ->
-    new_symbol` is applied by renaming AST identifier nodes (never by
-    substring-replacing the dumped text; see `_StructuralRename`), so a
-    rename can never reach into a string literal's contents no matter
-    what symbol names a row picks. `path_rewrites` keeps its existing,
-    narrower mechanism (an exact declared `old_ast -> new_ast`
-    expression substitution, verified in scratch copies per spec §3) —
-    that one isn't the laundering channel this fix addresses, since its
-    rows are exact multi-token expressions, not short bare symbols."""
-    if moves:
-        tree = copy.deepcopy(tree)
-        renames = {row["old_symbol"]: row["new_symbol"] for row in moves}
-        tree = _StructuralRename(renames).visit(tree)
-        ast.fix_missing_locations(tree)
-    dumped = ast.dump(tree, include_attributes=False)
-    for row in rewrites:
-        dumped = dumped.replace(row["old_ast"], row["new_ast"])
-    return dumped
 
 
 @dataclass
@@ -612,47 +460,45 @@ class ModuleDelta:
 
 def compare_protected_modules(
     base_sha: str,
-    protected: list[ProtectedModule],
+    base_protected: list[ProtectedModule],
+    candidate_protected: list[ProtectedModule],
     move_map: dict[str, Any],
 ) -> list[ModuleDelta]:
     deltas: list[ModuleDelta] = []
-    moves = move_map["moves"]
-    rewrites = move_map["path_rewrites"]
-    moved_new_paths = {r["new_path"] for r in moves}
-    moved_old_paths = {r["old_path"] for r in moves}
+    if move_map["moves"] or move_map["path_rewrites"]:
+        raise GuardError("P1 comparison only accepts an empty move map")
+    base_paths = {pm.path for pm in base_protected}
+    candidate_paths = {pm.path for pm in candidate_protected}
 
-    # Every protected object must exist at the merge base (unless it is
-    # the declared NEW path of a move) and in the candidate (unless it is
-    # the declared OLD path of a move that deleted it).
-    for pm in protected:
+    # Candidate-only protected modules are additive claim-license surface,
+    # not a harmless omission from a candidate-derived census.
+    for path in sorted(candidate_paths - base_paths):
+        deltas.append(ModuleDelta(
+            path,
+            "candidate adds a protected claim-license module that does not "
+            "exist in the merge-base protected set",
+        ))
+
+    for pm in base_protected:
         candidate_path = REPO_ROOT / pm.path
         base_content = show_file_at(base_sha, pm.path)
-
-        if base_content is None and pm.path not in moved_new_paths:
-            deltas.append(ModuleDelta(
-                pm.path,
-                "protected module does not exist at the merge base and is "
-                "not a declared move destination (packaging_move_map.json "
-                "moves[].new_path) — an unlisted new protected file",
-            ))
-            continue
-        if not candidate_path.is_file() and pm.path not in moved_old_paths:
-            deltas.append(ModuleDelta(
-                pm.path,
-                "protected module is missing from the candidate and is not "
-                "a declared move source (packaging_move_map.json "
-                "moves[].old_path) — an unlisted deletion",
-            ))
-            continue
         if base_content is None:
-            continue  # legitimate move destination; the OLD path's row covers it
+            deltas.append(ModuleDelta(
+                pm.path,
+                "protected merge-base module cannot be read",
+            ))
+            continue
+        if not candidate_path.is_file():
+            deltas.append(ModuleDelta(
+                pm.path,
+                "protected merge-base module is missing from the candidate",
+            ))
+            continue
 
         try:
             base_tree = ast.parse(base_content, filename=f"{base_sha}:{pm.path}")
         except SyntaxError as exc:
             deltas.append(ModuleDelta(pm.path, f"merge-base copy fails to parse: {exc}"))
-            continue
-        if not candidate_path.is_file():
             continue
         try:
             candidate_tree = ast.parse(
@@ -662,16 +508,33 @@ def compare_protected_modules(
             deltas.append(ModuleDelta(pm.path, f"candidate copy fails to parse: {exc}"))
             continue
 
-        base_dump = _normalized_dump(base_tree, moves, rewrites)
-        cand_dump = _normalized_dump(candidate_tree, moves, rewrites)
+        base_dump = ast.dump(base_tree, include_attributes=False)
+        cand_dump = ast.dump(candidate_tree, include_attributes=False)
         if base_dump != cand_dump:
             deltas.append(ModuleDelta(
                 pm.path,
-                "normalized whole-module AST differs from the merge-base "
-                "version and the delta is not explained by a declared "
-                "move/path_rewrite — a semantic claim-license change",
+                "whole-module AST differs from the merge-base version — "
+                "P1 authorizes no claim-license or relocation delta",
             ))
     return deltas
+
+
+def build_protected_set_at_revision(sha: str) -> list[ProtectedModule]:
+    """Materialize the merge-base script tree and derive its own closure."""
+    script_rel = "plugins/setec-voiceprint/scripts"
+    with tempfile.TemporaryDirectory(prefix="setec_claim_guard_base_") as raw:
+        root = Path(raw)
+        for rel in sorted(list_tree_py_files(sha, script_rel)):
+            content = show_file_at(sha, rel)
+            if content is None:
+                raise GuardError(f"cannot read {sha}:{rel}")
+            target = root / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        return build_protected_set(
+            root / script_rel,
+            repo_root=root,
+        )
 
 
 # ---------- CLI --------------------------------------------------------
@@ -680,15 +543,17 @@ def compare_protected_modules(
 def run(base_ref: str) -> tuple[bool, dict[str, Any]]:
     base_sha = merge_base(base_ref)
     move_map = load_move_map()
-    validate_move_map_paths(move_map, base_sha)
-    protected = build_protected_set()
-    deltas = compare_protected_modules(base_sha, protected, move_map)
+    base_protected = build_protected_set_at_revision(base_sha)
+    candidate_protected = build_protected_set()
+    deltas = compare_protected_modules(
+        base_sha, base_protected, candidate_protected, move_map)
     passed = not deltas
     report = {
         "passed": passed,
         "base_sha": base_sha,
-        "protected_module_count": len(protected),
-        "protected_modules": [p.path for p in protected],
+        "protected_module_count": len(base_protected),
+        "protected_modules": [p.path for p in base_protected],
+        "candidate_protected_modules": [p.path for p in candidate_protected],
         "deltas": [{"path": d.path, "detail": d.detail} for d in deltas],
     }
     return passed, report

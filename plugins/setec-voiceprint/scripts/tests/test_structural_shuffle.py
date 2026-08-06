@@ -28,8 +28,6 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 _SCRIPTS = _HERE.parent
 _REPO_ROOT = _SCRIPTS.parents[2]
-sys.path.insert(0, str(_SCRIPTS))
-
 import structural_shuffle_audit as ss  # noqa: E402
 
 

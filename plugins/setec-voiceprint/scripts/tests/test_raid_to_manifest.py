@@ -389,7 +389,6 @@ class TestManifestValidatorRoundTrip:
         # — we accept warnings (the impostor-track ratchets emit
         # warnings on shareable-no-consent-status entries) but
         # refuse any errors.
-        sys.path.insert(0, str(ROOT))
         import manifest_validator as mv  # type: ignore
         result = mv.validate_manifest(str(manifest_path))
         errors = [

@@ -7,13 +7,8 @@ legitimate but slower end-to-end CI gate, run as its own step exactly
 like check_capabilities_drift.py / check_claim_license_guard.py. This
 file pins the gate's classification logic directly:
 
-  * `check_setec_run_bare_dispatch` classifies the documented known
-    gap (internal_error + "can't open file") as a PASS.
-  * It classifies an outright success (available: true) as a PASS too
-    — the gap closing shouldn't fail the gate.
-  * It classifies any OTHER failure shape (wrong reason_category, a
-    crash, a timeout) as a FAIL — the gate must not silently absorb a
-    drifted failure mode.
+  * `check_setec_run_bare_dispatch` requires an exact successful envelope.
+  * Any failure, unrelated available envelope, crash, or timeout fails.
   * `make_bare_copy` produces a BARE `<tmp>/setec-voiceprint` with no
     `plugins/` parent — the exact shape the removed hermetic gate got
     wrong (build-review P1 finding #2).
@@ -50,7 +45,7 @@ def _fake_proc(returncode: int, stdout: str = "", stderr: str = "") -> subproces
     return subprocess.CompletedProcess(["x"], returncode, stdout=stdout, stderr=stderr)
 
 
-def test_documented_known_gap_is_a_pass(tmp_path, monkeypatch):
+def test_dispatch_failure_is_not_a_pass(tmp_path, monkeypatch):
     envelope = {
         "available": False,
         "reason_category": "internal_error",
@@ -66,12 +61,16 @@ def test_documented_known_gap_is_a_pass(tmp_path, monkeypatch):
         (tmp_path / "scripts" / "setec_run.py").write_text("", encoding="utf-8")
         zi.check_setec_run_bare_dispatch(tmp_path, tmp_path, report)
     result = report.results[0]
-    assert result.passed
-    assert "documented known gap" in result.detail
+    assert not result.passed
 
 
 def test_gap_closed_success_is_also_a_pass(tmp_path):
-    envelope = {"available": True, "reason_category": None}
+    envelope = {
+        "schema_version": "1.0",
+        "task_surface": "smoothing_diagnosis",
+        "tool": "variance_audit",
+        "available": True,
+    }
     with mock.patch.object(
         zi.subprocess, "run",
         return_value=_fake_proc(0, stdout=json.dumps(envelope)),
@@ -83,7 +82,41 @@ def test_gap_closed_success_is_also_a_pass(tmp_path):
         zi.check_setec_run_bare_dispatch(tmp_path, tmp_path, report)
     result = report.results[0]
     assert result.passed
-    assert "gap appears closed" in result.detail
+    assert "successfully" in result.detail
+
+
+def test_unrelated_available_envelope_fails(tmp_path):
+    envelope = {
+        "schema_version": "1.0",
+        "task_surface": "wrong_surface",
+        "tool": "unrelated",
+        "available": True,
+    }
+    with mock.patch.object(
+        zi.subprocess, "run",
+        return_value=_fake_proc(0, stdout=json.dumps(envelope)),
+    ):
+        report = zi.Report()
+        (tmp_path / "scripts" / "test_data").mkdir(parents=True)
+        (tmp_path / "scripts" / "test_data" / "human_sample.txt").write_text("x", encoding="utf-8")
+        (tmp_path / "scripts" / "setec_run.py").write_text("", encoding="utf-8")
+        zi.check_setec_run_bare_dispatch(tmp_path, tmp_path, report)
+    assert not report.results[0].passed
+
+
+def test_structural_reachability_rejects_parent_escape(tmp_path):
+    bare = tmp_path / "setec-voiceprint"
+    manifest_dir = bare / "capabilities.d"
+    manifest_dir.mkdir(parents=True)
+    (tmp_path / "escape.py").write_text("pass\n", encoding="utf-8")
+    (manifest_dir / "escape.yaml").write_text(
+        "entries:\n  - id: escape\n"
+        "    script_path: plugins/setec-voiceprint/../escape.py\n",
+        encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(bare, report)
+    assert not report.results[0].passed
 
 
 @pytest.mark.parametrize("envelope,stdout_override", [
@@ -104,4 +137,4 @@ def test_drifted_failure_shape_is_a_fail(tmp_path, envelope, stdout_override):
         zi.check_setec_run_bare_dispatch(tmp_path, tmp_path, report)
     result = report.results[0]
     assert not result.passed
-    assert "drifted" in result.detail
+    assert "exact envelope check" in result.detail

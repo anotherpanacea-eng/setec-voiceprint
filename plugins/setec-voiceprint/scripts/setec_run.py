@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -62,9 +63,7 @@ import capabilities  # type: ignore
 from output_schema import REASON_CATEGORIES, SCHEMA_VERSION, build_error_output  # type: ignore
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-# The repo root is the parent of plugins/ — manifest script_path values are
-# repo-relative (``plugins/setec-voiceprint/scripts/<x>.py``).
-REPO_ROOT = PLUGIN_ROOT.parent.parent
+_MANIFEST_PLUGIN_PREFIX = Path("plugins") / "setec-voiceprint"
 
 TOOL = "setec_run"
 # The dispatcher's own version, independent of any surface's SCRIPT_VERSION
@@ -146,9 +145,30 @@ def missing_required_deps(entry: dict[str, Any]) -> list[str]:
 
 def _script_abspath(entry: dict[str, Any]) -> Path:
     """Resolve the manifest's repo-relative ``script_path`` to an absolute
-    path under this checkout."""
+    path under this plugin copy.
+
+    Manifest paths intentionally retain their repository-relative
+    ``plugins/setec-voiceprint/`` prefix, but a copied plugin subtree has no
+    repository wrapper. Strip that stable prefix and resolve from the actual
+    plugin root so both the source checkout and a bare copied subtree work.
+    Refuse paths outside that prefix or paths that escape after resolution.
+    """
     rel = entry.get("script_path")
-    return (REPO_ROOT / rel).resolve()
+    if not isinstance(rel, str):
+        raise ValueError("manifest entry has no string script_path")
+    try:
+        plugin_rel = Path(rel).relative_to(_MANIFEST_PLUGIN_PREFIX)
+    except ValueError as exc:
+        raise ValueError(
+            f"manifest script_path {rel!r} is outside "
+            f"{_MANIFEST_PLUGIN_PREFIX.as_posix()!r}"
+        ) from exc
+    target = (PLUGIN_ROOT / plugin_rel).resolve()
+    try:
+        target.relative_to(PLUGIN_ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"manifest script_path {rel!r} escapes the plugin root") from exc
+    return target
 
 
 def _run_subprocess(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -281,7 +301,18 @@ def _wrap_script_failure(
         # install gate, which reproduces exactly this failure shape when
         # setec_run.py's REPO_ROOT resolution doesn't match a bare
         # (non-plugins/-wrapped) copy layout.
-        if "can't open file" in stderr_tail:
+        first_line = stderr_tail.splitlines()[0]
+        launch_error = re.fullmatch(
+            r".+: can't open file ['\"](?P<path>.+)['\"]: "
+            r"\[Errno 2\] No such file or directory",
+            first_line,
+        )
+        invoked = proc.args if isinstance(proc.args, (list, tuple)) else ()
+        if (
+            launch_error is not None
+            and len(invoked) >= 2
+            and launch_error.group("path") == str(invoked[1])
+        ):
             return _error(
                 surface=surface,
                 reason=(

@@ -525,8 +525,6 @@ def test_registry_and_nondocument_export_consume_corrected_manifest(tmp_path: Pa
     )
     assert records[0]["source_register"] == "blog_essay"
 
-    if str(SCRIPTS) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS))
     import author_corpus_export as exporter  # type: ignore
 
     records, _, receipt, _, _ = exporter.build_export(
@@ -557,8 +555,6 @@ def test_old_document_attestation_refuses_corrected_manifest(tmp_path: Path) -> 
         "private_entry_locator": "sha256:" + "b" * 64,
         "unit_kind": "chapter", "unit_index": 0, "unit_count": 1,
     }) + "\n", encoding="utf-8")
-    if str(SCRIPTS) not in sys.path:
-        sys.path.insert(0, str(SCRIPTS))
     import author_corpus_export as exporter  # type: ignore
     map_hash = exporter._load_document_map(document_map)[1]
     attestation = root / "document_attestation.json"
