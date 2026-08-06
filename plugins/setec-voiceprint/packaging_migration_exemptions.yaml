@@ -215,18 +215,24 @@ exemptions:
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/argument_register_baselines.py
   symbol: _DEFAULT_YAML_PATH
-  reason: pending relocation (P4); anchor `_DEFAULT_YAML_PATH` at line 42 not yet
-    converted to setec.paths (P1 lands no production moves)
+  reason: "Derived from _REPO_ROOT (repo-root baselines/ path) \u2014 same disposition:\
+    \ not convertible to setec.paths, see _REPO_ROOT's row."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argument_register_baselines.py
   symbol: _REPO_ROOT
-  reason: pending relocation (P4); anchor `_REPO_ROOT` at line 41 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: "_REPO_ROOT = Path(__file__).resolve().parents[3] reaches the REPOSITORY\
+    \ root specifically to find the shared top-level baselines/ directory (baselines/argument_register_baselines.yaml),\
+    \ which lives OUTSIDE plugins/setec-voiceprint/ entirely. setec.paths.find_plugin_root()\
+    \ resolves only the PLUGIN root by design and cannot reach a repo-root sibling\
+    \ directory. Not convertible without relocating baselines/ into the plugin (a\
+    \ data-ownership decision outside this packaging spec's scope) \u2014 SETEC_BASELINES_DIR\
+    \ is the documented env-var override already shipped for exactly this case. Standing\
+    \ exception, not migration debt."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/author_corpus_export.py
   symbol: <inline>
   reason: pending relocation (P4); anchor `<inline>` at line 186 not yet converted
@@ -237,20 +243,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/author_corpus_export.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 29 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/baseline_discovery.py
-  symbol: candidate
-  reason: pending relocation (P4); anchor `candidate` at line 143 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/baseline_discovery.py
-  symbol: repo_root
-  reason: pending relocation (P4); anchor `repo_root` at line 140 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -504,27 +496,6 @@ exemptions:
   symbol: dest
   reason: pending relocation (P4); anchor `dest` at line 80 not yet converted to setec.paths
     (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/fetch_pan24_voightkampff.py
-  symbol: names
-  reason: pending relocation (P4); anchor `names` at line 239 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/fetch_pan24_voightkampff.py
-  symbol: target
-  reason: pending relocation (P4); anchor `target` at line 205 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/fetch_pan24_voightkampff.py
-  symbol: zip_path
-  reason: pending relocation (P4); anchor `zip_path` at line 223 not yet converted
-    to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -1229,36 +1200,8 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: baseline
-  reason: pending relocation (P4); anchor `baseline` at line 113 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: env
-  reason: pending relocation (P4); anchor `env` at line 101 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
   symbol: envelope
   reason: pending relocation (P4); anchor `envelope` at line 1036 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: inputs
-  reason: pending relocation (P4); anchor `inputs` at line 126 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: json_str
-  reason: pending relocation (P4); anchor `json_str` at line 479 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1267,20 +1210,6 @@ exemptions:
   symbol: request_path
   reason: pending relocation (P4); anchor `request_path` at line 1035 not yet converted
     to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: results
-  reason: pending relocation (P4); anchor `results` at line 120 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: target
-  reason: pending relocation (P4); anchor `target` at line 108 not yet converted to
-    setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -1412,7 +1341,7 @@ exemptions:
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
   symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at lines 1762, 2291 not yet converted
+  reason: pending relocation (P4); anchor `<inline>` at line 1762 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1425,12 +1354,66 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: blob
+  reason: "Same tuple-unpacking assignment as 'revision' \u2014 see that row."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: commitment
+  reason: "Downstream of 'revision'/'blob'/'committed_script' (source_commitment.build_commitment(producer_revision=revision,\
+    \ producer_blob_oid=blob, producer_script_bytes=committed_script, ...)) \u2014\
+    \ part of the same self-referential content-commitment chain rooted in Path(__file__)\
+    \ as this script's own identity. Same disposition, see 'revision'."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: commitment_bytes
+  reason: "Downstream of 'commitment' \u2014 same self-referential chain, see 'revision'."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: committed_script
+  reason: "Same tuple-unpacking assignment as 'revision' \u2014 see that row."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: payloads
+  reason: "Downstream of 'commitment_bytes'/'receipt' \u2014 same self-referential\
+    \ chain, see 'revision'."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: receipt
+  reason: "Downstream of 'commitment'/'commitment_bytes' \u2014 same self-referential\
+    \ chain, see 'revision'."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
   symbol: repository
   reason: pending relocation (P4); anchor `repository` at line 2285 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: revision
+  reason: "Path(__file__) here is passed to source_commitment.committed_producer_identity(script=Path(__file__))\
+    \ as a SELF-REFERENTIAL provenance stamp \u2014 it identifies THIS script's own\
+    \ file for content-commitment hashing (git revision + blob OID + committed script\
+    \ bytes), not a stay-put data-path lookup. setec.paths resolves plugin-relative\
+    \ DATA locations; swapping this anchor for a setec.paths call would change WHAT\
+    \ gets hashed (the plugin root's identity instead of this script's), which is\
+    \ a semantic change this packaging spec explicitly forbids (no production behavior\
+    \ changes). Standing exception."
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/normalize_author_registry.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 20 not yet converted
@@ -1568,13 +1551,6 @@ exemptions:
   symbol: parse_dir
   reason: pending relocation (P4); anchor `parse_dir` at line 552 not yet converted
     to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: path
-  reason: pending relocation (P4); anchor `path` at line 353 not yet converted to
-    setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -1726,338 +1702,9 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: binding
-  reason: pending relocation (P4); anchor `binding` at line 2281 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: binding_raw
-  reason: pending relocation (P4); anchor `binding_raw` at line 2302 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: chunk
-  reason: pending relocation (P4); anchor `chunk` at line 495 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: collision
-  reason: pending relocation (P4); anchor `collision` at line 2165 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: completed
-  reason: pending relocation (P4); anchor `completed` at line 870 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: continuation
-  reason: pending relocation (P4); anchor `continuation` at line 554 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: continuation_end
-  reason: pending relocation (P4); anchor `continuation_end` at line 545 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: counts
-  reason: pending relocation (P4); anchor `counts` at line 418 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: coverage
-  reason: pending relocation (P4); anchor `coverage` at line 696 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: coverage_value
-  reason: pending relocation (P4); anchor `coverage_value` at line 605 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: covered
-  reason: pending relocation (P4); anchor `covered` at line 698 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: expected
-  reason: pending relocation (P4); anchor `expected` at line 482 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: expected_hash
-  reason: pending relocation (P4); anchor `expected_hash` at line 693 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: histogram
-  reason: pending relocation (P4); anchor `histogram` at line 588 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: intent
-  reason: pending relocation (P4); anchor `intent` at line 1446 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: intent_raw
-  reason: pending relocation (P4); anchor `intent_raw` at line 1867 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: intent_target
-  reason: pending relocation (P4); anchor `intent_target` at line 1649 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: key
-  reason: pending relocation (P4); anchor `key` at line 349 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: keys
-  reason: pending relocation (P4); anchor `keys` at line 240 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: length
-  reason: pending relocation (P4); anchor `length` at line 599 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: limit
-  reason: pending relocation (P4); anchor `limit` at line 540 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: longest
-  reason: pending relocation (P4); anchor `longest` at line 699 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: lowered
-  reason: pending relocation (P4); anchor `lowered` at line 480 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: matches
-  reason: pending relocation (P4); anchor `matches` at line 481 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: n
-  reason: pending relocation (P4); anchor `n` at line 1339 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: operations
-  reason: pending relocation (P4); anchor `operations` at line 910 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: originality
-  reason: pending relocation (P4); anchor `originality` at line 697 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: originality_value
-  reason: pending relocation (P4); anchor `originality_value` at line 606 not yet
-    converted to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: parsed
-  reason: pending relocation (P4); anchor `parsed` at line 179 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: parts
-  reason: pending relocation (P4); anchor `parts` at line 275 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: parts_key
-  reason: pending relocation (P4); anchor `parts_key` at line 2224 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: passage
-  reason: pending relocation (P4); anchor `passage` at line 385 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: payload
-  reason: pending relocation (P4); anchor `payload` at line 244 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: prompt
-  reason: pending relocation (P4); anchor `prompt` at line 553 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: prompt_end
-  reason: pending relocation (P4); anchor `prompt_end` at line 544 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: prompt_start
-  reason: pending relocation (P4); anchor `prompt_start` at line 543 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: raw
-  reason: pending relocation (P4); anchor `raw` at line 2418 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: receipt
-  reason: pending relocation (P4); anchor `receipt` at line 2475 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: receipt_raw
-  reason: pending relocation (P4); anchor `receipt_raw` at line 2519 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: recovered
-  reason: pending relocation (P4); anchor `recovered` at line 2424 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: recovered_binding
-  reason: pending relocation (P4); anchor `recovered_binding` at line 2352 not yet
-    converted to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
   symbol: relative
   reason: pending relocation (P4); anchor `relative` at line 884 not yet converted
     to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: reserved
-  reason: pending relocation (P4); anchor `reserved` at line 2523 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: result
-  reason: pending relocation (P4); anchor `result` at line 508 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: score
-  reason: pending relocation (P4); anchor `score` at line 790 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: scores
-  reason: pending relocation (P4); anchor `scores` at line 732 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: shard
-  reason: pending relocation (P4); anchor `shard` at line 2394 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: sigma
-  reason: pending relocation (P4); anchor `sigma` at line 496 not yet converted to
-    setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -2068,80 +1715,10 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: stage_identity
-  reason: pending relocation (P4); anchor `stage_identity` at line 1540 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: stored_hash
-  reason: pending relocation (P4); anchor `stored_hash` at line 690 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: text
-  reason: pending relocation (P4); anchor `text` at line 178 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: token_semantics
-  reason: pending relocation (P4); anchor `token_semantics` at line 2261 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: tokens
-  reason: pending relocation (P4); anchor `tokens` at line 555 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: value
-  reason: pending relocation (P4); anchor `value` at line 191 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: values
-  reason: pending relocation (P4); anchor `values` at line 2445 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: view
-  reason: pending relocation (P4); anchor `view` at line 1336 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  symbol: without_hash
-  reason: pending relocation (P4); anchor `without_hash` at line 691 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 43 not yet converted
     to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_sweep.py
-  symbol: ci
-  reason: pending relocation (P4); anchor `ci` at line 1128 not yet converted to setec.paths
-    (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -2155,13 +1732,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/register_sweep.py
   symbol: receipt
   reason: pending relocation (P4); anchor `receipt` at line 1605 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_sweep.py
-  symbol: review
-  reason: pending relocation (P4); anchor `review` at line 1121 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -2212,20 +1782,6 @@ exemptions:
   symbol: path
   reason: pending relocation (P4); anchor `path` at line 74 not yet converted to setec.paths
     (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
-  symbol: register_entry
-  reason: pending relocation (P4); anchor `register_entry` at line 140 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
-  symbol: signal_entry
-  reason: pending relocation (P4); anchor `signal_entry` at line 146 not yet converted
-    to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4

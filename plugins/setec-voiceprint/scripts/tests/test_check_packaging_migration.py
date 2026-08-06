@@ -16,6 +16,8 @@ Pins:
 
 from __future__ import annotations
 
+import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -140,3 +142,163 @@ def test_validate_exemption_rows_catches_duplicate_key():
     }
     problems = cpm.validate_exemption_rows([row, dict(row)])
     assert any("duplicate exemption" in p for p in problems)
+
+
+def test_validate_exemption_rows_accepts_not_applicable_phase():
+    row = {
+        "path": "a.py", "symbol": "X", "reason": "r", "owner": "o",
+        "introduced_sha": "s", "removal_phase": "not-applicable",
+    }
+    assert not cpm.validate_exemption_rows([row])
+
+
+# --------------- Build-review P1 finding #5 -------------------------
+
+
+def test_scope_aware_closure_does_not_conflate_function_local_name_collision(
+    tmp_path, monkeypatch,
+):
+    """A local variable in ONE function must not be mistaken for a
+    derivation of a same-named anchor that lives in a totally different,
+    unrelated function — the "86 of 371 rows are non-anchors from
+    function-local name collisions" defect the scope-blind
+    ast.walk(tree)-over-the-whole-file closure produced."""
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "an_audit.py"
+    mod.write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "def uses_file():\n"
+        "    SCRIPT_DIR = Path(__file__).resolve().parent\n"
+        "    return SCRIPT_DIR\n"
+        "\n"
+        "def unrelated():\n"
+        "    SCRIPT_DIR = 'not a file anchor at all'\n"  # different scope, same name
+        "    other = SCRIPT_DIR + '/x'\n"  # must NOT be flagged as a __file__ anchor
+        "    return other\n",
+        encoding="utf-8",
+    )
+    anchors = cpm.find_anchors_in_file(mod)
+    by_symbol = {a.symbol: a for a in anchors}
+    assert "SCRIPT_DIR" in by_symbol
+    assert "SCRIPT_DIR" in by_symbol["SCRIPT_DIR"].expr
+    assert "other" not in by_symbol
+
+
+def test_scope_aware_closure_still_finds_function_local_alias_of_module_anchor(
+    tmp_path, monkeypatch,
+):
+    """A function CAN legitimately derive from a MODULE-level anchor
+    (visible per Python scoping) — this must still be found."""
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "an_audit.py"
+    mod.write_text(
+        "from pathlib import Path\n"
+        "SCRIPT_DIR = Path(__file__).resolve().parent\n"
+        "\n"
+        "def helper():\n"
+        "    data_dir = SCRIPT_DIR / 'data'\n"
+        "    return data_dir\n",
+        encoding="utf-8",
+    )
+    anchors = cpm.find_anchors_in_file(mod)
+    symbols = {a.symbol for a in anchors}
+    assert "SCRIPT_DIR" in symbols
+    assert "data_dir" in symbols
+
+
+def test_anchor_scanner_handles_annassign_and_tuple_targets(tmp_path, monkeypatch):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "an_audit.py"
+    mod.write_text(
+        "from pathlib import Path\n"
+        "SCRIPT_DIR: Path = Path(__file__).resolve().parent\n"
+        "revision, blob = ('r', 'b')\n"
+        "target, extra = SCRIPT_DIR, 'x'\n",
+        encoding="utf-8",
+    )
+    anchors = cpm.find_anchors_in_file(mod)
+    symbols = {a.symbol for a in anchors}
+    assert "SCRIPT_DIR" in symbols  # AnnAssign anchor
+    assert "target" in symbols  # tuple target deriving from an anchor
+    assert "revision" not in symbols  # tuple target, unrelated RHS
+    assert "blob" not in symbols
+
+
+def test_manual_dispositions_are_present_in_regenerated_exemptions():
+    """The two hand-reviewed 'impossible removal plan' rows build-review
+    named must carry an honest not-applicable disposition, not a
+    default 'pending relocation... P4' claim that will never happen."""
+    rows = cpm.load_exemptions()
+    by_key = {(r["path"], r["symbol"]): r for r in rows}
+    baselines_row = by_key[(
+        "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
+        "_REPO_ROOT",
+    )]
+    assert baselines_row["removal_phase"] == "not-applicable"
+    assert "repository root" in baselines_row["reason"].lower()
+
+    revision_row = by_key[(
+        "plugins/setec-voiceprint/scripts/near_dup_dedup.py", "revision",
+    )]
+    assert revision_row["removal_phase"] == "not-applicable"
+    assert "self-referential" in revision_row["reason"].lower()
+
+
+def test_check_ghost_rows_catches_a_row_with_no_matching_anchor():
+    anchors = [cpm.Anchor(path="a.py", symbol="X", lineno=1, expr="x")]
+    rows = [{
+        "path": "a.py", "symbol": "GHOST", "reason": "r", "owner": "o",
+        "introduced_sha": "s", "removal_phase": "P4",
+    }]
+    problems = cpm.check_ghost_rows(rows, anchors)
+    assert len(problems) == 1
+    assert "GHOST" in problems[0]
+
+
+def test_check_ratchet_flags_a_new_row_beyond_an_empty_baseline(tmp_path, monkeypatch):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cpm, "EXEMPTIONS_PATH", tmp_path / "exemptions.yaml")
+    (tmp_path / "exemptions.yaml").write_text(
+        "schema_version: 1\nexemptions: []\n", encoding="utf-8",
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=tmp_path, check=True)
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    # The exemptions file at THIS sha has zero rows — a genuinely new row
+    # added since is fine (there's a baseline, but it's empty, not absent).
+    (tmp_path / "exemptions.yaml").write_text(
+        json.dumps({"schema_version": 1, "exemptions": [{
+            "path": "a.py", "symbol": "X", "reason": "r", "owner": "o",
+            "introduced_sha": sha, "removal_phase": "P4",
+        }]}), encoding="utf-8",
+    )
+    problems = cpm.check_ratchet(sha)
+    assert problems  # a new row beyond the (empty) merge-base baseline
+
+
+def test_check_ratchet_missing_file_at_merge_base_is_a_no_op(tmp_path, monkeypatch):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cpm, "EXEMPTIONS_PATH", tmp_path / "exemptions.yaml")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    (tmp_path / "other.txt").write_text("x", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base, no exemptions file yet"], cwd=tmp_path, check=True)
+    sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    (tmp_path / "exemptions.yaml").write_text(
+        json.dumps({"schema_version": 1, "exemptions": [{
+            "path": "a.py", "symbol": "X", "reason": "r", "owner": "o",
+            "introduced_sha": sha, "removal_phase": "P4",
+        }]}), encoding="utf-8",
+    )
+    problems = cpm.check_ratchet(sha)
+    assert problems == []  # nothing to ratchet against — this PR's own situation
