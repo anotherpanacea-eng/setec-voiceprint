@@ -30,11 +30,8 @@ It checks the following properties:
      gate and the generator can never disagree about what a golden is.
 
   10. **Examples shape.** Every manifest entry's `examples[]` item must
-      be a `{description, cmd}` mapping. `capabilities.py`'s
-      `render_recommend()`/`render_show()` index into `examples[0]`
-      and call `.get("cmd", ...)` on it, so a bare-string example
-      crashes with `AttributeError` the moment that entry is ranked
-      or shown.
+      be a `{description, cmd}` mapping. This prevents recurrence of the
+      bare-string shape that previously crashed the renderers.
 
 The linter is intentionally noisy: it reports every violation
 encountered before exiting with a non-zero status. Exit codes:
@@ -539,17 +536,8 @@ def check_drift(
             detail=detail or problem,
         ))
 
-    # Check 10 (examples shape): every `examples[]` item must be a
-    # `{description, cmd}` mapping, not a bare string. `capabilities.py`
-    # `render_recommend()` / `render_show()` both call `.get("cmd", ...)`
-    # on `entries[i]["examples"][0]`, so a string-shaped example crashes
-    # with `AttributeError: 'str' object has no attribute 'get'` the
-    # moment that entry ranks first in `recommend` or gets `show`n.
-    # narrative_decision_long_form / near_dup_dedup / passage_remediation
-    # all shipped bare-string examples and tripped exactly this; this
-    # check exists so that class of drift fails CI instead of a user's
-    # terminal. (See the renderers' own defensive `isinstance` fallback
-    # for third-party fragments this gate doesn't cover.)
+    # Check 10 (examples shape): keep checked-in examples canonical. The
+    # renderers retain a small defensive fallback for third-party fragments.
     for entry in manifest_entries:
         eid = entry.get("id") or "(no id)"
         exs = entry.get("examples") or []
@@ -562,10 +550,7 @@ def check_drift(
                         f"examples[{i}] is a bare {type(ex).__name__}, "
                         f"not a {{description, cmd}} mapping. Every "
                         f"example must be `- description: ...` / "
-                        f"`  cmd: ...` — a bare string crashes "
-                        f"`render_recommend`/`render_show` "
-                        f"(`ex.get('cmd', ...)`) the moment this entry "
-                        f"is ranked or shown."
+                        f"`  cmd: ...`."
                     ),
                 ))
                 continue
