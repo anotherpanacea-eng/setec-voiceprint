@@ -29,6 +29,10 @@ It checks the following properties:
      The check delegates to `gen_contract_fixtures.check_all()` so the
      gate and the generator can never disagree about what a golden is.
 
+  10. **Examples shape.** Every manifest entry's `examples[]` item must
+      be a `{description, cmd}` mapping. This prevents recurrence of the
+      bare-string shape that previously crashed the renderers.
+
 The linter is intentionally noisy: it reports every violation
 encountered before exiting with a non-zero status. Exit codes:
 
@@ -103,7 +107,7 @@ SKIP_FILE_PATTERNS = [
 
 @dataclass
 class Violation:
-    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo" | "fixture_drift"
+    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo" | "fixture_drift" | "invalid_examples_shape"
     where: str  # path or entry id
     detail: str
 
@@ -531,6 +535,43 @@ def check_drift(
             where=surface or "(contract_fixtures)",
             detail=detail or problem,
         ))
+
+    # Check 10 (examples shape): keep checked-in examples canonical. The
+    # renderers retain a small defensive fallback for third-party fragments.
+    for entry in manifest_entries:
+        eid = entry.get("id") or "(no id)"
+        exs = entry.get("examples") or []
+        for i, ex in enumerate(exs):
+            if not isinstance(ex, dict):
+                report.violations.append(Violation(
+                    kind="invalid_examples_shape",
+                    where=eid,
+                    detail=(
+                        f"examples[{i}] is a bare {type(ex).__name__}, "
+                        f"not a {{description, cmd}} mapping. Every "
+                        f"example must be `- description: ...` / "
+                        f"`  cmd: ...`."
+                    ),
+                ))
+                continue
+            if "cmd" not in ex or not str(ex.get("cmd") or "").strip():
+                report.violations.append(Violation(
+                    kind="invalid_examples_shape",
+                    where=eid,
+                    detail=(
+                        f"examples[{i}] is missing a non-empty `cmd` "
+                        f"field."
+                    ),
+                ))
+            if "description" not in ex or not str(ex.get("description") or "").strip():
+                report.violations.append(Violation(
+                    kind="invalid_examples_shape",
+                    where=eid,
+                    detail=(
+                        f"examples[{i}] is missing a non-empty "
+                        f"`description` field."
+                    ),
+                ))
 
     return report
 

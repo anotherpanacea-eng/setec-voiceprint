@@ -51,11 +51,26 @@
     ]
   },
   "examples": [
-    "python3 scripts/near_dup_dedup.py draft_manifest.jsonl --dry-run --json",
-    "python3 scripts/near_dup_dedup.py draft_manifest.jsonl --out deduped.jsonl --threshold 0.85",
-    "python3 scripts/near_dup_dedup.py staged_manifest.jsonl --passages --json",
-    "python3 scripts/near_dup_dedup.py staged_manifest.jsonl --passages --stages b --report-out spans.json",
-    "python3 scripts/near_dup_dedup.py staged_manifest.jsonl --passages --out passages.jsonl --passage-dir passages/"
+    {
+      "description": "Report document-level near-duplicate clusters without rewriting the manifest",
+      "cmd": "python3 scripts/near_dup_dedup.py draft_manifest.jsonl --dry-run --json"
+    },
+    {
+      "description": "Drop document-level near-duplicates at a custom Jaccard threshold and write a new manifest",
+      "cmd": "python3 scripts/near_dup_dedup.py draft_manifest.jsonl --out deduped.jsonl --threshold 0.85"
+    },
+    {
+      "description": "Run passage mode (both stages) and emit the JSON report on stdout",
+      "cmd": "python3 scripts/near_dup_dedup.py staged_manifest.jsonl --passages --json"
+    },
+    {
+      "description": "Run passage mode Stage B only (exact repeated-span scan) and write the span report to a file",
+      "cmd": "python3 scripts/near_dup_dedup.py staged_manifest.jsonl --passages --stages b --report-out spans.json"
+    },
+    {
+      "description": "Run passage mode and export a deduplicated passage-unit manifest plus one text file per passage",
+      "cmd": "python3 scripts/near_dup_dedup.py staged_manifest.jsonl --passages --out passages.jsonl --passage-dir passages/"
+    }
   ],
   "references": [
     "specs/36-passage-level-corpus-hygiene.md",

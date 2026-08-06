@@ -91,7 +91,10 @@
     "length_floor_words": 25001
   },
   "examples": [
-    "python3 plugins/setec-voiceprint/scripts/narrative_decision_long_form.py novel.txt --judge manifest --judge-manifest segments.json --json"
+    {
+      "description": "Score a novel above the 25,000-word ceiling with a precomputed per-segment judge manifest (the only free, licensable judge path today) and emit the JSON envelope",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/narrative_decision_long_form.py novel.txt --judge manifest --judge-manifest segments.json --json"
+    }
   ],
   "references": [
     "specs/79-storyscope-long-form-extension.md",

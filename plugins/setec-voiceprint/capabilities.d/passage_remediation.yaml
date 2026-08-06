@@ -51,8 +51,11 @@ entries:
   dependencies:
     python: []
   examples:
-  - >-
-    python3 scripts/passage_remediation.py --private-root PRIVATE_ROOT
-    --descriptor descriptor.json --output decisions.json --json
+  - description: >-
+      Apply the spec-74 Increment-1 truth table to a bound spec-36 passage
+      cluster, writing the decision artifact and the aggregate-only receipt
+    cmd: >-
+      python3 scripts/passage_remediation.py --private-root PRIVATE_ROOT
+      --descriptor descriptor.json --output decisions.json --json
   references:
   - specs/74-passage-remediation-package.md

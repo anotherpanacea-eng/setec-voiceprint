@@ -806,6 +806,125 @@ def test_cli_exits_nonzero_on_bad_manifest():
         assert rc != 0
 
 
+# ---------- Check 10: examples shape --------------------------------
+#
+# Regression for the bug where narrative_decision_long_form /
+# near_dup_dedup / passage_remediation carried `examples` as bare
+# strings instead of `{description, cmd}` mappings: capabilities.py's
+# render_recommend()/render_show() crash with
+# `AttributeError: 'str' object has no attribute 'get'` the moment
+# such an entry is ranked or shown. Check 10 makes that class of
+# drift fail CI instead of a user's terminal.
+
+def test_examples_shape_string_example_detected():
+    """(c) A fragment with a bare-string example must trip
+    invalid_examples_shape."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",
+                    "handoff": "none",
+                    "consumers": [],
+                    "compute": {"tier": "api_llm"},
+                    "examples": [
+                        "python3 scripts/narrative_decision_audit.py x.txt",
+                    ],
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_examples_shape" in kinds, (
+            f"expected invalid_examples_shape; got {kinds}"
+        )
+
+
+def test_examples_shape_dict_example_passes():
+    """A correctly-shaped `{description, cmd}` example must NOT trip
+    Check 10."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",
+                    "handoff": "none",
+                    "consumers": [],
+                    "compute": {"tier": "api_llm"},
+                    "examples": [
+                        {
+                            "description": "Run it",
+                            "cmd": (
+                                "python3 scripts/narrative_decision_audit.py "
+                                "x.txt"
+                            ),
+                        },
+                    ],
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_examples_shape" not in kinds, (
+            f"unexpected invalid_examples_shape: {report.violations}"
+        )
+
+
+def test_examples_shape_missing_cmd_or_description_detected():
+    """A dict example missing `cmd` or `description` (or with an
+    empty one) is still malformed and must trip Check 10 — a bare
+    string isn't the only malformed shape."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",
+                    "handoff": "none",
+                    "consumers": [],
+                    "compute": {"tier": "api_llm"},
+                    "examples": [
+                        {"description": "Missing cmd entirely"},
+                    ],
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_examples_shape" in kinds, (
+            f"expected invalid_examples_shape; got {kinds}"
+        )
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):
