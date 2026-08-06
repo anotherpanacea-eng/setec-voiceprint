@@ -14,7 +14,6 @@ import pytest
 
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-ROOT = Path(__file__).resolve().parents[4]
 
 import nonprose_sweep as N  # noqa: E402
 
