@@ -35,7 +35,7 @@ The new scripts/setec/core/textprims.py module is the single registry home. A pr
 1. the packaging phase that owns a module relocation lands first;
 2. this spec moves a shared primitive's exact existing function/pattern/table object to the new registry module where ownership consolidation is needed;
 3. old modules import and re-export that final object under their established names;
-4. only then does the registry inventory the final `implementation_ref` and mint the ID.
+4. only then does the registry inventory the final implementation_ref field and mint the ID.
 
 No ID contains or digests a temporary compatibility-launcher path. A compatibility re-export may move later without changing the ID because it is not the owner; the defining module/symbol may not move after minting in this increment. A future owner relocation must first specify a location-independent behavior digest or mint a new versioned ID. This spec chooses final-move-before-mint and does not leave that decision to the builder.
 
@@ -63,7 +63,7 @@ allowed_backends: closed list, empty for deterministic rows
 behavior_sha256: sha256 of the canonical preceding behavior fields plus defining source/table bytes
 ```
 
-`tools/gen_textprims_inventory.py --check` AST-scans voiceprint production source for compiled and inline word/sentence/paragraph patterns, function-word literals and re-exports, quantile/fingerprint functions, preprocessing calls, and imports of registered symbols. It compares discoveries directly with the live registry; it writes no second inventory artifact. It rejects a missing or duplicate site, duplicate ID, unresolved `implementation_ref`, registry row that is never imported or directly characterized, and a legacy implementation that remains reachable after its cohort migrates.
+`tools/gen_textprims_inventory.py --check` AST-scans voiceprint production source for compiled and inline word/sentence/paragraph patterns, function-word literals and re-exports, quantile/fingerprint functions, preprocessing calls, and imports of registered symbols. It compares discoveries directly with the live registry; it writes no second inventory artifact. It rejects a missing or duplicate site, duplicate ID, an unresolved implementation_ref field, a registry row that is never imported or directly characterized, and a legacy implementation that remains reachable after its cohort migrates.
 
 IDs use `<family>-<12-hex-behavior-prefix>-v1`. Because IDs are minted only after final ownership, `behavior_sha256` can bind the final defining source/table bytes without confusing a planned relocation with behavior change. Candidate rows are compared with the merge-base row of the same ID; a changed behavior digest requires a new versioned ID and is outside this no-change increment.
 
