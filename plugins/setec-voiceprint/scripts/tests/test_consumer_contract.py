@@ -204,9 +204,29 @@ def test_emit_envelope_semantic_types_are_closed():
         cv.validate_manifest_emit_envelope(bad_entries)
 
 
+@pytest.mark.parametrize("version", [
+    "01.2.3",
+    "1.2.3-alpha..1",
+    "1.2.3+build..1",
+    "1.2.3-.",
+])
+def test_emit_envelope_reuses_shared_semver_refusals(version):
+    envelope = cap.build_emit_envelope(_manifest())
+    envelope["setec_version"] = version
+    with pytest.raises(cv.ContractValidationError, match="semver"):
+        cv.validate_manifest_emit_envelope(envelope)
+
+
 def test_bad_file_hash_refused():
     c = _valid_contract()
     c["client"]["sha256"] = "not-a-real-hash"
+    with pytest.raises(cv.ContractValidationError, match="sha256"):
+        cv.validate_contract_block(c)
+
+
+def test_file_hash_with_trailing_newline_is_refused():
+    c = _valid_contract()
+    c["client"]["sha256"] = "0" * 64 + "\n"
     with pytest.raises(cv.ContractValidationError, match="sha256"):
         cv.validate_contract_block(c)
 

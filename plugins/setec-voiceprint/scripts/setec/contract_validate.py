@@ -10,11 +10,10 @@ or a mislabeled emission.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+from .consumer_client import VersionParseError, parse_version
 
 REQUIRED_CONTRACT_KEYS = frozenset({
     "output_schema_version", "output_key_policy", "reason_categories",
@@ -81,7 +80,11 @@ def _check_exact_keys(d: Any, required: frozenset, label: str) -> None:
 
 
 def _check_sha256(value: Any, label: str) -> None:
-    if not isinstance(value, str) or not _SHA256_RE.match(value):
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
         raise ContractValidationError(f"{label}: not a 64-lower-hex sha256 string: {value!r}")
 
 
@@ -159,10 +162,9 @@ def validate_manifest_emit_envelope(envelope: dict[str, Any]) -> None:
     _check_exact_keys(envelope, required, "emit envelope (schema 0.4.0)")
     if envelope["manifest_schema_version"] != EXPECTED_MANIFEST_SCHEMA_VERSION:
         raise ContractValidationError("emit envelope has the wrong manifest_schema_version")
-    if not isinstance(envelope["setec_version"], str) or not re.fullmatch(
-        r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?",
-        envelope["setec_version"],
-    ):
+    try:
+        parse_version(envelope["setec_version"])
+    except (TypeError, VersionParseError):
         raise ContractValidationError("emit envelope setec_version is not a semver string")
     if not isinstance(envelope["entries"], list):
         raise ContractValidationError("emit envelope entries must be a list")
