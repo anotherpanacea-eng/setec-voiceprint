@@ -221,6 +221,23 @@ def _module_path_for_import(
     return None
 
 
+def _bound_names_in_target(target: ast.expr) -> list[str]:
+    """Every name bound by an assignment target, traversed recursively
+    so destructuring binds are seen (`_claim_license, other = f()`,
+    `[a, *_claim_license_rest] = f()`) — the same recursive-target
+    posture check_packaging_migration.py's `_names_in_target` takes."""
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        out: list[str] = []
+        for elt in target.elts:
+            out.extend(_bound_names_in_target(elt))
+        return out
+    if isinstance(target, ast.Starred):
+        return _bound_names_in_target(target.value)
+    return []
+
+
 def _claim_license_relevant_subtrees(tree: ast.AST) -> list[ast.AST]:
     """Every AST subtree that is either a `_claim_license*`-named
     function body or a `ClaimLicense(...)` call — the exact places
@@ -231,9 +248,12 @@ def _claim_license_relevant_subtrees(tree: ast.AST) -> list[ast.AST]:
             if _CLAIM_LICENSE_NAME_RE.search(node.name):
                 subtrees.append(node)
         elif isinstance(node, ast.Assign):
-            for tgt in node.targets:
-                if isinstance(tgt, ast.Name) and _CLAIM_LICENSE_NAME_RE.search(tgt.id):
-                    subtrees.append(node.value)
+            if any(
+                _CLAIM_LICENSE_NAME_RE.search(name)
+                for tgt in node.targets
+                for name in _bound_names_in_target(tgt)
+            ):
+                subtrees.append(node.value)
         elif isinstance(node, ast.AnnAssign):
             if (
                 isinstance(node.target, ast.Name)

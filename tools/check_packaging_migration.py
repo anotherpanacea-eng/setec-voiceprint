@@ -263,9 +263,28 @@ def _is_path_alias_expr(node: ast.AST, anchor_names: set[str]) -> bool:
         )
     if isinstance(node, ast.Call):
         if isinstance(node.func, ast.Attribute):
-            return _is_path_alias_expr(node.func.value, anchor_names)
-        if isinstance(node.func, ast.Name) and node.func.id == "Path":
+            if _is_path_alias_expr(node.func.value, anchor_names):
+                return True
+            # Join-style constructors carry the anchor in an ARGUMENT,
+            # not the receiver: `os.path.join(root, ...)`,
+            # `anything.joinpath(root, ...)`.
+            if node.func.attr in ("join", "joinpath"):
+                return any(
+                    _is_path_alias_expr(arg, anchor_names) for arg in node.args
+                )
+            return False
+        if isinstance(node.func, ast.Name) and node.func.id in ("Path", "str"):
+            # `Path(root, ...)` / `str(root / ...)` — a stringified
+            # path derived from an anchor is still that anchor's alias.
             return any(_is_path_alias_expr(arg, anchor_names) for arg in node.args)
+        return False
+    if isinstance(node, ast.JoinedStr):
+        # f-string path building: f"{root}/data" derives from `root`.
+        return any(
+            _is_path_alias_expr(value.value, anchor_names)
+            for value in node.values
+            if isinstance(value, ast.FormattedValue)
+        )
     return False
 
 
@@ -553,7 +572,11 @@ def check_tools_repo_root() -> list[ToolRootViolation]:
         except (UnicodeDecodeError, SyntaxError):
             continue
         rel = path.relative_to(REPO_ROOT).as_posix()
-        for node in tree.body:  # module level only
+        # Flattened module scope, not bare tree.body: a conditional
+        # module-scope assignment (`if ...: REPO_ROOT = ...`) is still a
+        # module-level REPO_ROOT binding and must meet the same shape.
+        # Nested function/class scopes stay excluded (separate scopes).
+        for node in _flatten_scope_statements(tree.body):
             assigned = _assign_targets(node)
             if assigned is None:
                 continue

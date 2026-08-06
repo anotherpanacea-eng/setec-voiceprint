@@ -268,6 +268,33 @@ def test_scope_aware_closure_finds_nested_alias_of_outer_anchor(
     assert {"root", "data"} <= symbols
 
 
+def test_scope_aware_closure_finds_constructor_built_aliases_of_outer_anchor(
+    tmp_path, monkeypatch,
+):
+    """Exact-head review P2: for an OUTER exempted anchor, nested
+    aliases built with ordinary path constructors — `os.path.join`,
+    `str(root / ...)`, an f-string, `joinpath(root, ...)` — were
+    omitted from propagation, so a newly introduced alias passed the
+    exemption ratchet."""
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "an_audit.py"
+    mod.write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "def outer():\n"
+        "    root = Path(__file__).resolve().parent\n"
+        "    def inner():\n"
+        "        os_join = os.path.join(root, 'data')\n"
+        "        str_path = str(root / 'data')\n"
+        "        fstring = f'{root}/data'\n"
+        "        joined = Path().joinpath(root, 'data')\n"
+        "        return os_join, str_path, fstring, joined\n",
+        encoding="utf-8",
+    )
+    symbols = {anchor.symbol for anchor in cpm.find_anchors_in_file(mod)}
+    assert {"root", "os_join", "str_path", "fstring", "joined"} <= symbols
+
+
 def test_nested_scope_does_not_launder_arbitrary_call_result_into_path_alias(
     tmp_path, monkeypatch,
 ):
@@ -319,6 +346,34 @@ def test_tools_repo_root_chained_assignment_is_refused(tmp_path, monkeypatch):
     problems = cpm.check_tools_repo_root()
     assert len(problems) == 1
     assert "ALSO_ROOT" in problems[0].detail
+
+
+def test_tools_repo_root_conditional_assignment_is_checked(tmp_path, monkeypatch):
+    """Exact-head review P2: only direct `tree.body` statements were
+    examined, so `if True: REPO_ROOT = ...parents[9]` — still a
+    module-scope binding — escaped the depth check."""
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "bad.py").write_text(
+        "from pathlib import Path\n"
+        "if True:\n"
+        "    REPO_ROOT = Path(__file__).resolve().parents[9]\n",
+        encoding="utf-8",
+    )
+    # A function-local REPO_ROOT is a separate scope and stays ignored.
+    (tools_dir / "ok.py").write_text(
+        "from pathlib import Path\n"
+        "def helper():\n"
+        "    REPO_ROOT = Path('somewhere')\n"
+        "    return REPO_ROOT\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cpm, "TOOLS_ROOT", tools_dir)
+    problems = cpm.check_tools_repo_root()
+    assert len(problems) == 1
+    assert problems[0].path.endswith("bad.py")
+    assert "parents[9]" in problems[0].detail
 
 
 def test_manual_dispositions_are_present_in_regenerated_exemptions():

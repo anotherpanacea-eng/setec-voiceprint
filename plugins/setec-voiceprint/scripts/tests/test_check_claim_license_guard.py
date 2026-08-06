@@ -331,6 +331,46 @@ def test_candidate_only_protected_module_is_caught(fake_repo):
     )
 
 
+def test_candidate_only_destructured_protected_binding_is_caught(fake_repo):
+    """Exact-head review P1: only simple `ast.Name` assignment targets
+    were examined, so a destructured `_claim_license, other = f()`
+    binding was invisible — the module never became a seed, and its
+    supplier import was never traced."""
+    scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
+    (scripts / "supplier.py").write_text(
+        "def make_values():\n"
+        "    return ({'claim_tuple': []}, 'x')\n",
+        encoding="utf-8",
+    )
+    (scripts / "new_claim.py").write_text(
+        "from supplier import make_values\n"
+        "_claim_license, other = make_values()\n",
+        encoding="utf-8",
+    )
+    passed, report = clg.run(base_ref="HEAD")
+    assert not passed
+    delta_paths = {row["path"] for row in report["deltas"]}
+    assert any(p.endswith("new_claim.py") for p in delta_paths)
+    # The destructured seed makes the imported supplier visible too.
+    protected = {p.path for p in clg.build_protected_set()}
+    assert any(p.endswith("supplier.py") for p in protected)
+
+
+def test_starred_destructured_protected_binding_is_caught(fake_repo):
+    scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
+    (scripts / "new_claim.py").write_text(
+        "def make_values():\n"
+        "    return [1, 2, 3]\n"
+        "first, *_claim_license_rest = make_values()\n",
+        encoding="utf-8",
+    )
+    passed, report = clg.run(base_ref="HEAD")
+    assert not passed
+    assert any(
+        row["path"].endswith("new_claim.py") for row in report["deltas"]
+    )
+
+
 def test_candidate_only_annotated_protected_assignment_is_caught(fake_repo):
     scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
     (scripts / "new_claim.py").write_text(
