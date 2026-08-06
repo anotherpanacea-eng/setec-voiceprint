@@ -10,7 +10,6 @@ or a mislabeled emission.
 
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 from typing import Any
@@ -33,6 +32,36 @@ REQUIRED_FIXTURES_KEYS = frozenset({
 REQUIRED_S5_IDENTITY_KEYS = frozenset({"method", "family_order", "family_limits"})
 
 VALID_DISPOSITIONS = frozenset({"live_emission", "classifier_only"})
+
+EXPECTED_OUTPUT_SCHEMA_VERSION = "1.0"
+EXPECTED_MANIFEST_SCHEMA_VERSION = "0.4.0"
+EXPECTED_CONTRACT_FLOOR = "1.129.0"
+EXPECTED_COMMON_REQUIRED = [
+    "ai_status", "available", "baseline", "claim_license",
+    "claim_license_rendered", "results", "schema_version", "target",
+    "task_surface", "tool", "version", "warnings",
+]
+EXPECTED_ERROR_REQUIRED = ["reason", "reason_category"]
+EXPECTED_REASON_CATEGORIES = [
+    "bad_input", "internal_error", "missing_dependency", "policy_refused",
+    "text_too_short", "version_floor",
+]
+EXPECTED_CLIENT_RELATIVE_PATH = "scripts/setec/consumer_client.py"
+EXPECTED_S5_IDENTITY = {
+    "method": "unweighted mean of six family Burrows-Delta values",
+    "family_order": [
+        "char_ngrams_3", "char_ngrams_4", "char_ngrams_5", "pos_trigrams",
+        "dependency_ngrams", "punctuation",
+    ],
+    "family_limits": {
+        "char_ngrams_3": 200,
+        "char_ngrams_4": 200,
+        "char_ngrams_5": 200,
+        "pos_trigrams": 300,
+        "dependency_ngrams": 300,
+        "punctuation": None,
+    },
+}
 
 
 class ContractValidationError(ValueError):
@@ -68,13 +97,13 @@ def validate_contract_block(contract: Any) -> None:
 
     okp = contract["output_key_policy"]
     _check_exact_keys(okp, REQUIRED_OUTPUT_KEY_POLICY_KEYS, "contract.output_key_policy")
-    if list(okp["common_required"]) != sorted(okp["common_required"]):
+    if okp["common_required"] != EXPECTED_COMMON_REQUIRED:
         raise ContractValidationError(
-            "contract.output_key_policy.common_required is not a sorted projection"
+            "contract.output_key_policy.common_required differs from the exact contract"
         )
-    if list(okp["error_required"]) != sorted(okp["error_required"]):
+    if okp["error_required"] != EXPECTED_ERROR_REQUIRED:
         raise ContractValidationError(
-            "contract.output_key_policy.error_required is not a sorted projection"
+            "contract.output_key_policy.error_required differs from the exact contract"
         )
     if okp["success_extensions"] != "surface_specific_allowed":
         raise ContractValidationError(
@@ -91,13 +120,24 @@ def validate_contract_block(contract: Any) -> None:
             "contract.output_key_policy.reserved_collision_refused must be true"
         )
 
-    reason_categories = contract["reason_categories"]
-    if not isinstance(reason_categories, list) or list(reason_categories) != sorted(reason_categories):
+    if contract["output_schema_version"] != EXPECTED_OUTPUT_SCHEMA_VERSION:
         raise ContractValidationError(
-            "contract.reason_categories is not a sorted list projection"
+            "contract.output_schema_version differs from the exact contract"
+        )
+    if contract["contract_block_min_setec_version"] != EXPECTED_CONTRACT_FLOOR:
+        raise ContractValidationError(
+            "contract.contract_block_min_setec_version differs from the exact contract"
+        )
+    if contract["reason_categories"] != EXPECTED_REASON_CATEGORIES:
+        raise ContractValidationError(
+            "contract.reason_categories differs from the exact contract"
         )
 
     _check_exact_keys(contract["client"], REQUIRED_CLIENT_KEYS, "contract.client")
+    if contract["client"]["relative_path"] != EXPECTED_CLIENT_RELATIVE_PATH:
+        raise ContractValidationError(
+            "contract.client.relative_path differs from the exact contract"
+        )
     _check_sha256(contract["client"]["sha256"], "contract.client.sha256")
 
     _check_exact_keys(contract["fixtures"], REQUIRED_FIXTURES_KEYS, "contract.fixtures")
@@ -105,6 +145,10 @@ def validate_contract_block(contract: Any) -> None:
         _check_sha256(contract["fixtures"][key], f"contract.fixtures.{key}")
 
     _check_exact_keys(contract["s5_identity"], REQUIRED_S5_IDENTITY_KEYS, "contract.s5_identity")
+    if contract["s5_identity"] != EXPECTED_S5_IDENTITY:
+        raise ContractValidationError(
+            "contract.s5_identity differs from the exact contract"
+        )
 
 
 def validate_manifest_emit_envelope(envelope: dict[str, Any]) -> None:
@@ -113,6 +157,15 @@ def validate_manifest_emit_envelope(envelope: dict[str, Any]) -> None:
     entries}`, and a valid `contract` block."""
     required = frozenset({"setec_version", "manifest_schema_version", "contract", "entries"})
     _check_exact_keys(envelope, required, "emit envelope (schema 0.4.0)")
+    if envelope["manifest_schema_version"] != EXPECTED_MANIFEST_SCHEMA_VERSION:
+        raise ContractValidationError("emit envelope has the wrong manifest_schema_version")
+    if not isinstance(envelope["setec_version"], str) or not re.fullmatch(
+        r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?",
+        envelope["setec_version"],
+    ):
+        raise ContractValidationError("emit envelope setec_version is not a semver string")
+    if not isinstance(envelope["entries"], list):
+        raise ContractValidationError("emit envelope entries must be a list")
     validate_contract_block(envelope["contract"])
 
 
@@ -129,212 +182,30 @@ def validate_warning_classifier_coverage_row_shape(row: Any) -> None:
         )
 
 
-def validate_warning_producer_emissions_row_shape(row: Any) -> None:
-    required = frozenset({"case_id", "text", "producer_test"})
-    _check_exact_keys(row, required, "warning_producer_emissions row")
-
-
 def validate_live_emission_binding(
     coverage: list[dict[str, Any]], emissions: list[dict[str, Any]],
 ) -> None:
-    """Every `live_emission`-disposition coverage row must have a matching
-    `{case_id, text}` pair in `emissions` — refuses a falsely labeled live
-    emission (a row claiming `live_emission` with no bound producer test)."""
-    emission_keys = {(row["case_id"], row["text"]) for row in emissions}
+    """The 1.129.0 producer fixture is closed-empty and coverage says so."""
+    if emissions:
+        raise ContractValidationError(
+            "warning_producer_emissions must remain empty for contract 1.129.0; "
+            "a later live-emission fixture needs a direct behavioral validator"
+        )
     for row in coverage:
         validate_warning_classifier_coverage_row_shape(row)
         if row["producer_disposition"] == "live_emission":
-            key = (row["case_id"], row["text"])
-            if key not in emission_keys:
-                raise ContractValidationError(
-                    f"coverage row {row['case_id']!r} is disposition=live_emission "
-                    f"but no {{case_id,text}}={key!r} row exists in "
-                    f"warning_producer_emissions.json"
-                )
-
-
-def _parse_node_id(producer_test: str) -> tuple[str, list[str]]:
-    """Split a pytest node id 'path/to/file.py::Class::method' into
-    (path, [qualname parts])."""
-    if "::" not in producer_test:
-        raise ContractValidationError(
-            f"producer_test {producer_test!r} is not a pytest node id "
-            f"('path::name[::name...]')"
-        )
-    path, *parts = producer_test.split("::")
-    if not parts:
-        raise ContractValidationError(
-            f"producer_test {producer_test!r} names a path but no test node"
-        )
-    return path, parts
-
-
-def _find_def(tree: ast.Module, parts: list[str]) -> "ast.AST | None":
-    """Walk dotted `Class::method` / bare `function` parts to the AST def
-    node, or None if any segment is missing."""
-    scope: Any = tree
-    node = None
-    for part in parts:
-        node = None
-        body = getattr(scope, "body", [])
-        for item in body:
-            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and item.name == part:
-                node = item
-                break
-        if node is None:
-            return None
-        scope = node
-    return node
-
-
-def _collect_module_import_names(tree: ast.Module) -> set[str]:
-    """Top-level names bound by `import X` / `import X as Y` / `from M import
-    X [as Y]` — i.e. names that refer to an IMPORTED module or symbol, as
-    opposed to a name defined locally in the test file. Used to recognize a
-    "call into a production symbol" (an attribute/call on one of these
-    names) versus a purely test-local helper call."""
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                names.add((alias.asname or alias.name).split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            for alias in node.names:
-                if alias.name != "*":
-                    names.add(alias.asname or alias.name)
-    return names
-
-
-def _run_pytest_node(node_id: str, *, repo_root: Path) -> None:
-    """Actually EXECUTE the bound pytest node and require it passes. A
-    statically-plausible binding that is currently red (or collection-
-    broken) is not a real producer emission."""
-    import subprocess
-    import sys
-
-    completed = subprocess.run(
-        [sys.executable, "-m", "pytest", node_id, "-q"],
-        cwd=repo_root, capture_output=True, text=True,
-    )
-    if completed.returncode != 0:
-        raise ContractValidationError(
-            f"producer_test {node_id!r} does not currently pass "
-            f"(pytest exit {completed.returncode}): "
-            f"{completed.stdout[-800:]}{completed.stderr[-400:]}"
-        )
+            raise ContractValidationError(
+                f"coverage row {row['case_id']!r} cannot claim live_emission "
+                "while the 1.129.0 producer fixture is closed-empty"
+            )
 
 
 def validate_producer_emissions_bound(
     emissions: list[dict[str, Any]], *, repo_root: Path, run_pytest: bool = True,
 ) -> None:
-    """For every emissions row, refuse:
-
-      * a missing producer_test FILE or DEF node;
-      * a "docstring decoy" — the row's `text` appearing as an ARGUMENT to
-        any call inside the test body. That pattern means the test
-        constructs its OWN input containing the expected output (e.g.
-        ``audit = {"reason": "text too short"}; fn(audit)``) rather than
-        observing production code EMIT it — the exact gap a prior review
-        caught: a bound row whose "production path" was really the test
-        feeding itself the string it later asserted on;
-      * no call into an IMPORTED (production) symbol at all — a test that
-        never calls anything from outside itself cannot be observing a real
-        emission;
-      * the text never appearing inside an `assert` in the test body — it
-        must be genuinely CHECKED, not merely present;
-      * (when `run_pytest`, the default) the bound node not currently
-        passing when actually executed.
-
-    A row that survives all of these actually calls a production function
-    and asserts on ITS output containing `text` — not on a copy of `text`
-    the test typed in itself."""
-    for row in emissions:
-        validate_warning_producer_emissions_row_shape(row)
-        path_str, parts = _parse_node_id(row["producer_test"])
-        test_path = repo_root / path_str
-        if not test_path.is_file():
-            raise ContractValidationError(
-                f"emissions row {row['case_id']!r}: producer_test file "
-                f"{path_str!r} does not exist"
-            )
-        source = test_path.read_text(encoding="utf-8")
-        tree = ast.parse(source, filename=str(test_path))
-        def_node = _find_def(tree, parts)
-        if def_node is None:
-            raise ContractValidationError(
-                f"emissions row {row['case_id']!r}: producer_test node "
-                f"{row['producer_test']!r} was not found in {path_str}"
-            )
-        text = row["text"]
-
-        calls = [n for n in ast.walk(def_node) if isinstance(n, ast.Call)]
-        if not calls:
-            raise ContractValidationError(
-                f"emissions row {row['case_id']!r}: {row['producer_test']!r} "
-                f"calls no function at all — cannot observe a real emission"
-            )
-
-        # Decoy check: the literal must never appear ANYWHERE in the test
-        # body OUTSIDE of an assert statement — not as a direct call
-        # argument, and not one level removed via an intermediate variable
-        # (`audit = {"reason": "text too short"}; fn(audit)` — the exact
-        # shape a prior review caught: the literal never appears in fn()'s
-        # own call-argument AST node, only inside the dict literal that
-        # feeds it). Collecting every Constant OUTSIDE any Assert, over the
-        # whole function body, catches both shapes uniformly.
-        assert_nodes = [n for n in ast.walk(def_node) if isinstance(n, ast.Assert)]
-        assert_node_ids = {id(n) for n in assert_nodes}
-
-        def _inside_any_assert(target: ast.AST) -> bool:
-            # ast.walk has no parent pointers; walk each assert's own
-            # subtree instead and check identity membership.
-            return any(
-                any(sub is target for sub in ast.walk(a)) for a in assert_nodes
-            )
-
-        for node in ast.walk(def_node):
-            if isinstance(node, ast.Constant) and node.value == text:
-                if not _inside_any_assert(node):
-                    raise ContractValidationError(
-                        f"emissions row {row['case_id']!r}: text {text!r} "
-                        f"appears OUTSIDE any assert in "
-                        f"{row['producer_test']!r} — the test constructs "
-                        f"its own input containing the expected output "
-                        f"(a decoy binding, whether fed directly as a call "
-                        f"argument or via an intermediate variable), rather "
-                        f"than observing production code emit it"
-                    )
-
-        # Must call into an imported (production) symbol.
-        imported_names = _collect_module_import_names(tree)
-        calls_production = False
-        for call in calls:
-            func = call.func
-            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-                if func.value.id in imported_names:
-                    calls_production = True
-                    break
-            elif isinstance(func, ast.Name) and func.id in imported_names:
-                calls_production = True
-                break
-        if not calls_production:
-            raise ContractValidationError(
-                f"emissions row {row['case_id']!r}: {row['producer_test']!r} "
-                f"never calls an imported (production) symbol — cannot "
-                f"observe a real emission from test-local code alone"
-            )
-
-        # The text must actually be asserted on.
-        asserts = [n for n in ast.walk(def_node) if isinstance(n, ast.Assert)]
-        text_asserted = any(
-            isinstance(sub, ast.Constant) and sub.value == text
-            for a in asserts for sub in ast.walk(a)
+    """P1.129.0 has no live producer-warning rows; enforce that fact."""
+    del repo_root, run_pytest
+    if emissions:
+        raise ContractValidationError(
+            "warning_producer_emissions must remain empty for contract 1.129.0"
         )
-        if not text_asserted:
-            raise ContractValidationError(
-                f"emissions row {row['case_id']!r}: text {text!r} is never "
-                f"asserted on in {row['producer_test']!r}"
-            )
-
-        if run_pytest:
-            _run_pytest_node(row["producer_test"], repo_root=repo_root)

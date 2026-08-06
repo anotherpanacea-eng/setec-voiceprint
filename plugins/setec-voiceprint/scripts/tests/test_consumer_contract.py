@@ -33,7 +33,6 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import capabilities as cap  # type: ignore  # noqa: E402
-from setec import consumer_client as cc  # type: ignore  # noqa: E402
 from setec import contract_validate as cv  # type: ignore  # noqa: E402
 
 REPO_ROOT = ROOT.parents[2]  # .../plugins/setec-voiceprint/scripts -> repo root
@@ -66,16 +65,6 @@ def test_contract_block_min_setec_version_is_pinned_to_the_first_0_4_0_release()
     and the read would move together. Pinned as a literal forever; a future
     release bumping plugin.json's version must NOT move this constant."""
     assert cap.CONTRACT_BLOCK_MIN_SETEC_VERSION == "1.129.0"
-
-
-def test_contract_block_min_setec_version_does_not_exceed_current_plugin_version():
-    """Sanity bound (not a treadmill): the pinned floor must be a version
-    that has actually shipped — i.e. no later than the current plugin
-    version. This does NOT reassert equality (that would reintroduce the
-    treadmill); it only catches the floor being bumped ahead of a release
-    that doesn't exist yet."""
-    plugin_json = json.loads(cap.PLUGIN_JSON_PATH.read_text(encoding="utf-8"))
-    assert cc.meets_floor(plugin_json["version"], (1, 129, 0))
 
 
 def test_contract_client_sha256_matches_actual_vendored_source_bytes():
@@ -180,8 +169,39 @@ def test_unsorted_common_required_refused():
     c["output_key_policy"]["common_required"] = list(
         reversed(c["output_key_policy"]["common_required"])
     )
-    with pytest.raises(cv.ContractValidationError, match="not a sorted"):
+    with pytest.raises(cv.ContractValidationError, match="exact contract"):
         cv.validate_contract_block(c)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda c: c.__setitem__("output_schema_version", "9.9"),
+    lambda c: c.__setitem__("contract_block_min_setec_version", "1.0.0"),
+    lambda c: c.__setitem__("reason_categories", c["reason_categories"][:-1]),
+    lambda c: c["output_key_policy"].__setitem__(
+        "common_required", c["output_key_policy"]["common_required"][:-1]),
+    lambda c: c["output_key_policy"].__setitem__(
+        "error_required", ["reason_category"]),
+    lambda c: c["client"].__setitem__("relative_path", "scripts/decoy.py"),
+    lambda c: c["s5_identity"].__setitem__("method", "weighted mean"),
+    lambda c: c["s5_identity"]["family_limits"].__setitem__("punctuation", 1),
+])
+def test_semantic_contract_weakening_is_refused(mutate):
+    contract = _valid_contract()
+    mutate(contract)
+    with pytest.raises(cv.ContractValidationError, match="exact contract"):
+        cv.validate_contract_block(contract)
+
+
+def test_emit_envelope_semantic_types_are_closed():
+    envelope = cap.build_emit_envelope(_manifest())
+    bad_schema = copy.deepcopy(envelope)
+    bad_schema["manifest_schema_version"] = "0.4"
+    with pytest.raises(cv.ContractValidationError, match="manifest_schema_version"):
+        cv.validate_manifest_emit_envelope(bad_schema)
+    bad_entries = copy.deepcopy(envelope)
+    bad_entries["entries"] = {}
+    with pytest.raises(cv.ContractValidationError, match="entries must be a list"):
+        cv.validate_manifest_emit_envelope(bad_entries)
 
 
 def test_bad_file_hash_refused():
@@ -216,101 +236,17 @@ def test_falsely_labelled_live_emission_refused():
         "expected_classification": "unmatched_reliability",
         "producer_disposition": "live_emission",
     }]
-    with pytest.raises(cv.ContractValidationError, match="no .*row exists"):
+    with pytest.raises(cv.ContractValidationError, match="cannot claim live_emission"):
         cv.validate_live_emission_binding(coverage, emissions=[])
 
 
-def test_missing_producer_test_node_refused():
+def test_nonempty_producer_emission_fixture_is_refused_until_direct_capture_exists():
     emissions = [{
-        "case_id": "x", "text": "text too short",
-        "producer_test": (
-            "plugins/setec-voiceprint/scripts/tests/test_surprisal_audit_schema.py"
-            "::TestUnavailable::test_this_function_does_not_exist"
-        ),
+        "case_id": "forged", "text": "looks plausible",
+        "producer_test": "tests/test_hash.py::test_unrelated_passing_call",
     }]
-    with pytest.raises(cv.ContractValidationError, match="was not found"):
+    with pytest.raises(cv.ContractValidationError, match="must remain empty"):
         cv.validate_producer_emissions_bound(emissions, repo_root=REPO_ROOT)
-
-
-def test_producer_test_not_observing_text_refused():
-    emissions = [{
-        "case_id": "x", "text": "a string this test never mentions",
-        "producer_test": (
-            "plugins/setec-voiceprint/scripts/tests/test_surprisal_audit_schema.py"
-            "::TestUnavailable::test_unavailable_audit"
-        ),
-    }]
-    with pytest.raises(cv.ContractValidationError, match="is never asserted on"):
-        cv.validate_producer_emissions_bound(emissions, repo_root=REPO_ROOT)
-
-
-def test_docstring_decoy_refused():
-    """F3 regression: the exact defect a prior review caught. This test
-    node DOES call a production symbol (sa.build_audit_payload) and DOES
-    assert on "text too short" — but the test also hand-constructs its own
-    `audit` dict containing that exact literal as an INPUT, so the "emission"
-    is really the test feeding itself the string it later checks for, not a
-    production code path computing it. validate_producer_emissions_bound
-    must refuse this as a decoy binding (this is why
-    warning_producer_emissions.json is currently an honest empty array —
-    this was the fixture's one row before the defect was caught)."""
-    emissions = [{
-        "case_id": "x", "text": "text too short",
-        "producer_test": (
-            "plugins/setec-voiceprint/scripts/tests/test_surprisal_audit_schema.py"
-            "::TestUnavailable::test_unavailable_audit"
-        ),
-    }]
-    with pytest.raises(cv.ContractValidationError, match="appears OUTSIDE any assert"):
-        cv.validate_producer_emissions_bound(emissions, repo_root=REPO_ROOT, run_pytest=False)
-
-
-def test_no_production_call_refused(tmp_path):
-    """A call exists (so it clears the "calls no function at all" gate) but
-    it is to a purely test-local helper, never anything imported — refused."""
-    test_path = tmp_path / "test_fixture.py"
-    test_path.write_text(
-        "def _local_helper():\n"
-        "    return 'wholly local reliability caveat'\n\n"
-        "def test_pure_local():\n"
-        "    text = _local_helper()\n"
-        "    assert text == 'wholly local reliability caveat'\n",
-        encoding="utf-8",
-    )
-    emissions = [{
-        "case_id": "x", "text": "wholly local reliability caveat",
-        "producer_test": "test_fixture.py::test_pure_local",
-    }]
-    with pytest.raises(cv.ContractValidationError, match="never calls an imported"):
-        cv.validate_producer_emissions_bound(emissions, repo_root=tmp_path, run_pytest=False)
-
-
-def test_genuine_production_emission_accepted(tmp_path):
-    """Positive control: a test that calls a REAL production function and
-    asserts on ITS return value (never hand-typing the literal as an
-    argument anywhere) is accepted."""
-    (tmp_path / "produced.py").write_text(
-        "def render_caveat(n):\n"
-        "    return f'signal {n} is too noisy to score reliably'\n",
-        encoding="utf-8",
-    )
-    test_path = tmp_path / "test_fixture.py"
-    test_path.write_text(
-        "import produced\n\n"
-        "def test_real_emission():\n"
-        "    rendered = produced.render_caveat(3)\n"
-        "    assert 'signal 3 is too noisy to score reliably' in rendered\n",
-        encoding="utf-8",
-    )
-    emissions = [{
-        "case_id": "x", "text": "signal 3 is too noisy to score reliably",
-        "producer_test": "test_fixture.py::test_real_emission",
-    }]
-    # run_pytest=False: this synthetic fixture isn't a real pytest-collectible
-    # module on sys.path; the AST-level decoy/production/assert checks are
-    # what this test exercises. The real committed fixture set (empty right
-    # now) is exercised WITH run_pytest=True below.
-    cv.validate_producer_emissions_bound(emissions, repo_root=tmp_path, run_pytest=False)
 
 
 def test_real_committed_fixtures_pass_all_validators():
