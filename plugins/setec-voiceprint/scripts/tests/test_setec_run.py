@@ -26,8 +26,6 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]  # scripts/
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import capabilities  # type: ignore  # noqa: E402
 import setec_run  # type: ignore  # noqa: E402
@@ -206,6 +204,80 @@ def test_script_nonzero_exit_wrapped_as_internal_error(manifest, monkeypatch):
     assert rc == setec_run.EXIT_INTERNAL == 1
     assert env["reason_category"] == "internal_error"
     assert "boom" in env["reason"]
+
+
+def test_invalid_manifest_script_path_is_normalized(manifest):
+    broken = json.loads(json.dumps(manifest))
+    entry = next(
+        row for row in broken["entries"] if row["id"] == "variance_audit"
+    )
+    entry["script_path"] = "/tmp/outside.py"
+
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=broken, observed_version="1.112.0",
+    )
+
+    assert rc == setec_run.EXIT_INTERNAL
+    assert env["reason_category"] == "internal_error"
+    assert "invalid manifest script_path" in env["reason"]
+
+
+def test_script_exit_2_interpreter_launch_failure_wrapped_as_internal_error(
+    manifest, monkeypatch,
+):
+    """Build-review P2 finding (a), specs/svp-packaging-conversion.md: a
+    resolved script_path that doesn't exist under this REPO_ROOT (e.g.
+    the zero-install gate's bare, non-plugins/-wrapped copy layout —
+    see tools/check_zero_install.py) makes CPython itself fail to
+    launch the target with its own fixed "can't open file" wording and
+    exit 2. This must NEVER be reported as policy_refused (a privacy-
+    guard SIGNAL the target script never emitted) — it's a dispatcher/
+    environment fault, reason_category internal_error."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 2, stdout="",
+            stderr=(
+                "/usr/bin/python3: can't open file "
+                f"'{cmd[1]}': "
+                "[Errno 2] No such file or directory"
+            ),
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["reason_category"] == "internal_error"
+    assert "can't open file" in env["reason"]
+
+
+def test_exit_2_message_about_an_unrelated_file_is_not_launch_failure(
+    manifest, monkeypatch,
+):
+    """Only CPython's error for the exact invoked target gets reclassified."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 2, stdout="",
+            stderr=(
+                "/usr/bin/python3: can't open file '/tmp/unrelated.py': "
+                "[Errno 2] No such file or directory"
+            ),
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_CONTRACT
+    assert env["reason_category"] == "policy_refused"
 
 
 def test_script_exit_2_wrapped_as_policy_refused(manifest, monkeypatch):

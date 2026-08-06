@@ -39,8 +39,6 @@ import pytest
 
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(SCRIPTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_ROOT))
 
 import voice_fingerprint as vf  # type: ignore  # noqa: E402
 import crosslingual_voice_distance as cvd  # type: ignore  # noqa: E402

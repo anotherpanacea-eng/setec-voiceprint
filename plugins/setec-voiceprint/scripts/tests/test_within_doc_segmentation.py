@@ -34,10 +34,6 @@ from pathlib import Path
 
 import pytest
 
-SCRIPT_DIR = Path(__file__).resolve().parent.parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
 import within_doc_segmentation as w  # noqa: E402
 from variance_audit import _WORD_RE  # noqa: E402
 

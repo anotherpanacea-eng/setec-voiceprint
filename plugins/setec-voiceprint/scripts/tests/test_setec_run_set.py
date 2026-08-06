@@ -43,10 +43,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]  # scripts/
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import capabilities  # type: ignore  # noqa: E402
 import setec_run_set  # type: ignore  # noqa: E402
 
@@ -159,6 +155,15 @@ def baseline_dir(tmp_path):
 def _run_main(monkeypatch, manifest, argv):
     """Run main() with an injected manifest, capturing stdout."""
     monkeypatch.setattr(setec_run_set, "_load_live_manifest", lambda: manifest)
+    # These run-set unit tests execute temporary stub scripts.  Path-policy
+    # behavior belongs to test_setec_run.py; keep this helper focused on set
+    # orchestration rather than feeding non-manifest absolute paths through
+    # the production resolver.
+    monkeypatch.setattr(
+        setec_run_set.setec_run,
+        "_script_abspath",
+        lambda entry: Path(entry["script_path"]),
+    )
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         rc = setec_run_set.main(argv)

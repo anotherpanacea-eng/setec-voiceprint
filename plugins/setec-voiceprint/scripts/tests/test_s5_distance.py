@@ -14,8 +14,6 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "s5_distance_request.json"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import s5_distance as s5  # type: ignore  # noqa: E402
 

@@ -34,9 +34,6 @@ from unittest import mock
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import surprisal_backend as sb  # type: ignore
 
 # Math tests need torch for tensor ops. Skip when torch isn't

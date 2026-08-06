@@ -17,8 +17,6 @@ from pathlib import Path
 import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import tocsin_audit as tc  # type: ignore  # noqa: E402
 from output_schema import (  # type: ignore  # noqa: E402

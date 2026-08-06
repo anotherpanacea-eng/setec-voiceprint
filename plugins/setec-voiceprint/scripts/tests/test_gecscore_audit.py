@@ -21,9 +21,6 @@ import pytest
 _HERE = Path(__file__).resolve().parent
 _SCRIPTS = _HERE.parent
 _REPO_ROOT = _SCRIPTS.parents[2]
-if str(_SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS))
-
 import gecscore_audit as g  # type: ignore  # noqa: E402
 from output_schema import (  # type: ignore  # noqa: E402
     VALID_TASK_SURFACES,

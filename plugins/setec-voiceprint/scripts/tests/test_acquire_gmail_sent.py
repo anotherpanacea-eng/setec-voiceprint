@@ -25,10 +25,6 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import acquire_gmail_sent as G  # type: ignore
 from test_data.acquisition_gmail_fixture import build_fixture as bf  # type: ignore
 

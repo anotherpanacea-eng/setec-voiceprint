@@ -18,8 +18,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CALIB_DIR = ROOT / "calibration"
 if str(CALIB_DIR) not in sys.path:
     sys.path.insert(0, str(CALIB_DIR))
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import register_taxonomy as _rt  # type: ignore  # noqa: E402
 
@@ -391,7 +389,6 @@ class TestManifestValidatorRoundTrip:
         # — we accept warnings (the impostor-track ratchets emit
         # warnings on shareable-no-consent-status entries) but
         # refuse any errors.
-        sys.path.insert(0, str(ROOT))
         import manifest_validator as mv  # type: ignore
         result = mv.validate_manifest(str(manifest_path))
         errors = [

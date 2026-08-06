@@ -16,8 +16,6 @@ import pytest
 
 _HERE = Path(__file__).resolve().parent
 _SCRIPTS = _HERE.parent
-sys.path.insert(0, str(_SCRIPTS))
-
 import binoculars_audit as bin_audit  # noqa: E402
 
 

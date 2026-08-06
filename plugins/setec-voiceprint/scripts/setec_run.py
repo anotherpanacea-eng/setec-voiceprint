@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -62,9 +63,7 @@ import capabilities  # type: ignore
 from output_schema import REASON_CATEGORIES, SCHEMA_VERSION, build_error_output  # type: ignore
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-# The repo root is the parent of plugins/ — manifest script_path values are
-# repo-relative (``plugins/setec-voiceprint/scripts/<x>.py``).
-REPO_ROOT = PLUGIN_ROOT.parent.parent
+_MANIFEST_PLUGIN_PREFIX = Path("plugins") / "setec-voiceprint"
 
 TOOL = "setec_run"
 # The dispatcher's own version, independent of any surface's SCRIPT_VERSION
@@ -146,9 +145,30 @@ def missing_required_deps(entry: dict[str, Any]) -> list[str]:
 
 def _script_abspath(entry: dict[str, Any]) -> Path:
     """Resolve the manifest's repo-relative ``script_path`` to an absolute
-    path under this checkout."""
+    path under this plugin copy.
+
+    Manifest paths intentionally retain their repository-relative
+    ``plugins/setec-voiceprint/`` prefix, but a copied plugin subtree has no
+    repository wrapper. Strip that stable prefix and resolve from the actual
+    plugin root so both the source checkout and a bare copied subtree work.
+    Refuse paths outside that prefix or paths that escape after resolution.
+    """
     rel = entry.get("script_path")
-    return (REPO_ROOT / rel).resolve()
+    if not isinstance(rel, str):
+        raise ValueError("manifest entry has no string script_path")
+    try:
+        plugin_rel = Path(rel).relative_to(_MANIFEST_PLUGIN_PREFIX)
+    except ValueError as exc:
+        raise ValueError(
+            f"manifest script_path {rel!r} is outside "
+            f"{_MANIFEST_PLUGIN_PREFIX.as_posix()!r}"
+        ) from exc
+    target = (PLUGIN_ROOT / plugin_rel).resolve()
+    try:
+        target.relative_to(PLUGIN_ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"manifest script_path {rel!r} escapes the plugin root") from exc
+    return target
 
 
 def _run_subprocess(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -253,10 +273,15 @@ def _wrap_script_failure(
     exits 2 on a refused output path, but Python ``argparse`` ALSO exits 2
     on a usage error (e.g. an unrecognized flag), emitting a ``usage:``
     line. We disambiguate so consumers can branch on ``reason_category``
-    (R3): an argparse usage error (``usage:`` in stderr) -> ``bad_input``;
-    any other exit 2 -> ``policy_refused`` (the privacy ratchet); anything
-    else -> ``internal_error``. The stderr tail becomes the human
-    ``reason``."""
+    (R3): the interpreter itself failing to LAUNCH the resolved
+    script_path (CPython's own "can't open file" — the manifest's
+    script_path resolved to a path that doesn't exist under this
+    REPO_ROOT, e.g. a broken checkout or a layout the resolver doesn't
+    support) -> ``internal_error`` (a dispatcher/environment fault, never
+    a policy signal); an argparse usage error (``usage:`` in stderr) ->
+    ``bad_input``; any OTHER exit 2 -> ``policy_refused`` (the privacy
+    ratchet); anything else -> ``internal_error``. The stderr tail
+    becomes the human ``reason``."""
     stderr_tail = (proc.stderr or "").strip()
     if not stderr_tail:
         stderr_tail = (
@@ -264,6 +289,39 @@ def _wrap_script_failure(
             f"parseable envelope on stdout"
         )
     if proc.returncode == 2:
+        # The interpreter never reached the target script at all — this
+        # is CPython's own fixed launch-failure wording ("<python>: can't
+        # open file '<path>': ..."), not anything the target script
+        # emitted. Checked FIRST: a broken script_path resolution is a
+        # dispatcher/environment fault, and must never be reported as
+        # policy_refused (a privacy-guard SIGNAL) or bad_input (a user
+        # ARGUMENT problem) — neither is true here, and a consumer that
+        # branches on reason_category would draw the wrong conclusion
+        # from either. See specs/svp-packaging-conversion.md's zero-
+        # install gate, which reproduces exactly this failure shape when
+        # setec_run.py's REPO_ROOT resolution doesn't match a bare
+        # (non-plugins/-wrapped) copy layout.
+        first_line = stderr_tail.splitlines()[0]
+        launch_error = re.fullmatch(
+            r".+: can't open file ['\"](?P<path>.+)['\"]: "
+            r"\[Errno 2\] No such file or directory",
+            first_line,
+        )
+        invoked = proc.args if isinstance(proc.args, (list, tuple)) else ()
+        if (
+            launch_error is not None
+            and len(invoked) >= 2
+            and launch_error.group("path") == str(invoked[1])
+        ):
+            return _error(
+                surface=surface,
+                reason=(
+                    f"{surface}: the dispatcher could not launch the "
+                    f"resolved script (exit 2): {stderr_tail}"
+                ),
+                reason_category="internal_error",
+                exit_code=EXIT_INTERNAL,
+            )
         # argparse usage errors (unrecognized flag, etc.) also exit 2 but
         # emit a "usage:" line — those are bad_input, not a privacy refusal.
         if "usage:" in stderr_tail.lower():
@@ -376,13 +434,12 @@ def _extract_envelope(stdout: str) -> dict[str, Any] | None:
 
 def _run_stdout_surface(
     surface: str,
-    entry: dict[str, Any],
+    script: Path,
     surface_args: list[str],
 ) -> int:
     """Run a ``json_delivery: stdout`` surface: pass ``--json`` through,
     capture stdout, parse the envelope, and re-emit it. On failure, wrap
     as R3."""
-    script = _script_abspath(entry)
     cmd = [sys.executable, str(script), *surface_args, "--json"]
     proc = _run_subprocess(cmd)
     if proc.returncode != 0:
@@ -408,7 +465,7 @@ def _run_stdout_surface(
 
 def _run_file_surface(
     surface: str,
-    entry: dict[str, Any],
+    script: Path,
     surface_args: list[str],
 ) -> int:
     """Run a ``json_delivery: file`` surface (``pov_voice_profile`` /
@@ -419,7 +476,6 @@ def _run_file_surface(
     default-private policy), read the artifact, and project the consumer
     envelope to stdout. The consumer never touches ``--json-out`` (spec §3).
     The tempdir is always cleaned up."""
-    script = _script_abspath(entry)
     # The script's privacy guard requires the output path to live under a
     # directory named exactly ``ai-prose-baselines-private`` (resolved
     # path components). Build that inside a tempdir so the artifact is
@@ -580,20 +636,28 @@ def dispatch(
 
     # (4)+(5) Exec the script and guarantee the envelope reaches stdout.
     delivery = entry.get("json_delivery")
+    if delivery not in {"stdout", "file"}:
+        return _error(
+            surface=surface,
+            reason=(
+                f"{surface}: unsupported json_delivery {delivery!r} in the "
+                f"manifest (expected 'stdout' or 'file')"
+            ),
+            reason_category="internal_error",
+            exit_code=EXIT_INTERNAL,
+        )
+    try:
+        script = _script_abspath(entry)
+    except ValueError as exc:
+        return _error(
+            surface=surface,
+            reason=f"{surface}: invalid manifest script_path: {exc}",
+            reason_category="internal_error",
+            exit_code=EXIT_INTERNAL,
+        )
     if delivery == "stdout":
-        return _run_stdout_surface(surface, entry, surface_args)
-    if delivery == "file":
-        return _run_file_surface(surface, entry, surface_args)
-    # A surface with an unexpected json_delivery value is a manifest bug.
-    return _error(
-        surface=surface,
-        reason=(
-            f"{surface}: unsupported json_delivery {delivery!r} in the "
-            f"manifest (expected 'stdout' or 'file')"
-        ),
-        reason_category="internal_error",
-        exit_code=EXIT_INTERNAL,
-    )
+        return _run_stdout_surface(surface, script, surface_args)
+    return _run_file_surface(surface, script, surface_args)
 
 
 # ---------- CLI ----------------------------------------------------

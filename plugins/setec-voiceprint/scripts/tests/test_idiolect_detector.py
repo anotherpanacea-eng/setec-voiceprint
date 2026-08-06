@@ -8,8 +8,6 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from idiolect_detector import directory_entries, manifest_entries, run_idiolect_detector
 from manifest_validator import validate_manifest

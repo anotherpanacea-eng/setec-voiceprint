@@ -25,10 +25,6 @@ from typing import Any
 
 import pytest
 
-SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
-if str(SCRIPTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_ROOT))
-
 import house_style_decomposition as hsd  # noqa: E402
 
 # ---------------------------------------------------------------------------

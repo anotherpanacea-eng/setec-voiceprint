@@ -20,8 +20,6 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[4]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import function_word_adjacency_audit as fwan  # type: ignore  # noqa: E402
 import function_word_grammar_audit as ga  # type: ignore  # noqa: E402

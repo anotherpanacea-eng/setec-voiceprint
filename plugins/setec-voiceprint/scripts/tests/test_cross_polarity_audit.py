@@ -35,8 +35,6 @@ ROOT = Path(__file__).resolve().parents[1]
 CALIB_DIR = ROOT / "calibration"
 if str(CALIB_DIR) not in sys.path:
     sys.path.insert(0, str(CALIB_DIR))
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import cross_polarity_audit as cpa  # type: ignore
 import polarity_audit as pa  # type: ignore

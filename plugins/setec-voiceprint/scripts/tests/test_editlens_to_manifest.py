@@ -248,7 +248,6 @@ class TestB4ValidatorRoundTrip:
         )
         assert etm.convert(args) == 0
         # Run the validator on the output manifest.
-        sys.path.insert(0, str(ROOT))
         import manifest_validator as mv  # type: ignore
         result = mv.validate_manifest(str(out))
         issues = result.get("issues", [])

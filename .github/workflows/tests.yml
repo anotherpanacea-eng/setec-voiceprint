@@ -70,6 +70,21 @@ jobs:
           python3 tools/check_docs_freshness.py
           python3 tools/gen_calibration_readiness.py --check
 
+      # specs/svp-packaging-conversion.md P1 gates. Each is a runtime property
+      # here, not just a description: check_claim_license_guard.py exits 1 on
+      # ANY unexplained delta in the protected claim-license module set (no
+      # override) and exits 2 if the merge base can't be resolved — both
+      # nonzero, both fail this step and therefore the job.
+      # check_packaging_migration.py --strict additionally rejects a
+      # ghost/expired exemption row and enforces the shrink-only ratchet
+      # against origin/main (its default --base-ref).
+      - name: Packaging P1 gates (migration checker, claim-license guard, zero-install)
+        if: always()
+        run: |
+          python3 tools/check_packaging_migration.py --strict
+          python3 tools/check_claim_license_guard.py
+          python3 tools/check_zero_install.py
+
       # Spec-anchor lint, DIFF-SCOPED. tools/spec_anchor_lint.py catches the
       # "a spec asserts a symbol / file:line / sibling-spec / env-var that does
       # not exist" class, which the build retrospective puts behind ~40% of P1s.

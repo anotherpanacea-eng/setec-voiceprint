@@ -24,10 +24,6 @@ try:
 except ImportError:  # pragma: no cover
     pytest = None
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 import acquisition_core as ac  # type: ignore  # noqa: E402
 
 # The fallback path needs BeautifulSoup; skip the module cleanly when the

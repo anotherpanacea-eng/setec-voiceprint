@@ -38,8 +38,6 @@ from pathlib import Path
 import pytest  # type: ignore
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
 
 import cross_doc_novelty_profile as cdnp  # type: ignore  # noqa: E402
 from stylometry_core import CHAR_NGRAM_NS  # type: ignore  # noqa: E402

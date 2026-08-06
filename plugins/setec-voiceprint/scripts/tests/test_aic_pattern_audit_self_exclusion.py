@@ -16,8 +16,6 @@ a genuinely different baseline doc is kept.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
 import aic_pattern_audit as aic  # noqa: E402
 
 # A passage dense in AIC frames so pooling it visibly moves baseline density.

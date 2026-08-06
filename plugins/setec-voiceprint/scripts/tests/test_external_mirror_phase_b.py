@@ -18,7 +18,6 @@ _HERE = Path(__file__).resolve().parent
 _EXTERNAL_MIRROR = _HERE.parent / "external_mirror"
 _SCRIPTS = _HERE.parent
 sys.path.insert(0, str(_EXTERNAL_MIRROR))
-sys.path.insert(0, str(_SCRIPTS))
 
 import ingest_outputs as ingest  # noqa: E402
 import compute_distances as dist  # noqa: E402

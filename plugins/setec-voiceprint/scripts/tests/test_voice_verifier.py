@@ -21,7 +21,6 @@ from pathlib import Path
 import pytest
 
 SCRIPTS_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(SCRIPTS_ROOT))
 
 import voice_verifier as vv  # noqa: E402
 from output_schema import SCHEMA_VERSION, VALID_TASK_SURFACES  # noqa: E402

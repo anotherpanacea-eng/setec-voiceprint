@@ -21,8 +21,6 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 import narrative_decision_long_form as ndlf  # type: ignore  # noqa: E402
 import narrative_feature_schema as nfs  # type: ignore  # noqa: E402

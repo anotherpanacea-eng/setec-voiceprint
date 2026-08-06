@@ -15,10 +15,6 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parent.parent
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
-
 import agd_move_scan  # type: ignore
 import agd_move_scan_judge  # type: ignore
 

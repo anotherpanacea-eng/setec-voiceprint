@@ -39,8 +39,6 @@ import pytest
 
 _HERE = Path(__file__).resolve().parent
 _SCRIPTS = _HERE.parent
-sys.path.insert(0, str(_SCRIPTS))
-
 import watermark_probe as wp  # noqa: E402
 
 

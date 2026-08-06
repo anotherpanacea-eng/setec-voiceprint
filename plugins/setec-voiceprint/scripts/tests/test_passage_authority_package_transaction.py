@@ -10,10 +10,6 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT_DIR = Path(__file__).resolve().parents[1]
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
 import passage_authority_package_transaction as transaction  # noqa: E402
 from passage_remediation import PinnedPrivateRoot  # noqa: E402
 from passage_remediation_projection import RemediationProjection  # noqa: E402

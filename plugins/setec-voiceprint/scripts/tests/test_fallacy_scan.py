@@ -13,10 +13,6 @@ from pathlib import Path
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parent.parent
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
-
 import argument_judge  # type: ignore
 import fallacy_judge  # type: ignore
 import fallacy_scan  # type: ignore
