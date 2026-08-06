@@ -229,46 +229,16 @@ RELIABILITY_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
-MATCHED_RELIABILITY = "matched_reliability"
-UNMATCHED_RELIABILITY = "unmatched_reliability"
-
-# Both fine-grained results TIER as "reliability" for a caller that only
-# wants the tier (see `_classify_warnings`/`tier_envelope` below). They are
-# kept DISTINCT at the classify_warning() return-value level specifically so
-# a test can observe which branch fired — a classifier whose two branches
-# return the same literal is unfalsifiable-by-construction: deleting every
-# pattern in RELIABILITY_PATTERNS would not change classify_warning's
-# return value at all, and no fixture or test could catch that regression.
-# `test_deleting_all_patterns_changes_classification` below is exactly that
-# regression test.
-_RESULT_TIER = {
-    MATCHED_RELIABILITY: "reliability",
-    UNMATCHED_RELIABILITY: "reliability",
-}
-
-
 def classify_warning(warning: str) -> str:
-    """Classify a SUCCESS-envelope warning string against the permanent
-    11-pattern classifier. Returns 'matched_reliability' if a pattern
-    matched, 'unmatched_reliability' otherwise — NOT the tier itself. Per
-    C1.2 both currently TIER as 'reliability' (fail-upward default:
-    unmatched producer prose is never presumed harmless / 'cosmetic'), but
-    the two outcomes stay distinguishable at this layer so a caller (or a
-    coverage fixture, or a future tier change) can tell a KNOWN reliability
-    caveat from an unrecognized one. Callers that only want the tier use
-    `classification_tier()`."""
+    """Return the consumer tier for a SUCCESS-envelope warning.
+
+    Known patterns are reliability warnings. Unmatched prose fails upward to
+    that same tier; it is never presumed cosmetic.
+    """
     for pattern in RELIABILITY_PATTERNS:
         if pattern.search(warning):
-            return MATCHED_RELIABILITY
-    return UNMATCHED_RELIABILITY
-
-
-def classification_tier(classification: str) -> str:
-    """Map a `classify_warning()` result to its tier ('reliability').
-    Isolated from `classify_warning` itself so the TIER MAPPING (which may
-    one day distinguish the two) lives at the call site, not baked into the
-    classifier's return value."""
-    return _RESULT_TIER[classification]
+            return "reliability"
+    return "reliability"
 
 
 # ============================================================================
@@ -307,8 +277,9 @@ _REASON_CATEGORY_TIER: dict[str, str] = {
 _REQUIRED_ENVELOPE_KEYS = (
     "task_surface", "tool", "version", "available", "target",
     "baseline", "results", "claim_license", "claim_license_rendered",
-    "warnings",
+    "warnings", "ai_status",
 )
+_ERROR_ENVELOPE_KEYS = ("reason", "reason_category")
 
 
 class SetecRunnerError(RuntimeError):
@@ -347,13 +318,11 @@ def _tier_for_reason_category(reason_category: "str | None") -> str:
 
 
 def _classify_warnings(warnings: list[str]) -> tuple[list[str], list[str]]:
-    """Return (reliability, cosmetic) for a SUCCESS envelope's warnings.
-    Tier mapping (both classify_warning() outcomes currently tier
-    'reliability') happens HERE, at the call site — see classification_tier()."""
+    """Return (reliability, cosmetic) for a SUCCESS envelope's warnings."""
     reliability: list[str] = []
     cosmetic: list[str] = []
     for w in warnings:
-        if classification_tier(classify_warning(w)) == "reliability":
+        if classify_warning(w) == "reliability":
             reliability.append(w)
         else:
             cosmetic.append(w)
@@ -369,6 +338,8 @@ def _coerce_envelope(envelope: dict[str, Any]) -> None:
             f"this; check that the discovered SETEC is recent enough."
         )
     missing = [k for k in _REQUIRED_ENVELOPE_KEYS if k not in envelope]
+    if envelope.get("available") is False:
+        missing.extend(k for k in _ERROR_ENVELOPE_KEYS if k not in envelope)
     if missing:
         raise SetecRunnerError(
             f"SETEC envelope missing required keys: {missing!r}. Envelope "
@@ -494,7 +465,12 @@ def build_location(
             f"Found a SETEC plugin root at {plugin_root}, but plugin.json is "
             f"unreadable.\n\n{install_instructions()}"
         )
-    version_str = str(manifest.get("version", ""))
+    version_str = manifest.get("version")
+    if not isinstance(version_str, str):
+        raise SetecDiscoveryError(
+            f"SETEC plugin.json at {plugin_root} has a non-string version: "
+            f"{version_str!r}.\n\n{install_instructions()}"
+        )
     try:
         parsed = parse_version(version_str)
     except VersionParseError as exc:

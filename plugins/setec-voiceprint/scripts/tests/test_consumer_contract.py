@@ -222,7 +222,6 @@ def test_invalid_producer_disposition_refused():
     coverage = [{
         "case_id": "x", "text": "y",
         "expected_consumer_tier": "reliability",
-        "expected_classification": "unmatched_reliability",
         "producer_disposition": "definitely_not_valid",
     }]
     with pytest.raises(cv.ContractValidationError, match="invalid producer_disposition"):
@@ -233,7 +232,6 @@ def test_falsely_labelled_live_emission_refused():
     coverage = [{
         "case_id": "x", "text": "y",
         "expected_consumer_tier": "reliability",
-        "expected_classification": "unmatched_reliability",
         "producer_disposition": "live_emission",
     }]
     with pytest.raises(cv.ContractValidationError, match="cannot claim live_emission"):

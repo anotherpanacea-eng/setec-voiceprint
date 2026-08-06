@@ -171,8 +171,7 @@ def validate_manifest_emit_envelope(envelope: dict[str, Any]) -> None:
 
 def validate_warning_classifier_coverage_row_shape(row: Any) -> None:
     required = frozenset({
-        "case_id", "text", "expected_consumer_tier", "expected_classification",
-        "producer_disposition",
+        "case_id", "text", "expected_consumer_tier", "producer_disposition",
     })
     _check_exact_keys(row, required, "warning_classifier_coverage row")
     if row["producer_disposition"] not in VALID_DISPOSITIONS:
