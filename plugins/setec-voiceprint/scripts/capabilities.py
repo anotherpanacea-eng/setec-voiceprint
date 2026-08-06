@@ -344,6 +344,23 @@ def render_json(entries_list: list[dict[str, Any]]) -> str:
     return json.dumps(entries_list, indent=2, default=str) + "\n"
 
 
+def _example_parts(ex: Any) -> tuple[str, str]:
+    """Return (description, cmd) for one `examples[]` item.
+
+    The manifest schema requires `{description, cmd}` mappings — the
+    drift gate's Check 10 (tools/check_capabilities_drift.py) fails CI
+    on any fragment carrying a bare-string example — but a third-party
+    or hand-edited fragment could still slip past that gate before this
+    CLI runs against it. Tolerate a bare string defensively (treat it as
+    the `cmd`, with no description) rather than crashing with
+    `AttributeError: 'str' object has no attribute 'get'`, which is
+    exactly the bug this helper replaces.
+    """
+    if isinstance(ex, dict):
+        return str(ex.get("description", "") or ""), str(ex.get("cmd", "") or "")
+    return "", str(ex or "")
+
+
 def render_show(entry: dict[str, Any]) -> str:
     parts = [f"# {entry.get('id')}"]
     parts.append("")
@@ -398,10 +415,11 @@ def render_show(entry: dict[str, Any]) -> str:
         parts.append("## Examples")
         parts.append("")
         for ex in entry["examples"]:
-            parts.append(f"**{ex.get('description', '')}**")
+            description, cmd = _example_parts(ex)
+            parts.append(f"**{description}**")
             parts.append("")
             parts.append("```bash")
-            parts.append(ex.get("cmd", "").strip())
+            parts.append(cmd.strip())
             parts.append("```")
             parts.append("")
     if entry.get("references"):
@@ -598,8 +616,9 @@ def render_recommend(
         if entry.get("examples"):
             lines.append("- **example:**")
             ex = entry["examples"][0]
+            _, cmd = _example_parts(ex)
             lines.append("    ```bash")
-            lines.append("    " + ex.get("cmd", "").strip())
+            lines.append("    " + cmd.strip())
             lines.append("    ```")
         lines.append("")
         lines.append(

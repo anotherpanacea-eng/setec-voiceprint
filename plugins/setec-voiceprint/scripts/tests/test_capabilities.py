@@ -618,6 +618,110 @@ def test_cli_emit_returns_zero_and_valid_json():
     assert "setec_version" in env and "entries" in env
 
 
+# ---------- regression: string-shaped `examples[]` -----------------
+#
+# narrative_decision_long_form / near_dup_dedup / passage_remediation
+# shipped `examples` as bare strings instead of `{description, cmd}`
+# mappings. `render_recommend()` / `render_show()` both index
+# `entry["examples"][0]` (or iterate) and call `.get("cmd", ...)` on
+# each item, so a string-shaped example crashed with
+# `AttributeError: 'str' object has no attribute 'get'` the moment
+# that entry ranked first (recommend) or was looked up (show). The
+# three fragments are now normalized to the dict shape (see
+# capabilities.d/{narrative_decision_long_form,near_dup_dedup,
+# passage_remediation}.yaml); these tests pin both the manifest-level
+# fix and the renderer's defensive fallback for any fragment that
+# still slips through with a bare string.
+
+def test_cli_recommend_repro_situation_returns_zero():
+    """(a) The exact repro from the bug report and from
+    `skills/setec/SKILL.md` Step 3: pre-fix this raised AttributeError
+    when a string-examples entry (near_dup_dedup) ranked in the
+    results."""
+    rc = cap.main([
+        "recommend", "--situation",
+        "I have a 5000-word short story and I want to know if it "
+        "was AI-edited",
+        "--available", "--format", "md",
+    ])
+    assert rc == 0
+
+
+def test_render_recommend_ranks_previously_crashing_entries_first():
+    """(a) Force each of the three previously-string-examples entries
+    into the #1 (first-rendered) slot — the exact position that
+    indexed `examples[0]` — and confirm rendering succeeds and shows
+    the real command."""
+    m = _manifest()
+    all_entries = {e["id"]: e for e in m["entries"]}
+    for entry_id in (
+        "near_dup_dedup",
+        "narrative_decision_long_form",
+        "passage_remediation",
+    ):
+        entry = all_entries[entry_id]
+        assert entry.get("examples"), f"{entry_id} lost its examples"
+        results = [(entry_id, entry, ["forced"])]
+        md = cap.render_recommend(results, "regression: force this entry first")
+        assert f"## 1. `{entry_id}`" in md
+        assert "```bash" in md
+        assert "python3" in md
+
+
+def test_render_recommend_handles_dict_and_string_example_shapes():
+    """(b) Unit test for the renderer over both example shapes: the
+    canonical `{description, cmd}` mapping, and a defensively
+    tolerated bare string (belt-and-suspenders for third-party
+    fragments the drift gate doesn't cover)."""
+    base = {
+        "id": "fixture_entry",
+        "surface": "fixture_surface",
+        "status": "heuristic",
+        "compute": {"tier": "core"},
+    }
+    dict_entry = {**base, "examples": [
+        {"description": "Run it", "cmd": "python3 fixture.py --json"},
+    ]}
+    str_entry = {**base, "examples": ["python3 fixture.py --json"]}
+
+    md_dict = cap.render_recommend(
+        [("fixture_entry", dict_entry, [])], "situation",
+    )
+    md_str = cap.render_recommend(
+        [("fixture_entry", str_entry, [])], "situation",
+    )
+    assert "python3 fixture.py --json" in md_dict
+    assert "python3 fixture.py --json" in md_str
+
+
+def test_render_show_handles_dict_and_string_example_shapes():
+    """(b) Same coverage for render_show(), the sibling renderer that
+    also indexes `examples[]`."""
+    base = {
+        "id": "fixture_entry",
+        "surface": "fixture_surface",
+        "status": "heuristic",
+        "compute": {"tier": "core"},
+    }
+    dict_entry = {**base, "examples": [
+        {"description": "Run it", "cmd": "python3 fixture.py --json"},
+    ]}
+    str_entry = {**base, "examples": ["python3 fixture.py --json"]}
+
+    md_dict = cap.render_show(dict_entry)
+    md_str = cap.render_show(str_entry)
+    assert "python3 fixture.py --json" in md_dict
+    assert "**Run it**" in md_dict
+    assert "python3 fixture.py --json" in md_str
+
+
+def test_example_parts_helper_tolerates_both_shapes():
+    """Direct unit coverage of the `_example_parts` helper itself."""
+    assert cap._example_parts({"description": "d", "cmd": "c"}) == ("d", "c")
+    assert cap._example_parts("bare string cmd") == ("", "bare string cmd")
+    assert cap._example_parts({}) == ("", "")
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):
