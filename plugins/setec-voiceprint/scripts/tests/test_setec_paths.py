@@ -68,6 +68,7 @@ def test_find_plugin_root_multiple_matches_raises(tmp_path):
 def test_plugin_paths_named_locations_exist_on_real_tree():
     p = setec_paths.plugin_paths()
     assert p.root == REAL_PLUGIN_ROOT
+    assert p.scripts.is_dir()
     assert p.capabilities_d.is_dir()
     assert p.plugin_json.is_file()
     assert p.claim_license_surfaces.is_dir()
@@ -78,6 +79,7 @@ def test_plugin_paths_named_locations_exist_on_real_tree():
 
 def test_convenience_accessors_match_plugin_paths():
     bundle = setec_paths.plugin_paths()
+    assert setec_paths.scripts_dir() == bundle.scripts
     assert setec_paths.capabilities_d_dir() == bundle.capabilities_d
     assert setec_paths.plugin_json_path() == bundle.plugin_json
     assert (
@@ -87,6 +89,10 @@ def test_convenience_accessors_match_plugin_paths():
     assert setec_paths.register_tiers_d_dir() == bundle.register_tiers_d
     assert setec_paths.references_dir() == bundle.references
     assert setec_paths.data_dir() == bundle.data
+
+
+def test_scripts_dir_equals_real_scripts_root():
+    assert setec_paths.scripts_dir() == SCRIPTS
 
 
 def test_plugin_json_path_content_matches_setec_voiceprint():

@@ -100,6 +100,7 @@ class PluginPaths:
     """
 
     root: Path
+    scripts: Path
     capabilities_d: Path
     plugin_json: Path
     claim_license_surfaces: Path
@@ -114,6 +115,7 @@ def plugin_paths(start: Path | str | None = None) -> PluginPaths:
     root = find_plugin_root(start)
     return PluginPaths(
         root=root,
+        scripts=root / "scripts",
         capabilities_d=root / "capabilities.d",
         plugin_json=root / _PLUGIN_MARKER,
         claim_license_surfaces=root / "scripts" / "claim_license_surfaces",
@@ -130,6 +132,28 @@ def plugin_paths(start: Path | str | None = None) -> PluginPaths:
 # root fresh (cheap: a handful of `is_file()` stats), so a caller in a
 # scratch copy gets the scratch copy's root, never a cached value from
 # a different process/tree.
+
+def scripts_dir(start: Path | str | None = None) -> Path:
+    """The plugin's `scripts/` root — the ONE directory pytest.ini's
+    `pythonpath` setting adds and every launcher's own bootstrap
+    resolves to. Added per build-review P2 finding (b): a data-path
+    user in a test/script that currently spells its own
+    `Path(__file__).resolve().parents[N]` chain to reach the scripts
+    root has a named `setec.paths` accessor to convert to instead of
+    reimplementing the arithmetic. The bulk per-file CONVERSION of
+    existing `Path(__file__)`-based scripts-root users to this
+    accessor is explicitly NOT done in this PR (see
+    specs/svp-packaging-conversion.md's §6 note in this repo's PR
+    body / commit history) — most of scripts/tests/*.py's
+    ~150 remaining data-path bindings point at scripts/test_data/
+    subdirectories or per-script fixture paths, not the bare scripts
+    root alone, and a mechanical AST rewrite of that scale belongs in
+    its own reviewed pass, not folded into this fix round. This
+    accessor exists NOW so that pass — and any NEW code written
+    against `setec.paths` from here on — has a real target instead of
+    an excuse to keep hand-rolling the chain."""
+    return plugin_paths(start).scripts
+
 
 def capabilities_d_dir(start: Path | str | None = None) -> Path:
     return plugin_paths(start).capabilities_d
