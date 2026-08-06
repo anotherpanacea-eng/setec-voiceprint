@@ -71,6 +71,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import json
 import re
 import subprocess
@@ -461,6 +462,19 @@ def load_move_map(path: Path | None = None) -> dict[str, Any]:
                 f"{path}: moves[{i}] must have exactly keys "
                 f"{sorted(REQUIRED_MOVE_ROW_KEYS)}"
             )
+        # `old_symbol`/`new_symbol` drive a STRUCTURAL AST rename (see
+        # _normalized_dump) — restricting them to legal Python identifiers
+        # is a cheap first fail-closed gate (a non-identifier can never
+        # match a Name/alias/attr node, so it would silently no-op the
+        # row instead of documenting a real rename; reject it instead of
+        # accepting dead data).
+        for key in ("old_symbol", "new_symbol"):
+            value = row.get(key)
+            if not isinstance(value, str) or not value.isidentifier():
+                raise GuardError(
+                    f"{path}: moves[{i}].{key} = {value!r} is not a legal "
+                    f"Python identifier"
+                )
     for i, row in enumerate(rewrites):
         if not isinstance(row, dict) or set(row.keys()) != REQUIRED_REWRITE_ROW_KEYS:
             raise GuardError(
@@ -485,22 +499,122 @@ def load_move_map(path: Path | None = None) -> dict[str, Any]:
     return data
 
 
+def validate_move_map_paths(move_map: dict[str, Any], base_sha: str) -> None:
+    """Both endpoints of every `moves` row must resolve as real git
+    objects — `old_path` at the merge base, `new_path` in the candidate
+    — never a path that merely LOOKS plausible. Without this, a row
+    could name a path that never existed anywhere, and its
+    old_symbol/new_symbol rename would still get applied everywhere
+    that symbol appears across the WHOLE protected set (not just the
+    claimed file), which is its own laundering surface even after the
+    rename is made structural."""
+    for i, row in enumerate(move_map["moves"]):
+        old_path = row["old_path"]
+        if show_file_at(base_sha, old_path) is None:
+            raise GuardError(
+                f"moves[{i}].old_path {old_path!r} does not resolve as a "
+                f"real git object at the merge base {base_sha} — refusing "
+                f"to trust the row"
+            )
+        new_path = row["new_path"]
+        if not (REPO_ROOT / new_path).is_file():
+            raise GuardError(
+                f"moves[{i}].new_path {new_path!r} does not resolve to a "
+                f"real file in the candidate tree — refusing to trust the "
+                f"row"
+            )
+
+
 # ---------- AST normalization + comparison ---------------------------
 
 
-def _normalized_dump(tree: ast.AST, moves: list[dict[str, Any]], rewrites: list[dict[str, Any]]) -> str:
-    """`ast.dump(..., include_attributes=False)`, then apply ONLY the
-    substitutions the move map declares: an old_symbol -> new_symbol
-    (and old_path -> new_path, for any embedded path-string literal)
-    rewrite per `moves` row, and the exact verified `old_ast` ->
-    `new_ast` substitution per `path_rewrites` row. P1 ships an empty
-    move map, so this is the identity transform today; the substitution
-    logic is exercised (and tested) via the module's own unit tests
-    using a synthetic non-empty map."""
+class _StructuralRename(ast.NodeTransformer):
+    """Rename ONLY identifier-bearing AST nodes — `ast.Name`, `ast.arg`,
+    `ast.alias` (`import X` / `import X as Y` / `from M import X as Y`),
+    `FunctionDef`/`AsyncFunctionDef`/`ClassDef.name`, `Attribute.attr`,
+    and `ImportFrom.module` (a dotted module-path string, per the spec's
+    "module-path nodes"). `ast.Constant` — where license PROSE lives —
+    is never visited by name here (NodeTransformer's generic_visit still
+    walks into it, but there is no visit_Constant override, so it is
+    returned unchanged). This is the fix for a real laundering channel:
+    the previous implementation did a raw `str.replace` on the whole
+    `ast.dump()` TEXT, so a `moves` row with `old_symbol="REPORTS"` /
+    `new_symbol="REFUSES"` silently rewrote a `Constant` string
+    containing the substring "REPORTS" too — inverting a refusal
+    sentence while the guard reported a clean structural relocation.
+    Confirmed via a synthetic repro before this fix; regression-tested
+    after it (see test_check_claim_license_guard.py)."""
+
+    def __init__(self, renames: dict[str, str]):
+        self.renames = renames
+
+    def _rename(self, name: str) -> str:
+        return self.renames.get(name, name)
+
+    def visit_Name(self, node: ast.Name) -> ast.AST:
+        self.generic_visit(node)
+        node.id = self._rename(node.id)
+        return node
+
+    def visit_arg(self, node: ast.arg) -> ast.AST:
+        self.generic_visit(node)
+        node.arg = self._rename(node.arg)
+        return node
+
+    def visit_alias(self, node: ast.alias) -> ast.AST:
+        node.name = self._rename(node.name)
+        if node.asname is not None:
+            node.asname = self._rename(node.asname)
+        return node
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.AST:
+        self.generic_visit(node)
+        node.name = self._rename(node.name)
+        return node
+
+    visit_AsyncFunctionDef = visit_FunctionDef  # type: ignore[assignment]
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> ast.AST:
+        self.generic_visit(node)
+        node.name = self._rename(node.name)
+        return node
+
+    def visit_Attribute(self, node: ast.Attribute) -> ast.AST:
+        self.generic_visit(node)
+        node.attr = self._rename(node.attr)
+        return node
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> ast.AST:
+        self.generic_visit(node)
+        if node.module is not None:
+            # Rename a whole-module dotted path only on an exact match —
+            # a partial/segment rename would require splitting on "."
+            # and is not a shape the spec's `moves` rows describe (a
+            # `moves` row relocates one file/symbol, not a package
+            # segment).
+            node.module = self._rename(node.module)
+        return node
+
+
+def _normalized_dump(
+    tree: ast.AST, moves: list[dict[str, Any]], rewrites: list[dict[str, Any]]
+) -> str:
+    """`ast.dump(..., include_attributes=False)` of a STRUCTURALLY
+    renamed copy of `tree` — every `moves` row's `old_symbol ->
+    new_symbol` is applied by renaming AST identifier nodes (never by
+    substring-replacing the dumped text; see `_StructuralRename`), so a
+    rename can never reach into a string literal's contents no matter
+    what symbol names a row picks. `path_rewrites` keeps its existing,
+    narrower mechanism (an exact declared `old_ast -> new_ast`
+    expression substitution, verified in scratch copies per spec §3) —
+    that one isn't the laundering channel this fix addresses, since its
+    rows are exact multi-token expressions, not short bare symbols."""
+    if moves:
+        tree = copy.deepcopy(tree)
+        renames = {row["old_symbol"]: row["new_symbol"] for row in moves}
+        tree = _StructuralRename(renames).visit(tree)
+        ast.fix_missing_locations(tree)
     dumped = ast.dump(tree, include_attributes=False)
-    for row in moves:
-        dumped = dumped.replace(row["old_symbol"], row["new_symbol"])
-        dumped = dumped.replace(row["old_path"], row["new_path"])
     for row in rewrites:
         dumped = dumped.replace(row["old_ast"], row["new_ast"])
     return dumped
@@ -582,6 +696,7 @@ def compare_protected_modules(
 def run(base_ref: str) -> tuple[bool, dict[str, Any]]:
     base_sha = merge_base(base_ref)
     move_map = load_move_map()
+    validate_move_map_paths(move_map, base_sha)
     protected = build_protected_set()
     deltas = compare_protected_modules(base_sha, protected, move_map)
     passed = not deltas

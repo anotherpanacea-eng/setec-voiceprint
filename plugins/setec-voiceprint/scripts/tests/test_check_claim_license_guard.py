@@ -142,6 +142,120 @@ def test_declared_move_with_symbol_rewrite_passes(fake_repo):
     assert passed, report["deltas"]
 
 
+def test_moves_substring_laundering_is_blocked(fake_repo):
+    """The attack this fix closes: a `moves` row whose old_symbol is a
+    STRING-LEVEL SUBSTRING of a license sentence must not launder a
+    content change. Before the fix, `_normalized_dump` did a raw
+    `str.replace` on the whole `ast.dump()` TEXT, so
+    old_symbol="REPORTS" / new_symbol="REFUSES" silently rewrote a
+    `Constant` string containing "REPORTS" too — an inverted refusal
+    sentence passed as a clean relocation. Confirmed exploitable against
+    the pre-fix implementation before writing this test; must now fail
+    the guard (no relocation actually happened — old_path == new_path,
+    so there is nothing legitimate for the row to explain)."""
+    scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
+    audit = scripts / "an_audit.py"
+    audit.write_text(
+        "from claim_license import ClaimLicense\n\n"
+        "def _claim_license():\n"
+        "    return ClaimLicense(licenses='This audit REPORTS smoothing evidence')\n",
+        encoding="utf-8",
+    )
+    # Same file, unchanged path — an inverted sentence, "explained" only
+    # by a bogus old_symbol/new_symbol pair chosen to string-match text
+    # inside the license constant.
+    audit.write_text(
+        "from claim_license import ClaimLicense\n\n"
+        "def _claim_license():\n"
+        "    return ClaimLicense(licenses='This audit REFUSES smoothing evidence')\n",
+        encoding="utf-8",
+    )
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [{
+            "old_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "new_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "old_symbol": "REPORTS",
+            "new_symbol": "REFUSES",
+            "phase": "P4",
+        }],
+        "path_rewrites": [],
+    }), encoding="utf-8")
+
+    passed, report = clg.run(base_ref="HEAD")
+    assert not passed
+    paths = {d["path"] for d in report["deltas"]}
+    assert "plugins/setec-voiceprint/scripts/an_audit.py" in paths
+
+
+def test_moves_rejects_non_identifier_symbol(fake_repo):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [{
+            "old_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "new_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "old_symbol": "REPORTS smoothing",  # not a legal identifier
+            "new_symbol": "x",
+            "phase": "P4",
+        }],
+        "path_rewrites": [],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="not a legal Python identifier"):
+        clg.load_move_map(move_map_path)
+
+
+def test_moves_rejects_old_path_absent_at_merge_base(fake_repo):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [{
+            "old_path": "plugins/setec-voiceprint/scripts/does_not_exist.py",
+            "new_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "old_symbol": "x",
+            "new_symbol": "y",
+            "phase": "P4",
+        }],
+        "path_rewrites": [],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="does not resolve as a real git object"):
+        clg.run(base_ref="HEAD")
+
+
+def test_moves_rejects_new_path_absent_from_candidate(fake_repo):
+    move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
+    move_map_path.write_text(json.dumps({
+        "schema": 1,
+        "moves": [{
+            "old_path": "plugins/setec-voiceprint/scripts/an_audit.py",
+            "new_path": "plugins/setec-voiceprint/scripts/nowhere.py",
+            "old_symbol": "x",
+            "new_symbol": "y",
+            "phase": "P4",
+        }],
+        "path_rewrites": [],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="does not resolve to a real file"):
+        clg.run(base_ref="HEAD")
+
+
+def test_structural_rename_never_touches_string_constants():
+    """Unit-level pin on _StructuralRename directly: a Constant node
+    with a value equal to a renamed symbol's TEXT must be left byte-
+    identical, even though a Name with that same id is renamed."""
+    import ast as ast_mod
+    import copy as copy_mod
+    tree = ast_mod.parse("x = REPORTS\ny = 'REPORTS'\n")
+    renamed = clg._StructuralRename({"REPORTS": "REFUSES"}).visit(
+        copy_mod.deepcopy(tree)
+    )
+    ast_mod.fix_missing_locations(renamed)
+    dumped = ast_mod.dump(renamed, include_attributes=False)
+    assert "id='REFUSES'" in dumped  # the Name was renamed
+    assert "value='REPORTS'" in dumped  # the string Constant was NOT
+
+
 def test_load_move_map_rejects_duplicate_new_path(fake_repo, monkeypatch):
     move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
     move_map_path.write_text(json.dumps({
