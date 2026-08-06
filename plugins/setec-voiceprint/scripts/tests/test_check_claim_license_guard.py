@@ -331,6 +331,35 @@ def test_candidate_only_protected_module_is_caught(fake_repo):
     )
 
 
+def test_candidate_only_annotated_protected_assignment_is_caught(fake_repo):
+    scripts = fake_repo / "plugins" / "setec-voiceprint" / "scripts"
+    (scripts / "new_claim.py").write_text(
+        "from claim_license import ClaimLicense\n"
+        "_claim_license: object = ClaimLicense(licenses='new')\n",
+        encoding="utf-8",
+    )
+    passed, report = clg.run(base_ref="HEAD")
+    assert not passed
+    assert any(
+        row["path"].endswith("new_claim.py")
+        and "adds a protected" in row["detail"]
+        for row in report["deltas"]
+    )
+
+
+@pytest.mark.parametrize("schema", [False, 0, "1", 2])
+def test_load_move_map_requires_exact_integer_schema(fake_repo, schema):
+    move_map_path = (
+        fake_repo / "plugins" / "setec-voiceprint"
+        / "packaging_move_map.json"
+    )
+    move_map_path.write_text(json.dumps({
+        "schema": schema, "moves": [], "path_rewrites": [],
+    }), encoding="utf-8")
+    with pytest.raises(clg.GuardError, match="integer 1"):
+        clg.load_move_map(move_map_path)
+
+
 def test_load_move_map_rejects_malformed_row(fake_repo):
     move_map_path = fake_repo / "plugins" / "setec-voiceprint" / "packaging_move_map.json"
     move_map_path.write_text(json.dumps({

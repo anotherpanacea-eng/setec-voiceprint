@@ -41,6 +41,21 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     assert (bare_root / ".claude-plugin" / "plugin.json").is_file()
 
 
+def test_make_bare_copy_refuses_source_symlinks(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("secret = True\n", encoding="utf-8")
+    try:
+        (source / "laundered.py").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks unavailable on this platform")
+    monkeypatch.setattr(zi, "PLUGIN_ROOT", source)
+
+    with pytest.raises(zi.GateError, match="contains symlink"):
+        zi.make_bare_copy(tmp_path / "copy")
+
+
 def _fake_proc(returncode: int, stdout: str = "", stderr: str = "") -> subprocess.CompletedProcess:
     return subprocess.CompletedProcess(["x"], returncode, stdout=stdout, stderr=stderr)
 

@@ -206,6 +206,23 @@ def test_script_nonzero_exit_wrapped_as_internal_error(manifest, monkeypatch):
     assert "boom" in env["reason"]
 
 
+def test_invalid_manifest_script_path_is_normalized(manifest):
+    broken = json.loads(json.dumps(manifest))
+    entry = next(
+        row for row in broken["entries"] if row["id"] == "variance_audit"
+    )
+    entry["script_path"] = "/tmp/outside.py"
+
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=broken, observed_version="1.112.0",
+    )
+
+    assert rc == setec_run.EXIT_INTERNAL
+    assert env["reason_category"] == "internal_error"
+    assert "invalid manifest script_path" in env["reason"]
+
+
 def test_script_exit_2_interpreter_launch_failure_wrapped_as_internal_error(
     manifest, monkeypatch,
 ):

@@ -244,6 +244,31 @@ def _contains_file_dunder(node: ast.AST) -> bool:
     return False
 
 
+def _is_path_alias_expr(node: ast.AST, anchor_names: set[str]) -> bool:
+    """Whether ``node`` derives a path from a visible anchor.
+
+    Enclosing-scope propagation is deliberately narrower than the historical
+    same-scope closure: merely passing an anchor to an arbitrary function does
+    not make that function's return value a path alias.  This still recognizes
+    the path-building forms the migration ratchet owns.
+    """
+    if isinstance(node, ast.Name):
+        return node.id in anchor_names
+    if isinstance(node, (ast.Attribute, ast.Subscript)):
+        return _is_path_alias_expr(node.value, anchor_names)
+    if isinstance(node, ast.BinOp):
+        return (
+            _is_path_alias_expr(node.left, anchor_names)
+            or _is_path_alias_expr(node.right, anchor_names)
+        )
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Attribute):
+            return _is_path_alias_expr(node.func.value, anchor_names)
+        if isinstance(node.func, ast.Name) and node.func.id == "Path":
+            return any(_is_path_alias_expr(arg, anchor_names) for arg in node.args)
+    return False
+
+
 def _line_range(node: ast.AST) -> range:
     lo = node.lineno
     hi = getattr(node, "end_lineno", None) or lo
@@ -324,6 +349,7 @@ def _names_in_target(target: ast.expr) -> list[str]:
 
 def _scope_anchors(
     stmts: list[ast.stmt], visible_names: set[str],
+    broad_visible_names: set[str] | None = None,
     allowed_duplicates: dict[str, tuple[int, ...]] | None = None,
 ) -> dict[str, ast.stmt]:
     """Anchors found within ONE scope's own flattened statement list.
@@ -370,7 +396,10 @@ def _scope_anchors(
                 n.id for n in ast.walk(value)
                 if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
             }
-            if loaded & (known.keys() | visible_names):
+            if (
+                loaded & (known.keys() | (broad_visible_names or set()))
+                or _is_path_alias_expr(value, visible_names)
+            ):
                 for name in names:
                     if name in known and known[name] is not stmt and (
                         allowed_duplicates or {}
@@ -425,12 +454,14 @@ def find_anchors_in_file(path: Path) -> list[Anchor]:
     all_known: dict[str, ast.stmt] = dict(module_known)
     covered_nodes: list[ast.stmt] = list(module_known.values())
 
-    for scope_node in ast.walk(tree):
-        if not isinstance(scope_node, _SCOPE_BOUNDARY):
-            continue
-        scope_stmts = _flatten_scope_statements(scope_node.body)
+    def visit_nested_scopes(
+        body: list[ast.stmt], visible_names: set[str],
+        broad_visible_names: set[str],
+    ) -> None:
+        scope_stmts = _flatten_scope_statements(body)
         local_known = _scope_anchors(
-            scope_stmts, visible_names=set(module_known.keys()),
+            scope_stmts, visible_names=visible_names,
+            broad_visible_names=broad_visible_names,
             allowed_duplicates=allowed_duplicates,
         )
         for name, stmt in local_known.items():
@@ -445,6 +476,18 @@ def find_anchors_in_file(path: Path) -> list[Anchor]:
                 )
             all_known[name] = stmt
             covered_nodes.append(stmt)
+        nested_visible = visible_names | set(local_known)
+        for stmt in scope_stmts:
+            if isinstance(stmt, _SCOPE_BOUNDARY):
+                visit_nested_scopes(
+                    stmt.body, nested_visible, broad_visible_names,
+                )
+
+    for stmt in module_stmts:
+        if isinstance(stmt, _SCOPE_BOUNDARY):
+            visit_nested_scopes(
+                stmt.body, set(module_known), set(module_known),
+            )
 
     anchors = [
         Anchor(
@@ -515,14 +558,15 @@ def check_tools_repo_root() -> list[ToolRootViolation]:
             if assigned is None:
                 continue
             names, value = assigned
-            if names != ["REPO_ROOT"]:
+            if "REPO_ROOT" not in names:
                 continue
             expr = ast.unparse(value)
-            if expr != "Path(__file__).resolve().parents[1]":
+            if names != ["REPO_ROOT"] or expr != "Path(__file__).resolve().parents[1]":
                 violations.append(ToolRootViolation(
                     path=rel,
                     detail=(
-                        f"REPO_ROOT = {expr!r} at line {node.lineno}; "
+                        f"REPO_ROOT assignment targets {names!r} with "
+                        f"{expr!r} at line {node.lineno}; "
                         f"expected exactly "
                         f"'Path(__file__).resolve().parents[1]' "
                         f"(tools/ is one level under the repo root)"

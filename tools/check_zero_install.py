@@ -95,11 +95,20 @@ def make_bare_copy(tmp_root: Path) -> Path:
     the wrapper directory is not part of what gets copied, so it's not
     part of what this gate reproduces either.
 
-    `shutil.copytree` with `symlinks=False` (the default) dereferences
-    any symlink it meets rather than reproducing it, so the bare copy
-    can never carry a live link back into the original checkout."""
+    Refuse source symlinks before copying: dereferencing could launder
+    outside content into the copy, while preserving links would leave the
+    supposedly bare tree dependent on its source checkout."""
+    symlinks = [path for path in PLUGIN_ROOT.rglob("*") if path.is_symlink()]
+    if symlinks:
+        relative = ", ".join(
+            str(path.relative_to(PLUGIN_ROOT)) for path in symlinks[:5]
+        )
+        raise GateError(f"plugin tree contains symlink(s): {relative}")
     dest = tmp_root / "setec-voiceprint"
-    shutil.copytree(PLUGIN_ROOT, dest, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(
+        PLUGIN_ROOT, dest, symlinks=True,
+        ignore=shutil.ignore_patterns("__pycache__"),
+    )
     return dest
 
 

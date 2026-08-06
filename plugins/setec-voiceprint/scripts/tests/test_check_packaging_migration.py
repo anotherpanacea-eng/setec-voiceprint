@@ -250,6 +250,44 @@ def test_scope_aware_closure_still_finds_function_local_alias_of_module_anchor(
     assert "data_dir" in symbols
 
 
+def test_scope_aware_closure_finds_nested_alias_of_outer_anchor(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "an_audit.py"
+    mod.write_text(
+        "from pathlib import Path\n"
+        "def outer():\n"
+        "    root = Path(__file__).resolve().parent\n"
+        "    def inner():\n"
+        "        data = root / 'data'\n"
+        "        return data\n",
+        encoding="utf-8",
+    )
+    symbols = {anchor.symbol for anchor in cpm.find_anchors_in_file(mod)}
+    assert {"root", "data"} <= symbols
+
+
+def test_nested_scope_does_not_launder_arbitrary_call_result_into_path_alias(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    mod = tmp_path / "an_audit.py"
+    mod.write_text(
+        "from pathlib import Path\n"
+        "import subprocess\n"
+        "def outer():\n"
+        "    root = Path(__file__).resolve().parent\n"
+        "    def inner():\n"
+        "        completed = subprocess.run([str(root)])\n"
+        "        return completed\n",
+        encoding="utf-8",
+    )
+    symbols = {anchor.symbol for anchor in cpm.find_anchors_in_file(mod)}
+    assert "root" in symbols
+    assert "completed" not in symbols
+
+
 def test_anchor_scanner_handles_annassign_and_tuple_targets(tmp_path, monkeypatch):
     monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
     mod = tmp_path / "an_audit.py"
@@ -266,6 +304,21 @@ def test_anchor_scanner_handles_annassign_and_tuple_targets(tmp_path, monkeypatc
     assert "target" in symbols  # tuple target deriving from an anchor
     assert "revision" not in symbols  # tuple target, unrelated RHS
     assert "blob" not in symbols
+
+
+def test_tools_repo_root_chained_assignment_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(cpm, "REPO_ROOT", tmp_path)
+    tools_dir = tmp_path / "tools"
+    tools_dir.mkdir()
+    (tools_dir / "bad.py").write_text(
+        "from pathlib import Path\n"
+        "REPO_ROOT = ALSO_ROOT = Path(__file__).resolve().parents[9]\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cpm, "TOOLS_ROOT", tools_dir)
+    problems = cpm.check_tools_repo_root()
+    assert len(problems) == 1
+    assert "ALSO_ROOT" in problems[0].detail
 
 
 def test_manual_dispositions_are_present_in_regenerated_exemptions():

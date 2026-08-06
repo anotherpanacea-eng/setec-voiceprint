@@ -434,13 +434,12 @@ def _extract_envelope(stdout: str) -> dict[str, Any] | None:
 
 def _run_stdout_surface(
     surface: str,
-    entry: dict[str, Any],
+    script: Path,
     surface_args: list[str],
 ) -> int:
     """Run a ``json_delivery: stdout`` surface: pass ``--json`` through,
     capture stdout, parse the envelope, and re-emit it. On failure, wrap
     as R3."""
-    script = _script_abspath(entry)
     cmd = [sys.executable, str(script), *surface_args, "--json"]
     proc = _run_subprocess(cmd)
     if proc.returncode != 0:
@@ -466,7 +465,7 @@ def _run_stdout_surface(
 
 def _run_file_surface(
     surface: str,
-    entry: dict[str, Any],
+    script: Path,
     surface_args: list[str],
 ) -> int:
     """Run a ``json_delivery: file`` surface (``pov_voice_profile`` /
@@ -477,7 +476,6 @@ def _run_file_surface(
     default-private policy), read the artifact, and project the consumer
     envelope to stdout. The consumer never touches ``--json-out`` (spec §3).
     The tempdir is always cleaned up."""
-    script = _script_abspath(entry)
     # The script's privacy guard requires the output path to live under a
     # directory named exactly ``ai-prose-baselines-private`` (resolved
     # path components). Build that inside a tempdir so the artifact is
@@ -638,20 +636,28 @@ def dispatch(
 
     # (4)+(5) Exec the script and guarantee the envelope reaches stdout.
     delivery = entry.get("json_delivery")
+    if delivery not in {"stdout", "file"}:
+        return _error(
+            surface=surface,
+            reason=(
+                f"{surface}: unsupported json_delivery {delivery!r} in the "
+                f"manifest (expected 'stdout' or 'file')"
+            ),
+            reason_category="internal_error",
+            exit_code=EXIT_INTERNAL,
+        )
+    try:
+        script = _script_abspath(entry)
+    except ValueError as exc:
+        return _error(
+            surface=surface,
+            reason=f"{surface}: invalid manifest script_path: {exc}",
+            reason_category="internal_error",
+            exit_code=EXIT_INTERNAL,
+        )
     if delivery == "stdout":
-        return _run_stdout_surface(surface, entry, surface_args)
-    if delivery == "file":
-        return _run_file_surface(surface, entry, surface_args)
-    # A surface with an unexpected json_delivery value is a manifest bug.
-    return _error(
-        surface=surface,
-        reason=(
-            f"{surface}: unsupported json_delivery {delivery!r} in the "
-            f"manifest (expected 'stdout' or 'file')"
-        ),
-        reason_category="internal_error",
-        exit_code=EXIT_INTERNAL,
-    )
+        return _run_stdout_surface(surface, script, surface_args)
+    return _run_file_surface(surface, script, surface_args)
 
 
 # ---------- CLI ----------------------------------------------------

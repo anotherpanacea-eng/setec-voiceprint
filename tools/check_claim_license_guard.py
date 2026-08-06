@@ -234,6 +234,13 @@ def _claim_license_relevant_subtrees(tree: ast.AST) -> list[ast.AST]:
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and _CLAIM_LICENSE_NAME_RE.search(tgt.id):
                     subtrees.append(node.value)
+        elif isinstance(node, ast.AnnAssign):
+            if (
+                isinstance(node.target, ast.Name)
+                and node.value is not None
+                and _CLAIM_LICENSE_NAME_RE.search(node.target.id)
+            ):
+                subtrees.append(node.value)
         elif isinstance(node, ast.Call):
             func = node.func
             called_name = None
@@ -436,6 +443,8 @@ def load_move_map(path: Path | None = None) -> dict[str, Any]:
             f"{path}: top-level keys must be exactly "
             f"{sorted(REQUIRED_MOVE_MAP_KEYS)}; got {sorted(data.keys())}"
         )
+    if type(data["schema"]) is not int or data["schema"] != 1:
+        raise GuardError(f"{path}: `schema` must be the integer 1")
     moves = data["moves"]
     rewrites = data["path_rewrites"]
     if not isinstance(moves, list) or not isinstance(rewrites, list):
