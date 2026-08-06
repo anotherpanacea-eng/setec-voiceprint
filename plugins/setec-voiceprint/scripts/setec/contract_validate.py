@@ -117,7 +117,10 @@ def validate_manifest_emit_envelope(envelope: dict[str, Any]) -> None:
 
 
 def validate_warning_classifier_coverage_row_shape(row: Any) -> None:
-    required = frozenset({"case_id", "text", "expected_consumer_tier", "producer_disposition"})
+    required = frozenset({
+        "case_id", "text", "expected_consumer_tier", "expected_classification",
+        "producer_disposition",
+    })
     _check_exact_keys(row, required, "warning_classifier_coverage row")
     if row["producer_disposition"] not in VALID_DISPOSITIONS:
         raise ContractValidationError(
@@ -184,13 +187,67 @@ def _find_def(tree: ast.Module, parts: list[str]) -> "ast.AST | None":
     return node
 
 
+def _collect_module_import_names(tree: ast.Module) -> set[str]:
+    """Top-level names bound by `import X` / `import X as Y` / `from M import
+    X [as Y]` — i.e. names that refer to an IMPORTED module or symbol, as
+    opposed to a name defined locally in the test file. Used to recognize a
+    "call into a production symbol" (an attribute/call on one of these
+    names) versus a purely test-local helper call."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    names.add(alias.asname or alias.name)
+    return names
+
+
+def _run_pytest_node(node_id: str, *, repo_root: Path) -> None:
+    """Actually EXECUTE the bound pytest node and require it passes. A
+    statically-plausible binding that is currently red (or collection-
+    broken) is not a real producer emission."""
+    import subprocess
+    import sys
+
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", node_id, "-q"],
+        cwd=repo_root, capture_output=True, text=True,
+    )
+    if completed.returncode != 0:
+        raise ContractValidationError(
+            f"producer_test {node_id!r} does not currently pass "
+            f"(pytest exit {completed.returncode}): "
+            f"{completed.stdout[-800:]}{completed.stderr[-400:]}"
+        )
+
+
 def validate_producer_emissions_bound(
-    emissions: list[dict[str, Any]], *, repo_root: Path,
+    emissions: list[dict[str, Any]], *, repo_root: Path, run_pytest: bool = True,
 ) -> None:
-    """For every emissions row: the `producer_test` node's FILE and DEF must
-    exist (refuses "a missing producer_test node"), and the row's `text`
-    must appear as a literal string constant somewhere in that def's body
-    (refuses a producer_test that does not actually observe the text)."""
+    """For every emissions row, refuse:
+
+      * a missing producer_test FILE or DEF node;
+      * a "docstring decoy" — the row's `text` appearing as an ARGUMENT to
+        any call inside the test body. That pattern means the test
+        constructs its OWN input containing the expected output (e.g.
+        ``audit = {"reason": "text too short"}; fn(audit)``) rather than
+        observing production code EMIT it — the exact gap a prior review
+        caught: a bound row whose "production path" was really the test
+        feeding itself the string it later asserted on;
+      * no call into an IMPORTED (production) symbol at all — a test that
+        never calls anything from outside itself cannot be observing a real
+        emission;
+      * the text never appearing inside an `assert` in the test body — it
+        must be genuinely CHECKED, not merely present;
+      * (when `run_pytest`, the default) the bound node not currently
+        passing when actually executed.
+
+    A row that survives all of these actually calls a production function
+    and asserts on ITS output containing `text` — not on a copy of `text`
+    the test typed in itself."""
     for row in emissions:
         validate_warning_producer_emissions_row_shape(row)
         path_str, parts = _parse_node_id(row["producer_test"])
@@ -200,20 +257,84 @@ def validate_producer_emissions_bound(
                 f"emissions row {row['case_id']!r}: producer_test file "
                 f"{path_str!r} does not exist"
             )
-        tree = ast.parse(test_path.read_text(encoding="utf-8"), filename=str(test_path))
+        source = test_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(test_path))
         def_node = _find_def(tree, parts)
         if def_node is None:
             raise ContractValidationError(
                 f"emissions row {row['case_id']!r}: producer_test node "
                 f"{row['producer_test']!r} was not found in {path_str}"
             )
-        literals = {
-            n.value for n in ast.walk(def_node)
-            if isinstance(n, ast.Constant) and isinstance(n.value, str)
-        }
-        if row["text"] not in literals:
+        text = row["text"]
+
+        calls = [n for n in ast.walk(def_node) if isinstance(n, ast.Call)]
+        if not calls:
             raise ContractValidationError(
-                f"emissions row {row['case_id']!r}: text {row['text']!r} does not "
-                f"appear as a string literal in {row['producer_test']!r} — the "
-                f"test does not observably bind this exact string"
+                f"emissions row {row['case_id']!r}: {row['producer_test']!r} "
+                f"calls no function at all — cannot observe a real emission"
             )
+
+        # Decoy check: the literal must never appear ANYWHERE in the test
+        # body OUTSIDE of an assert statement — not as a direct call
+        # argument, and not one level removed via an intermediate variable
+        # (`audit = {"reason": "text too short"}; fn(audit)` — the exact
+        # shape a prior review caught: the literal never appears in fn()'s
+        # own call-argument AST node, only inside the dict literal that
+        # feeds it). Collecting every Constant OUTSIDE any Assert, over the
+        # whole function body, catches both shapes uniformly.
+        assert_nodes = [n for n in ast.walk(def_node) if isinstance(n, ast.Assert)]
+        assert_node_ids = {id(n) for n in assert_nodes}
+
+        def _inside_any_assert(target: ast.AST) -> bool:
+            # ast.walk has no parent pointers; walk each assert's own
+            # subtree instead and check identity membership.
+            return any(
+                any(sub is target for sub in ast.walk(a)) for a in assert_nodes
+            )
+
+        for node in ast.walk(def_node):
+            if isinstance(node, ast.Constant) and node.value == text:
+                if not _inside_any_assert(node):
+                    raise ContractValidationError(
+                        f"emissions row {row['case_id']!r}: text {text!r} "
+                        f"appears OUTSIDE any assert in "
+                        f"{row['producer_test']!r} — the test constructs "
+                        f"its own input containing the expected output "
+                        f"(a decoy binding, whether fed directly as a call "
+                        f"argument or via an intermediate variable), rather "
+                        f"than observing production code emit it"
+                    )
+
+        # Must call into an imported (production) symbol.
+        imported_names = _collect_module_import_names(tree)
+        calls_production = False
+        for call in calls:
+            func = call.func
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                if func.value.id in imported_names:
+                    calls_production = True
+                    break
+            elif isinstance(func, ast.Name) and func.id in imported_names:
+                calls_production = True
+                break
+        if not calls_production:
+            raise ContractValidationError(
+                f"emissions row {row['case_id']!r}: {row['producer_test']!r} "
+                f"never calls an imported (production) symbol — cannot "
+                f"observe a real emission from test-local code alone"
+            )
+
+        # The text must actually be asserted on.
+        asserts = [n for n in ast.walk(def_node) if isinstance(n, ast.Assert)]
+        text_asserted = any(
+            isinstance(sub, ast.Constant) and sub.value == text
+            for a in asserts for sub in ast.walk(a)
+        )
+        if not text_asserted:
+            raise ContractValidationError(
+                f"emissions row {row['case_id']!r}: text {text!r} is never "
+                f"asserted on in {row['producer_test']!r}"
+            )
+
+        if run_pytest:
+            _run_pytest_node(row["producer_test"], repo_root=repo_root)

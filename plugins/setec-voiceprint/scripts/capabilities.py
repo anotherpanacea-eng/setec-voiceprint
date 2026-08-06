@@ -620,12 +620,32 @@ def render_recommend(
 # `contract`) manifest is still a legitimate transitional read.
 CONTRACT_BLOCK_MIN_SETEC_VERSION = "1.129.0"
 
-# The manifest schema version at/above which `emit` carries `contract`.
+# The manifest schema version AT OR ABOVE which `emit` carries `contract`.
+# A future 0.4.1/0.5.0 manifest schema still carries it — the gate is a
+# floor, not an exact-equality trap that would silently stop emitting the
+# block the moment the schema version moves again (F5/F10: unify producer
+# emission on a floor so it agrees with the floor rule both consumers gate
+# `contract`-required on, rather than three different conditions).
 CONTRACT_MANIFEST_SCHEMA_VERSION = "0.4.0"
+_CONTRACT_MANIFEST_SCHEMA_FLOOR = (0, 4, 0)
 
 CLIENT_RELATIVE_PATH = "scripts/setec/consumer_client.py"
 
 _CONTRACT_FIXTURES_SUBDIR = PLUGIN_ROOT / "references" / "contract_fixtures"
+
+
+def _manifest_schema_meets_contract_floor(manifest_schema_version: Any) -> bool:
+    """True if `manifest_schema_version` is at/above 0.4.0 (a FLOOR
+    comparison via the shared parser, not `== "0.4.0"` — an exact-equality
+    gate would silently stop emitting `contract` the moment the schema
+    version moves to 0.4.1/0.5.0)."""
+    if not isinstance(manifest_schema_version, str) or not manifest_schema_version:
+        return False
+    from setec import consumer_client as _cc  # local: avoid a hard module-level dep
+    try:
+        return _cc.meets_floor(manifest_schema_version, _CONTRACT_MANIFEST_SCHEMA_FLOOR)
+    except _cc.VersionParseError:
+        return False
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -653,6 +673,40 @@ def canonical_contract_bytes(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _s5_probe_entry(entry_id: str, digit: str) -> dict[str, Any]:
+    return {
+        "id": entry_id,
+        "content_sha256": f"sha256:{digit * 64}",
+        "word_count": 100,
+        "features": {
+            "char_ngrams_3": {"aaa": float(digit)},
+            "char_ngrams_4": {"aaaa": float(digit)},
+            "char_ngrams_5": {"aaaaa": float(digit)},
+            "pos_trigrams": {"NOUN VERB NOUN": float(digit)},
+            "dependency_ngrams": {"nsubj>ROOT>dobj": float(digit)},
+            "punctuation": {"comma": float(digit)},
+        },
+    }
+
+
+# F12: a minimal, VALID s5_distance request, inline — not read from
+# `scripts/tests/fixtures/`. Used only to probe compute_s5()'s live
+# `method` string (see build_contract_block below); the values are
+# arbitrary placeholders satisfying s5_distance.validate_request's shape
+# (>= 2 baseline entries, all six feature families present, sha256-shaped
+# hash fields), never real content.
+_S5_METHOD_PROBE_REQUEST: dict[str, Any] = {
+    "schema": "setec-s5-distance-request/1",
+    "target": _s5_probe_entry("target", "9"),
+    "baseline": {
+        "manifest_sha256": f"sha256:{'b' * 64}",
+        "content_inventory_sha256": f"sha256:{'c' * 64}",
+        "entries": [_s5_probe_entry("baseline-0", "0"), _s5_probe_entry("baseline-1", "1")],
+    },
+    "parser_inventory_sha256": f"sha256:{'d' * 64}",
+}
+
+
 def build_contract_block(*, plugin_root: Path = PLUGIN_ROOT) -> dict[str, Any]:
     """Build the closed `contract` block added to the R1 `emit` envelope at
     manifest_schema_version 0.4.0 (C2.1). Every value is read live from its
@@ -666,7 +720,13 @@ def build_contract_block(*, plugin_root: Path = PLUGIN_ROOT) -> dict[str, Any]:
         envelope; editing it for a contract-block convenience would drift
         `implementation_sha256` (and downstream `s5_verification_sha256`),
         which is out of scope (acceptance gate 2). Reading `method` off a
-        real computed result keeps this field live without that edit.
+        real computed result keeps this field live without that edit. The
+        request fed to `compute_s5()` is an INLINE literal
+        (`_S5_METHOD_PROBE_REQUEST`, module-level below), not a read off
+        `scripts/tests/fixtures/`: a bare copied plugin subtree (what
+        actually ships to a consumer — the packaging spec's own zero-install
+        contract) has no `tests/` tree, and `emit` is a production R1 query
+        surface that must work there too.
       * `client.sha256` <- the actual bytes of the vendored client source
       * `fixtures.*_sha256` <- the actual bytes of the three C1 fixtures
 
@@ -686,9 +746,7 @@ def build_contract_block(*, plugin_root: Path = PLUGIN_ROOT) -> dict[str, Any]:
     client_path = scripts_dir / "setec" / "consumer_client.py"
     fixtures_dir = plugin_root / "references" / "contract_fixtures"
 
-    s5_request_path = scripts_dir / "tests" / "fixtures" / "s5_distance_request.json"
-    s5_request = json.loads(s5_request_path.read_text(encoding="utf-8"))
-    s5_method = s5_distance.compute_s5(s5_request)["method"]
+    s5_method = s5_distance.compute_s5(_S5_METHOD_PROBE_REQUEST)["method"]
 
     return {
         "output_schema_version": output_schema.SCHEMA_VERSION,
@@ -760,7 +818,7 @@ def build_emit_envelope(
         "setec_version": sv,
         "manifest_schema_version": manifest_schema_version,
     }
-    if manifest_schema_version == CONTRACT_MANIFEST_SCHEMA_VERSION:
+    if _manifest_schema_meets_contract_floor(manifest_schema_version):
         envelope["contract"] = build_contract_block(plugin_root=plugin_root)
     envelope["entries"] = [
         _project_calibration_status(e) for e in entries(manifest)
