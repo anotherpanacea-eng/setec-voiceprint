@@ -253,10 +253,15 @@ def _wrap_script_failure(
     exits 2 on a refused output path, but Python ``argparse`` ALSO exits 2
     on a usage error (e.g. an unrecognized flag), emitting a ``usage:``
     line. We disambiguate so consumers can branch on ``reason_category``
-    (R3): an argparse usage error (``usage:`` in stderr) -> ``bad_input``;
-    any other exit 2 -> ``policy_refused`` (the privacy ratchet); anything
-    else -> ``internal_error``. The stderr tail becomes the human
-    ``reason``."""
+    (R3): the interpreter itself failing to LAUNCH the resolved
+    script_path (CPython's own "can't open file" — the manifest's
+    script_path resolved to a path that doesn't exist under this
+    REPO_ROOT, e.g. a broken checkout or a layout the resolver doesn't
+    support) -> ``internal_error`` (a dispatcher/environment fault, never
+    a policy signal); an argparse usage error (``usage:`` in stderr) ->
+    ``bad_input``; any OTHER exit 2 -> ``policy_refused`` (the privacy
+    ratchet); anything else -> ``internal_error``. The stderr tail
+    becomes the human ``reason``."""
     stderr_tail = (proc.stderr or "").strip()
     if not stderr_tail:
         stderr_tail = (
@@ -264,6 +269,28 @@ def _wrap_script_failure(
             f"parseable envelope on stdout"
         )
     if proc.returncode == 2:
+        # The interpreter never reached the target script at all — this
+        # is CPython's own fixed launch-failure wording ("<python>: can't
+        # open file '<path>': ..."), not anything the target script
+        # emitted. Checked FIRST: a broken script_path resolution is a
+        # dispatcher/environment fault, and must never be reported as
+        # policy_refused (a privacy-guard SIGNAL) or bad_input (a user
+        # ARGUMENT problem) — neither is true here, and a consumer that
+        # branches on reason_category would draw the wrong conclusion
+        # from either. See specs/svp-packaging-conversion.md's zero-
+        # install gate, which reproduces exactly this failure shape when
+        # setec_run.py's REPO_ROOT resolution doesn't match a bare
+        # (non-plugins/-wrapped) copy layout.
+        if "can't open file" in stderr_tail:
+            return _error(
+                surface=surface,
+                reason=(
+                    f"{surface}: the dispatcher could not launch the "
+                    f"resolved script (exit 2): {stderr_tail}"
+                ),
+                reason_category="internal_error",
+                exit_code=EXIT_INTERNAL,
+            )
         # argparse usage errors (unrecognized flag, etc.) also exit 2 but
         # emit a "usage:" line — those are bad_input, not a privacy refusal.
         if "usage:" in stderr_tail.lower():

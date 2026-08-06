@@ -206,6 +206,39 @@ def test_script_nonzero_exit_wrapped_as_internal_error(manifest, monkeypatch):
     assert "boom" in env["reason"]
 
 
+def test_script_exit_2_interpreter_launch_failure_wrapped_as_internal_error(
+    manifest, monkeypatch,
+):
+    """Build-review P2 finding (a), specs/svp-packaging-conversion.md: a
+    resolved script_path that doesn't exist under this REPO_ROOT (e.g.
+    the zero-install gate's bare, non-plugins/-wrapped copy layout —
+    see tools/check_zero_install.py) makes CPython itself fail to
+    launch the target with its own fixed "can't open file" wording and
+    exit 2. This must NEVER be reported as policy_refused (a privacy-
+    guard SIGNAL the target script never emitted) — it's a dispatcher/
+    environment fault, reason_category internal_error."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 2, stdout="",
+            stderr=(
+                "/usr/bin/python3: can't open file "
+                "'/tmp/x/setec-voiceprint/scripts/variance_audit.py': "
+                "[Errno 2] No such file or directory"
+            ),
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["reason_category"] == "internal_error"
+    assert "can't open file" in env["reason"]
+
+
 def test_script_exit_2_wrapped_as_policy_refused(manifest, monkeypatch):
     import subprocess
 
