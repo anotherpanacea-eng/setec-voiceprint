@@ -233,3 +233,40 @@ def test_tier_envelope_rejects_missing_error_key(missing):
     del env[missing]
     with pytest.raises(cc.SetecRunnerError):
         cc.tier_envelope(env)
+
+
+@pytest.mark.parametrize("field,bad_value", [
+    ("available", "false"),
+    ("available", 0),
+    ("warnings", "not-a-list"),
+    ("warnings", ["valid", 1]),
+    ("target", []),
+    ("baseline", []),
+    ("results", []),
+    ("claim_license", []),
+    ("task_surface", 1),
+    ("ai_status", 1),
+    ("claim_license_rendered", 1),
+])
+def test_tier_envelope_rejects_mistyped_common_fields(field, bad_value):
+    env = _base_envelope()
+    env[field] = bad_value
+    with pytest.raises(cc.SetecRunnerError):
+        cc.tier_envelope(env)
+
+
+def test_tier_envelope_rejects_nonmapping_top_level():
+    with pytest.raises(cc.SetecRunnerError, match="mapping"):
+        cc.tier_envelope([])
+
+
+@pytest.mark.parametrize("field", ["reason", "reason_category"])
+def test_tier_envelope_rejects_mistyped_error_fields(field):
+    env = _base_envelope(
+        available=False,
+        reason="producer refused",
+        reason_category="policy_refused",
+    )
+    env[field] = 1
+    with pytest.raises(cc.SetecRunnerError):
+        cc.tier_envelope(env)
