@@ -5,7 +5,8 @@
 > own reviewed PR"). This is that document. It authorizes its own follow-up PR; it does
 > not itself land code.
 
-- **Status:** BUILD-READY (v1) · **Date:** 2026-08-06 · **Repo:** `setec-voiceprint`
+- **Status:** BUILD-READY (v2, adversarial-review finding folded) · **Date:** 2026-08-06 ·
+  **Repo:** `setec-voiceprint`
 - **Provenance:** an Opus reviewer's ruling on PR #387 (packaging P1). Hermetic backend
   mode (`setec_hermetic_backend=stub` at the judge/embedding/surprisal backend
   construction boundaries, plus a scratch-copy consumer-case gate) was built, then
@@ -15,6 +16,14 @@
   (that closure is doing its job), don't merge with the gate red — land an amendment
   first, "because the guard must never be the thing that bends." This document is that
   amendment.
+- **v2 round:** an adversarial review of the sibling harness spec (#390) turned up a
+  side finding against v1 of this amendment — a local-variable rebind or module-constant
+  indirection could satisfy v1's clauses while still softening license text, since v1's
+  clause 1 protected only the `ClaimLicense(...)` call subtree, not the names it loads.
+  Confirmed reproducible against v1's own clause set (§2 records the exact
+  counterexample) and against three live examples already on `origin/main`. §2's clause
+  1 and clause 5 are rewritten around a claim-license **dataflow closure**, not merely
+  the call-site subtree; no other section changed in substance.
 - **Depends on:** `specs/svp-packaging-conversion.md` §3 (`tools/check_claim_license_guard.py`),
   §5 (`tools/check_zero_install.py`'s bare-copy gate). Authorizes a new phase,
   **P1-hermetic**, sequenced after packaging P1 and independent of P2–P5.
@@ -114,24 +123,109 @@ the prior finding is that anything an author can *assert* is something an author
 assert falsely. The checker derives everything from the two ASTs (merge-base and
 candidate) it already has open for the comparison it's already making.
 
+**Why "the subtree" is not enough — the closure must follow dataflow, not syntax.** An
+earlier draft of this exemption protected only `PS(T)` — the `ClaimLicense(...)`
+call-site subtrees themselves — under the assumption that byte-identical call-site ASTs
+mean byte-identical license output. That assumption is false whenever the call site
+reads a **name** rather than a literal, which is the normal shape in this codebase, not
+an edge case:
+
+- `plugins/setec-voiceprint/scripts/fast_detect_curvature.py:130` defines
+  `STUDENT_T_CAVEAT`, a module constant with no `LICENSE` in its name, appended into
+  `does_not_license_text` at `plugins/setec-voiceprint/scripts/fast_detect_curvature.py:478`
+  before that name reaches the `ClaimLicense(...)` call.
+- `plugins/setec-voiceprint/scripts/narrative_decision_audit.py:91` defines
+  `BRIDGE_CONTROL_EXTENSION_SENTENCE` — containing the literal license text "Its output
+  is licensed only as spec-78 Arm A bridge-control input" — appended into
+  `does_not_license_text` at `plugins/setec-voiceprint/scripts/narrative_decision_audit.py:456-458`.
+- `plugins/setec-voiceprint/scripts/fallacy_scan.py` builds a local `caveats` list via a
+  sequence of conditional `.append(...)` calls inside `compose_envelope` (from
+  `plugins/setec-voiceprint/scripts/fallacy_scan.py:167` through the
+  `additional_caveats=caveats` keyword at
+  `plugins/setec-voiceprint/scripts/fallacy_scan.py:217`), none of which are inside the
+  `ClaimLicense(...)` call site itself.
+
+In every one of these, the `ClaimLicense(...)` call site's own AST is just a `Name`
+load (`does_not_license=does_not_license_text`, `additional_caveats=caveats`) — its dump
+is identical no matter what those names are bound to. A subtree-only clause 1 would let
+an inserted statement — anywhere reachable, before the call, that rebinds
+`does_not_license_text` or mutates `caveats` — pass clauses 1–5 unchanged while silently
+softening the emitted refusal text. This is exactly the shape an independent review of
+the sibling harness spec found as a live hole in this amendment's first draft: an
+inserted local statement
+
+```python
+does_not_license_text = "...softened text..."
+```
+
+placed immediately before an existing `ClaimLicense(...)` call inside an existing
+function satisfied every clause below as originally written — the call subtree's own
+dump never changed, nothing at module scope was shadowed, and the insertion was a
+syntactically pure addition. **It does not pass the clauses as extended below** (clause
+1 now protects `does_not_license_text`'s definer statement as part of the closure, and
+clause 5 now forbids any new binding of that name at any scope) — but it is worth
+recording plainly that the first draft's clause 1 and clause 5, as originally scoped,
+did not stop it. The fix is not a patch bolted onto the old clauses; it replaces what
+"the protected zone" means.
+
 **Definitions.** For a protected module present at path `p` in both trees, let `B` and
 `C` be its merge-base and candidate ASTs. Let `PS(T)` be the ordered subtree list
 `_claim_license_relevant_subtrees(T)` — the exact function the guard already runs to
-*seed* the closure (no new code, reused as-is). The module qualifies for the exemption
-iff all five clauses hold; any single failure falls through unchanged to today's
-whole-module hard fail — no partial credit, no "mostly additive":
+*seed* the closure (no new code, reused as-is).
 
-1. **Zero drift inside every claim-license subtree.** Match each entry of `PS(B)` to an
-   entry of `PS(C)` by stable anchor — the enclosing `_claim_license*`-named
-   function/assignment's own name, or (for a bare `ClaimLicense(...)` call site) the
-   name of its immediately enclosing function — never by raw list position, which
-   `ast.walk`'s traversal order can shift when unrelated statements are inserted
-   elsewhere in the module. `PS(B)` and `PS(C)` must have the same cardinality and every
-   matched pair's `ast.dump(..., include_attributes=False)` must be byte-identical. An
-   unmatched entry on either side, or any dump mismatch, fails the module out of the
-   exemption immediately — this clause alone is what makes it impossible for a license
-   string, `does_not_license` sentence, `comparison_set` key, `additional_caveats`
-   entry, or `ai_status` branch to change and still qualify.
+Define `LOADED(S)` for a subtree `S ∈ PS(T)` as every `Name` node with `Load` context
+appearing anywhere inside `S` (the same walk the guard's own supplier-closure resolution
+already performs over a seed's claim-license subtrees — reused, not reinvented).
+
+Define `DATAFLOW(T)`, the **claim-license dataflow closure**, by the following fixpoint,
+computed the same "repeat until the set closes; fail closed on anything unresolved"
+way §3's existing supplier closure already works:
+
+1. Seed a worklist with every name in `LOADED(S)` for every `S ∈ PS(T)`.
+2. For each worklist name `n`, resolve its binding by ordinary Python scoping, scoped to
+   the **innermost enclosing function of the subtree that loaded it** (a name assigned
+   anywhere in a function body is local to that whole function under normal Python
+   semantics, so every `Assign`/`AnnAssign`/`AugAssign`/`For`-target/`With ... as`/
+   `except ... as`/walrus (`:=`) binding of `n` anywhere in that same function is a
+   **definer statement** for `n`, regardless of whether it appears before or after the
+   subtree that loads it) — or, if `n` is never locally bound in that function (a free
+   variable), resolve outward to the nearest enclosing scope, and if still unresolved,
+   to module scope, exactly as clause-1's old subtree resolution and the guard's
+   existing one-hop supplier resolution both already do. A plugin-local import binding
+   `n` pulls in its supplier module exactly as today's supplier closure already
+   specifies (whole module, terminal at `ClaimLicense`/`claim_license`).
+3. Add every definer statement found in step 2 to `DEFINERS(T)`. For each such definer
+   statement, walk it for its own `Name` loads (e.g. `STUDENT_T_CAVEAT` inside
+   `does_not_license_text = f"{does_not_license_text} {STUDENT_T_CAVEAT}"`, or `caveats`
+   inside `caveats.append(...)`) and add any newly seen name to the worklist.
+4. Repeat until the worklist is empty. A star import, an unresolved/ambiguous binding,
+   or a name whose assignment can't be uniquely located inside the fixpoint fails the
+   whole check closed — exactly §3's existing posture, never a guess.
+
+`DATAFLOW(T) = PS(T) ∪ DEFINERS(T)`, and `NAMES(T)` is the set of every name any
+`DEFINERS(T)` statement binds, rebinds, or the target object of any mutation described
+in clause 5 below.
+
+The module qualifies for the exemption iff all five clauses hold; any single failure
+falls through unchanged to today's whole-module hard fail — no partial credit, no
+"mostly additive":
+
+1. **Zero drift across the claim-license dataflow closure.** Match each entry of
+   `DATAFLOW(B)` to an entry of `DATAFLOW(C)` by stable anchor — for a `PS` entry, the
+   enclosing `_claim_license*`-named function/assignment's own name, or (for a bare
+   `ClaimLicense(...)` call site) the name of its immediately enclosing function; for a
+   `DEFINERS` entry, the bound/mutated name plus its enclosing scope path (module, or
+   the specific enclosing function) — never by raw list position, which `ast.walk`'s
+   traversal order can shift when unrelated statements are inserted elsewhere in the
+   module. `DATAFLOW(B)` and `DATAFLOW(C)` must have the same cardinality per anchor and
+   every matched pair's `ast.dump(..., include_attributes=False)` must be byte-identical.
+   An unmatched entry on either side, or any dump mismatch — in a `ClaimLicense(...)`
+   call site *or* in any statement that defines a name it transitively loads — fails the
+   module out of the exemption immediately. This is the clause that makes it impossible
+   for a license string, `does_not_license` sentence, `comparison_set` key,
+   `additional_caveats` entry, or `ai_status` branch to change, however many local or
+   module-level names of indirection sit between the literal and the call site, and
+   still qualify.
 2. **Named-definition pass.** For every top-level `FunctionDef`/`AsyncFunctionDef`/
    `ClassDef` present in both `B.body` and `C.body` under the same `(kind, name)`: if
    its signature-bearing fields (`args`, `decorator_list`, `bases`, `keywords`,
@@ -151,20 +245,34 @@ whole-module hard fail — no partial credit, no "mostly additive":
    rewritten.
 4. **Module-level insertions are declaration-shaped only.** Any statement `insert`-
    classified by clause 3 **at module top level** (not inside a recursed function/class
-   body, where any statement shape is permitted, since it only executes when that
-   function is called) must be an `Import`, `ImportFrom`, `FunctionDef`,
-   `AsyncFunctionDef`, `ClassDef`, or `Assign`/`AnnAssign` binding only brand-new names
-   (clause 5). A bare expression-statement, augmented assignment, subscript- or
-   attribute-assignment, `Global`, `Nonlocal`, or `Delete` inserted at module level
-   fails the module out of the exemption — these are exactly the import-time
-   side-effect shapes (mutating a shared object a protected subtree later reads,
-   without ever "modifying" or "shadowing" its binding) that clauses 1–3 alone do not
-   close, and they are cheap to insert if left open.
-5. **No shadowing, no dynamic dispatch.** No name introduced anywhere under clauses 3–4
-   may coincide with a name already bound at module scope in `B` — this is what stops a
-   new statement from silently rebinding `ClaimLicense`, an existing supplier alias, or
-   any existing constant the guard already trusts. No inserted statement or inserted
-   function body may call `eval`, `exec`, `compile`, `__import__`,
+   body, where any statement shape is otherwise permitted, since it only executes when
+   that function is called — subject always to clause 5) must be an `Import`,
+   `ImportFrom`, `FunctionDef`, `AsyncFunctionDef`, `ClassDef`, or `Assign`/`AnnAssign`
+   binding only brand-new names (clause 5). A bare expression-statement, augmented
+   assignment, subscript- or attribute-assignment, `Global`, `Nonlocal`, or `Delete`
+   inserted at module level fails the module out of the exemption — these are import-time
+   side-effect shapes that clauses 1–3 alone would not close even for names outside
+   `NAMES(T)`, and they are cheap to insert if left open.
+5. **No shadowing, rebinding, or mutation of a dataflow-closure name at any scope; no
+   dynamic dispatch.** No statement inserted anywhere under clauses 3–4 — module level or
+   inside any recursed function/class body, before the protected call site or after it —
+   may bind, rebind, augment-assign, delete, or **mutate** (subscript-assignment,
+   attribute-assignment, or a call to a name-mutating method — `.append`, `.extend`,
+   `.update`, `.insert`, `.add`, `.pop`, `.remove`, `.sort`, `.__setitem__`,
+   `.__iadd__`, or similar — on) any name in `NAMES(B) ∪ NAMES(C)`, nor any name already
+   bound at module scope in `B` more generally (the original, narrower shadowing rule is
+   now a special case of this one). This is what stops the `does_not_license_text`
+   rebind and the `caveats.append(...)` insertion alike — both target a name the
+   dataflow closure already protects, so both are refused regardless of where in the
+   function they're placed, exactly like inserting text into the `ClaimLicense(...)`
+   call directly would be. **No new aliases of a protected name either:** a newly
+   inserted statement may not bind a brand-new name whose value is a bare reference to,
+   or an attribute/subscript access on, any name in `NAMES(B) ∪ NAMES(C)` (e.g.
+   `caveats2 = caveats` followed by mutating `caveats2` must not become a side door —
+   the alias-creating statement is itself refused, not merely the later mutation),
+   except the declaration-shaped forms clause 4 already permits at module level for a
+   genuinely unrelated new name with no such reference. No inserted statement or
+   inserted function body may call `eval`, `exec`, `compile`, `__import__`,
    `importlib.import_module`, `getattr`/`setattr` with a non-literal attribute
    argument, or contain a star import — the same "fail closed on unresolved
    provenance" posture §3 already applies to the seed/supplier resolution itself,
@@ -172,10 +280,11 @@ whole-module hard fail — no partial credit, no "mostly additive":
 
 A module that satisfies all five clauses is exempt from the whole-module hard fail; the
 checker instead emits a passing, auditable line — e.g. `judge_backends.py: additive-only
-delta (3 new module-level statement(s); zero drift in 0 claim-license subtree(s) — not
-a seed)` — so the exemption's use is visible in every CI run, not silent. A module that
-fails any clause gets **exactly today's** error, unchanged: `"whole-module AST differs
-from the merge-base version — P1 authorizes no claim-license or relocation delta."`
+delta (3 new module-level statement(s); zero drift across 0 claim-license subtree(s) + 0
+dataflow definer(s) — not a seed)` — so the exemption's use is visible in every CI run,
+not silent. A module that fails any clause gets **exactly today's** error, unchanged:
+`"whole-module AST differs from the merge-base version — P1 authorizes no claim-license
+or relocation delta."`
 
 ## 3. General form achieved — and its one honest limit
 
@@ -200,6 +309,23 @@ tries to approve the additive half and flag the rest. No clause here accepts an
 author's claim that a change "is additive" — every clause is computed from the two
 committed ASTs, exactly as the existing whole-module comparison already is.
 
+**Second honest limit, specific to the dataflow closure.** `DATAFLOW`'s resolution
+(§2's step 2) is scoped to "the innermost enclosing function," module scope, and one-hop
+plugin-local imports — the same boundary the guard's existing supplier closure already
+draws, not a new, wider claim of general dataflow analysis (§3 of the base spec already
+disclaims that, and this amendment does not withdraw the disclaimer). A same-name-object
+alias inserted specifically to dodge clause 5 (`caveats2 = caveats`, then mutate
+`caveats2`) is closed by clause 5's anti-aliasing sentence, not left as a gap. What
+remains genuinely outside §2's resolution is a name passed as a **function parameter
+from a different, pre-existing function** — the closure does not trace call graphs
+across function boundaries, so it cannot see that an *existing* helper function's
+parameter is, at every real call site, fed a value influencing a protected name; that
+is exactly the "no general interprocedural dataflow" analysis the guard already
+disclaims, not a new hole this amendment opens. The implementer must treat any
+name-resolution step §2 cannot uniquely close — including this one, if a candidate diff
+introduces a *new* call into such a helper — as a hard fail per §2 step 4, exactly as an
+unresolved import already is, rather than guessing that an unfamiliar shape is safe.
+
 ## 4. Acceptance gates for the hermetic-mode PR
 
 In addition to inheriting `specs/svp-packaging-conversion.md`'s general acceptance-gate
@@ -220,7 +346,30 @@ no rows at all), the hermetic-mode PR must clear:
    proving clause 1 isn't accidentally satisfied by clauses 2–3's leniency. A third
    fixture inserts a module-level statement that mutates an existing dict a protected
    subtree reads (`SOME_TABLE["k"] = "v"` as a new top-level statement) and must fail
-   under clause 4.
+   under clause 4. A fourth, **non-vacuity fixture is mandatory and is the direct
+   regression test for the v1→v2 finding**: an otherwise fully additive diff (real
+   hermetic-mode shape, passes clauses 2–4 cleanly) that also inserts
+
+   ```python
+   does_not_license_text = "...softened text..."
+   ```
+
+   as a new local statement immediately before an existing `ClaimLicense(...)` call
+   inside an existing function — where `does_not_license_text` is already a name the
+   call site loads — **must fail**, and must fail specifically under clause 1 (the
+   inserted statement is a new, unmatched `DEFINERS` entry for a name in `NAMES(T)`, so
+   `DATAFLOW(B)` and `DATAFLOW(C)` no longer have matching cardinality/content for that
+   anchor) or clause 5 (the same insertion is also a rebind of a dataflow-closure name
+   at function scope). Either reported clause is acceptable; silently passing is not —
+   a green result on this fixture is a build-blocking regression, not a passing test.
+   Companion fixtures covering the three confirmed live shapes (§2's "why the subtree is
+   not enough" examples) are required too: an inserted module constant appended into an
+   existing `does_not_license_text`/caveat variable (the `STUDENT_T_CAVEAT` shape), an
+   inserted sentence appended via `.rstrip() + ... +` string concatenation into an
+   existing licensed-text variable (the `BRIDGE_CONTROL_EXTENSION_SENTENCE` shape), and
+   an inserted `.append(...)` onto an existing local list already passed as
+   `additional_caveats=` (the `fallacy_scan.py` `caveats` shape) — each must fail the
+   same way.
 2. **Two live defects found in the original build are not re-earned.**
    a. **Bypass modules.** `voice_fingerprint.py` constructs `AutoTokenizer.from_pretrained`
       / `AutoModel.from_pretrained` directly in its **own** `_load()`-shaped methods
