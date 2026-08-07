@@ -85,6 +85,35 @@ jobs:
           python3 tools/check_claim_license_guard.py
           python3 tools/check_zero_install.py
 
+      # specs/svp-packaging-conversion.md P5 gates -- deliberately sequenced
+      # BEFORE any module relocation (P2-P4 have not landed; the flat tree
+      # is still 190 top-level scripts/*.py modules) so these three
+      # guarantees hold now and survive unchanged whether or not the
+      # relocation tail is ever done:
+      #   * check_layering.py: L0/L1/L2 tiers are derived by PREDICATE (a
+      #     capabilities.d fragment / a __main__ entry / a build_output()
+      #     emission), never by directory. Enforces L0 imports nothing
+      #     outside L0, L1 imports only L0/L1, and a NEW L2->L2 edge always
+      #     fails -- the committed L2->L2 baseline is shrink-only. Cycles
+      #     are reported, never gated (5 known pre-existing 2-cycles).
+      #     --strict additionally rejects a ghost layer_exemptions row and
+      #     enforces the merge-base ratchet.
+      #   * check_syspath_ratchet.py: pins the count of
+      #     sys.path.insert/append bootstrap sites in plugin-runtime
+      #     production code; fails if it grows. Does not remove any of the
+      #     ~109 already-redundant sites -- that's a separate change.
+      #   * check_no_new_flat_modules.py: freezes the top-level
+      #     scripts/*.py module set (190 names); a new one fails unless
+      #     added to flat_module_exemptions.yaml with owner/reason/
+      #     introduced_sha/removal_phase. --strict also rejects a
+      #     hand-mutated baseline and a ghost exemption row.
+      - name: Packaging P5 gates (layering, sys.path ratchet, flat-module freeze)
+        if: always()
+        run: |
+          python3 tools/check_layering.py --strict
+          python3 tools/check_syspath_ratchet.py --strict
+          python3 tools/check_no_new_flat_modules.py --strict
+
       # Spec-anchor lint, DIFF-SCOPED. tools/spec_anchor_lint.py catches the
       # "a spec asserts a symbol / file:line / sibling-spec / env-var that does
       # not exist" class, which the build retrospective puts behind ~40% of P1s.

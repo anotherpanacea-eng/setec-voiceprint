@@ -722,9 +722,29 @@ def cmd_seed(args: argparse.Namespace) -> int:
             "removal_phase": removal_phase,
         })
     rows.sort(key=lambda r: (r["path"], r["symbol"]))
+
+    # Preserve any OTHER top-level key already committed in this file --
+    # e.g. `layer_exemptions:`, owned by tools/check_layering.py, which
+    # documents its rows in the SAME file per
+    # specs/svp-packaging-conversion.md §4 ("Layer exemptions use the same
+    # migration-exemptions file"). A naive overwrite here would silently
+    # discard that section on the next `--seed` run of THIS tool.
+    extra: dict[str, Any] = {}
+    if EXEMPTIONS_PATH.exists():
+        try:
+            existing = yaml.safe_load(EXEMPTIONS_PATH.read_text(encoding="utf-8")) or {}
+        except Exception:
+            existing = {}
+        if isinstance(existing, dict):
+            extra = {
+                k: v for k, v in existing.items()
+                if k not in ("schema_version", "exemptions")
+            }
+
     doc = {
         "schema_version": 1,
         "exemptions": rows,
+        **extra,
     }
     EXEMPTIONS_PATH.parent.mkdir(parents=True, exist_ok=True)
     with EXEMPTIONS_PATH.open("w", encoding="utf-8") as fh:
