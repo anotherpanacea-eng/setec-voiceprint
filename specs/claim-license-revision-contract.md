@@ -252,32 +252,201 @@ different, unreviewed edit.
 ## 3. Direction classification — mechanical, not author-asserted
 
 The task's hardest honesty requirement: `direction` must be **recomputed by
-CI from the hunks**, not trusted from the artifact's own field. Four hunk
-shapes, four rules:
+CI from the hunks**, not trusted from the artifact's own field. Several hunk
+shapes, several rules — §3.1 below was revised after an adversarial review
+found the original sentence-superset rule unsound; the finding and the fix
+are recorded in place rather than silently folded in, because the failure
+mode is instructive for every other rule in this section.
 
-### 3.1 Refusal-shaped text (`does_not_license`, `additional_caveats` entries, `TARGET_STATE_CAVEAT_TEMPLATES`/`COMPARISON_STATE_CAVEAT_TEMPLATES` values)
+### 3.1 Refusal-shaped text — the co-occurrence hazard
 
-Tokenize `old_text` and `new_text` into sentences with the repo's existing
-deterministic splitter, `split_sentences`
-(`plugins/setec-voiceprint/scripts/variance_audit.py:155`, backed by the
-stdlib-only fallback regex `_SENT_RE` at
-`plugins/setec-voiceprint/scripts/variance_audit.py:151`) — already
-verified stdlib-clean and reused elsewhere in the repo for exactly this
-kind of text-shape work. Let `S_old`, `S_new` be the resulting sentence
-sets (order-insensitive, whitespace-normalized).
+**The hole (found in review, confirmed against this spec's own text).** The
+first draft of this rule was: tokenize `old_text`/`new_text` into sentences
+and call it narrow whenever `S_old ⊆ S_new` — every old sentence survives,
+only new ones are added. That rule is unsound. Sentence-set inclusion can
+only see *membership*; it cannot see a *relation* between sentences. An
+added sentence that **quantifies over** the existing ones defeats it
+completely:
 
-- `S_old ⊆ S_new` and `S_old ≠ S_new` → **narrow** (pure addition —
-  every existing refusal sentence survives verbatim; the delta only adds
-  new sentences).
-- `S_old == S_new` (as sets; only ordering/whitespace differs) → candidate
-  for **restructure** — see §3.3, it still needs the golden-output proof.
-- Anything else (any old sentence missing, reworded, or reordered-with-
-  wording-changed) → **widen**, the conservative default. A revision that
-  merely *edits* an existing refusal's wording — even to make it stricter
-  in the author's intent — cannot be proven additive by set inclusion, so
-  it is not given the cheap path. (An author who wants credit for a strict
-  strengthening can express it as a pure addition instead: leave the old
-  sentence and append a new, more specific one.)
+```
+old:  "This surface does not license an authorship verdict."
+      "Thresholds are operator-side and PROVISIONAL."
+
+new:  (both sentences above, retained verbatim)
+      + "These limitations describe the uncalibrated default; with a
+         supplied baseline the output may be read as provisional
+         evidence of AI provenance."
+```
+
+`S_old ⊆ S_new` holds — nothing old is removed — yet the added sentence
+grants back, conditionally, exactly what the two old sentences refuse. The
+old superset-only rule would compute **narrow** and route this to the cheap
+track with no owner sign-off. It does not, because the rule below replaces
+it. No clause in the original §3.1–§3.3 stopped this: §3.2 (licensing text)
+and §3.3 (restructure) are different code paths entirely, and §3.5's
+mismatch check only catches a *self-declared* direction disagreeing with
+the (unsound) computed one — it does nothing if the computation itself is
+wrong. The gap was real.
+
+**The fix — bounded refusal vocabulary, with a structural fast path.**
+Considered and rejected: (a) escalate on scope-marker keywords
+("unless"/"except"/"provided that"/etc.) alone — rejected as the *sole*
+mechanism because a keyword blocklist is evadable by paraphrase (the
+example above uses none of those words) and, independently, has real false
+positives (a legitimate strengthening caveat like "treat as unknown-
+equivalent unless a per-section breakdown is available" is not an
+undercut, and would still wrongly get escalated by a broad blocklist). (b)
+force every refusal-field addition to `widen` — rejected outright: it is
+unevadable but it makes both worked examples in §5 expensive, which was the
+explicit failure condition this contract was built against. **Chosen: (c),
+a bounded vocabulary with a structural fast path for the case where
+co-occurrence is provably impossible**, described as three tiers below,
+plus a narrow keyword backstop retained from (a) — not as the mechanism,
+but as a cheap, honestly-caveated defense-in-depth layer.
+
+**Dependency direction, stated explicitly**: §7's coming vocabulary
+consolidation is what eventually makes Tier 2 (below) the common case
+instead of the exception — once most refusal/caveat prose is drawn from a
+shared, individually-vetted template set, MOST future additions become
+template instantiations, which are mechanically verifiable by construction.
+That means the consolidation work in §7 *strengthens* this contract as it
+proceeds (more of the corpus becomes cheaply, soundly narrow-able) rather
+than straining it, and this section's Tier 3 default-to-widen bucket should
+shrink over time rather than grow. This contract does not wait for that
+work to land — Tier 1 and the existing shipped-text corpus already make
+both worked examples cheap today (§5) — but the design is chosen so
+consolidation pays down Tier 3, not so consolidation is required to make
+the contract usable.
+
+**Decision procedure.** First, the structural check that survives from the
+original rule, unchanged: compute `S_old`, `S_new` as before. If `S_old`
+is **not** a subset of `S_new` — any old sentence missing, reworded, or
+reordered-with-wording-changed — the hunk is **widen** immediately; no
+tier analysis runs, exactly as the original rule already said for this
+case, and it was never the unsound part. If `S_old == S_new` (set-equal,
+only formatting differs), route to the restructure check (§3.3) as before.
+**Only when `S_old ⊊ S_new`** — a strict, pure addition, which is exactly
+the case the original rule got wrong — do the *added* sentences
+(`S_new − S_old`) each get classified individually by Tier 1/2/3 below.
+The hunk's direction is the worst of its added sentences' individual
+classifications: if every added sentence is Tier 1 or Tier 2, the hunk is
+narrow; if any added sentence is Tier 3 (or trips the backstop), the hunk
+is widen.
+
+#### Tier 1 — mutually exclusive selection (structural exemption)
+
+If the hunk adds a key to a `dict[str, str]`-shaped (or
+`dict[frozenset[str], str]`-shaped) template table, and **every** reference
+site to that table — resolved the same way `build_protected_set` already
+resolves plugin-local name references
+(`tools/check_claim_license_guard.py:305-439`) — performs only a
+single-key lookup (`.get(k)`, `d[k]`, or an `in`-membership test followed by
+a single subscript) and never iterates, joins, or concatenates multiple
+values from the table in one call, then an added entry can **provably never
+co-occur** with any existing entry in a single rendered output — there is no
+call path by which two entries from the same table appear in the same
+document, so a new entry cannot quantify over an old one no matter what it
+says. Narrow, unconditionally, regardless of the new entry's wording.
+
+Verified today: `TARGET_STATE_CAVEAT_TEMPLATES`
+(`plugins/setec-voiceprint/scripts/claim_license.py:266-313`) has exactly
+one reference site, `TARGET_STATE_CAVEAT_TEMPLATES.get(target_ai_status)`
+at `plugins/setec-voiceprint/scripts/claim_license.py:380` — a single-key
+lookup, nothing else. `COMPARISON_STATE_CAVEAT_TEMPLATES`
+(`plugins/setec-voiceprint/scripts/claim_license.py:316-329`) has two
+reference sites, both in `_comparison_caveat`
+(`plugins/setec-voiceprint/scripts/claim_license.py:346-347`): an
+`in`-membership test and a same-key subscript — also single-key. Both
+tables qualify for Tier 1 today; this is not a hypothetical.
+
+#### Tier 2 — verbatim template reuse
+
+For a concatenated field (a single prose string such as `does_not_license`,
+or one new item appended to an `additional_caveats`-shaped list — see the
+list-specific note below), an added sentence is narrow iff it is a
+byte-for-byte match — normalized whitespace only, plus a small,
+**explicitly declared** set of surface-local parameter substitutions (a
+task-surface name, a script name — never a clause boundary) — against a
+sentence that **already exists verbatim in at least one other already-
+shipped, protected file at the merge base**. Reusing language that has
+already survived review in its original home cannot introduce a *new*
+undercutting relationship that wasn't already possible there; the sentence
+carries its prior scrutiny with it.
+
+#### Tier 3 — everything else: widen
+
+A genuinely novel sentence in a concatenated field — no existing
+precedent, not a Tier 1 dict entry — is **widen**, full stop. This is the
+residual bucket where "does this sentence quietly scope the paragraph
+above it" is a real question only a human can answer; making it the
+*default* rather than the *whole rule* is what keeps §5's worked examples
+cheap without pretending the general case is mechanically decidable.
+
+#### Backstop — license-granting-verb screen (applies to every tier, including Tier 1)
+
+Independent of tier, an added sentence is escalated to widen if it contains
+a **license-granting verb pattern** ("may be read as," "constitutes,"
+"is evidence of," "should be treated as," "licenses," "entitles") — this is
+deliberately narrower than a general exception-keyword blocklist (which
+would false-positive on legitimate conditional caveats like "unless a
+per-section breakdown is available"): a `does_not_license`/caveat field
+exists specifically to *negate* license, so any sentence that *grants* it
+back, even conditionally, is polarity-anomalous inside that field
+regardless of paraphrase risk on the exact verb chosen. This is a
+backstop, not the mechanism — stated honestly, it is still a keyword
+screen and a sufficiently creative paraphrase with no listed verb ("a
+supplied baseline shifts what this result supports") can still evade it.
+It exists to catch the cheap, common case for free, not to close the gap
+by itself; Tiers 1–3 are what actually closes it, because they never grant
+the cheap path to a novel sentence in a co-occurring field regardless of
+what the screen finds.
+
+**Walking the attack diff through the fix**: the coordinator's example
+sentence is (i) not a Tier 1 dict entry — `does_not_license` is a plain
+concatenated string; (ii) not a Tier 2 match — no existing shipped file
+carries this sentence verbatim; so it lands in Tier 3 → **widen** on
+structural grounds alone, before the backstop is even consulted. The
+backstop also independently trips ("may be read as" + "evidence of"),
+which is redundant here but is the intended belt-and-suspenders posture:
+Tier 3 does the real work, the screen catches obvious cases even faster
+and flags them for the `owner_signoff.statement` to address by name. See
+gate G7 in §9 for the required must-fail fixture.
+
+**`additional_caveats` (list-shaped) carries the identical hazard and the
+identical fix.** `additional_caveats` renders as a bulleted list
+(`render_block`, `plugins/setec-voiceprint/scripts/claim_license.py:171-176`)
+— every item co-occurs in the same block exactly like sentences within one
+`does_not_license` string, so a new bullet can scope away an earlier one
+just as readily as a new sentence can. A new list item is classified by
+the same three tiers: Tier 1 does not apply to a list (nothing about a
+Python list structurally prevents two items co-occurring — that is in fact
+the whole point of a list), so every `additional_caveats` addition is
+either Tier 2 (verbatim match against an existing caveat elsewhere in the
+shipped corpus) or Tier 3 (widen).
+
+**`comparison_set` — narrative values carry the same hazard; structured
+values do not.** Most `comparison_set` values are short, non-narrative
+(an id, a count, a hash, a fingerprint, an enum-like label) — adding such a
+key is narrow by default, unchanged from this contract's original
+treatment, because a bare identifier cannot narrate an exception. A value
+that is itself a free-text/descriptive string, however — the kind of entry
+that could say something like "results are only meaningful for baselines
+collected after the January calibration" — carries exactly the same
+co-occurrence risk as a caveat, because it sits in the same rendered
+`### Comparison context` block as every other entry
+(`_comparison_context_lines`,
+`plugins/setec-voiceprint/scripts/claim_license.py:189-209`) and a reader
+integrates it with the rest of the license block. A new `comparison_set`
+key whose value is a narrative string (heuristic: longer than ~12 words, or
+containing a verb) goes through the same Tier 1/2/3 pipeline as a
+refusal-field addition (Tier 1 is inapplicable — `comparison_set` is a
+plain dict assembled per-call, not a shared mutually-exclusive template
+table); a short structured value does not. This is distinct from, and
+additional to, §8.1's separate carve-out for the two specific keys
+(`prompt_fingerprint_sha256`, `length_range_words`) that `setec-voicewright`
+parses structurally — that rule protects a code consumer from a shape
+change; this rule protects a human/model reader from a narrated exception.
+Both can apply to the same hunk.
 
 ### 3.2 Licensing-shaped text (`licenses`)
 
@@ -288,6 +457,15 @@ removing content narrows exposure and adding content widens it.
   nothing new claimed).
 - `S_old == S_new` → restructure candidate (§3.3).
 - Otherwise (anything added, or any existing sentence reworded) → **widen**.
+
+**Checked for the same hole and found immune**: `licenses` additions are
+already `widen` by this rule — any addition at all fails the "`S_new ⊆
+S_old`" test, since adding content to what's claimed is definitionally not
+a subset of what was claimed before. There is no cheap path here for an
+added sentence to exploit, quantifying or not; the vulnerability in §3.1
+was specific to a field whose whole purpose is negation, where addition
+looked safe and wasn't. `licenses`'s inverted polarity means addition was
+never given the benefit of the doubt in the first place.
 
 ### 3.3 Restructure (semantic-neutral)
 
@@ -334,6 +512,20 @@ For `state_routed_caveats`, the golden input domain is exactly
 (`plugins/setec-voiceprint/scripts/normalize_author_registry.py:28-34`, all
 9 values) plus `None` — a small, enumerable, already-named set; the proof
 is a parametrized test over 10 cases, not an open-ended claim.
+
+**The subset/prefix check on `old_output ⊆ new_output` is necessary but
+not sufficient**, for the identical reason §3.1's original rule was
+insufficient: `state_routed_caveats` returns `list[str]`, and a code
+change could add a *new list entry* for an already-handled input rather
+than only adding entries for newly-handled ones. A new list entry is a new
+co-occurring string exactly like a new `additional_caveats` bullet, so it
+is independently subject to §3.1's Tier 1/2/3 pipeline — Tier 1 already
+covers this specific fix (the new entries originate from
+`TARGET_STATE_CAVEAT_TEMPLATES`, a Tier 1 table, so at most one such entry
+is ever contributed per call; see §5.1) but a *different* future code-level
+revision that appends a second, always-present sentence to every call's
+output would not get Tier 1's exemption and must clear Tier 2 or 3 like
+any other new sentence in a co-occurring field.
 
 ### 3.5 Mismatch handling
 
@@ -442,13 +634,25 @@ plus 2 new key/value pairs for `mixed_pre_and_post_ai` and
 `old_text` reappears unchanged in `new_text`; two new entries' sentences
 are net-new. → **narrow**.
 
+Because `TARGET_STATE_CAVEAT_TEMPLATES` qualifies for **Tier 1** (§3.1 —
+its sole reference site, `plugins/setec-voiceprint/scripts/claim_license.py:380`,
+is a single-key `.get()` lookup, so no two entries can ever co-occur in one
+rendered block), the two new entries are narrow regardless of their exact
+wording — Tier 1 is a structural exemption, not a text check, so this hunk
+does not need to clear Tier 2/3 or the backstop screen at all.
+
 **Hunk 2** — same file, `state_routed_caveats`: `old_text` is the current
 two-line no-op body (`tmpl = ...get(...); if tmpl is not None: ...`);
 `new_text` is the fixed version (§6). This is a code-level hunk, not a
 text hunk — classified per §3.4's behavioral-characterization rule: for
 all 7 previously-recognized states, output is unchanged (`old_output ==
 new_output`, trivially a subset); for the 2 new states, `old_output == []`
-and `new_output` is non-empty. → **narrow**.
+and `new_output` is non-empty. → **narrow**. §3.4's own caveat about new
+list entries applies here too, but is satisfied by the same Tier 1 fact as
+Hunk 1: the only new content this fix can ever emit into the returned list
+is drawn from `TARGET_STATE_CAVEAT_TEMPLATES`, and at most one entry from
+that table is ever contributed per call — no new co-occurring sentence is
+introduced by this hunk beyond what Hunk 1 already cleared.
 
 Combined direction (§3.5): worst of {narrow, narrow} = **narrow**. Review
 track: cheap (§4.1). No owner sign-off. The PR touches exactly
@@ -466,20 +670,41 @@ Artifact: `2026-08-06-agd-move-scan-disjointness-clause`.
 
 **Hunk 1** — `plugins/setec-voiceprint/scripts/agd_move_scan.py`,
 lines 170-175: `old_text` is the current 3-sentence `agent_host` caveat
-string; `new_text` is the same string with the disjointness sentence
-appended, matching the wording the other five surfaces already carry
-(e.g. adapted from `plugins/setec-voiceprint/scripts/fallacy_scan.py:179-189`'s
-phrasing to this surface's own vocabulary — "inventory" rather than
-"candidate flags" — since the artifact's `new_text` must be this
-surface's own exact prose, not a copy-paste that reads oddly here).
-Sentence-set check: `S_old ⊆ S_new`, one sentence added, nothing removed
-or reworded. → **narrow**. Single-surface, single-hunk, single-file. This
-is the cheapest possible case: cheap track, no sign-off, one file besides
-the artifact itself.
+string; `new_text` is the same string with one sentence appended, **byte-
+identical** to the disjointness sentence already shipped verbatim in four
+sibling surfaces — confirmed by extracting each surface's `agent_host`
+caveat string via AST and comparing them directly: *"The identity is
+recorded as `agent_host:<host>:<model>` so a consumer can assert it is
+disjoint from any generator it validates (the consumer's drift gate must
+enforce judge model != generator model on holdout/selection surfaces; see
+`specs/35-host-delegated-judge.md`)."* is byte-identical across
+`plugins/setec-voiceprint/scripts/warrant_probe.py`,
+`plugins/setec-voiceprint/scripts/argument_decision_audit.py`,
+`plugins/setec-voiceprint/scripts/argquality_dimension_profile.py`, and
+`plugins/setec-voiceprint/scripts/fallacy_scan.py` (the fifth surface,
+`narrative_decision_audit.py`, carries the same disjointness content in
+different wording — not a byte match, so it isn't cited as the Tier 2
+precedent here; it's a fifth confirmation the *content* is standard, not a
+fifth reusable string). Tier check (§3.1): not a dict entry (Tier 1
+inapplicable — `does_not_license`-shaped string), and the appended
+sentence is an exact match against an already-shipped sentence → **Tier
+2, narrow**. It also clears the backstop screen (no license-granting verb
+— the sentence discloses an identity format, it doesn't grant back any
+inference the surrounding caveat refuses). Single-surface, single-hunk,
+single-file. This is the cheapest possible case: cheap track, no
+sign-off, one file besides the artifact itself.
 
 Both worked examples land on the cheap path with zero owner sign-off and a
-same-day mergeable PR — confirming the design goal: **narrowing a claim
-must be at least this cheap, or the design is wrong.**
+same-day mergeable PR under the **corrected** §3.1 mechanism — Tier 1 for
+5.1, Tier 2 for 5.2 — not under the unsound sentence-superset rule the
+first draft used. Neither example needed the superset rule's leniency: 5.1
+is cheap because its table structurally cannot co-occur with itself, and
+5.2 is cheap because its addition is a proven-safe, already-shipped
+sentence, not because "it's just an addition." That distinction is the
+whole fix. Confirming the design goal: **narrowing a claim must be at
+least this cheap, or the design is wrong** — and now, must be at least
+this *justified*, or a narrow label is just as dangerous as no check at
+all.
 
 ## 6. The `state_routed_caveats` fallback fix and cross-surface handling
 
@@ -746,10 +971,11 @@ gate is not a gate.
 |---|---|---|
 | G1 | Every protected-module delta not explained by an approved artifact's reconstruction (§2.3) fails CI. | Plant a softening: weaken one word in an existing `does_not_license` string with **no** artifact committed. Expect: guard fails with the original "unexplained delta" message, unchanged from today's behavior. |
 | G2 | An approved `narrow` revision (reconstruction exact, direction correctly computed narrow) passes with the cheap-track requirements only. | Submit §5.2's worked artifact (single sentence appended, matching wording pattern) with no `owner_signoff`. Expect: guard passes; no sign-off/scope/changelog gate blocks it. |
-| G3 | An approved `widen` revision missing its heavier requirement (no `owner_signoff`, or `hunks_sha256` mismatch, or extra files in the PR) fails. | Take §5.2's artifact, edit its `new_text` to instead *remove* the existing "OBSERVATIONS ONLY" caveat sentence from `agd_move_scan.py` (a genuine widen — a sentence is deleted) but leave `owner_signoff: null`. Expect: computed direction is `widen` (§3.1's "anything else" branch — a sentence removed), and the guard fails on missing `owner_signoff`, distinctly from G1's failure message. |
+| G3 | An approved `widen` revision missing its heavier requirement (no `owner_signoff`, or `hunks_sha256` mismatch, or extra files in the PR) fails. | Take §5.2's artifact, edit its `new_text` to instead *remove* the existing "OBSERVATIONS ONLY" caveat sentence from `agd_move_scan.py` (a genuine widen — a sentence is deleted) but leave `owner_signoff: null`. Expect: computed direction is `widen` (§3.1's decision procedure — `S_old` is not a subset of `S_new`, a sentence is missing — widen immediately, no tier analysis needed), and the guard fails on missing `owner_signoff`, distinctly from G1's failure message. |
 | G4 | A self-declared `direction` that disagrees with the computed direction fails, independent of whether reconstruction succeeds. | Take §5.1's Hunk 1 (a pure addition, computed `narrow`) and hand-edit the artifact's `direction` field to `"widen"` with a fabricated `owner_signoff`. Expect: guard fails on direction mismatch, not on the (structurally valid) sign-off — proving the sign-off can't buy a pass for a lie about direction, and proving direction is recomputed rather than read. |
 | G5 | A cross-surface (`changed_symbols` resolving to >1 caller) artifact's `changelog.d/` entry must name the CI-derived surface list exactly; a hand-typed list that omits a real caller fails. | Take §5.1's artifact, hand-author a `changelog.d/` entry naming only 6 of the 12 real callers. Expect: the derived-list check (§6.3) fails, distinct from G1-G4, because the committed changelog entry doesn't match the mechanically re-derived caller set. |
 | G6 | A migration-mode artifact with one hunk that fails the golden-output proof does not partially land. | Construct a migration batch of 3 hunks where 2 render byte-identical pre/post and 1 does not (a genuine content drift mislabeled as a dedup). Expect: the whole artifact fails, not just the bad hunk — proving "no widen may hide inside a migration artifact" (§7.2.2) is enforced at the artifact, not hunk, granularity. |
+| **G7** | **Required, build-blocking must-fail fixture.** The additive-undercut attack — an added sentence to a refusal field that is a strict superset (`S_old ⊊ S_new`) but semantically quantifies over the retained old sentences — must compute `widen`, never `narrow`, regardless of the artifact's self-declared `direction`. | Submit the coordinator's exact attack diff (§3.1's opening example: `does_not_license` gains "These limitations describe the uncalibrated default; with a supplied baseline the output may be read as provisional evidence of AI provenance." while both old sentences survive verbatim) as a `direction: "narrow"`, `owner_signoff: null` artifact. **Expect: FAIL**, on two independent grounds — (1) the added sentence is neither a Tier 1 dict entry nor a Tier 2 verbatim match, so §3.1's decision procedure computes `widen`, contradicting the artifact's declared `narrow` (a G4-shaped mismatch failure); (2) even if an attacker also hand-edits `direction` to `"widen"` in the same submission, it then fails G3-shaped (no `owner_signoff`). **A green result on this fixture — the artifact passing on the cheap track — is a build-blocking regression in the classifier, not a passing test.** This fixture must be added to the same test file as G1-G6, run on every change to the §3.1 classifier logic, and never skipped or marked `xfail`. |
 
 ## Out of scope / non-goals
 
@@ -761,6 +987,15 @@ gate is not a gate.
   committed sign-off field proves *what* was approved, not
   cryptographically *who* approved it) — that is explicitly named as this
   contract's weakest point, not silently assumed away.
+- It does not make Tier 2 (§3.1) re-verify a reused sentence's safety *in
+  its new context*. Tier 2 trusts that a sentence which survived review in
+  file A carries that scrutiny into file B — true for the co-occurrence
+  hazard this fix targets (the sentence's own wording can't newly
+  quantify over anything just by moving), but not a guarantee that file
+  B's *other*, different sentences don't combine with the reused one in
+  some new way file A never had. This is a narrower, second-order version
+  of the same problem §3.1 was written to close, left open rather than
+  hidden.
 - It does not design schema 2.0 itself — §7 defines only the migration
   *mode*'s review mechanics, not the target schema shape.
 - It does not change `setec-voicewright` or `apodictic` — §8 states the
@@ -785,3 +1020,17 @@ gate is not a gate.
    (§4.2.4) is worth strengthening into something more substantive before
    this contract's first real widen, given it is currently the weakest
    gate in the whole design.
+4. Whether Tier 3's default-to-widen bucket (§3.1) should eventually gain
+   its own cheap sub-path once enough judgment calls have accumulated —
+   e.g. a reviewed, named exception list of specific sentence *pairs*
+   known not to interact, rather than requiring full owner sign-off for
+   every genuinely novel addition forever. Deferred deliberately: minting
+   that mechanism now, before any real Tier 3 cases exist, risks building
+   the wrong shape of shortcut.
+5. Whether the license-granting-verb backstop (§3.1) is worth dropping
+   entirely, given it gates nothing that Tiers 1-3 don't already gate more
+   soundly, and a keyword list that catches nothing structural can create
+   false confidence ("it passed the screen") even though the screen was
+   never load-bearing. Kept for now because it fires before the more
+   expensive tier analysis and gives a reviewer a concrete phrase to point
+   at, but this is a judgment call, not a settled one.
