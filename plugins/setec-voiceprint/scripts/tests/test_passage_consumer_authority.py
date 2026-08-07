@@ -9,16 +9,13 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import _digest  # noqa: E402
 
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 
 import passage_consumer_authority as consumer  # noqa: E402
 from passage_tokenizer_v1 import load_data  # noqa: E402
-
-
-def _digest(label: str) -> str:
-    return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
 
 
 def _args(root: Path, **changes: object) -> argparse.Namespace:

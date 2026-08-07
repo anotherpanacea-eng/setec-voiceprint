@@ -16,6 +16,7 @@ import argument_judge  # type: ignore
 import fallacy_judge  # type: ignore
 import warrant_judge  # type: ignore
 import warrant_probe  # type: ignore
+from conftest import _results  # noqa: E402
 
 SAMPLE = (
     "Everyone already knows the policy works, so anyone who doubts it simply "
@@ -39,10 +40,6 @@ def _run(tmp_path, text=SAMPLE, *args):
     rc = warrant_probe.main(argv)
     env = json.loads(out.read_text(encoding="utf-8"))
     return rc, env
-
-
-def _results(env):
-    return env.get("results", env)
 
 
 def test_mock_coverage_shape(tmp_path):

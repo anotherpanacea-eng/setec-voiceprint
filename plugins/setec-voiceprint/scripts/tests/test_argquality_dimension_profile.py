@@ -28,6 +28,7 @@ import argument_judge  # type: ignore
 import argquality_dimension_profile as aqp  # type: ignore
 import argquality_judge  # type: ignore
 import fallacy_judge  # type: ignore
+from conftest import _results  # noqa: E402
 
 # A two-paragraph argument-shaped passage with inferential connectives (so no
 # register warning fires on the happy path) and enough words to clear MIN_WORDS.
@@ -61,11 +62,6 @@ def _run(tmp_path, text=SAMPLE, *args):
     rc = aqp.main(argv)
     env = json.loads(out.read_text(encoding="utf-8"))
     return rc, env
-
-
-def _results(env):
-    # success envelope nests results; error envelope is flat-ish — handle both.
-    return env.get("results", env)
 
 
 def _walk_keys(obj, _prefix=""):

@@ -11,14 +11,11 @@ import pytest
 import author_corpus_export as ace  # noqa: E402
 import passage_lineage_crosswalk as lineage  # noqa: E402
 import reconstructibility_probe_set as spec75  # noqa: E402
+from conftest import _digest  # noqa: E402
 
 
 SOURCE_COMMITMENT = "sha256:" + "1" * 64
 EXPORT_RECEIPT = "sha256:" + "2" * 64
-
-
-def _digest(label: str) -> str:
-    return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
 
 
 def _record(text: str, digit: str) -> tuple[dict[str, object], bytes]:

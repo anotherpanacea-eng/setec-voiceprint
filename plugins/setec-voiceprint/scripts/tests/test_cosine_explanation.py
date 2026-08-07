@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 import cosine_explanation as ce  # type: ignore
+from conftest import _results  # noqa: E402
 
 # cosine HIGH (>=0.5): a near-identical feature -> high sim -> tracks; a far
 # feature -> low sim -> diverges. Pins BOTH agreement directions at a high cosine.
@@ -51,10 +52,6 @@ def _run_injected(tmp_path, inputs, *args):
     rc = ce.main([str(target), "--inputs-json", str(_write(tmp_path, inputs)),
                   "--out", str(out), "--out-md", str(tmp_path / "out.md"), *args])
     return rc, json.loads(out.read_text(encoding="utf-8"))
-
-
-def _results(env):
-    return env.get("results", env)
 
 
 def test_side_by_side_shape(tmp_path):

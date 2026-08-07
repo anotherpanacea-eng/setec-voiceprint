@@ -14,6 +14,7 @@ import passage_authority_package_transaction as transaction  # noqa: E402
 from passage_remediation import PinnedPrivateRoot  # noqa: E402
 from passage_remediation_projection import RemediationProjection  # noqa: E402
 import reconstructibility_probe_set as spec75  # noqa: E402
+from conftest import _digest  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -23,10 +24,6 @@ def _enable_synthetic_package_test_seam(monkeypatch: pytest.MonkeyPatch):
 
 def _capability() -> transaction._SyntheticPackageCapability:
     return transaction.synthetic_package_capability()
-
-
-def _digest(label: str) -> str:
-    return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
 
 
 def _profile() -> dict:
