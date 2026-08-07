@@ -234,19 +234,27 @@ class TestB3StateRoutedCaveats:
         """Safe-by-default no-op when called with no state inputs."""
         assert state_routed_caveats() == []
 
-    def test_unrecognized_target_state_returns_empty(self):
-        """An ai_status value outside the SPEC vocabulary should
-        NOT produce a caveat (no template), but the helper must
-        not raise — defensive against operator-supplied free-text."""
-        assert state_routed_caveats(target_ai_status="garbage") == []
+    def test_unrecognized_target_state_gets_generic_fallback(self):
+        """An ai_status value outside the known taxonomy must NOT be
+        silently dropped: the helper still emits a caveat (a generic
+        fallback naming the unrecognized status), it just doesn't
+        match a specific template. Mirrors ``_comparison_caveat``'s
+        handling of an unrecognized comparison state."""
+        cs = state_routed_caveats(target_ai_status="garbage")
+        assert len(cs) == 1
+        assert "garbage" in cs[0]
+        assert "unrecognized" in cs[0].lower() or "outside" in cs[0].lower()
 
     def test_all_canonical_target_states_have_templates(self):
-        """Coverage: every value in ALLOWED_AI_STATUS gets a
-        template, so a B.3-wired audit script always emits a
-        caveat when --ai-status was passed with a valid value."""
+        """Coverage: every value in ALLOWED_AI_STATUS (the full
+        normalize_author_registry.py vocabulary, including the two
+        personal-manifest-only labels) gets a template, so a
+        B.3-wired audit script always emits a caveat when
+        --ai-status was passed with a valid value."""
         canonical = (
             "pre_ai_human", "ai_generated", "ai_generated_from_outline",
             "ai_assisted", "ai_edited", "mixed", "unknown",
+            "mixed_pre_and_post_ai", "post_june_2025_uncertain",
         )
         for state in canonical:
             assert state in TARGET_STATE_CAVEAT_TEMPLATES, (
@@ -255,6 +263,20 @@ class TestB3StateRoutedCaveats:
             cs = state_routed_caveats(target_ai_status=state)
             assert len(cs) == 1
             assert cs[0]  # non-empty
+
+    def test_mixed_pre_and_post_ai_caveat_names_the_boundary_span(self):
+        cs = state_routed_caveats(target_ai_status="mixed_pre_and_post_ai")
+        text = cs[0].lower()
+        assert "mixed_pre_and_post_ai" in text
+        assert "boundary" in text
+        assert "does not license" in text or "not license" in text
+
+    def test_post_june_2025_uncertain_caveat_names_postdating(self):
+        cs = state_routed_caveats(target_ai_status="post_june_2025_uncertain")
+        text = cs[0].lower()
+        assert "post_june_2025_uncertain" in text
+        assert "postdates" in text or "boundary" in text
+        assert "does not license" in text or "not license" in text
 
     def test_outline_caveat_distinguishes_from_thin_prompt(self):
         """SPEC §9.2: ai_generated_from_outline's caveat must

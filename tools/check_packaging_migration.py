@@ -30,8 +30,9 @@ Exit codes:
     0 — every anchor is exempted (or none found)
     1 — an anchor is missing from the exemptions file, or an
         exemption is malformed/stale
-    2 — internal error (missing merge base is NOT this checker's
-        job — see tools/check_claim_license_guard.py)
+    2 — internal error (this checker does not depend on a merge
+        base; that failure mode belongs to gates that diff against
+        origin/main, e.g. `check_layering.py --strict`)
 
 Usage:
 

@@ -310,6 +310,25 @@ TARGET_STATE_CAVEAT_TEMPLATES: dict[str, str] = {
         "diagnosis of cause (writer / register / language) before "
         "attributing patterns to AI involvement."
     ),
+    "mixed_pre_and_post_ai": (
+        "Target is labeled `mixed_pre_and_post_ai` (a personal-"
+        "manifest label: the document's own provenance spans the "
+        "writer's AI-adoption boundary — part of it predates the "
+        "boundary, part postdates it). The result does NOT license "
+        "any inference tied to a single authorship state across the "
+        "document as a whole; provenance-dependent inferences "
+        "require establishing which passages fall on which side of "
+        "the boundary before they can be trusted."
+    ),
+    "post_june_2025_uncertain": (
+        "Target is labeled `post_june_2025_uncertain` (a personal-"
+        "manifest label: the document postdates the writer's "
+        "AI-adoption boundary, but the degree of AI involvement in "
+        "producing it is not established). The result does NOT "
+        "license any provenance-dependent inference; treat as a "
+        "lower-confidence reading until the document's production "
+        "history is clarified."
+    ),
 }
 
 
@@ -373,13 +392,26 @@ def state_routed_caveats(
 
     Returns an empty list when no state inputs are supplied; this
     keeps the helper a safe-by-default no-op when callers haven't
-    plumbed authorship-state metadata through to the audit yet.
+    plumbed authorship-state metadata through to the audit yet. A
+    ``target_ai_status`` that IS supplied but falls outside
+    ``TARGET_STATE_CAVEAT_TEMPLATES`` still produces a caveat — a
+    generic fallback, mirroring ``_comparison_caveat``'s handling of
+    an unrecognized comparison state — so an unrecognized status is
+    never silently dropped.
     """
     caveats: list[str] = []
     if target_ai_status:
         tmpl = TARGET_STATE_CAVEAT_TEMPLATES.get(target_ai_status)
-        if tmpl is not None:
-            caveats.append(tmpl)
+        if tmpl is None:
+            tmpl = (
+                f"Target is labeled `{target_ai_status}`, a status "
+                f"outside this helper's known taxonomy. The result "
+                f"does not license any state-specific inference for "
+                f"an unrecognized status; treat as a lower-confidence "
+                f"reading until the status is resolved to a value "
+                f"this helper recognizes."
+            )
+        caveats.append(tmpl)
     comparison_caveat = _comparison_caveat(comparison_ai_statuses)
     if comparison_caveat is not None:
         caveats.append(comparison_caveat)

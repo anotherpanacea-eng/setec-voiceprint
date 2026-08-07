@@ -95,6 +95,8 @@ Their existing “add `scripts/` to `sys.path`” bootstraps are load-bearing un
 
 ## 3. Claim-license Deficit Lock
 
+**REMOVED by owner decision (Joshua, 2026-08-07):** `tools/check_claim_license_guard.py` and its whole-module AST freeze are deleted. Rationale: this is a set of tools, not a cryptography suite — each edit needs to be justified, but not frozen, guarded, or sealed. At removal the guard froze 110 of 252 production modules (93,039 of 203,133 LOC, 46% of non-test code) against ANY AST change, and P2's promised "narrowly scoped relocation support" never landed to relax it. The rest of this section is retained as a historical record of the gate's design; it no longer runs in CI and `packaging_move_map.json` no longer exists.
+
 This gate lands in P1, before any mass codemod or relocation.
 
 `tools/check_claim_license_guard.py` compares the candidate against the fetched merge base using Git objects (`git merge-base` + `git show`), never against a baseline regenerated in the PR. P1 has no production moves, so its committed `packaging_move_map.json` is exactly `{"schema":1,"moves":[],"path_rewrites":[]}` and the checker rejects every non-empty authorization row. This avoids shipping a generic relocation normalizer before a real move exists to falsify it against.
