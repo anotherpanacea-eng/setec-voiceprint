@@ -171,7 +171,12 @@ def compose_envelope(
         caveats.append(
             "Judge backend is `agent_host` — the inventory was produced by the "
             "HOST runtime's model (see judge.judge_identity.host), not a pinned "
-            "API model@revision; NON-DETERMINISTIC and host-version-fluid."
+            "API model@revision; NON-DETERMINISTIC and host-version-fluid. "
+            "The identity is recorded as "
+            "agent_host:<host>:<model> so a consumer can assert it is disjoint from "
+            "any generator it validates (the consumer's drift gate must enforce "
+            "judge model != generator model on holdout/selection surfaces; see "
+            "specs/35-host-delegated-judge.md)."
         )
     caveats.append(
         "OBSERVATIONS ONLY: all three move families are legitimate; an "
