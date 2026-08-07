@@ -7,7 +7,7 @@
 
 - **Status:** BUILD-READY (v1) · **Date:** 2026-08-06 · **Repo:** `setec-voiceprint`
 - **Provenance:** an Opus reviewer's ruling on PR #387 (packaging P1). Hermetic backend
-  mode (`SETEC_HERMETIC_BACKEND=stub` at the judge/embedding/surprisal backend
+  mode (`setec_hermetic_backend=stub` at the judge/embedding/surprisal backend
   construction boundaries, plus a scratch-copy consumer-case gate) was built, then
   extracted, because it collided with the just-landed no-change claim-license guard.
   The reviewer's ruling, verbatim intent: don't widen the guard's `moves` mechanism
@@ -29,7 +29,7 @@ reachability only, deferring "the broader hermetic consumer matrix" to this amen
 §3 landed the same phase's no-change claim-license guard with, verbatim, "**No semantic
 claim-license change is authorized by this packaging spec.** Any canonical change fails
 CI with no override." Both are P1. The first hermetic-mode build, adding
-`SETEC_HERMETIC_BACKEND=stub` short-circuits to `judge_backends.make_api_judge`,
+`setec_hermetic_backend=stub` short-circuits to `judge_backends.make_api_judge`,
 `EmbeddingBackend._load`, and `SurprisalBackend._load`, tripped the second.
 
 **The verified mechanism, read from `tools/check_claim_license_guard.py` on
@@ -227,7 +227,7 @@ no rows at all), the hermetic-mode PR must clear:
       (three separate construction sites, confirmed at `plugins/setec-voiceprint/scripts/voice_fingerprint.py:204`,
       `plugins/setec-voiceprint/scripts/voice_fingerprint.py:328`, and
       `plugins/setec-voiceprint/scripts/voice_fingerprint.py:420`) — none of which route
-      through `surprisal_backend.py`, so `SETEC_HERMETIC_BACKEND=stub` does not stop
+      through `surprisal_backend.py`, so `setec_hermetic_backend=stub` does not stop
       them. The same own-construction shape, confirmed present on `origin/main`, also
       exists in: `plugins/setec-voiceprint/scripts/edit_magnitude_audit.py`
       (`AutoTokenizer.from_pretrained` / `AutoModelForSequenceClassification.from_pretrained`
@@ -241,7 +241,7 @@ no rows at all), the hermetic-mode PR must clear:
       `plugins/setec-voiceprint/scripts/biber_features.py:352`). Each site needs one of
       two outcomes, chosen per site and stated in the PR, not silently defaulted: (i)
       route it through the corresponding guarded backend's construction boundary so
-      `SETEC_HERMETIC_BACKEND=stub` actually stops it, or (ii) leave it unguarded and
+      `setec_hermetic_backend=stub` actually stops it, or (ii) leave it unguarded and
       record it — by name, file, and line — as a known-uncovered gap in the hermetic
       gate's own report/docstring, so "hermetic" is never claimed for a surface it
       doesn't actually cover. Silence (neither routing nor recording) fails review.
@@ -267,7 +267,7 @@ no rows at all), the hermetic-mode PR must clear:
       the same falsification discipline the rest of this codebase's gates already carry.
 3. **Poisoned-`sys.modules` regression coverage.** Each of the three guarded backends
    (`judge_backends.py`, `embedding_backend.py`, `surprisal_backend.py`) keeps its own
-   test proving `SETEC_HERMETIC_BACKEND=stub` raises before the provider SDK /
+   test proving `setec_hermetic_backend=stub` raises before the provider SDK /
    `sentence_transformers` / `transformers` import is even attempted, using a
    sentinel module/meta-path finder that raises `AssertionError` if touched — and a
    companion test proving the stub is off by default (`_hermetic_stub_active()` is
@@ -290,8 +290,8 @@ no rows at all), the hermetic-mode PR must clear:
 The hermetic gate's own scratch-copy fixture must build on
 `tools/check_zero_install.py`'s bare-copy mechanism — `shutil.copytree` of
 `plugins/setec-voiceprint/` directly to a scratch root, with **no synthetic `plugins/`
-parent directory reconstructed around it**. The original build's scratch-copy gate
-(`build/svp-hermetic-mode`'s `tools/check_hermetic_scratch_gate.py`) recreated the
+parent directory reconstructed around it**. The original build's scratch-copy gate, a now-removed `tools/` script that only ever
+existed on the local `build/svp-hermetic-mode` branch, recreated the
 two-level `plugins/<name>/` nesting inside its scratch dir specifically because
 `setec_run.py` derives `REPO_ROOT` as `PLUGIN_ROOT.parent.parent` — a fixture-shaping
 choice a prior P1 finding rejected: the spec's own invariant is that a **bare** copied
@@ -330,6 +330,6 @@ it touches none of their files. P1-hermetic's own PR:
   rule for non-protected modules — it only ever applies to a module already in the
   protected closure, and only ever removes the *no-override* consequence, never the
   closure computation itself.
-- Resolving whether the env var should be `SETEC_HERMETIC_BACKEND` (this codebase's
+- Resolving whether the env var should be `setec_hermetic_backend` (this codebase's
   all-caps convention) or the spec-prose's lowercase form — carried over as an open flag
   from the original build; the implementing PR states its choice and why.
