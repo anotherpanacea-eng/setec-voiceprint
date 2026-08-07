@@ -1,13 +1,7 @@
-# packaging_migration_exemptions.yaml — the single exemptions file for tools/check_packaging_migration.py
+# packaging_migration_exemptions.yaml -- shared by tools/check_packaging_migration.py (`exemptions:`) and tools/check_layering.py (`layer_exemptions:`), per specs/svp-packaging-conversion.md §4 ("Layer exemptions use the same migration-exemptions file").
 #
-# Per specs/svp-packaging-conversion.md §1: every __file__-relative anchor in plugin-runtime code under
-# plugins/setec-voiceprint/scripts/ (excluding scripts/tests/ and exact scripts/setec/paths.py) is either converted to
-# setec.paths or listed here with path, symbol, reason, owner, introduced_sha, and removal_phase.
-#
-# Regenerate with: python3 tools/check_packaging_migration.py --seed --introduced-sha <sha>
-# Then hand-review the diff before committing — a `--seed` run makes every CURRENT anchor exempt; it does not
-# decide whether a NEW anchor introduced by an unrelated PR should be. Removing a row (as its module's owning
-# phase lands and converts it to setec.paths) is the ratchet: exemptions only shrink from here.
+# layer_exemptions regenerate with: python3 tools/check_layering.py --seed --introduced-sha <sha>
+# Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. l2_to_l2 rows are a SHRINK-ONLY baseline: a row may be deleted (the edge was removed) but never added for an edge that didn't already exist at the last seed.
 schema_version: 1
 exemptions:
 - path: plugins/setec-voiceprint/scripts/acquire_blog.py
@@ -1969,8 +1963,8 @@ exemptions:
   removal_phase: P2
 - path: plugins/setec-voiceprint/scripts/setec_run.py
   symbol: target
-  reason: pending relocation (P2); anchor `target` at line 165 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: pending relocation (P2); anchor `target` at line 165 not yet converted to
+    setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P2
@@ -2149,3 +2143,2041 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
+layer_exemptions:
+- from_path: plugins/setec-voiceprint/scripts/capabilities.py
+  to_path: plugins/setec-voiceprint/scripts/s5_distance.py
+  edge_kind: l0_outbound
+  reason: 'capabilities.py''s `emit` R1-query-envelope command deliberately introspects
+    s5_distance.compute_s5(...)[''method''] so the contract block''s method field
+    stays live without a hand-edit on drift (see the docstring above the emit builder:
+    ''a real computed result keeps this field live without that edit''). This is intentional
+    runtime coupling for a shipped feature, not migration debt -- no relocation phase
+    removes it.'
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/capabilities.py
+  to_path: plugins/setec-voiceprint/scripts/setec/consumer_client.py
+  edge_kind: l0_outbound
+  reason: capabilities.py's _manifest_schema_meets_contract_floor imports setec.consumer_client
+    for the shared FLOOR-comparison version parser (meets_floor) that fleet-coordination/specs/setec-consumer-client-contract.md
+    supplies as the one shared client. Intentional cross-tier coupling to the shared
+    client module, not migration debt.
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/pan_metrics.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/calibration/pan_metrics.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/validation_harness.py. Not yet analyzed for\
+    \ a specific fix (possible future direction: invert via a registry so the L2 module\
+    \ registers itself rather than the L1 module reaching down); captured as a baseline\
+    \ row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/task_surfaces.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/calibration/task_surfaces.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py. Not yet\
+    \ analyzed for a specific fix (possible future direction: invert via a registry\
+    \ so the L2 module registers itself rather than the L1 module reaching down);\
+    \ captured as a baseline row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/task_surfaces.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/calibration/task_surfaces.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/calibration/shard_runner.py. Not yet analyzed\
+    \ for a specific fix (possible future direction: invert via a registry so the\
+    \ L2 module registers itself rather than the L1 module reaching down); captured\
+    \ as a baseline row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/task_surfaces.py
+  to_path: plugins/setec-voiceprint/scripts/check_corpus.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/calibration/task_surfaces.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/check_corpus.py. Not yet analyzed for a specific\
+    \ fix (possible future direction: invert via a registry so the L2 module registers\
+    \ itself rather than the L1 module reaching down); captured as a baseline row\
+    \ rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/task_surfaces.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/calibration/task_surfaces.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/validation_harness.py. Not yet analyzed for\
+    \ a specific fix (possible future direction: invert via a registry so the L2 module\
+    \ registers itself rather than the L1 module reaching down); captured as a baseline\
+    \ row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/diveye_signals.py
+  to_path: plugins/setec-voiceprint/scripts/surprisal_audit.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/diveye_signals.py imports L2 module plugins/setec-voiceprint/scripts/surprisal_audit.py.\
+    \ Not yet analyzed for a specific fix (possible future direction: invert via a\
+    \ registry so the L2 module registers itself rather than the L1 module reaching\
+    \ down); captured as a baseline row rather than promising an unverified removal\
+    \ phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_authority_package_transaction.py
+  to_path: plugins/setec-voiceprint/scripts/passage_remediation.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/passage_authority_package_transaction.py imports\
+    \ L2 module plugins/setec-voiceprint/scripts/passage_remediation.py. Not yet analyzed\
+    \ for a specific fix (possible future direction: invert via a registry so the\
+    \ L2 module registers itself rather than the L1 module reaching down); captured\
+    \ as a baseline row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_authority_package_transaction.py
+  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/passage_authority_package_transaction.py imports\
+    \ L2 module plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py.\
+    \ Not yet analyzed for a specific fix (possible future direction: invert via a\
+    \ registry so the L2 module registers itself rather than the L1 module reaching\
+    \ down); captured as a baseline row rather than promising an unverified removal\
+    \ phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py
+  to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/author_corpus_export.py. Not yet analyzed for\
+    \ a specific fix (possible future direction: invert via a registry so the L2 module\
+    \ registers itself rather than the L1 module reaching down); captured as a baseline\
+    \ row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py
+  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py. Not yet analyzed\
+    \ for a specific fix (possible future direction: invert via a registry so the\
+    \ L2 module registers itself rather than the L1 module reaching down); captured\
+    \ as a baseline row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_source_population_commitment.py
+  to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/passage_source_population_commitment.py imports\
+    \ L2 module plugins/setec-voiceprint/scripts/author_corpus_export.py. Not yet\
+    \ analyzed for a specific fix (possible future direction: invert via a registry\
+    \ so the L2 module registers itself rather than the L1 module reaching down);\
+    \ captured as a baseline row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/stylometry_core.py
+  to_path: plugins/setec-voiceprint/scripts/biber_features.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/stylometry_core.py imports L2 module plugins/setec-voiceprint/scripts/biber_features.py.\
+    \ Not yet analyzed for a specific fix (possible future direction: invert via a\
+    \ registry so the L2 module registers itself rather than the L1 module reaching\
+    \ down); captured as a baseline row rather than promising an unverified removal\
+    \ phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/stylometry_core.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/stylometry_core.py imports L2 module plugins/setec-voiceprint/scripts/variance_audit.py.\
+    \ Not yet analyzed for a specific fix (possible future direction: invert via a\
+    \ registry so the L2 module registers itself rather than the L1 module reaching\
+    \ down); captured as a baseline row rather than promising an unverified removal\
+    \ phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/windows_portable_tree.py
+  to_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  edge_kind: l1_to_l2
+  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
+    \ plugins/setec-voiceprint/scripts/windows_portable_tree.py imports L2 module\
+    \ plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py. Not yet analyzed\
+    \ for a specific fix (possible future direction: invert via a registry so the\
+    \ L2 module registers itself rather than the L1 module reaching down); captured\
+    \ as a baseline row rather than promising an unverified removal phase."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_blog.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_blog.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_corpus_template.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_courtlistener.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_courtlistener.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_epub.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_epub.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_everycrsreport.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_everycrsreport.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_gmail_sent.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_gmail_sent.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_imessage_sent.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  to_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py\
+    \ imports plugins/setec-voiceprint/scripts/acquire_imessage_sent.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_magazine.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_manuscript.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_manuscript.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_mirrulations.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_mirrulations.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_openalex_core.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_openalex_core.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_pdf_urls.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquire_pdf_urls.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  to_path: plugins/setec-voiceprint/scripts/pdf_extract.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/acquisition_core.py\
+    \ imports plugins/setec-voiceprint/scripts/pdf_extract.py directly. L2\u2192L2\
+    \ sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+  to_path: plugins/setec-voiceprint/scripts/image_conjunction.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/image_conjunction.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+  to_path: plugins/setec-voiceprint/scripts/kicker_density.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/kicker_density.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+  to_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/prestige_metaphor.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/aic_pattern_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/apply_owner_corrections.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/apply_owner_corrections.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/argmove_profile.py
+  to_path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/argmove_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/agency_abstraction_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/argmove_profile.py
+  to_path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/argmove_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/stance_modality_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/argument_decision_audit.py
+  to_path: plugins/setec-voiceprint/scripts/argmove_profile.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/argument_decision_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/argmove_profile.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  to_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/author_corpus_export.py\
+    \ imports plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/author_corpus_export.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/before_after_restoration.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/before_after_restoration.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/bigram_diff.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/bigram_diff.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
+  to_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/binoculars_calibrate.py\
+    \ imports plugins/setec-voiceprint/scripts/binoculars_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/aitdna_to_manifest.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/aitdna_to_manifest.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py\
+    \ directly. L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py
+  to_path: plugins/setec-voiceprint/scripts/originality_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py\
+    \ imports plugins/setec-voiceprint/scripts/originality_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/aitdna_benchmark.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/calibration_survey.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py\
+    \ directly. L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/calibration_survey.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/calibration_survey.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/cross_polarity_audit.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/polarity_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/cross_polarity_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/polarity_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/editlens_to_manifest.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/editlens_to_manifest.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/fetch_pan24_voightkampff.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/fetch_pan24_voightkampff.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py
+  to_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/narrative_decision_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/narrative_longform_agreement.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/narrative_longform_agreement.py\
+    \ directly. L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py\
+    \ directly. L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py
+  to_path: plugins/setec-voiceprint/scripts/narrative_decision_long_form.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py\
+    \ imports plugins/setec-voiceprint/scripts/narrative_decision_long_form.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
+  to_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/pan_replay.py\
+    \ imports plugins/setec-voiceprint/scripts/adversarial_robustness_card.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/pan_replay.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py
+  to_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py\
+    \ imports plugins/setec-voiceprint/scripts/binoculars_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/adversarial_fixtures.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py\
+    \ imports plugins/setec-voiceprint/scripts/adversarial_fixtures.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py\
+    \ imports plugins/setec-voiceprint/scripts/adversarial_robustness_card.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/shard_runner.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py\
+    \ directly. L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/slice_bakeoff_v2.py
+  to_path: plugins/setec-voiceprint/scripts/calibration/polarity_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/slice_bakeoff_v2.py\
+    \ imports plugins/setec-voiceprint/scripts/calibration/polarity_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration_drift_monitor.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration_drift_monitor.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
+  to_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/manuscript_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
+  to_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/repetition_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/check_corpus.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/check_corpus.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py
+  to_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py\
+    \ imports plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/construction_signature_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/controls_audit.py
+  to_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/controls_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_distance.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
+  to_path: plugins/setec-voiceprint/scripts/originality_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/corpus_novelty_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/originality_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  to_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cosine_explanation.py\
+    \ imports plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cosine_explanation.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cosine_explanation.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/cross_doc_argument_consistency.py
+  to_path: plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cross_doc_argument_consistency.py\
+    \ imports plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/dependency_distance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/draft_history_analysis.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/embedding_attribution.py
+  to_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/embedding_attribution.py\
+    \ imports plugins/setec-voiceprint/scripts/cosine_explanation.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
+  to_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/function_word_grammar_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gecscore_audit.py
+  to_path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gecscore_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/agd_move_scan.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/agd_move_scan.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/argument_decision_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/argument_decision_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/author_corpus_export.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/binoculars_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/general_imposters.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/general_imposters.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/idiolect_detector.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/manuscript_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/narrative_decision_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/position_pair_register.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/position_pair_register.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/pov_voice_profile.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/register_classifier.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/register_classifier.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/repetition_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/s5_distance.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/s5_distance.py directly. L2\u2192L2\
+    \ sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_distance.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/voice_profile.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gen_contract_fixtures.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_profile.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/general_imposters.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/general_imposters.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/generate_voice_report.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gmail_locator_map.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/gmail_locator_map.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/idiolect_detector.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/known_editor_profile.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/known_editor_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/lambdag_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/lambdag_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  to_path: plugins/setec-voiceprint/scripts/register_sweep.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manifest_validator.py\
+    \ imports plugins/setec-voiceprint/scripts/register_sweep.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+  to_path: plugins/setec-voiceprint/scripts/bigram_diff.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py\
+    \ imports plugins/setec-voiceprint/scripts/bigram_diff.py directly. L2\u2192L2\
+    \ sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
+  to_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/manuscript_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
+  to_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/repetition_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/model_family_attribution.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/model_family_attribution.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/narrative_decision_long_form.py
+  to_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/narrative_decision_long_form.py\
+    \ imports plugins/setec-voiceprint/scripts/narrative_decision_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/near_dup_dedup.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_consumer_authority.py
+  to_path: plugins/setec-voiceprint/scripts/passage_remediation.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/passage_consumer_authority.py\
+    \ imports plugins/setec-voiceprint/scripts/passage_remediation.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_consumer_authority.py
+  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/passage_consumer_authority.py\
+    \ imports plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_remediation.py
+  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/passage_remediation.py\
+    \ imports plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/pdf_extract.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/pdf_extract.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/pdf_inventory.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/pdf_inventory.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/pov_voice_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/prepare_author_document_adapter.py
+  to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/prepare_author_document_adapter.py\
+    \ imports plugins/setec-voiceprint/scripts/author_corpus_export.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
+  to_path: plugins/setec-voiceprint/scripts/image_conjunction.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/prestige_metaphor.py\
+    \ imports plugins/setec-voiceprint/scripts/image_conjunction.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
+  to_path: plugins/setec-voiceprint/scripts/originality_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py\
+    \ imports plugins/setec-voiceprint/scripts/originality_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/register_sweep.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/register_sweep.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/semantic_preservation_check.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec_run_set.py
+  to_path: plugins/setec-voiceprint/scripts/setec_run.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec_run_set.py\
+    \ imports plugins/setec-voiceprint/scripts/setec_run.py directly. L2\u2192L2 sharing\
+    \ between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec_run_set.py
+  to_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec_run_set.py\
+    \ imports plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py
+  to_path: plugins/setec-voiceprint/scripts/originality_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/originality_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/check_corpus.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/check_corpus.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/variance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/aic_pattern_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/image_conjunction.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/variance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/image_conjunction.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/kicker_density.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/variance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/kicker_density.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/variance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/length_bootstrap.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/variance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/prestige_metaphor.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/surprisal_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/variance_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/surprisal_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/biber_features.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_distance.py\
+    \ imports plugins/setec-voiceprint/scripts/biber_features.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_distance.py\
+    \ imports plugins/setec-voiceprint/scripts/length_bootstrap.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/register_classifier.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_distance.py\
+    \ imports plugins/setec-voiceprint/scripts/register_classifier.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_drift_tracker.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
+  to_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_fingerprint.py\
+    \ imports plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_profile.py
+  to_path: plugins/setec-voiceprint/scripts/biber_features.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/biber_features.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/voice_validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/within_doc_segmentation.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/within_doc_segmentation.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
