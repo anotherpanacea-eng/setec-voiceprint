@@ -71,18 +71,19 @@ jobs:
           python3 tools/gen_calibration_readiness.py --check
 
       # specs/svp-packaging-conversion.md P1 gates. Each is a runtime property
-      # here, not just a description: check_claim_license_guard.py exits 1 on
-      # ANY unexplained delta in the protected claim-license module set (no
-      # override) and exits 2 if the merge base can't be resolved — both
-      # nonzero, both fail this step and therefore the job.
-      # check_packaging_migration.py --strict additionally rejects a
-      # ghost/expired exemption row and enforces the shrink-only ratchet
-      # against origin/main (its default --base-ref).
-      - name: Packaging P1 gates (migration checker, claim-license guard, zero-install)
+      # here, not just a description.
+      # check_packaging_migration.py --strict rejects a ghost/expired
+      # exemption row and enforces the shrink-only ratchet against
+      # origin/main (its default --base-ref).
+      #
+      # The former no-change claim-license guard (check_claim_license_guard.py,
+      # spec §3) was removed by owner decision 2026-08-07: this is a set of
+      # tools, not a cryptography suite. See specs/svp-packaging-conversion.md
+      # §3's amendment note.
+      - name: Packaging P1 gates (migration checker, zero-install)
         if: always()
         run: |
           python3 tools/check_packaging_migration.py --strict
-          python3 tools/check_claim_license_guard.py
           python3 tools/check_zero_install.py
 
       # specs/svp-packaging-conversion.md P5 gates -- deliberately sequenced

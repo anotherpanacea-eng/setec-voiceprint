@@ -4,7 +4,7 @@
 The gate's own full run (`python3 tools/check_zero_install.py`) copies
 the whole plugin tree and runs several real subprocesses — a
 legitimate but slower end-to-end CI gate, run as its own step exactly
-like check_capabilities_drift.py / check_claim_license_guard.py. This
+like check_capabilities_drift.py / check_packaging_migration.py. This
 file pins the gate's classification logic directly:
 
   * `check_setec_run_bare_dispatch` requires an exact successful envelope.
