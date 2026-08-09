@@ -1163,6 +1163,24 @@ def test_verify_existing_bounded_and_full_are_planted_write_clean(
         assert snapshot() == before
 
 
+@pytest.mark.parametrize("publication_flag", ["--dry-run", "--live-smoke-confirmed"])
+def test_verify_existing_refuses_publication_flags(
+    private_root: Path, publication_flag: str,
+):
+    """The mutual exclusion is enforced in run(), not by argparse -- pin it."""
+    manifest = _source(private_root, "gmail_sent", "Enough words for the mutex fixture.")
+    key = _private_key(private_root, "key.bin", b"z" * 32)
+    args = E.build_arg_parser().parse_args([
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(private_root / "out"),
+        "--verify-existing", publication_flag,
+    ])
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        E.run(args)
+
+
 @pytest.mark.parametrize("mutation", ["package", "receipt_freshness"])
 def test_verify_existing_refusal_is_planted_write_clean(
     private_root: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
