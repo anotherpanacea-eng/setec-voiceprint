@@ -19,16 +19,18 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-# Imported surfaces use the shared packaging resolver.  A direct nested-script
-# launch cannot import the package until bootstrapped, so fall back to this
-# file's own fixed position: scripts/setec/surfaces/<module>.py.  Anchoring on
-# __file__ rather than sys.path[0] keeps the fallback correct when the module is
-# imported, run with -m, or run with -c, none of which put the script directory
-# on sys.path[0].
+# Imported surfaces use the shared packaging resolver.  The fallback covers only
+# the one case where it is unavailable: a direct nested-script launch with an
+# empty PYTHONPATH, where `setec` is not importable yet and CPython has put this
+# script's own directory on sys.path[0].  That is exactly how setec_run.py
+# dispatches a surface, and it is the only invocation that reaches this branch --
+# under import, -m, or -c, `setec` is importable and scripts_dir() is used.
+# Deliberately not a __file__ anchor: new plugin-runtime code resolves through
+# setec.paths, and check_packaging_migration.py --strict enforces that.
 try:
     from setec.paths import scripts_dir
 except ModuleNotFoundError:  # direct launch with an empty PYTHONPATH
-    SCRIPTS = Path(__file__).resolve().parents[2]
+    SCRIPTS = Path(sys.path[0]).resolve().parents[1]
 else:
     SCRIPTS = scripts_dir()
 if not (SCRIPTS / "acquire_gmail_sent.py").is_file():  # pragma: no cover

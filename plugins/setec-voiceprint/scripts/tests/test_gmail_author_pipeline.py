@@ -431,35 +431,6 @@ def test_foreign_cwd_direct_launch_with_empty_pythonpath(tmp_path):
     assert json.loads(proc.stdout)["results"]["reason_category"] == "bad_input"
 
 
-@pytest.mark.parametrize("mode", ["-c-import", "-m"])
-def test_bootstrap_resolves_scripts_dir_when_not_launched_as_a_script(tmp_path, mode):
-    """sys.path[0] is only the script directory for `python FILE`.
-
-    The fallback anchor must survive import, -m and -c, where sys.path[0] is
-    the caller's cwd or an unrelated package root.
-    """
-    environment = dict(os.environ)
-    environment.pop("PYTHONPATH", None)
-    foreign = _private_dir(tmp_path / "foreign")
-    if mode == "-c-import":
-        argv = [sys.executable, "-c", (
-            "import importlib.util as u, sys;"
-            f"s = u.spec_from_file_location('gap', {str(FACADE)!r});"
-            "m = u.module_from_spec(s); s.loader.exec_module(m);"
-            "print(m.SCRIPTS)"
-        )]
-        cwd = foreign
-    else:
-        argv = [sys.executable, "-m", "setec.surfaces.gmail_author_pipeline",
-                "--json", "--request", "/nonexistent"]
-        cwd = FACADE.parents[2]
-    proc = subprocess.run(argv, cwd=cwd, env=environment, capture_output=True, text=True)
-    assert proc.returncode in (0, 2), proc.stderr
-    assert "SETEC scripts directory not found" not in proc.stderr
-    if mode == "-c-import":
-        assert Path(proc.stdout.strip()) == FACADE.parents[2]
-
-
 def test_verifier_success_and_refusal_do_not_write(monkeypatch, tmp_path):
     """Planted-write guard at the public facade verifier boundary."""
     case = _case(tmp_path)

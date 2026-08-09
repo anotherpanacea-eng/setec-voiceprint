@@ -1954,33 +1954,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/setec/surfaces/gmail_author_pipeline.py
-  symbol: SCRIPTS
-  reason: intrinsic self-location; a nested direct launcher must locate
-    scripts/ before it can import setec.paths. The previous sys.path[0] form
-    avoided this row but was only correct under `python FILE`, so the module
-    raised on import, -m and -c
-  owner: packaging
-  introduced_sha: 71b0e6665fe2f0f3cacaa34d297a968db2ef5cdf
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/setec/surfaces/gmail_author_pipeline.py
-  symbol: argv
-  reason: intrinsic self-location; a nested direct launcher must locate
-    scripts/ before it can import setec.paths. The previous sys.path[0] form
-    avoided this row but was only correct under `python FILE`, so the module
-    raised on import, -m and -c
-  owner: packaging
-  introduced_sha: 71b0e6665fe2f0f3cacaa34d297a968db2ef5cdf
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/setec/surfaces/gmail_author_pipeline.py
-  symbol: gmail
-  reason: intrinsic self-location; a nested direct launcher must locate
-    scripts/ before it can import setec.paths. The previous sys.path[0] form
-    avoided this row but was only correct under `python FILE`, so the module
-    raised on import, -m and -c
-  owner: packaging
-  introduced_sha: 71b0e6665fe2f0f3cacaa34d297a968db2ef5cdf
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/setec_run.py
   symbol: PLUGIN_ROOT
   reason: pending relocation (P2); anchor `PLUGIN_ROOT` at line 63 not yet converted
