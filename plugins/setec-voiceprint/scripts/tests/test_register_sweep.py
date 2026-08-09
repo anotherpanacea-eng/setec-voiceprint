@@ -2019,6 +2019,27 @@ def test_error_categories_are_the_three_fixed_envelopes() -> None:
         assert issubclass(cls, rs.SweepRefusal)
 
 
+def test_importing_the_sweep_opens_no_network_or_subprocess_surface() -> None:
+    """The sweep walks private corpus text; importing it must load no
+    exfiltration-capable module.  Checked behaviorally (a fresh interpreter's
+    sys.modules after import), not by source grep, so a conditional or aliased
+    import cannot slip past a substring check."""
+    import subprocess
+
+    surfaces = ("socket", "ssl", "urllib", "http", "subprocess", "requests")
+    probe = (
+        "import json,sys; import register_sweep; "
+        f"print(json.dumps([name for name in {surfaces!r} if name in sys.modules]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(rs.__file__).resolve().parent,
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == []
+
+
 # ---- Increment B: manifest projection seam ----
 #
 # Covers the H2 manifest-projection seam:
