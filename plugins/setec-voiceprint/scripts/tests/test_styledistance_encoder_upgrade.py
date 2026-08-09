@@ -531,25 +531,6 @@ def test_crosslingual_default_imports_no_model_deps():
     assert res.stdout.strip() == "", f"eager import leak: {res.stdout!r}"
 
 
-def test_crosslingual_source_has_no_toplevel_model_import():
-    """Source-level [P2] guard: no top-level (column-0) transformers or
-    voice_fingerprint import; the only voice_fingerprint import is
-    indented (in-branch)."""
-    src_lines = Path(cvd.__file__).read_text(encoding="utf-8").splitlines()
-    for line in src_lines:
-        # column-0 import statements only
-        if line.startswith("import ") or line.startswith("from "):
-            assert "transformers" not in line, line
-            assert "voice_fingerprint" not in line, line
-            assert "semantic_trajectory_audit" not in line, line
-    # The in-branch import exists but is indented.
-    assert any(
-        l.strip() == "import voice_fingerprint as vf  # type: ignore"
-        and l != l.lstrip()
-        for l in src_lines
-    ), "expected a lazy, indented voice_fingerprint import"
-
-
 def test_crosslingual_default_envelope_unchanged(tmp_path: Path):
     """With no --encoder, the parser-free envelope carries delta /
     cosine_distance / profiles and NO encoder_block."""

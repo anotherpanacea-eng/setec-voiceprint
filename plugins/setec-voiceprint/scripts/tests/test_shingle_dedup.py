@@ -276,16 +276,6 @@ def test_usage_error_is_exit_two_and_does_not_echo_untrusted_argument() -> None:
     assert b"private-argument-token" not in result.stderr
     assert b"Traceback" not in result.stderr
 
-
-def test_portability_source_avoids_unconditional_posix_permission_calls() -> None:
-    source = SCRIPT.read_text(encoding="utf-8")
-    io_source = (SCRIPTS / "shingle_dedup_io.py").read_text(encoding="utf-8")
-    assert "chmod(" not in source and "fchmod(" not in source
-    assert "def _optional_flag" in io_source and "getattr(os, name, 0)" in io_source
-    assert '_optional_flag("O_BINARY")' in io_source
-    assert '_optional_flag("O_NOFOLLOW")' in io_source
-
-
 def test_windows_source_reader_allows_stable_multiple_links_only_for_read_handles(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

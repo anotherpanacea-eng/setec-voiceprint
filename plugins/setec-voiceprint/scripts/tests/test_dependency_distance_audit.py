@@ -219,16 +219,24 @@ def _flat_numbers(obj):
 
 
 def test_no_numpy_scipy_import():
-    # AC 11: the shape math is pure stdlib. Assert the module pulls in NO
-    # numpy/scipy/torch (the only heavy import remains the OPTIONAL spaCy).
-    import importlib
-    src = (Path(dd.__file__)).read_text(encoding="utf-8")
-    for banned in ("import numpy", "import scipy", "import torch",
-                   "from numpy", "from scipy", "from torch"):
-        assert banned not in src, f"{banned!r} leaked into dependency_distance_audit.py"
-    # and it is importable + _distance_shape runs with none of those installed
-    importlib.reload(dd)
-    assert dd._distance_shape([1, 2, 3, 4, 5])["variance"] >= 0.0
+    """AC 11: the stdlib shape path runs when heavy modules are unavailable."""
+    import subprocess
+
+    code = (
+        "import sys; "
+        "[sys.modules.__setitem__(name, None) for name in "
+        "('numpy','scipy','torch')]; "
+        "import dependency_distance_audit as dd; "
+        "assert dd._distance_shape([1,2,3,4,5])['variance'] >= 0.0"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(dd.__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_dependency_distance_not_imported_by_detectors():

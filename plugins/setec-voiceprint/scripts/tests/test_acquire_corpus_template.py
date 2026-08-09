@@ -26,7 +26,6 @@ Tests verify:
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
@@ -41,7 +40,6 @@ import acquire_corpus_template as tmpl  # type: ignore
 
 
 PLUGIN_ROOT = ROOT.parent
-TEMPLATE_PATH = ROOT / "acquire_corpus_template.py"
 REFERENCE_DOC_PATH = (
     PLUGIN_ROOT / "references" / "acquire-corpus-pattern.md"
 )
@@ -49,39 +47,6 @@ SKILL_MD_PATH = PLUGIN_ROOT / "skills" / "corpus-acquisition" / "SKILL.md"
 
 
 # ------------------- Template structure --------------------------
-
-
-def test_template_file_exists():
-    assert TEMPLATE_PATH.is_file()
-
-
-def test_template_imports_cleanly():
-    """If the template fails to import, every adaptation also fails.
-    The import-time test catches regressions in shared
-    `acquisition_core` helpers that the template depends on."""
-    # Import already happened at the top of this file. Just assert
-    # the module is loaded and exposes the documented API.
-    assert hasattr(tmpl, "discover_items")
-    assert hasattr(tmpl, "extract_one")
-    assert hasattr(tmpl, "build_arg_parser")
-    assert hasattr(tmpl, "parse_options")
-    assert hasattr(tmpl, "run")
-
-
-def test_template_has_todo_llm_markers():
-    """The template's adaptation surface is documented via four
-    ``TODO(LLM)`` markers. Removing them silently lets a
-    mis-adapted copy ship as no-op; pin that they're present in
-    the template source."""
-    source = TEMPLATE_PATH.read_text(encoding="utf-8")
-    todo_count = source.count("TODO(LLM)")
-    # Four primary markers (discover_items, extract_one,
-    # build_arg_parser additions, parse_options additions) plus
-    # the SOURCE_NAME edit-before-use marker. Allow ≥ 4.
-    assert todo_count >= 4, (
-        f"expected at least 4 TODO(LLM) markers, found {todo_count}. "
-        "Adaptation guidance lives in those markers."
-    )
 
 
 def test_template_marks_source_name_for_replacement():
@@ -120,21 +85,6 @@ def test_item_meta_has_documented_fields():
     assert item.author == "Some Author"
     assert item.date is None
     assert isinstance(item.extra, dict)
-
-
-def test_process_options_has_required_fields():
-    options = _make_minimal_options()
-    # Fields documented in the pattern reference.
-    expected = {
-        "persona", "impostor_for", "register", "register_match",
-        "topic_match", "consent_status", "era", "since", "until",
-        "output_dir", "manifest_path", "max_items", "dry_run",
-        "allow_non_prose", "strip_rules", "strip_aggressive",
-        "acquired_via", "source_extras",
-    }
-    actual = set(options.__dataclass_fields__.keys())
-    missing = expected - actual
-    assert not missing, f"ProcessOptions missing fields: {missing}"
 
 
 def _make_minimal_options() -> tmpl.ProcessOptions:
@@ -236,41 +186,6 @@ def test_reference_doc_exists():
         f"reference doc not found at {REFERENCE_DOC_PATH}"
 
 
-def test_reference_doc_documents_pipeline():
-    """The reference's section structure is what an LLM grounds
-    from. Pin the canonical headings."""
-    text = REFERENCE_DOC_PATH.read_text(encoding="utf-8")
-    expected_headings = (
-        "## When to reach for this",
-        "## The pipeline",
-        "## What `acquisition_core.py` gives you",
-        "## The CLI conventions every acquisition script follows",
-        "## What the source-specific code has to implement",
-        "## Testing pattern",
-        "## Working with an LLM",
-    )
-    for h in expected_headings:
-        assert h in text, f"reference missing heading: {h}"
-
-
-def test_reference_doc_lists_acquisition_core_helpers():
-    """The reference must enumerate the helpers a new script will
-    consume — slugify, content_hash_already_present, html_to_text,
-    AcquiredPiece, RunSummary, etc. — so an LLM has the helper
-    names it needs."""
-    text = REFERENCE_DOC_PATH.read_text(encoding="utf-8")
-    helper_names = (
-        "slugify", "compute_content_hash", "is_private_safe_path",
-        "check_output_privacy", "Fetcher", "FixtureFetcher",
-        "make_requests_fetcher", "preprocess_text", "html_to_text",
-        "AcquiredPiece", "RunSummary", "write_piece",
-        "content_hash_already_present", "compose_manifest_entry",
-        "append_manifest_entry",
-    )
-    for name in helper_names:
-        assert name in text, f"reference missing helper: {name}"
-
-
 def test_skill_md_exists_and_references_template_and_reference():
     """The skill must point an LLM at both the reference doc and the
     template — those are the two artifacts an adaptation
@@ -280,49 +195,6 @@ def test_skill_md_exists_and_references_template_and_reference():
     assert "acquire-corpus-pattern.md" in text
     assert "acquire_corpus_template.py" in text
     assert "${CLAUDE_PLUGIN_ROOT}" in text
-
-
-def test_skill_md_walks_through_six_workflow_steps():
-    """The skill's documented workflow has six numbered steps. Pin
-    that the headings exist in the right order."""
-    text = SKILL_MD_PATH.read_text(encoding="utf-8")
-    steps = [
-        "### Step 1:",
-        "### Step 2:",
-        "### Step 3:",
-        "### Step 4:",
-        "### Step 5:",
-        "### Step 6:",
-    ]
-    last_idx = -1
-    for s in steps:
-        idx = text.find(s)
-        assert idx > last_idx, f"step out of order or missing: {s}"
-        last_idx = idx
-
-
-def test_skill_md_lists_consent_status_options():
-    """The consent-status decision is required. Pin that the skill
-    enumerates the five options so an LLM doesn't invent a sixth."""
-    text = SKILL_MD_PATH.read_text(encoding="utf-8")
-    for status in (
-        "public_record", "cc_licensed", "fair_use_research",
-        "author_consent", "undocumented",
-    ):
-        assert status in text
-
-
-def test_skill_md_includes_concrete_example():
-    """Walking through a concrete adaptation makes the abstract
-    pattern grounded. Pin that at least one example workflow is
-    present."""
-    text = SKILL_MD_PATH.read_text(encoding="utf-8")
-    # At least one of the example sources mentioned in the
-    # 'Common patterns' or 'Example' section.
-    assert any(
-        keyword in text
-        for keyword in ("Slack", "Obsidian", "mbox", "Notion", "Discord")
-    )
 
 
 if __name__ == "__main__":

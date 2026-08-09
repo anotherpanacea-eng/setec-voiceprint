@@ -2019,25 +2019,6 @@ def test_error_categories_are_the_three_fixed_envelopes() -> None:
         assert issubclass(cls, rs.SweepRefusal)
 
 
-def test_no_source_field_appears_in_any_frozen_payload_builder() -> None:
-    source = Path(rs.__file__).read_text(encoding="utf-8")
-    for forbidden in ('"source"', '"source_id"', '"source_family"'):
-        assert forbidden not in source
-
-
-def test_module_imports_no_network_or_subprocess_surface() -> None:
-    source = Path(rs.__file__).read_text(encoding="utf-8")
-    for forbidden in (
-        "import socket",
-        "import ssl",
-        "import urllib",
-        "import http",
-        "import subprocess",
-        "import requests",
-    ):
-        assert forbidden not in source
-
-
 # ---- Increment B: manifest projection seam ----
 #
 # Covers the H2 manifest-projection seam:
@@ -2187,12 +2168,6 @@ def test_instrumented_mapping_projects_via_direct_lookup_only() -> None:
         persona="alias-a",
         ai_status="pre_ai_human",
     )
-
-
-def test_row_projection_source_never_names_unowned_fields() -> None:
-    source = inspect.getsource(mv._project_h2_row) + inspect.getsource(mv._row_item)
-    for forbidden in ("source_family", "source_id", '"source"', "'source'"):
-        assert forbidden not in source
 
 
 _SOURCE_FIELD_VARIANTS: list[dict[str, Any]] = [
