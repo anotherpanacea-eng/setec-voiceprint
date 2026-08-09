@@ -33,6 +33,15 @@ def test_relative_path_refuses_symlink_component_before_child(tmp_path):
         P._rel(root, "link/output")
 
 
+@pytest.mark.parametrize("name", ["logs", "producer-receipts"])
+def test_state_directory_symlink_is_refused_before_child(tmp_path, name):
+    root = tmp_path / "root"; root.mkdir(); os.chmod(root, 0o700)
+    outside = tmp_path / "outside"; outside.mkdir()
+    (root / name).symlink_to(outside, target_is_directory=True)
+    with pytest.raises(P.Refusal):
+        P._safe_dir(root, name, root=root)
+
+
 def test_domain_identity_and_lineage_are_action_invariant():
     output = [{"kind": "file", "label": "x", "identity_kind": "sha256", "identity": "a" * 64}]
     config = {"source": {}, "corpus": {}}

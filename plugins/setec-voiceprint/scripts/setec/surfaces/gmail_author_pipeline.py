@@ -72,6 +72,23 @@ def _owner_file(path: Path, *, root: Path | None = None) -> None:
         try: path.resolve().relative_to(root)
         except ValueError as exc: raise Refusal("private artifact escapes root") from exc
 
+def _owner_dir(path: Path, *, root: Path) -> None:
+    try: st = path.lstat()
+    except OSError as exc: raise Refusal("private directory unavailable") from exc
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+        raise Refusal("private directory policy refused")
+    try: path.resolve().relative_to(root)
+    except ValueError as exc: raise Refusal("private directory escapes root") from exc
+
+def _safe_dir(parent: Path, name: str, *, root: Path) -> Path:
+    path = parent / name
+    if path.exists(): _owner_dir(path, root=root)
+    else:
+        try: path.mkdir(mode=0o700)
+        except OSError as exc: raise Refusal("private directory creation refused") from exc
+        _owner_dir(path, root=root)
+    return path
+
 def _private_root(raw: Any) -> Path:
     if type(raw) is not str or not Path(raw).is_absolute(): raise Refusal("private_root must be absolute")
     root = Path(raw)
@@ -203,18 +220,17 @@ def _lineage(stage: str, config: dict[str, Any], output: list[dict[str, Any]], i
             "domain_receipts":[{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}],
             "output_identities":output,"domain_identity":domain}
 
-def _envelope(action: str, stage: str, config: dict[str, Any], status: str, output: list[dict[str, Any]] | None = None, lineage_sha: str | None = None, reason: str | None = None) -> dict[str, Any]:
+def _envelope(action: str, stage: str, config: dict[str, Any], status: str, output: list[dict[str, Any]] | None = None, lineage_sha: str | None = None, reason: str | None = None, inputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     output = output or []
     config_sha = _config_sha(config)
     domain = _domain_identity(stage, config_sha, output) if status == "completed" else None
     receipts = [] if domain is None else [{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}]
-    results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":[],"domain_receipts":receipts,"output_identities":output,"lineage_receipt_sha256":lineage_sha,"reason_category":reason}
+    results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":inputs or [],"domain_receipts":receipts,"output_identities":output,"lineage_receipt_sha256":lineage_sha,"reason_category":reason}
     assert set(results) == RESULT_KEYS
     return {"schema_version":"1.0","available":status == "completed","results":results}
 
 def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
-    directory = run_dir / "producer-receipts"
-    directory.mkdir(mode=0o700, exist_ok=True)
+    directory = _safe_dir(run_dir, "producer-receipts", root=run_dir)
     target = directory / f"{stage}.json"
     payload = _canon(lineage)
     try:
@@ -236,6 +252,7 @@ def _check_prior(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any]
         if _sha_path(path) != item["receipt_sha256"]: raise Refusal("prior receipt hash refused")
         try: stored=json.loads(path.read_text(encoding="utf-8")); results=stored
         except (OSError, ValueError, KeyError, TypeError) as exc: raise Refusal("prior receipt unreadable") from exc
+        if not isinstance(results, dict) or set(results) != {"schema","stage_id","config_sha256","input_identities","domain_receipts","output_identities","domain_identity"} or results["schema"] != "setec-gmail-author-pipeline-lineage/1" or results["stage_id"] != item["stage_id"] or results["config_sha256"] != _config_sha({"source":s,"corpus":c}): raise Refusal("prior lineage refused")
         actual=_domain_identity(item["stage_id"],results["config_sha256"],results["output_identities"])
         if item["domain_identity"] != actual: raise Refusal("prior domain identity refused")
         argv,_ = _argv(root,s,c,"verify",item["stage_id"])
@@ -257,6 +274,12 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     root,run_dir,s,c,action,stage = _validate(req)
     _owner_file(request_path, root=root)
     if request_path.parent.resolve() != run_dir.resolve(): raise Refusal("request must be a direct run-root child")
+    # Create/validate both stateful directories before a child can run.
+    _safe_dir(run_dir, "producer-receipts", root=run_dir)
+    logs = _safe_dir(run_dir, "logs", root=run_dir)
+    for suffix in ("stdout", "stderr"):
+        candidate = logs / f"{stage}.domain.{suffix}"
+        if candidate.exists(): _owner_file(candidate, root=run_dir)
     inputs = _check_prior(root, run_dir, s, c, stage, req["prior"])
     config={"source":s,"corpus":c}
     argv, marker = _argv(root,s,c,action,stage)
@@ -267,11 +290,6 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
         except EOFError: answer = ""
         if answer not in {"y", "yes"}: raise Refusal("owner declined bounded package smoke")
     proc = subprocess.run(argv, stdin=None if action == "approve" else subprocess.DEVNULL, capture_output=True, text=True)
-    logs = run_dir / "logs"
-    if logs.exists():
-        st=logs.lstat()
-        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077: raise Refusal("logs policy refused")
-    else: logs.mkdir(mode=0o700)
     for suffix,data in (("stdout",proc.stdout),("stderr",proc.stderr)):
         path=logs/f"{stage}.domain.{suffix}"
         try: fd=os.open(path, os.O_WRONLY|os.O_CREAT|os.O_APPEND|getattr(os,"O_NOFOLLOW",0), 0o600)
@@ -284,6 +302,15 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
         return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
     if action == "verify" and stage == "03_source_acquire" and not (run_dir / "producer-receipts" / f"{stage}.json").exists():
         return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
+    if action == "verify" and stage == "07_author_package":
+        try:
+            package_receipt = json.loads((_rel(root,c["package_dir"]) / "producer_receipt.json").read_text(encoding="utf-8"))
+            producer_envelope = json.loads(_rel(root,c["producer_envelope"]).read_text(encoding="utf-8"))
+            embedded = producer_envelope["results"]["producer_receipt"]
+            if producer_envelope.get("schema_version") != "1.0" or embedded != package_receipt:
+                raise ValueError("envelope mismatch")
+        except (OSError, UnicodeError, ValueError, KeyError, TypeError):
+            return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
     if stage == "05_near_duplicate_filter" and action != "verify":
         report=_rel(root,c["dedup_report"]); report.parent.mkdir(mode=0o700,parents=True,exist_ok=True); report.write_text(proc.stdout,encoding="utf-8"); os.chmod(report,0o600)
     if stage == "07_author_package" and action != "verify":
@@ -292,7 +319,7 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
         output = _output_identities(root,s,c,stage)
         lineage = _lineage(stage,config,output,inputs)
         receipt_sha = _write_receipt(run_dir,stage,lineage)
-        envelope = _envelope(action,stage,config,"completed",output,receipt_sha)
+        envelope = _envelope(action,stage,config,"completed",output,receipt_sha,inputs=inputs)
         return 0, envelope
     except Refusal: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
 
@@ -300,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
     p=argparse.ArgumentParser(prog="gmail_author_pipeline", add_help=True); p.add_argument("--json",action="store_true"); p.add_argument("--request",required=True)
     args=p.parse_args(argv)
     try: rc,envelope=run_request(Path(args.request))
-    except Refusal:
+    except (Refusal, OSError, UnicodeError, subprocess.SubprocessError, ValueError, TypeError):
         rc=2; envelope={"schema_version":"1.0","available":False,"results":{"request_schema":REQUEST_SCHEMA,"action":None,"stage_id":None,"status":"refused","config_sha256":None,"input_identities":[],"domain_receipts":[],"output_identities":[],"lineage_receipt_sha256":None,"reason_category":"bad_input"}}
     print(json.dumps(envelope,sort_keys=True,separators=(",",":")))
     return rc
