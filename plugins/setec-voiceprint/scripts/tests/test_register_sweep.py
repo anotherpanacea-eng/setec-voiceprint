@@ -2026,10 +2026,15 @@ def test_importing_the_sweep_opens_no_network_or_subprocess_surface() -> None:
     import cannot slip past a substring check."""
     import subprocess
 
-    surfaces = ("socket", "ssl", "urllib", "http", "subprocess", "requests")
+    # The exfiltration-CAPABLE modules, not their inert parents: urllib.parse
+    # is pure string parsing and arrives transitively from ordinary stdlib
+    # imports on some platforms; the network capability lives in
+    # urllib.request / http.client.
+    surfaces = ("socket", "ssl", "urllib.request", "http.client",
+                "subprocess", "requests")
     # Snapshot before the import: hosted runners' site/.pth processing can pull
-    # urllib at interpreter startup, which is not the sweep's doing.  The guard
-    # is on what importing the sweep ADDS.
+    # stdlib networking at interpreter startup, which is not the sweep's doing.
+    # The guard is on what importing the sweep ADDS.
     probe = (
         "import json,sys; "
         f"before = {{name for name in {surfaces!r} if name in sys.modules}}; "
