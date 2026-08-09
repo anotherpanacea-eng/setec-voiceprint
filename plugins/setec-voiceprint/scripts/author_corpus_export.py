@@ -1623,12 +1623,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-text-bytes", type=int)
     p.add_argument("--live-smoke-confirmed", action="store_true")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--verify-existing", action="store_true",
+                   help="Read-only verification of an already-published package.")
     p.add_argument("--json", action="store_true")
     return p
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     _check_private([args.output_dir])
+    if args.verify_existing and (args.dry_run or args.live_smoke_confirmed):
+        raise ValueError("--verify-existing is mutually exclusive with publication flags")
     if (args.max_records is None) != (args.max_text_bytes is None):
         raise ValueError(
             "bounded smoke requires both --max-records and --max-text-bytes"
@@ -1655,7 +1659,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "record_atomic_degraded: stable grouping was unavailable; consumers "
             "must restrict this package to train-only, non-comparative use."
         )
-    if args.dry_run:
+    if args.verify_existing:
+        published_records, published_texts, published_receipt = _load_published_package(args.output_dir)
+        expected_receipt_hash = _digest(DOMAIN_RECEIPT, receipt)
+        if _verify_package(
+            published_records, published_texts, published_receipt,
+            hmac_key=key, config_hash=config_hash,
+            producer_revision=receipt["producer_revision"],
+        ) != expected_receipt_hash:
+            raise PermissionError("published package does not match the current export")
+        if published_receipt != receipt:
+            raise PermissionError("published package receipt differs from current export")
+        if args.max_records is None:
+            _require_smoke_receipt(args.output_dir, config_hash, receipt, records, key)
+        else:
+            smoke = _smoke_path(args.output_dir)
+            if smoke.is_symlink() or not smoke.is_file():
+                raise PermissionError("bounded package lacks its smoke receipt")
+        warnings.append("verify-existing: package was verified without publication")
+    elif args.dry_run:
         warnings.append("dry-run: package was validated but not written")
     else:
         if args.max_records is not None:

@@ -2025,6 +2025,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Report near-duplicate clusters without rewriting the manifest.")
     p.add_argument("--json", action="store_true",
                    help="Emit the dedup result as JSON on stdout.")
+    p.add_argument("--verify-out", type=Path, default=None,
+                   help="Read-only: byte-verify an existing document-mode dedup manifest.")
+    p.add_argument("--verify-report", type=Path, default=None,
+                   help="Read-only: byte-verify an existing document-mode JSON report.")
 
     g = p.add_argument_group(
         "passage/span mode (spec 36)",
@@ -2084,6 +2088,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
+    verifying = args.verify_out is not None or args.verify_report is not None
+    if verifying:
+        if (args.verify_out is None or args.verify_report is None or not args.dry_run
+                or not args.json or args.out is not None or args.passages):
+            sys.stderr.write("[near_dup_dedup] verification requires --dry-run --json, both verify paths, and no --out/--passages.\n")
+            return 2
+        try:
+            rows, _ = _load_manifest_records(args.manifest)
+            result = dedup_manifest(args.manifest, threshold=args.threshold,
+                                    num_perm=args.num_perm, shingle_size=args.shingle_size,
+                                    dry_run=True)
+            expected_manifest = "".join(
+                json.dumps(row["_row"], sort_keys=True, ensure_ascii=False) + "\n"
+                for row in rows if row["_id"] not in set(result.dropped)
+            ).encode("utf-8")
+            expected_report = (json.dumps(result.to_dict(), indent=2) + "\n").encode("utf-8")
+            if args.verify_out.read_bytes() != expected_manifest or args.verify_report.read_bytes() != expected_report:
+                sys.stderr.write("[near_dup_dedup] verification refused: existing outputs differ.\n")
+                return 2
+        except (OSError, RuntimeError, ValueError) as exc:
+            sys.stderr.write("[near_dup_dedup] verification refused.\n")
+            return 2
+        sys.stdout.write(json.dumps(result.to_dict(), indent=2) + "\n")
+        return 0
     if getattr(args, "strict_spec80", False) and not getattr(args, "passages", False):
         sys.stderr.write("[near_dup_dedup] --strict-spec80 requires --passages.\n")
         return 2

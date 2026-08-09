@@ -33,7 +33,7 @@ else:  # pragma: no cover - broken installed layout
 REQUEST_SCHEMA = "setec-gmail-author-pipeline-request/1"
 TASK_SURFACE = "voice_coherence_acquisition"
 RESULT_KEYS = {"request_schema", "action", "stage_id", "status", "config_sha256",
-               "input_identities", "domain_receipts", "output_identities", "reason_category"}
+               "input_identities", "domain_receipts", "output_identities", "lineage_receipt_sha256", "reason_category"}
 STAGES = ("01_source_smoke", "02_source_approval", "03_source_acquire",
           "04_manifest_validate", "05_near_duplicate_filter", "06_package_smoke",
           "07_author_package")
@@ -145,16 +145,23 @@ def _argv(root: Path, s: dict[str, Any], c: dict[str, Any], action: str, stage: 
         if s[key] is not None: base += [flag, str(_rel(root,s[key])) if key.endswith("map") or key == "own_signature_lines" else s[key]]
     if s["allow_empty"]: base.append("--allow-empty")
     if stage == "01_source_smoke":
+        if action == "verify": return gmail + ["validate-smoke", "--mbox-path", str(_rel(root,s["mbox"],exists=True)), "--smoke-dir", str(_rel(root,s["smoke_dir"]))], _rel(root,s["smoke_dir"]) / ".smoke_descriptor.json"
         argv = gmail + ["smoke", *base, "--since", s["smoke_since"] or s["since"], "--until", s["smoke_until"] or s["until"], "--output-dir", str(_rel(root,s["smoke_dir"]))]
         return argv, _rel(root,s["smoke_dir"]) / ".smoke_descriptor.json"
-    if stage == "02_source_approval": return gmail + ["approve-smoke", "--mbox-path", str(_rel(root,s["mbox"],exists=True)), "--smoke-dir", str(_rel(root,s["smoke_dir"])), "--output-dir", str(_rel(root,s["output_dir"]))], _rel(root,s["output_dir"]) / ".gmail_live_smoke_receipt.json"
-    if stage == "03_source_acquire": return gmail + ["acquire", *base, "--output-dir", str(_rel(root,s["output_dir"])), "--emit-manifest", str(_rel(root,s["manifest"]))], _rel(root,s["manifest"])
+    if stage == "02_source_approval": return gmail + (["verify-approval", *base, "--output-dir", str(_rel(root,s["output_dir"]))] if action == "verify" else ["approve-smoke", "--mbox-path", str(_rel(root,s["mbox"],exists=True)), "--smoke-dir", str(_rel(root,s["smoke_dir"])), "--output-dir", str(_rel(root,s["output_dir"]))]), _rel(root,s["output_dir"]) / ".live_smoke_passed"
+    if stage == "03_source_acquire": return gmail + (["verify-acquisition" if action == "verify" else "acquire", *base, "--output-dir", str(_rel(root,s["output_dir"])), "--emit-manifest", str(_rel(root,s["manifest"]))]), _rel(root,s["manifest"])
     if stage == "04_manifest_validate": return [sys.executable,str(SCRIPTS/"manifest_validator.py"),str(_rel(root,s["manifest"])),"--strict","--check-conflict-copies","--json"], _rel(root,s["manifest"])
-    if stage == "05_near_duplicate_filter": return [sys.executable,str(SCRIPTS/"near_dup_dedup.py"),str(_rel(root,s["manifest"])),"--out",str(_rel(root,c["dedup_manifest"])),"--threshold",str(c["dedup_threshold"]),"--num-perm",str(c["dedup_num_perm"]),"--shingle-size",str(c["dedup_shingle_size"]),"--json"], _rel(root,c["dedup_manifest"])
+    if stage == "05_near_duplicate_filter" and action != "verify":
+        argv=[sys.executable,str(SCRIPTS/"near_dup_dedup.py"),str(_rel(root,s["manifest"])),"--threshold",str(c["dedup_threshold"]),"--num-perm",str(c["dedup_num_perm"]),"--shingle-size",str(c["dedup_shingle_size"]),"--json"]
+        if action == "verify": argv += ["--dry-run","--verify-out",str(_rel(root,c["dedup_manifest"])),"--verify-report",str(_rel(root,c["dedup_report"]))]
+        else: argv += ["--out",str(_rel(root,c["dedup_manifest"]))]
+        return argv, _rel(root,c["dedup_manifest"])
     out = c["package_smoke_dir"] if stage == "06_package_smoke" else c["package_dir"]
     argv = [sys.executable,str(SCRIPTS/"author_corpus_export.py"),"--source-manifest",f"gmail_sent={_rel(root,c['dedup_manifest'])}","--register-map",f"gmail_sent:personal={c['register_map']['personal']}","--persona",s["persona"],"--hmac-key",str(_rel(root,c["hmac_key"],exists=True)),"--output-dir",str(_rel(root,out))]
     for status in c["allowed_ai_status"]: argv += ["--allowed-ai-status",status]
     if stage == "06_package_smoke": argv += ["--max-records",str(c["smoke_max_records"]),"--max-text-bytes",str(c["smoke_max_text_bytes"]),"--live-smoke-confirmed"]
+    if action == "verify":
+        argv = [item for item in argv if item != "--live-smoke-confirmed"] + ["--verify-existing"]
     argv.append("--json")
     return argv, _rel(root,out) / "producer_receipt.json"
 
@@ -181,27 +188,36 @@ def _output_identities(root: Path, s: dict[str, Any], c: dict[str, Any], stage: 
         out.append({"kind":"file","label":label,"identity_kind":"sha256","identity":_sha_path(path)})
     return out
 
-def _envelope(action: str, stage: str, config: dict[str, Any], status: str, output: list[dict[str, Any]] | None = None, reason: str | None = None) -> dict[str, Any]:
+def _lineage(stage: str, config: dict[str, Any], output: list[dict[str, Any]]) -> dict[str, Any]:
+    config_sha = _config_sha(config)
+    domain = _domain_identity(stage, config_sha, output)
+    return {"schema":"setec-gmail-author-pipeline-lineage/1","stage_id":stage,
+            "config_sha256":config_sha,"input_identities":[],
+            "domain_receipts":[{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}],
+            "output_identities":output,"domain_identity":domain}
+
+def _envelope(action: str, stage: str, config: dict[str, Any], status: str, output: list[dict[str, Any]] | None = None, lineage_sha: str | None = None, reason: str | None = None) -> dict[str, Any]:
     output = output or []
     config_sha = _config_sha(config)
     domain = _domain_identity(stage, config_sha, output) if status == "completed" else None
     receipts = [] if domain is None else [{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}]
-    results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":[],"domain_receipts":receipts,"output_identities":output,"reason_category":reason}
+    results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":[],"domain_receipts":receipts,"output_identities":output,"lineage_receipt_sha256":lineage_sha,"reason_category":reason}
     assert set(results) == RESULT_KEYS
     return {"schema_version":"1.0","available":status == "completed","results":results}
 
-def _write_receipt(run_dir: Path, stage: str, envelope: dict[str, Any]) -> None:
+def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
     directory = run_dir / "producer-receipts"
     directory.mkdir(mode=0o700, exist_ok=True)
     target = directory / f"{stage}.json"
-    payload = _canon(envelope)
+    payload = _canon(lineage)
     try:
         fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         _owner_file(target)
         if target.read_bytes() != payload: raise Refusal("existing lineage receipt mismatched")
-        return
+        return _sha_path(target)
     with os.fdopen(fd, "wb") as fh: fh.write(payload)
+    return hashlib.sha256(payload).hexdigest()
 
 def _check_prior(run_dir: Path, stage: str, prior: list[dict[str, Any]]) -> None:
     expected = list(STAGES[:STAGES.index(stage)])
@@ -210,7 +226,7 @@ def _check_prior(run_dir: Path, stage: str, prior: list[dict[str, Any]]) -> None
         path = run_dir / "producer-receipts" / f"{item['stage_id']}.json"
         _owner_file(path)
         if _sha_path(path) != item["receipt_sha256"]: raise Refusal("prior receipt hash refused")
-        try: stored=json.loads(path.read_text(encoding="utf-8")); results=stored["results"]
+        try: stored=json.loads(path.read_text(encoding="utf-8")); results=stored
         except (OSError, ValueError, KeyError, TypeError) as exc: raise Refusal("prior receipt unreadable") from exc
         actual=_domain_identity(item["stage_id"],results["config_sha256"],results["output_identities"])
         if item["domain_identity"] != actual: raise Refusal("prior domain identity refused")
@@ -225,27 +241,30 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     _check_prior(run_dir, stage, req["prior"])
     config={"source":s,"corpus":c}
     argv, marker = _argv(root,s,c,action,stage)
-    if action == "verify":
-        try:
-            output = _output_identities(root,s,c,stage)
-            envelope = _envelope(action,stage,config,"completed",output)
-            _write_receipt(run_dir,stage,envelope)
-            return 0, envelope
-        except Refusal: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
-    if stage in {"02_source_approval","06_package_smoke"} and not sys.stdin.isatty(): raise Refusal("interactive TTY required")
-    proc = subprocess.run(argv, stdin=None if stage in {"02_source_approval","06_package_smoke"} else subprocess.DEVNULL, capture_output=True, text=True)
-    logs = run_dir / "logs"; logs.mkdir(mode=0o700, exist_ok=True)
+    if action == "approve" and stage in {"02_source_approval","06_package_smoke"} and not sys.stdin.isatty(): raise Refusal("interactive TTY required")
+    proc = subprocess.run(argv, stdin=None if action == "approve" else subprocess.DEVNULL, capture_output=True, text=True)
+    logs = run_dir / "logs"
+    if logs.exists():
+        st=logs.lstat()
+        if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077: raise Refusal("logs policy refused")
+    else: logs.mkdir(mode=0o700)
     for suffix,data in (("stdout",proc.stdout),("stderr",proc.stderr)):
-        path=logs/f"{stage}.{suffix}"; path.write_text(data,encoding="utf-8"); os.chmod(path,0o600)
+        path=logs/f"{stage}.domain.{suffix}"
+        try: fd=os.open(path, os.O_WRONLY|os.O_CREAT|os.O_APPEND|getattr(os,"O_NOFOLLOW",0), 0o600)
+        except OSError as exc: raise Refusal("domain log policy refused") from exc
+        with os.fdopen(fd,"ab") as fh: fh.write(f"\n[setec-pipeline {action}]\n".encode("ascii") + data.encode("utf-8"))
     if proc.returncode != 0: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
+    if action == "verify" and stage == "03_source_acquire" and not (run_dir / "producer-receipts" / f"{stage}.json").exists():
+        return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
     if stage == "05_near_duplicate_filter":
         report=_rel(root,c["dedup_report"]); report.parent.mkdir(mode=0o700,parents=True,exist_ok=True); report.write_text(proc.stdout,encoding="utf-8"); os.chmod(report,0o600)
-    if stage == "07_author_package":
+    if stage == "07_author_package" and action != "verify":
         output=_rel(root,c["producer_envelope"]); output.parent.mkdir(mode=0o700,parents=True,exist_ok=True); output.write_text(proc.stdout,encoding="utf-8"); os.chmod(output,0o600)
     try:
         output = _output_identities(root,s,c,stage)
-        envelope = _envelope(action,stage,config,"completed",output)
-        _write_receipt(run_dir,stage,envelope)
+        lineage = _lineage(stage,config,output)
+        receipt_sha = _write_receipt(run_dir,stage,lineage)
+        envelope = _envelope(action,stage,config,"completed",output,receipt_sha)
         return 0, envelope
     except Refusal: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
 
