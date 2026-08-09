@@ -11,10 +11,7 @@ import pytest
 import author_corpus_export as ace  # noqa: E402
 import passage_lineage_crosswalk as lineage  # noqa: E402
 import passage_remediation_projection as remediation  # noqa: E402
-
-
-def _digest(label: str) -> str:
-    return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
+from conftest import _digest  # noqa: E402
 
 
 def _source(text: str, digit: str) -> tuple[dict, bytes]:

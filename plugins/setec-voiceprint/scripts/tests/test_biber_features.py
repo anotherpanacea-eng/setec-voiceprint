@@ -564,8 +564,8 @@ class TestStandaloneAbstain:
 
 # ===========================================================================
 # AC10 — Opt-in OFF leaves existing surfaces unchanged
-# (Also in test_voice_distance_schema.py and test_voice_profile_schema.py —
-#  this is the function-call-consumer check on raw stylometry_core APIs.)
+# (The matching envelope checks now live in `test_schema_envelopes.py`; this is
+#  the function-call-consumer check on raw stylometry_core APIs.)
 # ===========================================================================
 
 class TestOptInOffDefaultBehavior:

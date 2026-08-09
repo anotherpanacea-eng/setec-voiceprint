@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import _results  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 
@@ -57,10 +58,6 @@ def _run_injected(tmp_path, inputs, *args):
     rc = ea.main([str(target), "--inputs-json", str(_write(tmp_path, inputs)),
                   "--out", str(out), "--out-md", str(tmp_path / "out.md"), *args])
     return rc, json.loads(out.read_text(encoding="utf-8"))
-
-
-def _results(env):
-    return env.get("results", env)
 
 
 # --------------------------------------------------------------------------

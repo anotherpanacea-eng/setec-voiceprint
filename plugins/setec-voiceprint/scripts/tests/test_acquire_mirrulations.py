@@ -20,6 +20,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from conftest import read_manifest  # noqa: E402
 
 try:
     import pytest  # type: ignore
@@ -125,16 +126,6 @@ def make_args(**overrides) -> argparse.Namespace:
 
 def make_store() -> "mr.FixtureObjectStore":
     return mr.FixtureObjectStore(OBJECTS)
-
-
-def read_manifest(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
 
 
 # ------------------- ObjectStore ---------------------------------

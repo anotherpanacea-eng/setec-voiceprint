@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Functional tests for aic_pattern_audit.py's pattern detectors.
 
-The surface previously had only a schema-shape test (`test_aic_pattern_audit_schema.py`);
+The surface previously had only schema-shape coverage (now consolidated in
+`test_schema_envelopes.py`);
 the detector LOGIC — the named AIC patterns from `references/source-triage.md` —
 was untested. These pin each pure detector against hand-constructed positive and
 negative inputs so a regression in the matching logic is caught (not just the

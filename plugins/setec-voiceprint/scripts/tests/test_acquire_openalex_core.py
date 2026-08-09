@@ -25,6 +25,7 @@ import datetime as dt
 import json
 import sys
 from pathlib import Path
+from conftest import read_manifest  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -111,16 +112,6 @@ def make_fetcher(url_map: dict | None = None) -> ac.FixtureFetcher:
         rate_limit_seconds=0.0,
         respect_robots=False,
     )
-
-
-def read_manifest(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
 
 
 # ------------------- Unit helpers --------------------------------
