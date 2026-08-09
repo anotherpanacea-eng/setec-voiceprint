@@ -374,17 +374,16 @@ def _strict_author_envelope(value: Any, receipt: dict[str, Any], *, verifying: b
         raise Refusal("author export warning posture refused")
     return value
 
-def _check_prior(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Authenticate every predecessor from its lineage receipt and real artifacts.
+def _check_prior(root: Path, run_dir: Path, logs: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Re-verify every predecessor through its owning domain verifier.
 
-    Each prior stage is re-hashed, not re-executed.  The lineage receipt embeds
-    the SHA-256 of that stage's own output files and its config; rebuilding the
-    receipt from the artifacts on disk and byte-comparing it detects any change
-    to either.  Re-running the predecessor's domain verifier would recompute a
-    pure function of those same bytes and that same config, so on unchanged
-    input its answer is fixed in advance -- it costs one child process per
-    predecessor to learn nothing.  The stage actually being acted on always runs
-    its own domain verifier; that is where real revalidation belongs.
+    Hashing the lineage receipt and the artifacts it lists is NOT sufficient
+    here.  A stage's `output_identities` name only its headline artifacts -- for
+    stage 03, the manifest -- while its verifier also revalidates the committed
+    per-record text files, sidecars, hashes, and locators that no receipt hash
+    covers.  Dropping the re-run makes predecessor authentication quadratic-free
+    but blind to tampering with those files.  See the handoff for the
+    measurement and the proposed narrower fix.
     """
     expected = list(STAGES[:STAGES.index(stage)])
     if [x["stage_id"] for x in prior] != expected: raise Refusal("prior ordering refused")
@@ -404,6 +403,11 @@ def _check_prior(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any]
                 or not _valid_identity_list(stored.get("input_identities"), prior=True)
                 or not _valid_identity_list(stored.get("output_identities"))):
             raise Refusal("prior lineage shape refused")
+        argv, _ = _argv(root, s, c, "verify", prior_stage)
+        proc = _run_child(logs, prior_stage, "verify", argv)
+        child_json = _safe_json(proc.stdout)
+        if proc.returncode or (type(child_json) is dict and child_json.get("available") is False):
+            raise Refusal("prior verifier refused")
         output = _output_identities(root, s, c, prior_stage)
         expected_lineage = _lineage(prior_stage, config, output, inputs)
         if (stored != expected_lineage or raw != _canon(expected_lineage)
@@ -455,7 +459,7 @@ def _execute(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any],
     prior_stages = [x["stage_id"] for x in prior]
     _preflight_logs(logs, prior_stages + [stage], root=run_dir)
     _preflight_receipts(receipt_dir, prior_stages, stage, root=run_dir)
-    inputs = _check_prior(root, run_dir, s, c, stage, prior)
+    inputs = _check_prior(root, run_dir, logs, s, c, stage, prior)
     current_receipt = receipt_dir / f"{stage}.json"
     try:
         current_receipt.lstat()
