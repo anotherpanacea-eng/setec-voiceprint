@@ -119,8 +119,14 @@ def _author_envelope(receipt: dict[str, Any], *, verifying: bool = False) -> dic
         "target": {"path": None, "words": 0}, "baseline": None,
         "results": {"producer_receipt": receipt}, "claim_license": license_value,
         "claim_license_rendered": "## What this result licenses\n",
-        "warnings": (["verify-existing: package was verified without publication"]
-                     if verifying else []),
+        # Mirrors the exporter: the degradation warning comes first, then the
+        # verify-only warning.
+        "warnings": ([
+            "record_atomic_degraded: stable grouping was unavailable; consumers "
+            "must restrict this package to train-only, non-comparative use."
+        ] if receipt.get("record_atomic_degraded") else []) + (
+            ["verify-existing: package was verified without publication"]
+            if verifying else []),
         "ai_status": None,
     }
 
@@ -205,11 +211,85 @@ def _tree_snapshot(root: Path) -> dict[str, tuple[int, bytes | None]]:
 
 
 def _policy_refusal(outcome: tuple[int, dict[str, Any]]) -> bool:
-    """A policy refusal is exit 3 with the normalized refused envelope, not exit 2."""
+    """A policy refusal is exit 3 with the R3 structured-error envelope."""
     code, envelope = outcome
     return (code == 3 and envelope["available"] is False
-            and envelope["results"]["status"] == "refused"
-            and envelope["results"]["reason_category"] == "policy_refused")
+            and envelope["results"] == {}
+            and envelope["reason_category"] == "policy_refused"
+            and type(envelope["reason"]) is str and bool(envelope["reason"]))
+
+
+STANDARD_ENVELOPE_KEYS = {
+    "schema_version", "task_surface", "tool", "version", "available", "target",
+    "baseline", "results", "claim_license", "claim_license_rendered",
+    "warnings", "ai_status",
+}
+
+
+def test_envelope_is_the_normalized_surface_contract(tmp_path, monkeypatch):
+    """The facade is a surface, so it emits the same envelope every surface does.
+
+    It previously returned a bespoke {schema_version, available, results}, which
+    left no channel for `warnings` and no `claim_license` bounding what a stage
+    identity attests -- and made an R5 contract golden impossible to generate.
+    """
+    case = _case(tmp_path)
+    fake = _run_through(case, monkeypatch, 1)
+    assert fake.calls
+    rc, envelope = P.run_request(_request(case, "01_source_smoke", "verify", []))
+    assert rc == 0
+    assert set(envelope) == STANDARD_ENVELOPE_KEYS
+    assert envelope["schema_version"] == "1.0"
+    assert envelope["task_surface"] == P.TASK_SURFACE
+    assert envelope["tool"] == "gmail_author_pipeline"
+    # No target text, no baseline, no ai_status -- exactly author_corpus_export's
+    # posture for the same task surface.
+    assert envelope["target"] == {"path": None, "words": 0}
+    assert envelope["baseline"] is None and envelope["ai_status"] is None
+    assert envelope["claim_license"]["task_surface"] == P.TASK_SURFACE
+    assert "no AI/human, voice, or provenance verdict" in \
+        envelope["claim_license"]["does_not_license"]
+    assert envelope["claim_license_rendered"]
+    # The no-prose boundary still holds: no private path reaches the response.
+    assert str(case.root) not in json.dumps(envelope)
+
+
+def test_bad_input_envelope_is_also_normalized(tmp_path):
+    request = _private_file(tmp_path / "bad.json", b"not-json")
+    rc = P.main(["--json", "--request", str(request)])
+    assert rc == 2
+
+
+def test_error_envelope_shape_is_the_r3_contract(tmp_path, capsys):
+    request = _private_file(tmp_path / "bad.json", b"not-json")
+    assert P.main(["--json", "--request", str(request)]) == 2
+    envelope = json.loads(capsys.readouterr().out)
+    # R3: the 12 standard keys plus the two additive error keys.
+    assert set(envelope) == STANDARD_ENVELOPE_KEYS | {"reason", "reason_category"}
+    assert envelope["available"] is False and envelope["results"] == {}
+    assert envelope["reason_category"] == "bad_input"
+    assert envelope["claim_license"] is None
+
+
+def test_degraded_package_warning_reaches_the_consumer(tmp_path, monkeypatch):
+    """record_atomic_degraded makes the package train-only; it must propagate.
+
+    The facade validates that the exporter emitted this warning, so dropping it
+    from its own response would be the one surface that checked the flag and
+    then hid it.
+    """
+    case = _case(tmp_path)
+    degraded = {"counts": {"records": 1, "by_register": {"email.personal": 1}},
+                "record_atomic_degraded": True}
+    import test_gmail_author_pipeline as self_module
+    monkeypatch.setattr(self_module, "_author_receipt", lambda: degraded)
+    fake = _run_through(case, monkeypatch, 7)
+    rc, envelope = P.run_request(
+        _request(case, "07_author_package", "verify", _prior(case, 6)))
+    assert rc == 0, envelope
+    assert P.DEGRADED_WARNING in envelope["warnings"]
+    assert any("train-only" in caveat
+               for caveat in envelope["claim_license"]["additional_caveats"])
 
 
 def test_action_matrix_is_closed():
@@ -415,7 +495,7 @@ def test_public_cli_returns_closed_bad_input_without_private_exception(tmp_path,
     assert P.main(["--json", "--request", str(request)]) == 2
     envelope = json.loads(capsys.readouterr().out)
     assert envelope["available"] is False
-    assert envelope["results"]["reason_category"] == "bad_input"
+    assert envelope["reason_category"] == "bad_input"
 
 
 def test_foreign_cwd_direct_launch_with_empty_pythonpath(tmp_path):
@@ -428,7 +508,7 @@ def test_foreign_cwd_direct_launch_with_empty_pythonpath(tmp_path):
         cwd=foreign, env=environment, capture_output=True, text=True,
     )
     assert proc.returncode == 2
-    assert json.loads(proc.stdout)["results"]["reason_category"] == "bad_input"
+    assert json.loads(proc.stdout)["reason_category"] == "bad_input"
 
 
 def test_verifier_success_and_refusal_do_not_write(monkeypatch, tmp_path):

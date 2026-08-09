@@ -6,7 +6,7 @@ entries:
   handoff: experimental
   consumers:
   - setec-voicewright
-  min_setec_version: "1.130.0"
+  min_setec_version: "1.131.0"
   json_delivery: stdout
   family: corpus-acquisition
   purpose: Closed no-prose adapter for the reviewed Gmail-to-author-corpus recipe stages.

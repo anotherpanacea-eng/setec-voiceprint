@@ -1039,8 +1039,31 @@ def _build_s5_distance() -> dict[str, Any]:
     return envelope
 
 
+def _build_gmail_author_pipeline() -> dict[str, Any]:
+    from setec.surfaces import gmail_author_pipeline as m  # type: ignore
+
+    # Drive the surface's REAL builder (`_envelope` -> output_schema
+    # build_output + its own `_claim_license`) with one canonical completed
+    # stage response. The config is the minimal shape `_validate` accepts;
+    # identities are sentinel hashes. No domain child runs.
+    sha = "0" * 64
+    config = {
+        "source": {key: None for key in sorted(m.SOURCE_KEYS)},
+        "corpus": {key: None for key in sorted(m.CORPUS_KEYS)},
+    }
+    output = [{"kind": "file", "label": "smoke_descriptor",
+               "identity_kind": "sha256", "identity": sha},
+              {"kind": "file", "label": "smoke_manifest",
+               "identity_kind": "sha256", "identity": sha}]
+    return m._envelope(
+        "verify", "01_source_smoke", config, "completed",
+        output=output, lineage_sha=sha, inputs=[],
+    )
+
+
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "author_corpus_export": _build_author_corpus_export,
+    "gmail_author_pipeline": _build_gmail_author_pipeline,
     "variance_audit": _build_variance_audit,
     "manuscript_audit": _build_manuscript_audit,
     "repetition_audit": _build_repetition_audit,

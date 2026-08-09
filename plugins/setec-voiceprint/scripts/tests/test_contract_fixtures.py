@@ -57,6 +57,7 @@ EXPECTED_TASK_SURFACE = {
     "position_pair_register": "position_pair_register",
     "agd_move_scan": "agd_move_scan",
     "s5_distance": "voice_coherence",
+    "gmail_author_pipeline": "voice_coherence_acquisition",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({
@@ -148,9 +149,12 @@ def test_every_golden_is_a_valid_envelope(surface):
     assert env["claim_license_rendered"]
     # Volatile fields are normalized.
     assert env["version"] == gen.VERSION_SENTINEL
-    if surface == "author_corpus_export":
+    if surface in {"author_corpus_export", "gmail_author_pipeline"}:
+        # Packaging/attestation surfaces analyse no target text: target.path
+        # is genuinely null, not a normalized absolute path.
         assert env["target"]["path"] is None
-        assert env["results"]["producer_receipt"]["source_persona_aliases"] == {}
+        if surface == "author_corpus_export":
+            assert env["results"]["producer_receipt"]["source_persona_aliases"] == {}
     else:
         assert env["target"]["path"] == gen.PATH_SENTINEL
 

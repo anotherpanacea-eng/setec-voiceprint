@@ -25,6 +25,13 @@ Enforced (errors, exit 1 unless exempted):
     * An L2 -> L2 edge is a violation UNLESS it is in the committed,
       SHRINK-ONLY baseline (the count may only decrease; a NEW L2->L2
       edge not in the baseline always fails, `--strict` or not).
+      ONE sanctioned exception: edges FROM the R5 contract-fixture
+      generator (gen_contract_fixtures.py). Its faithfulness contract
+      requires importing each golden surface's real envelope-assembly
+      path, so a surface joining the golden regime necessarily adds
+      one generator edge; refusing it would close the golden regime
+      to new surfaces permanently. Such a row may be ADDED to the
+      baseline; every other from_path stays shrink-only.
 
 Reported, never gated: cycles (SCCs of size > 1) in the internal
 import graph. Five are known to exist at the P5 baseline; this
@@ -83,6 +90,10 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # L0 predicate: contract modules, by identity (basename), not directory --
 # per specs/svp-packaging-conversion.md §4 and this PR's build contract.
 _L0_STEMS = {"output_schema", "claim_license", "capabilities"}
+
+# The one from_path allowed to ADD l2_to_l2 baseline rows (see header):
+# the R5 golden generator, whose job is importing every golden surface.
+_GENERATOR_FROM_PATH = "plugins/setec-voiceprint/scripts/gen_contract_fixtures.py"
 
 EDGE_KINDS = ("l0_outbound", "l1_to_l2", "l2_to_l2")
 REQUIRED_LAYER_FIELDS = (
@@ -724,6 +735,10 @@ def check_ratchet(base_sha: str) -> list[str]:
         return []
     new_keys = {_exemption_key(r) for r in new_rows if isinstance(r, dict)}
     added = sorted(new_keys - old_keys, key=lambda k: (k[2] or "", k[0] or "", k[1] or ""))
+    added = [
+        (fp, tp, kind) for fp, tp, kind in added
+        if not (kind == "l2_to_l2" and fp == _GENERATOR_FROM_PATH)
+    ]
     if not added:
         return []
     return [

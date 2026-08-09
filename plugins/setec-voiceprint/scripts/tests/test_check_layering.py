@@ -318,6 +318,46 @@ def test_check_ratchet_flags_a_new_row_beyond_a_committed_baseline(tmp_path, mon
     assert problems  # committed baseline had zero rows; this adds one
 
 
+def test_check_ratchet_allows_only_the_generator_hub_addition(tmp_path, monkeypatch):
+    """A surface joining the R5 golden regime adds one generator edge; that
+    row may be added.  Any other from_path -- including a surface importing
+    the generator, the reverse direction -- stays shrink-only."""
+    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
+    exemptions_path = tmp_path / "exemptions.yaml"
+    monkeypatch.setattr(cl, "EXEMPTIONS_PATH", exemptions_path)
+    exemptions_path.write_text(
+        "schema_version: 1\nlayer_exemptions: []\n", encoding="utf-8",
+    )
+    sha = _init_git_repo(tmp_path)
+    def rows(from_path, to_path):
+        return [{
+            "from_path": from_path, "to_path": to_path,
+            "edge_kind": "l2_to_l2", "reason": "r", "owner": "o",
+            "introduced_sha": sha, "removal_phase": "not-applicable",
+        }]
+    generator = cl._GENERATOR_FROM_PATH
+    surface = "plugins/setec-voiceprint/scripts/setec/surfaces/x.py"
+    exemptions_path.write_text(
+        json.dumps({"schema_version": 1,
+                    "layer_exemptions": rows(generator, surface)}),
+        encoding="utf-8")
+    assert cl.check_ratchet(sha) == []  # sanctioned: generator -> surface
+    exemptions_path.write_text(
+        json.dumps({"schema_version": 1,
+                    "layer_exemptions": rows(surface, generator)}),
+        encoding="utf-8")
+    assert cl.check_ratchet(sha)  # reverse direction still refuses
+    exemptions_path.write_text(
+        json.dumps({"schema_version": 1,
+                    "layer_exemptions": [{
+                        "from_path": generator, "to_path": surface,
+                        "edge_kind": "l1_to_l2", "reason": "r", "owner": "o",
+                        "introduced_sha": sha,
+                        "removal_phase": "not-applicable"}]}),
+        encoding="utf-8")
+    assert cl.check_ratchet(sha)  # other edge kinds from the generator too
+
+
 def test_check_ratchet_absent_key_at_merge_base_is_a_no_op(tmp_path, monkeypatch):
     """This PR's own bootstrap situation: the merge base's file exists but
     has no `layer_exemptions` key at all -- nothing to ratchet against,

@@ -3506,6 +3506,17 @@ layer_exemptions:
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/gmail_author_pipeline.py
+  edge_kind: l2_to_l2
+  reason: "R5 golden-generator hub edge (the sanctioned addition class in\
+    \ check_layering.py): gen_contract_fixtures.py imports the surface's real\
+    \ envelope-assembly path to produce references/contract_fixtures/gmail_author_pipeline.json,\
+    \ exactly as it does for the other golden surfaces. The generator's edges\
+    \ exist so goldens are never hand-written JSON."
+  owner: packaging
+  introduced_sha: acae4405198297c68ecd42d21bfad45afd202862
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
