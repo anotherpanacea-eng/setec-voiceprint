@@ -1,0 +1,21 @@
+{
+  "id": "gmail_author_pipeline",
+  "script_path": "plugins/setec-voiceprint/scripts/setec/surfaces/gmail_author_pipeline.py",
+  "surface": "voice_coherence_acquisition",
+  "status": "experimental",
+  "handoff": "experimental",
+  "consumers": ["setec-voicewright"],
+  "min_setec_version": "1.130.0",
+  "json_delivery": "stdout",
+  "family": "corpus-acquisition",
+  "purpose": "Closed no-prose adapter for the reviewed Gmail-to-author-corpus recipe stages.",
+  "use_when": ["a setec-gmail-author-pipeline-request/1 request was created by the pinned consumer"],
+  "do_not_use_when": ["an operator needs a general workflow runner or pass-through command arguments"],
+  "inputs": [{"flag": "--request", "type": "path", "required": true}],
+  "outputs": {"schema_version": "1.0", "artifacts": ["normalized stage receipt identities only"]},
+  "compute": {"tier": "acquisition", "cost_note": "dispatches existing local Gmail, manifest, dedup, and export tools", "length_floor_words": null},
+  "registers": ["personal"],
+  "dependencies": {"python": []},
+  "examples": [],
+  "references": ["plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md"]
+}
