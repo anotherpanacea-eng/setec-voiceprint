@@ -287,10 +287,3 @@ def test_cross_register_pairs_are_built_not_refused() -> None:
     )
     assert any(p["same_author"] for p in pairs)
     assert any(not p["same_author"] for p in pairs)
-
-
-def test_harness_does_not_import_the_isolation_guard() -> None:
-    """The inverse obligation `test_register_isolation_coverage.py` enforces on
-    every EXEMPT entry, pinned here too so the reason travels with the code."""
-    src = Path(vvh.__file__).read_text(encoding="utf-8")
-    assert "assert_personal_register_isolated" not in src

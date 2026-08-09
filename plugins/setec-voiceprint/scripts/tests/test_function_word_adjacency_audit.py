@@ -253,11 +253,6 @@ def test_networkx_not_imported_by_fwan():
     assert not any(m == "networkx" or m.startswith("networkx.") for m in added), added
 
 
-def test_source_has_no_networkx_import():
-    src = (SCRIPTS / "function_word_adjacency_audit.py").read_text(encoding="utf-8")
-    assert "import networkx" not in src and "from networkx" not in src
-
-
 def test_networkx_absent_from_requirements():
     # The Tier-1 stdlib contract lives at the dependency manifest: networkx is in
     # NO requirements*.txt.

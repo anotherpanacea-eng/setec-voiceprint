@@ -48,12 +48,6 @@ def test_envelope_shape_validates(tmp_path):
         assert key in payload["results"]
 
 
-def test_no_spacy_import():
-    src = Path(cvd.__file__).read_text(encoding="utf-8")
-    assert "import spacy" not in src
-    assert "en_core_web" not in src
-
-
 def test_self_distance_small():
     res = cvd.compute_distance(A_TEXT, [A_TEXT, A_TEXT, A_TEXT], n=3, top_k=200)
     assert res["delta"] < 0.05

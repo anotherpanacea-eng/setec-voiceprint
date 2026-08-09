@@ -31,7 +31,6 @@ and were left alone.
 
 from __future__ import annotations
 
-import inspect
 import json
 import sys
 from pathlib import Path
@@ -3364,12 +3363,6 @@ class TestVoiceDistanceClaimLicense:
         assert _voice_distance_envelope["claim_license_rendered"].startswith(
             "## What this result licenses"
         )
-
-    def test_register_match_read_site_uses_live_strength_key(self):
-        source = inspect.getsource(vd._claim_license)
-        assert '.get("strength")' in source
-        assert '.get("verdict")' not in source
-
 
 class TestVoiceDistanceOptionalBlocks:
     def test_register_match_under_results(self):

@@ -871,31 +871,23 @@ def test_register_selection_fails_closed_when_no_register_can_be_inferred():
 
 
 def test_the_guard_does_not_drag_in_the_heavy_stylometry_stack():
-    """Why the guard lives in `register_taxonomy` and not `stylometry_core`:
-    importing stylometry_core pulls spaCy + nltk and costs seconds, and this
-    harness deliberately ships its own lightweight featurizer for that reason
-    (see `_tokens`). Routing the guard through the stdlib-only taxonomy module is
-    what made the fix possible without a dependency regression.
+    """Importing the lightweight harness must not load the model stack."""
+    import subprocess
 
-    Checked structurally rather than by substring, so the prose explaining the
-    choice cannot trip the check that enforces it."""
-    import ast
-
-    tree = ast.parse(Path(gi.__file__).read_text(encoding="utf-8"))
-    sources = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module
-    } | {
-        alias.name.split(".")[0]
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
-    assert "register_taxonomy" in sources
-    assert "stylometry_core" not in sources
-    for heavy in ("spacy", "nltk", "numpy", "scipy", "torch", "sklearn"):
-        assert heavy not in sources, f"{heavy} would tax this stdlib-light harness"
+    heavy = ("spacy", "nltk", "numpy", "scipy", "torch", "sklearn")
+    probe = (
+        "import json,sys; import general_imposters; "
+        f"print(json.dumps([name for name in {heavy!r} if name in sys.modules]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(gi.__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == []
 
 
 if __name__ == "__main__":

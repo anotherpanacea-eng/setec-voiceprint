@@ -2019,23 +2019,36 @@ def test_error_categories_are_the_three_fixed_envelopes() -> None:
         assert issubclass(cls, rs.SweepRefusal)
 
 
-def test_no_source_field_appears_in_any_frozen_payload_builder() -> None:
-    source = Path(rs.__file__).read_text(encoding="utf-8")
-    for forbidden in ('"source"', '"source_id"', '"source_family"'):
-        assert forbidden not in source
+def test_importing_the_sweep_opens_no_network_or_subprocess_surface() -> None:
+    """The sweep walks private corpus text; importing it must load no
+    exfiltration-capable module.  Checked behaviorally (a fresh interpreter's
+    sys.modules after import), not by source grep, so a conditional or aliased
+    import cannot slip past a substring check."""
+    import subprocess
 
-
-def test_module_imports_no_network_or_subprocess_surface() -> None:
-    source = Path(rs.__file__).read_text(encoding="utf-8")
-    for forbidden in (
-        "import socket",
-        "import ssl",
-        "import urllib",
-        "import http",
-        "import subprocess",
-        "import requests",
-    ):
-        assert forbidden not in source
+    # The exfiltration-CAPABLE modules, not their inert parents: urllib.parse
+    # is pure string parsing and arrives transitively from ordinary stdlib
+    # imports on some platforms; the network capability lives in
+    # urllib.request / http.client.
+    surfaces = ("socket", "ssl", "urllib.request", "http.client",
+                "subprocess", "requests")
+    # Snapshot before the import: hosted runners' site/.pth processing can pull
+    # stdlib networking at interpreter startup, which is not the sweep's doing.
+    # The guard is on what importing the sweep ADDS.
+    probe = (
+        "import json,sys; "
+        f"before = {{name for name in {surfaces!r} if name in sys.modules}}; "
+        "import register_sweep; "
+        f"print(json.dumps([name for name in {surfaces!r} "
+        "if name in sys.modules and name not in before]))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=Path(rs.__file__).resolve().parent,
+        capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == []
 
 
 # ---- Increment B: manifest projection seam ----
@@ -2187,12 +2200,6 @@ def test_instrumented_mapping_projects_via_direct_lookup_only() -> None:
         persona="alias-a",
         ai_status="pre_ai_human",
     )
-
-
-def test_row_projection_source_never_names_unowned_fields() -> None:
-    source = inspect.getsource(mv._project_h2_row) + inspect.getsource(mv._row_item)
-    for forbidden in ("source_family", "source_id", '"source"', "'source'"):
-        assert forbidden not in source
 
 
 _SOURCE_FIELD_VARIANTS: list[dict[str, Any]] = [

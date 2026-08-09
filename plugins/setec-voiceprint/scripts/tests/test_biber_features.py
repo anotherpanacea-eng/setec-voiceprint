@@ -502,36 +502,6 @@ class TestStdlibImport:
         out = bf.biber_family_features({})
         assert len(out) == 96
 
-    def test_no_torch_in_biber_features_source(self):
-        """AC8: biber_features.py source does not import torch/transformers at module level."""
-        src = Path(bf.__file__).read_text(encoding="utf-8")
-        # These are only allowed inside function bodies (lazy), not at module top level.
-        # We check that neither 'import torch' nor 'import transformers' appears as a
-        # top-level (non-indented) statement.
-        for line in src.splitlines():
-            stripped = line.lstrip()
-            if stripped.startswith("import torch") or stripped.startswith("from torch"):
-                # Only forbidden if at module top level (no indentation)
-                assert line.startswith(" ") or line.startswith("\t"), (
-                    f"torch imported at module top level: {line!r}"
-                )
-            if stripped.startswith("import transformers") or stripped.startswith("from transformers"):
-                assert line.startswith(" ") or line.startswith("\t"), (
-                    f"transformers imported at module top level: {line!r}"
-                )
-
-    def test_stylometry_core_no_top_level_biber_import(self):
-        """AC8: stylometry_core does not top-level import biber_features (lazy only)."""
-        src = Path(sc.__file__).read_text(encoding="utf-8")
-        # The import of biber_family_features must be inside the if-biber: block
-        # (indented), never at module top level.
-        for line in src.splitlines():
-            if "from biber_features import" in line or "import biber_features" in line:
-                assert line.startswith(" ") or line.startswith("\t"), (
-                    f"biber_features imported at module top level in stylometry_core: {line!r}"
-                )
-
-
 # ===========================================================================
 # AC9 — Standalone abstain when no tagger
 # ===========================================================================

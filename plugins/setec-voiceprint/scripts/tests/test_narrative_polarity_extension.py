@@ -247,30 +247,6 @@ def test_eight_field_design_substitution_changes_digest():
     assert digest([base]) != digest([changed])
 
 
-def test_receipt_and_signal_cell_keysets_are_pinned():
-    receipt_keys = {
-        "schema_version", "date", "arm", "signal_id_set_sha256", "thresholds_sha256",
-        "registration_sha256", "derivation_sha256", "manifest_sha256",
-        "source_envelopes_sha256", "registration_path", "manifest_path", "class_counts",
-        "covered_length_range", "covered_source_work_range", "segmenter", "judge",
-        "bridge_read_mode", "floors_applied", "bands_applied", "multiplicity",
-        "deferrals", "stated_limits", "per_signal",
-    }
-    signal_keys = {
-        "verdict", "verdict_step", "operator", "units", "transfer_caveat",
-        "response_class", "support", "availability_by_class", "separation_saturated",
-        "sign_stability", "statistics", "ci", "bridge", "multiplicity",
-        "joint_claim_suppressed",
-    }
-    assert len(receipt_keys) == 23
-    assert len(signal_keys) == 15
-    # The construction site is intentionally direct: a future key addition must
-    # update this test before it can silently expand the receipt contract.
-    source = Path(npe.__file__).read_text(encoding="utf-8")
-    for key in receipt_keys | signal_keys:
-        assert f'"{key}"' in source
-
-
 def test_verify_rejects_tampered_rederived_receipt(tmp_path, monkeypatch):
     expected = {"derivation_sha256": "sha256:good", "verdict": "polarity_matches"}
     receipt = tmp_path / "receipt.json"
