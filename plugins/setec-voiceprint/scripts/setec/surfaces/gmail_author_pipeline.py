@@ -297,7 +297,6 @@ def _envelope(action: str, stage: str, config: dict[str, Any], status: str, outp
     domain = _domain_identity(stage, config_sha, output) if status == "completed" else None
     receipts = [] if domain is None else [{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}]
     results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":inputs or [],"domain_receipts":receipts,"output_identities":output,"lineage_receipt_sha256":lineage_sha,"reason_category":reason}
-    assert set(results) == RESULT_KEYS
     return {"schema_version":"1.0","available":status == "completed","results":results}
 
 def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
@@ -398,9 +397,6 @@ def _check_prior(root: Path, run_dir: Path, logs: Path, s: dict[str, Any], c: di
         if proc.returncode or (type(child_json) is dict and child_json.get("available") is False):
             raise Refusal("prior verifier refused")
         output = _output_identities(root, s, c, prior_stage)
-        if prior_stage == "07_author_package":  # unreachable today; closes future extension
-            receipt = json.loads((_rel(root, c["package_dir"]) / "producer_receipt.json").read_text(encoding="utf-8"))
-            _strict_author_envelope(child_json, receipt, verifying=True)
         expected_lineage = _lineage(prior_stage, config, output, inputs)
         if (stored != expected_lineage or raw != _canon(expected_lineage)
                 or item["domain_identity"] != expected_lineage["domain_identity"]):
@@ -430,22 +426,29 @@ def _publish_file_noreplace(path: Path, payload: bytes, *, root: Path) -> None:
     with os.fdopen(fd, "wb") as fh:
         fh.write(payload)
 
-def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
+def _parse_request(request_path: Path) -> tuple[Path, Path, dict[str, Any], dict[str, Any], str, str, list[dict[str, Any]]]:
+    """Read and validate the request itself.  Refusals here are bad input (exit 2)."""
     _owner_file(request_path)
     try: req = json.loads(request_path.read_text(encoding="utf-8"))
     except (OSError,json.JSONDecodeError) as exc: raise Refusal("request unreadable") from exc
     root,run_dir,s,c,action,stage = _validate(req)
     _owner_file(request_path, root=root)
     if request_path.parent.resolve() != run_dir.resolve(): raise Refusal("request must be a direct run-root child")
+    return root, run_dir, s, c, action, stage, req["prior"]
+
+def _execute(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any],
+             action: str, stage: str, prior: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:
+    """Perform at most one stage side effect.  Refusals here are policy (exit 3)."""
+    config = {"source": s, "corpus": c}
+    inputs: list[dict[str, Any]] = []
     # Create/validate both stateful directories before a child can run.
     receipt_dir = _safe_dir(run_dir, "producer-receipts", root=run_dir)
     logs = _safe_dir(run_dir, "logs", root=run_dir)
-    prior_stages = [x["stage_id"] for x in req["prior"]]
+    prior_stages = [x["stage_id"] for x in prior]
     _preflight_logs(logs, prior_stages + [stage], root=run_dir)
     _preflight_receipts(receipt_dir, prior_stages, stage, root=run_dir)
-    inputs = _check_prior(root, run_dir, logs, s, c, stage, req["prior"])
-    config={"source":s,"corpus":c}
-    current_receipt = run_dir / "producer-receipts" / f"{stage}.json"
+    inputs = _check_prior(root, run_dir, logs, s, c, stage, prior)
+    current_receipt = receipt_dir / f"{stage}.json"
     try:
         current_receipt.lstat()
     except FileNotFoundError:
@@ -458,24 +461,23 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     if action in {"run", "approve"} and receipt_exists:
         raise Refusal("completed stage cannot repeat its side effect")
     if stage == "03_source_acquire" and action == "verify" and not receipt_exists:
-        return 3, _envelope(action,stage,config,"refused",reason="policy_refused",inputs=inputs)
+        raise Refusal("stage 03 verify requires an existing lineage receipt")
     # A resumed, already-complete acquisition is a re-verification, never a
     # second acquisition.  Resume enters the acquisition continuation only
     # while the adapter lineage receipt is absent.
     domain_action = "verify" if stage == "03_source_acquire" and action == "resume" and receipt_exists else action
     argv, _ = _argv(root,s,c,domain_action,stage)
-    if action == "approve" and stage in {"02_source_approval","06_package_smoke"} and not sys.stdin.isatty(): raise Refusal("interactive TTY required")
+    if action == "approve" and not sys.stdin.isatty(): raise Refusal("interactive TTY required")
     if action == "approve" and stage == "06_package_smoke":
         print("The bounded package smoke will request one confirmation. Continue? [y/N]", file=sys.stderr)
         try: answer = input().strip().lower()
         except EOFError: answer = ""
         if answer not in {"y", "yes"}: raise Refusal("owner declined bounded package smoke")
     proc = _run_child(logs, stage, domain_action, argv, inherit_stdin=action == "approve")
-    if proc.returncode != 0: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
-    try: child_json=json.loads(proc.stdout)
-    except (TypeError, ValueError): child_json=None
+    if proc.returncode != 0: raise Refusal("domain child refused")
+    child_json = _safe_json(proc.stdout)
     if isinstance(child_json, dict) and child_json.get("available") is False:
-        return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
+        raise Refusal("domain child reported unavailable")
     if stage == "07_author_package":
         try:
             package_receipt = json.loads((_rel(root,c["package_dir"]) / "producer_receipt.json").read_text(encoding="utf-8"))
@@ -486,19 +488,24 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
                 for key in AUTHOR_ENVELOPE_KEYS - {"warnings"}:
                     if stored_envelope[key] != verified_envelope[key]:
                         raise Refusal("stored author envelope differs from verified projection")
-        except (OSError, UnicodeError, ValueError, KeyError, TypeError):
-            return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
+        except (OSError, UnicodeError, ValueError, KeyError, TypeError) as exc:
+            raise Refusal("author package envelope refused") from exc
     if stage == "05_near_duplicate_filter" and action != "verify":
         _publish_file_noreplace(_rel(root,c["dedup_report"]), proc.stdout.encode("utf-8"), root=root)
     if stage == "07_author_package" and action != "verify":
         _publish_file_noreplace(_rel(root,c["producer_envelope"]), proc.stdout.encode("utf-8"), root=root)
+    output = _output_identities(root,s,c,stage)
+    lineage = _lineage(stage,config,output,inputs)
+    receipt_sha = _write_receipt(run_dir,stage,lineage)
+    return 0, _envelope(action,stage,config,"completed",output,receipt_sha,inputs=inputs)
+
+def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
+    root, run_dir, s, c, action, stage, prior = _parse_request(request_path)
     try:
-        output = _output_identities(root,s,c,stage)
-        lineage = _lineage(stage,config,output,inputs)
-        receipt_sha = _write_receipt(run_dir,stage,lineage)
-        envelope = _envelope(action,stage,config,"completed",output,receipt_sha,inputs=inputs)
-        return 0, envelope
-    except Refusal: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
+        return _execute(root, run_dir, s, c, action, stage, prior)
+    except Refusal:
+        return 3, _envelope(action, stage, {"source": s, "corpus": c},
+                            "refused", reason="policy_refused")
 
 def main(argv: list[str] | None = None) -> int:
     p=argparse.ArgumentParser(prog="gmail_author_pipeline", add_help=True); p.add_argument("--json",action="store_true"); p.add_argument("--request",required=True)

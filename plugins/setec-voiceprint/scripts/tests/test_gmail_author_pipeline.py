@@ -204,6 +204,14 @@ def _tree_snapshot(root: Path) -> dict[str, tuple[int, bytes | None]]:
     return snapshot
 
 
+def _policy_refusal(outcome: tuple[int, dict[str, Any]]) -> bool:
+    """A policy refusal is exit 3 with the normalized refused envelope, not exit 2."""
+    code, envelope = outcome
+    return (code == 3 and envelope["available"] is False
+            and envelope["results"]["status"] == "refused"
+            and envelope["results"]["reason_category"] == "policy_refused")
+
+
 def test_action_matrix_is_closed():
     assert P.ALLOWED == {
         "01_source_smoke": {"run", "verify"},
@@ -223,8 +231,7 @@ def test_broken_log_symlink_refuses_before_any_child(tmp_path, monkeypatch, suff
     (logs / f"01_source_smoke.domain.{suffix}").symlink_to(case.root / "missing")
     calls = []
     monkeypatch.setattr(P.subprocess, "run", lambda *a, **k: calls.append(a))
-    with pytest.raises(P.Refusal):
-        P.run_request(_request(case, "01_source_smoke", "run", []))
+    assert _policy_refusal(P.run_request(_request(case, "01_source_smoke", "run", [])))
     assert calls == []
 
 
@@ -242,8 +249,7 @@ def test_broken_receipt_symlink_refuses_before_any_child(tmp_path, monkeypatch, 
     }]
     if stage == "02_source_approval":
         _private_file(receipt_dir / "01_source_smoke.json", b"{}\n")
-    with pytest.raises(P.Refusal):
-        P.run_request(_request(case, stage, "verify", prior))
+    assert _policy_refusal(P.run_request(_request(case, stage, "verify", prior)))
     assert calls == []
 
 
@@ -279,8 +285,7 @@ def test_recursive_prior_lineage_refuses_every_mutation(tmp_path, monkeypatch, m
         prior[0]["receipt_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
         if mutation == "domain_identity":
             prior[0]["domain_identity"] = "f" * 64
-    with pytest.raises(P.Refusal):
-        P.run_request(_request(case, "04_manifest_validate", "verify", prior, config=config))
+    assert _policy_refusal(P.run_request(_request(case, "04_manifest_validate", "verify", prior, config=config)))
     assert not any(call == ("manifest_validator.py", "run") for call in fake.calls)
 
 
@@ -326,8 +331,7 @@ def test_package_approval_tty_decline_and_affirmative(tmp_path, monkeypatch, ans
     monkeypatch.setattr(builtins, "input", lambda: answer)
     before = len([call for call in fake.calls if call == ("author_corpus_export.py", "run")])
     if answer == "no":
-        with pytest.raises(P.Refusal):
-            P.run_request(_request(case, "06_package_smoke", "approve", _prior(case, 5)))
+        assert _policy_refusal(P.run_request(_request(case, "06_package_smoke", "approve", _prior(case, 5))))
     else:
         assert P.run_request(_request(case, "06_package_smoke", "approve", _prior(case, 5)))[0] == 0
     after = len([call for call in fake.calls if call == ("author_corpus_export.py", "run")])
