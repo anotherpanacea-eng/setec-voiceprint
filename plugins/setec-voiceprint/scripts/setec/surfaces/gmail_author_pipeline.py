@@ -23,8 +23,6 @@ from typing import Any
 _HERE = Path(__file__).resolve()
 for _parent in _HERE.parents:
     if (_parent / "acquire_gmail_sent.py").is_file():
-        if str(_parent) not in sys.path:
-            sys.path.insert(0, str(_parent))
         SCRIPTS = _parent
         break
 else:  # pragma: no cover - broken installed layout
@@ -87,6 +85,12 @@ def _rel(root: Path, raw: Any, *, exists: bool = False) -> Path:
     if type(raw) is not str or not raw or Path(raw).is_absolute() or ".." in Path(raw).parts:
         raise Refusal("invalid private relative path")
     path = root / raw
+    current = root
+    for part in Path(raw).parts:
+        current = current / part
+        if current.exists() and current.is_symlink(): raise Refusal("symlinked private path refused")
+    try: path.resolve(strict=False).relative_to(root.resolve())
+    except ValueError as exc: raise Refusal("private path escapes root") from exc
     if exists: _owner_file(path, root=root)
     return path
 
@@ -146,12 +150,15 @@ def _argv(root: Path, s: dict[str, Any], c: dict[str, Any], action: str, stage: 
     if s["allow_empty"]: base.append("--allow-empty")
     if stage == "01_source_smoke":
         if action == "verify": return gmail + ["validate-smoke", "--mbox-path", str(_rel(root,s["mbox"],exists=True)), "--smoke-dir", str(_rel(root,s["smoke_dir"]))], _rel(root,s["smoke_dir"]) / ".smoke_descriptor.json"
-        argv = gmail + ["smoke", *base, "--since", s["smoke_since"] or s["since"], "--until", s["smoke_until"] or s["until"], "--output-dir", str(_rel(root,s["smoke_dir"]))]
+        argv = gmail + ["smoke", *base]
+        if s["smoke_since"] is not None: argv += ["--since", s["smoke_since"]]
+        if s["smoke_until"] is not None: argv += ["--until", s["smoke_until"]]
+        argv += ["--output-dir", str(_rel(root,s["smoke_dir"]))]
         return argv, _rel(root,s["smoke_dir"]) / ".smoke_descriptor.json"
     if stage == "02_source_approval": return gmail + (["verify-approval", *base, "--output-dir", str(_rel(root,s["output_dir"]))] if action == "verify" else ["approve-smoke", "--mbox-path", str(_rel(root,s["mbox"],exists=True)), "--smoke-dir", str(_rel(root,s["smoke_dir"])), "--output-dir", str(_rel(root,s["output_dir"]))]), _rel(root,s["output_dir"]) / ".live_smoke_passed"
     if stage == "03_source_acquire": return gmail + (["verify-acquisition" if action == "verify" else "acquire", *base, "--output-dir", str(_rel(root,s["output_dir"])), "--emit-manifest", str(_rel(root,s["manifest"]))]), _rel(root,s["manifest"])
     if stage == "04_manifest_validate": return [sys.executable,str(SCRIPTS/"manifest_validator.py"),str(_rel(root,s["manifest"])),"--strict","--check-conflict-copies","--json"], _rel(root,s["manifest"])
-    if stage == "05_near_duplicate_filter" and action != "verify":
+    if stage == "05_near_duplicate_filter":
         argv=[sys.executable,str(SCRIPTS/"near_dup_dedup.py"),str(_rel(root,s["manifest"])),"--threshold",str(c["dedup_threshold"]),"--num-perm",str(c["dedup_num_perm"]),"--shingle-size",str(c["dedup_shingle_size"]),"--json"]
         if action == "verify": argv += ["--dry-run","--verify-out",str(_rel(root,c["dedup_manifest"])),"--verify-report",str(_rel(root,c["dedup_report"]))]
         else: argv += ["--out",str(_rel(root,c["dedup_manifest"]))]
@@ -188,11 +195,11 @@ def _output_identities(root: Path, s: dict[str, Any], c: dict[str, Any], stage: 
         out.append({"kind":"file","label":label,"identity_kind":"sha256","identity":_sha_path(path)})
     return out
 
-def _lineage(stage: str, config: dict[str, Any], output: list[dict[str, Any]]) -> dict[str, Any]:
+def _lineage(stage: str, config: dict[str, Any], output: list[dict[str, Any]], inputs: list[dict[str, Any]]) -> dict[str, Any]:
     config_sha = _config_sha(config)
     domain = _domain_identity(stage, config_sha, output)
     return {"schema":"setec-gmail-author-pipeline-lineage/1","stage_id":stage,
-            "config_sha256":config_sha,"input_identities":[],
+            "config_sha256":config_sha,"input_identities":inputs,
             "domain_receipts":[{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}],
             "output_identities":output,"domain_identity":domain}
 
@@ -219,9 +226,10 @@ def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
     with os.fdopen(fd, "wb") as fh: fh.write(payload)
     return hashlib.sha256(payload).hexdigest()
 
-def _check_prior(run_dir: Path, stage: str, prior: list[dict[str, Any]]) -> None:
+def _check_prior(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
     expected = list(STAGES[:STAGES.index(stage)])
     if [x["stage_id"] for x in prior] != expected: raise Refusal("prior ordering refused")
+    inputs=[]
     for item in prior:
         path = run_dir / "producer-receipts" / f"{item['stage_id']}.json"
         _owner_file(path)
@@ -230,6 +238,17 @@ def _check_prior(run_dir: Path, stage: str, prior: list[dict[str, Any]]) -> None
         except (OSError, ValueError, KeyError, TypeError) as exc: raise Refusal("prior receipt unreadable") from exc
         actual=_domain_identity(item["stage_id"],results["config_sha256"],results["output_identities"])
         if item["domain_identity"] != actual: raise Refusal("prior domain identity refused")
+        argv,_ = _argv(root,s,c,"verify",item["stage_id"])
+        try: proc=subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+        except (OSError, subprocess.SubprocessError) as exc: raise Refusal("prior verifier unavailable") from exc
+        if proc.returncode or (isinstance(_safe_json(proc.stdout),dict) and _safe_json(proc.stdout).get("available") is False): raise Refusal("prior verifier refused")
+        if _output_identities(root,s,c,item["stage_id"]) != results["output_identities"]: raise Refusal("prior output identity changed")
+        inputs.append({"kind":"prior_domain","label":item["stage_id"],"identity_kind":"sha256","identity":actual})
+    return inputs
+
+def _safe_json(text: str) -> Any:
+    try: return json.loads(text)
+    except (TypeError, ValueError): return None
 
 def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     _owner_file(request_path)
@@ -238,10 +257,15 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     root,run_dir,s,c,action,stage = _validate(req)
     _owner_file(request_path, root=root)
     if request_path.parent.resolve() != run_dir.resolve(): raise Refusal("request must be a direct run-root child")
-    _check_prior(run_dir, stage, req["prior"])
+    inputs = _check_prior(root, run_dir, s, c, stage, req["prior"])
     config={"source":s,"corpus":c}
     argv, marker = _argv(root,s,c,action,stage)
     if action == "approve" and stage in {"02_source_approval","06_package_smoke"} and not sys.stdin.isatty(): raise Refusal("interactive TTY required")
+    if action == "approve" and stage == "06_package_smoke":
+        print("The bounded package smoke will request one confirmation. Continue? [y/N]", file=sys.stderr)
+        try: answer = input().strip().lower()
+        except EOFError: answer = ""
+        if answer not in {"y", "yes"}: raise Refusal("owner declined bounded package smoke")
     proc = subprocess.run(argv, stdin=None if action == "approve" else subprocess.DEVNULL, capture_output=True, text=True)
     logs = run_dir / "logs"
     if logs.exists():
@@ -254,15 +278,19 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
         except OSError as exc: raise Refusal("domain log policy refused") from exc
         with os.fdopen(fd,"ab") as fh: fh.write(f"\n[setec-pipeline {action}]\n".encode("ascii") + data.encode("utf-8"))
     if proc.returncode != 0: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
+    try: child_json=json.loads(proc.stdout)
+    except (TypeError, ValueError): child_json=None
+    if isinstance(child_json, dict) and child_json.get("available") is False:
+        return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
     if action == "verify" and stage == "03_source_acquire" and not (run_dir / "producer-receipts" / f"{stage}.json").exists():
         return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
-    if stage == "05_near_duplicate_filter":
+    if stage == "05_near_duplicate_filter" and action != "verify":
         report=_rel(root,c["dedup_report"]); report.parent.mkdir(mode=0o700,parents=True,exist_ok=True); report.write_text(proc.stdout,encoding="utf-8"); os.chmod(report,0o600)
     if stage == "07_author_package" and action != "verify":
         output=_rel(root,c["producer_envelope"]); output.parent.mkdir(mode=0o700,parents=True,exist_ok=True); output.write_text(proc.stdout,encoding="utf-8"); os.chmod(output,0o600)
     try:
         output = _output_identities(root,s,c,stage)
-        lineage = _lineage(stage,config,output)
+        lineage = _lineage(stage,config,output,inputs)
         receipt_sha = _write_receipt(run_dir,stage,lineage)
         envelope = _envelope(action,stage,config,"completed",output,receipt_sha)
         return 0, envelope
@@ -273,7 +301,7 @@ def main(argv: list[str] | None = None) -> int:
     args=p.parse_args(argv)
     try: rc,envelope=run_request(Path(args.request))
     except Refusal:
-        rc=2; envelope={"schema_version":"1.0","available":False,"results":{"request_schema":REQUEST_SCHEMA,"action":None,"stage_id":None,"status":"refused","config_sha256":None,"input_identities":[],"domain_receipts":[],"output_identities":[],"reason_category":"bad_input"}}
+        rc=2; envelope={"schema_version":"1.0","available":False,"results":{"request_schema":REQUEST_SCHEMA,"action":None,"stage_id":None,"status":"refused","config_sha256":None,"input_identities":[],"domain_receipts":[],"output_identities":[],"lineage_receipt_sha256":None,"reason_category":"bad_input"}}
     print(json.dumps(envelope,sort_keys=True,separators=(",",":")))
     return rc
 
