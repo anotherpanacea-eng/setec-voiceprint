@@ -53,6 +53,7 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
 # with their expected script module basename and delivery mode.
 EXPECTED_SURFACES = {
     "author_corpus_export": ("author_corpus_export.py", "stdout"),
+    "gmail_author_pipeline": ("gmail_author_pipeline.py", "stdout"),
     "variance_audit": ("variance_audit.py", "stdout"),
     "voice_distance": ("voice_distance.py", "stdout"),
     "idiolect_detector": ("idiolect_detector.py", "stdout"),

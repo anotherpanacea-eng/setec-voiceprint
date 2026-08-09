@@ -1322,6 +1322,101 @@ def test_document_mode_cli_and_output_unchanged(tmp_path):
     assert result["dropped"] == ["base"]
 
 
+@_needs_datasketch
+def test_document_verifier_success_and_refusal_are_planted_write_clean(tmp_path):
+    manifest = tmp_path / "source.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "base", "text": BASE}) + "\n"
+        + json.dumps({"id": "near_dup", "text": NEAR_DUP}) + "\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "dedup.jsonl"
+    report = tmp_path / "report.json"
+    sink = io.StringIO()
+    with redirect_stdout(sink):
+        assert ndd.main([
+            str(manifest), "--threshold", "0.6", "--num-perm", "128",
+            "--shingle-size", "5", "--out", str(out), "--json",
+        ]) == 0
+    report.write_text(sink.getvalue(), encoding="utf-8")
+
+    def snapshot():
+        return {str(path.relative_to(tmp_path)): path.read_bytes()
+                for path in tmp_path.rglob("*") if path.is_file()}
+
+    verify_argv = [
+        str(manifest), "--threshold", "0.6", "--num-perm", "128",
+        "--shingle-size", "5", "--dry-run", "--json",
+        "--verify-out", str(out), "--verify-report", str(report),
+    ]
+    before = snapshot()
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main(verify_argv) == 0
+    assert snapshot() == before
+
+    out.write_bytes(out.read_bytes() + b"{}\n")
+    before_refusal = snapshot()
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main(verify_argv) == 2
+    assert snapshot() == before_refusal
+
+
+@pytest.mark.parametrize("extra, missing", [
+    (["--verify-out", "OUT"], "report path"),
+    (["--verify-report", "REPORT"], "out path"),
+    (["--verify-out", "OUT", "--verify-report", "REPORT", "--out", "OUT2"], "--out"),
+    (["--verify-out", "OUT", "--verify-report", "REPORT", "--passages"], "--passages"),
+])
+def test_verify_mode_requires_its_exact_flag_set(tmp_path, extra, missing):
+    """The paired-flag guard is what keeps verification from writing."""
+    manifest = tmp_path / "source.jsonl"
+    manifest.write_text(json.dumps({"id": "base", "text": BASE}) + "\n", encoding="utf-8")
+    substitutions = {
+        "OUT": str(tmp_path / "dedup.jsonl"), "OUT2": str(tmp_path / "other.jsonl"),
+        "REPORT": str(tmp_path / "report.json"),
+    }
+    argv = [str(manifest), "--dry-run", "--json"] + [
+        substitutions.get(token, token) for token in extra]
+    before = {str(path.relative_to(tmp_path)): path.read_bytes()
+              for path in tmp_path.rglob("*") if path.is_file()}
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main(argv) == 2, missing
+    after = {str(path.relative_to(tmp_path)): path.read_bytes()
+             for path in tmp_path.rglob("*") if path.is_file()}
+    assert after == before
+
+
+def test_verify_mode_refuses_a_mismatched_report_alone(tmp_path):
+    """A tampered report must refuse even when the kept rows still match."""
+    manifest = tmp_path / "source.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "base", "text": BASE}) + "\n"
+        + json.dumps({"id": "near_dup", "text": NEAR_DUP}) + "\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "dedup.jsonl"
+    report = tmp_path / "report.json"
+    sink = io.StringIO()
+    with redirect_stdout(sink):
+        assert ndd.main([
+            str(manifest), "--threshold", "0.6", "--num-perm", "128",
+            "--shingle-size", "5", "--out", str(out), "--json",
+        ]) == 0
+    report.write_text(sink.getvalue(), encoding="utf-8")
+    verify_argv = [
+        str(manifest), "--threshold", "0.6", "--num-perm", "128",
+        "--shingle-size", "5", "--dry-run", "--json",
+        "--verify-out", str(out), "--verify-report", str(report),
+    ]
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main(verify_argv) == 0
+    tampered = json.loads(report.read_text(encoding="utf-8"))
+    tampered["threshold"] = 0.99
+    report.write_text(json.dumps(tampered) + "\n", encoding="utf-8")
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main(verify_argv) == 2
+
+
 def test_passage_mode_rejects_dry_run(tmp_path):
     m = _passage_manifest(tmp_path, [_full_row("a", _filler(40, 95))])
     err = io.StringIO()

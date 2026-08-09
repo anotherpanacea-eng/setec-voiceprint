@@ -1588,6 +1588,40 @@ def _require_smoke_receipt(destination: Path, config_hash: str,
         raise PermissionError("bounded smoke receipt hash does not match its confirmation")
 
 
+def _verify_bounded_smoke_receipt(destination: Path, config_hash: str,
+                                  receipt: dict[str, Any], records: list[dict[str, Any]],
+                                  hmac_key: bytes) -> None:
+    """Read-only counterpart to the bounded publish receipt verification."""
+    path = _smoke_path(destination)
+    if path.is_symlink() or not path.is_file():
+        raise PermissionError("bounded package lacks its smoke receipt")
+    data = _load_json_object(path.read_text(encoding="utf-8"), "bounded live-smoke receipt")
+    if set(data) != SMOKE_KEYS or data.get("schema") != "setec-author-corpus-export-live-smoke/1":
+        raise PermissionError("bounded smoke receipt is malformed")
+    expected = {
+        "config_hash": config_hash, "producer_revision": receipt["producer_revision"],
+        "bounded_package_hash": receipt["package_hash"],
+        "bounded_receipt_hash": _digest(DOMAIN_RECEIPT, receipt),
+        "bounded_destination_name": destination.name,
+        "source_kinds": sorted(receipt["counts"]["by_source_kind"]),
+        "registers": sorted(receipt["counts"]["by_register"]),
+        "source_register_pairs": _source_register_pairs(records),
+    }
+    if any(data.get(key) != value for key, value in expected.items()):
+        raise PermissionError("bounded smoke receipt does not bind the current package")
+    try:
+        confirmed = dt.datetime.fromisoformat(data["confirmed_at"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PermissionError("bounded smoke receipt time is malformed") from exc
+    now = dt.datetime.now(dt.timezone.utc)
+    if confirmed.tzinfo != dt.timezone.utc or data["confirmed_at"] != confirmed.isoformat(timespec="seconds") or not dt.timedelta(0) <= now - confirmed <= SMOKE_MAX_AGE:
+        raise PermissionError("bounded smoke receipt is stale or non-UTC")
+    got_records, got_texts, got_receipt = _load_published_package(destination)
+    if _verify_package(got_records, got_texts, got_receipt, hmac_key=hmac_key,
+                       config_hash=config_hash, producer_revision=receipt["producer_revision"]) != _digest(DOMAIN_RECEIPT, receipt):
+        raise PermissionError("bounded package does not match smoke receipt")
+
+
 def _claim_license(receipt: dict[str, Any]) -> ClaimLicense:
     return ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -1623,12 +1657,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-text-bytes", type=int)
     p.add_argument("--live-smoke-confirmed", action="store_true")
     p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--verify-existing", action="store_true",
+                   help="Read-only verification of an already-published package.")
     p.add_argument("--json", action="store_true")
     return p
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     _check_private([args.output_dir])
+    if args.verify_existing and (args.dry_run or args.live_smoke_confirmed):
+        raise ValueError("--verify-existing is mutually exclusive with publication flags")
     if (args.max_records is None) != (args.max_text_bytes is None):
         raise ValueError(
             "bounded smoke requires both --max-records and --max-text-bytes"
@@ -1655,7 +1693,23 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "record_atomic_degraded: stable grouping was unavailable; consumers "
             "must restrict this package to train-only, non-comparative use."
         )
-    if args.dry_run:
+    if args.verify_existing:
+        published_records, published_texts, published_receipt = _load_published_package(args.output_dir)
+        expected_receipt_hash = _digest(DOMAIN_RECEIPT, receipt)
+        if _verify_package(
+            published_records, published_texts, published_receipt,
+            hmac_key=key, config_hash=config_hash,
+            producer_revision=receipt["producer_revision"],
+        ) != expected_receipt_hash:
+            raise PermissionError("published package does not match the current export")
+        if published_receipt != receipt:
+            raise PermissionError("published package receipt differs from current export")
+        if args.max_records is None:
+            _require_smoke_receipt(args.output_dir, config_hash, receipt, records, key)
+        else:
+            _verify_bounded_smoke_receipt(args.output_dir, config_hash, receipt, records, key)
+        warnings.append("verify-existing: package was verified without publication")
+    elif args.dry_run:
         warnings.append("dry-run: package was validated but not written")
     else:
         if args.max_records is not None:
