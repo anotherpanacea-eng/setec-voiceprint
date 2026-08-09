@@ -19,13 +19,17 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-# Nested launchers must work from a foreign CWD and an empty PYTHONPATH.
-_HERE = Path(__file__).resolve()
-for _parent in _HERE.parents:
-    if (_parent / "acquire_gmail_sent.py").is_file():
-        SCRIPTS = _parent
-        break
-else:  # pragma: no cover - broken installed layout
+# Imported surfaces use the shared packaging resolver.  A direct nested-script
+# launch cannot import the package until bootstrapped; CPython supplies the
+# script directory as sys.path[0], from which the fixed setec/surfaces layout
+# reaches scripts/ without adding another sys.path mutation or __file__ anchor.
+try:
+    from setec.paths import scripts_dir
+except ModuleNotFoundError:  # direct launch with an empty PYTHONPATH
+    SCRIPTS = Path(sys.path[0]).resolve().parents[1]
+else:
+    SCRIPTS = scripts_dir()
+if not (SCRIPTS / "acquire_gmail_sent.py").is_file():  # pragma: no cover
     raise RuntimeError("SETEC scripts directory not found")
 
 REQUEST_SCHEMA = "setec-gmail-author-pipeline-request/1"
@@ -49,6 +53,12 @@ CORPUS_KEYS = {"strict_manifest", "check_conflict_copies", "dedup_manifest", "de
     "dedup_threshold", "dedup_num_perm", "dedup_shingle_size", "hmac_key", "allowed_ai_status",
     "register_map", "package_smoke_dir", "package_dir", "producer_envelope",
     "smoke_max_records", "smoke_max_text_bytes"}
+LINEAGE_KEYS = {"schema", "stage_id", "config_sha256", "input_identities",
+                "domain_receipts", "output_identities", "domain_identity"}
+IDENTITY_KEYS = {"kind", "label", "identity_kind", "identity"}
+AUTHOR_ENVELOPE_KEYS = {"schema_version", "task_surface", "tool", "version", "available",
+                        "target", "baseline", "results", "claim_license",
+                        "claim_license_rendered", "warnings", "ai_status"}
 
 class Refusal(ValueError): pass
 
@@ -62,6 +72,10 @@ def _sha_path(path: Path) -> str:
         for block in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(block)
     return h.hexdigest()
+
+def _is_sha256(value: Any) -> bool:
+    return (type(value) is str and len(value) == 64
+            and all(ch in "0123456789abcdef" for ch in value))
 
 def _owner_file(path: Path, *, root: Path | None = None) -> None:
     try: st = path.lstat()
@@ -88,6 +102,57 @@ def _safe_dir(parent: Path, name: str, *, root: Path) -> Path:
         except OSError as exc: raise Refusal("private directory creation refused") from exc
         _owner_dir(path, root=root)
     return path
+
+def _preflight_logs(logs: Path, stages: list[str], *, root: Path) -> None:
+    """Reject even dangling symlink leaves before any domain process starts."""
+    for stage in stages:
+        for suffix in ("stdout", "stderr"):
+            candidate = logs / f"{stage}.domain.{suffix}"
+            try:
+                candidate.lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                raise Refusal("domain log policy refused") from exc
+            _owner_file(candidate, root=root)
+
+def _preflight_receipts(directory: Path, prior_stages: list[str], current_stage: str,
+                        *, root: Path) -> None:
+    """Resolve every caller-addressable receipt leaf before a child starts."""
+    for stage in prior_stages + [current_stage]:
+        candidate = directory / f"{stage}.json"
+        try:
+            candidate.lstat()
+        except FileNotFoundError:
+            if stage in prior_stages:
+                raise Refusal("prior lineage receipt unavailable")
+            continue
+        except OSError as exc:
+            raise Refusal("lineage receipt policy refused") from exc
+        _owner_file(candidate, root=root)
+
+def _append_log(path: Path, action: str, data: str) -> None:
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND |
+                     getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError as exc:
+        raise Refusal("domain log policy refused") from exc
+    with os.fdopen(fd, "ab") as fh:
+        fh.write(f"\n[setec-pipeline {action}]\n".encode("ascii"))
+        fh.write(data.encode("utf-8"))
+
+def _run_child(logs: Path, stage: str, action: str, argv: list[str], *,
+               inherit_stdin: bool = False) -> subprocess.CompletedProcess[str]:
+    try:
+        proc = subprocess.run(
+            argv, stdin=None if inherit_stdin else subprocess.DEVNULL,
+            capture_output=True, text=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refusal("domain verifier unavailable") from exc
+    _append_log(logs / f"{stage}.domain.stdout", action, proc.stdout)
+    _append_log(logs / f"{stage}.domain.stderr", action, proc.stderr)
+    return proc
 
 def _private_root(raw: Any) -> Path:
     if type(raw) is not str or not Path(raw).is_absolute(): raise Refusal("private_root must be absolute")
@@ -156,7 +221,13 @@ def _validate(req: Any) -> tuple[Path, Path, dict[str, Any], dict[str, Any], str
     paths = [str(_rel(root, source[key])) for key in ("output_dir", "manifest", "smoke_dir")] + [str(_rel(root, corpus[key])) for key in ("dedup_manifest", "dedup_report", "package_smoke_dir", "package_dir", "producer_envelope")]
     if len(paths) != len(set(paths)) or Path(corpus["package_smoke_dir"]).parent != Path(corpus["package_dir"]).parent: raise Refusal("output collision refused")
     prior = req["prior"]
-    if type(prior) is not list or any(not isinstance(x, dict) or set(x) != {"stage_id","receipt_sha256","domain_identity"} or x["stage_id"] not in STAGES or type(x["receipt_sha256"]) is not str or type(x["domain_identity"]) is not str for x in prior): raise Refusal("prior refused")
+    if type(prior) is not list or any(
+        type(x) is not dict or set(x) != {"stage_id", "receipt_sha256", "domain_identity"}
+        or x["stage_id"] not in STAGES or not _is_sha256(x["receipt_sha256"])
+        or not _is_sha256(x["domain_identity"])
+        for x in prior
+    ):
+        raise Refusal("prior refused")
     return root, run_dir, source, corpus, req["action"], req["stage_id"]
 
 def _argv(root: Path, s: dict[str, Any], c: dict[str, Any], action: str, stage: str) -> tuple[list[str], Path]:
@@ -242,30 +313,122 @@ def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
     with os.fdopen(fd, "wb") as fh: fh.write(payload)
     return hashlib.sha256(payload).hexdigest()
 
-def _check_prior(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _valid_identity_list(value: Any, *, prior: bool = False) -> bool:
+    if type(value) is not list:
+        return False
+    expected_kind = "prior_domain" if prior else "file"
+    for item in value:
+        if (type(item) is not dict or set(item) != IDENTITY_KEYS
+                or item["kind"] != expected_kind
+                or type(item["label"]) is not str or not item["label"]
+                or item["identity_kind"] != "sha256"
+                or not _is_sha256(item["identity"])):
+            return False
+    return True
+
+def _strict_author_envelope(value: Any, receipt: dict[str, Any], *, verifying: bool) -> dict[str, Any]:
+    """Validate the domain command's exact ordinary normalized envelope.
+
+    The domain process has already rebuilt and verified the package.  This
+    adapter check closes only the public-envelope binding that the exporter
+    intentionally owns: exact normalized shape, receipt, claim license, and
+    the two action-specific warning sets.
+    """
+    if type(value) is not dict or set(value) != AUTHOR_ENVELOPE_KEYS:
+        raise Refusal("author export envelope shape refused")
+    if (value["schema_version"] != "1.0" or value["task_surface"] != TASK_SURFACE
+            or value["tool"] != "author_corpus_export" or value["available"] is not True
+            or type(value["version"]) is not str or not value["version"]
+            or value["target"] != {"path": None, "words": 0}
+            or value["baseline"] is not None or value["ai_status"] is not None
+            or type(value["results"]) is not dict
+            or set(value["results"]) != {"producer_receipt"}
+            or value["results"]["producer_receipt"] != receipt):
+        raise Refusal("author export envelope binding refused")
+    license_value = value["claim_license"]
+    if type(license_value) is not dict or set(license_value) != {
+        "task_surface", "licenses", "does_not_license", "comparison_set",
+        "length_range_words", "register_match", "language_match", "fpr_target",
+        "confidence_interval_95", "additional_caveats", "references",
+    }:
+        raise Refusal("author export claim license shape refused")
+    counts = receipt.get("counts")
+    registers = counts.get("by_register") if type(counts) is dict else None
+    if (license_value["task_surface"] != TASK_SURFACE
+            or license_value["comparison_set"] != {"records": counts.get("records") if type(counts) is dict else None}
+            or license_value["register_match"] != (sorted(registers) if type(registers) is dict else None)
+            or type(license_value["licenses"]) is not str
+            or type(license_value["does_not_license"]) is not str
+            or type(value["claim_license_rendered"]) is not str
+            or not value["claim_license_rendered"]):
+        raise Refusal("author export claim license binding refused")
+    base_warnings = []
+    if receipt.get("record_atomic_degraded") is True:
+        base_warnings.append(
+            "record_atomic_degraded: stable grouping was unavailable; consumers "
+            "must restrict this package to train-only, non-comparative use."
+        )
+    expected_warnings = base_warnings + (["verify-existing: package was verified without publication"] if verifying else [])
+    if value["warnings"] != expected_warnings:
+        raise Refusal("author export warning posture refused")
+    return value
+
+def _check_prior(root: Path, run_dir: Path, logs: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
     expected = list(STAGES[:STAGES.index(stage)])
     if [x["stage_id"] for x in prior] != expected: raise Refusal("prior ordering refused")
-    inputs=[]
+    inputs: list[dict[str, Any]] = []
+    config = {"source": s, "corpus": c}
     for item in prior:
-        path = run_dir / "producer-receipts" / f"{item['stage_id']}.json"
-        _owner_file(path)
+        prior_stage = item["stage_id"]
+        path = run_dir / "producer-receipts" / f"{prior_stage}.json"
+        _owner_file(path, root=run_dir)
         if _sha_path(path) != item["receipt_sha256"]: raise Refusal("prior receipt hash refused")
-        try: stored=json.loads(path.read_text(encoding="utf-8")); results=stored
-        except (OSError, ValueError, KeyError, TypeError) as exc: raise Refusal("prior receipt unreadable") from exc
-        if not isinstance(results, dict) or set(results) != {"schema","stage_id","config_sha256","input_identities","domain_receipts","output_identities","domain_identity"} or results["schema"] != "setec-gmail-author-pipeline-lineage/1" or results["stage_id"] != item["stage_id"] or results["config_sha256"] != _config_sha({"source":s,"corpus":c}): raise Refusal("prior lineage refused")
-        actual=_domain_identity(item["stage_id"],results["config_sha256"],results["output_identities"])
-        if item["domain_identity"] != actual: raise Refusal("prior domain identity refused")
-        argv,_ = _argv(root,s,c,"verify",item["stage_id"])
-        try: proc=subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True)
-        except (OSError, subprocess.SubprocessError) as exc: raise Refusal("prior verifier unavailable") from exc
-        if proc.returncode or (isinstance(_safe_json(proc.stdout),dict) and _safe_json(proc.stdout).get("available") is False): raise Refusal("prior verifier refused")
-        if _output_identities(root,s,c,item["stage_id"]) != results["output_identities"]: raise Refusal("prior output identity changed")
-        inputs.append({"kind":"prior_domain","label":item["stage_id"],"identity_kind":"sha256","identity":actual})
+        try:
+            raw = path.read_bytes()
+            stored = json.loads(raw)
+        except (OSError, UnicodeError, ValueError, TypeError) as exc:
+            raise Refusal("prior receipt unreadable") from exc
+        if (type(stored) is not dict or set(stored) != LINEAGE_KEYS
+                or not _valid_identity_list(stored.get("input_identities"), prior=True)
+                or not _valid_identity_list(stored.get("output_identities"))):
+            raise Refusal("prior lineage shape refused")
+        argv, _ = _argv(root, s, c, "verify", prior_stage)
+        proc = _run_child(logs, prior_stage, "verify", argv)
+        child_json = _safe_json(proc.stdout)
+        if proc.returncode or (type(child_json) is dict and child_json.get("available") is False):
+            raise Refusal("prior verifier refused")
+        output = _output_identities(root, s, c, prior_stage)
+        if prior_stage == "07_author_package":  # unreachable today; closes future extension
+            receipt = json.loads((_rel(root, c["package_dir"]) / "producer_receipt.json").read_text(encoding="utf-8"))
+            _strict_author_envelope(child_json, receipt, verifying=True)
+        expected_lineage = _lineage(prior_stage, config, output, inputs)
+        if (stored != expected_lineage or raw != _canon(expected_lineage)
+                or item["domain_identity"] != expected_lineage["domain_identity"]):
+            raise Refusal("prior lineage refused")
+        inputs.append({"kind":"prior_domain","label":prior_stage,"identity_kind":"sha256",
+                       "identity":expected_lineage["domain_identity"]})
     return inputs
 
 def _safe_json(text: str) -> Any:
     try: return json.loads(text)
     except (TypeError, ValueError): return None
+
+def _publish_file_noreplace(path: Path, payload: bytes, *, root: Path) -> None:
+    if path.parent.exists():
+        _owner_dir(path.parent, root=root)
+    else:
+        try:
+            path.parent.mkdir(mode=0o700, parents=True)
+        except OSError as exc:
+            raise Refusal("private output directory creation refused") from exc
+        _owner_dir(path.parent, root=root)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                     getattr(os, "O_NOFOLLOW", 0), 0o600)
+    except OSError as exc:
+        raise Refusal("private output publication refused") from exc
+    with os.fdopen(fd, "wb") as fh:
+        fh.write(payload)
 
 def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     _owner_file(request_path)
@@ -275,46 +438,60 @@ def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     _owner_file(request_path, root=root)
     if request_path.parent.resolve() != run_dir.resolve(): raise Refusal("request must be a direct run-root child")
     # Create/validate both stateful directories before a child can run.
-    _safe_dir(run_dir, "producer-receipts", root=run_dir)
+    receipt_dir = _safe_dir(run_dir, "producer-receipts", root=run_dir)
     logs = _safe_dir(run_dir, "logs", root=run_dir)
-    for suffix in ("stdout", "stderr"):
-        candidate = logs / f"{stage}.domain.{suffix}"
-        if candidate.exists(): _owner_file(candidate, root=run_dir)
-    inputs = _check_prior(root, run_dir, s, c, stage, req["prior"])
+    prior_stages = [x["stage_id"] for x in req["prior"]]
+    _preflight_logs(logs, prior_stages + [stage], root=run_dir)
+    _preflight_receipts(receipt_dir, prior_stages, stage, root=run_dir)
+    inputs = _check_prior(root, run_dir, logs, s, c, stage, req["prior"])
     config={"source":s,"corpus":c}
-    argv, marker = _argv(root,s,c,action,stage)
+    current_receipt = run_dir / "producer-receipts" / f"{stage}.json"
+    try:
+        current_receipt.lstat()
+    except FileNotFoundError:
+        receipt_exists = False
+    except OSError as exc:
+        raise Refusal("current lineage receipt unavailable") from exc
+    else:
+        _owner_file(current_receipt, root=run_dir)
+        receipt_exists = True
+    if action in {"run", "approve"} and receipt_exists:
+        raise Refusal("completed stage cannot repeat its side effect")
+    if stage == "03_source_acquire" and action == "verify" and not receipt_exists:
+        return 3, _envelope(action,stage,config,"refused",reason="policy_refused",inputs=inputs)
+    # A resumed, already-complete acquisition is a re-verification, never a
+    # second acquisition.  Resume enters the acquisition continuation only
+    # while the adapter lineage receipt is absent.
+    domain_action = "verify" if stage == "03_source_acquire" and action == "resume" and receipt_exists else action
+    argv, _ = _argv(root,s,c,domain_action,stage)
     if action == "approve" and stage in {"02_source_approval","06_package_smoke"} and not sys.stdin.isatty(): raise Refusal("interactive TTY required")
     if action == "approve" and stage == "06_package_smoke":
         print("The bounded package smoke will request one confirmation. Continue? [y/N]", file=sys.stderr)
         try: answer = input().strip().lower()
         except EOFError: answer = ""
         if answer not in {"y", "yes"}: raise Refusal("owner declined bounded package smoke")
-    proc = subprocess.run(argv, stdin=None if action == "approve" else subprocess.DEVNULL, capture_output=True, text=True)
-    for suffix,data in (("stdout",proc.stdout),("stderr",proc.stderr)):
-        path=logs/f"{stage}.domain.{suffix}"
-        try: fd=os.open(path, os.O_WRONLY|os.O_CREAT|os.O_APPEND|getattr(os,"O_NOFOLLOW",0), 0o600)
-        except OSError as exc: raise Refusal("domain log policy refused") from exc
-        with os.fdopen(fd,"ab") as fh: fh.write(f"\n[setec-pipeline {action}]\n".encode("ascii") + data.encode("utf-8"))
+    proc = _run_child(logs, stage, domain_action, argv, inherit_stdin=action == "approve")
     if proc.returncode != 0: return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
     try: child_json=json.loads(proc.stdout)
     except (TypeError, ValueError): child_json=None
     if isinstance(child_json, dict) and child_json.get("available") is False:
         return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
-    if action == "verify" and stage == "03_source_acquire" and not (run_dir / "producer-receipts" / f"{stage}.json").exists():
-        return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
-    if action == "verify" and stage == "07_author_package":
+    if stage == "07_author_package":
         try:
             package_receipt = json.loads((_rel(root,c["package_dir"]) / "producer_receipt.json").read_text(encoding="utf-8"))
-            producer_envelope = json.loads(_rel(root,c["producer_envelope"]).read_text(encoding="utf-8"))
-            embedded = producer_envelope["results"]["producer_receipt"]
-            if producer_envelope.get("schema_version") != "1.0" or embedded != package_receipt:
-                raise ValueError("envelope mismatch")
+            verified_envelope = _strict_author_envelope(child_json, package_receipt, verifying=action == "verify")
+            if action == "verify":
+                producer_envelope = json.loads(_rel(root,c["producer_envelope"]).read_text(encoding="utf-8"))
+                stored_envelope = _strict_author_envelope(producer_envelope, package_receipt, verifying=False)
+                for key in AUTHOR_ENVELOPE_KEYS - {"warnings"}:
+                    if stored_envelope[key] != verified_envelope[key]:
+                        raise Refusal("stored author envelope differs from verified projection")
         except (OSError, UnicodeError, ValueError, KeyError, TypeError):
             return 3, _envelope(action,stage,config,"refused",reason="policy_refused")
     if stage == "05_near_duplicate_filter" and action != "verify":
-        report=_rel(root,c["dedup_report"]); report.parent.mkdir(mode=0o700,parents=True,exist_ok=True); report.write_text(proc.stdout,encoding="utf-8"); os.chmod(report,0o600)
+        _publish_file_noreplace(_rel(root,c["dedup_report"]), proc.stdout.encode("utf-8"), root=root)
     if stage == "07_author_package" and action != "verify":
-        output=_rel(root,c["producer_envelope"]); output.parent.mkdir(mode=0o700,parents=True,exist_ok=True); output.write_text(proc.stdout,encoding="utf-8"); os.chmod(output,0o600)
+        _publish_file_noreplace(_rel(root,c["producer_envelope"]), proc.stdout.encode("utf-8"), root=root)
     try:
         output = _output_identities(root,s,c,stage)
         lineage = _lineage(stage,config,output,inputs)

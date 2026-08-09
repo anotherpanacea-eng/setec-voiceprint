@@ -1125,6 +1125,80 @@ def test_bounded_smoke_then_distinct_full_export_succeeds(
     assert (private_root / "full-package" / "producer_receipt.json").is_file()
 
 
+def test_verify_existing_bounded_and_full_are_planted_write_clean(
+    private_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    manifest = _source(private_root, "gmail_sent", "Enough words for verifier fixture.")
+    key = _private_key(private_root, "key.bin", b"z" * 32)
+    common = [
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key),
+    ]
+    bounded = private_root / "bounded"
+    full = private_root / "full"
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    E.run(E.build_arg_parser().parse_args(common + [
+        "--output-dir", str(bounded), "--max-records", "1",
+        "--max-text-bytes", "1000000", "--live-smoke-confirmed",
+    ]))
+    E.run(E.build_arg_parser().parse_args(common + ["--output-dir", str(full)]))
+
+    def snapshot():
+        return {str(path.relative_to(private_root)): path.read_bytes()
+                for path in private_root.rglob("*") if path.is_file()}
+
+    for destination, limits in (
+        (bounded, ["--max-records", "1", "--max-text-bytes", "1000000"]),
+        (full, []),
+    ):
+        args = E.build_arg_parser().parse_args(
+            common + ["--output-dir", str(destination), *limits, "--verify-existing"]
+        )
+        before = snapshot()
+        envelope = E.run(args)
+        assert envelope["available"] is True
+        assert envelope["warnings"][-1].startswith("verify-existing:")
+        assert snapshot() == before
+
+
+@pytest.mark.parametrize("mutation", ["package", "receipt_freshness"])
+def test_verify_existing_refusal_is_planted_write_clean(
+    private_root: Path, monkeypatch: pytest.MonkeyPatch, mutation: str,
+):
+    manifest = _source(private_root, "gmail_sent", "Enough words for refusal fixture.")
+    key = _private_key(private_root, "key.bin", b"z" * 32)
+    destination = private_root / "bounded"
+    common = [
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(destination),
+        "--max-records", "1", "--max-text-bytes", "1000000",
+    ]
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    E.run(E.build_arg_parser().parse_args(common + ["--live-smoke-confirmed"]))
+    if mutation == "package":
+        record = json.loads((destination / "records.jsonl").read_text().splitlines()[0])
+        text_path = destination / record["text_path"]
+        text_path.write_bytes(text_path.read_bytes() + b"tampered")
+    else:
+        smoke_path = E._smoke_path(destination)
+        smoke = json.loads(smoke_path.read_text(encoding="utf-8"))
+        smoke["confirmed_at"] = (
+            dt.datetime.now(dt.timezone.utc) - E.SMOKE_MAX_AGE - dt.timedelta(seconds=1)
+        ).isoformat(timespec="seconds")
+        smoke_path.write_text(json.dumps(smoke) + "\n", encoding="utf-8")
+    before = {str(path.relative_to(private_root)): path.read_bytes()
+              for path in private_root.rglob("*") if path.is_file()}
+    with pytest.raises((PermissionError, ValueError)):
+        E.run(E.build_arg_parser().parse_args(common + ["--verify-existing"]))
+    after = {str(path.relative_to(private_root)): path.read_bytes()
+             for path in private_root.rglob("*") if path.is_file()}
+    assert after == before
+
+
 def test_bounded_smoke_requires_every_source_register_pair(private_root: Path):
     im = _source(private_root, "imessage_sent", "Enough text words for pair coverage.")
     gm = _source(private_root, "gmail_sent", "Enough email words for pair coverage.")

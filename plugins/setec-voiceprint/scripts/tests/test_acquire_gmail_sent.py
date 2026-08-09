@@ -1511,6 +1511,44 @@ def test_full_run_accepts_receipt_from_separate_smoke_tree(tmp_path, mbox, monke
     assert list(full.glob("*.txt"))
 
 
+def test_approval_and_acquisition_verifiers_are_planted_write_clean(
+    tmp_path, mbox, monkeypatch,
+):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    manifest = full / "draft_manifest.jsonl"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "yes")
+    assert G.main([
+        "approve-smoke", "--mbox-path", str(mbox),
+        "--smoke-dir", str(smoke_dir), "--output-dir", str(full),
+    ]) == 0
+    common = [
+        "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--persona", "joshua", "--register", "personal",
+        "--consent-status", "author_consent", "--max-items", "100",
+        "--min-words-per-piece", "5", "--sent-label-token", "Sent",
+        "--output-dir", str(full), "--emit-manifest", str(manifest),
+    ]
+    assert G.main(["acquire", *common]) == 0
+
+    private_root = tmp_path / "ai-prose-baselines-private"
+    def snapshot():
+        return {str(path.relative_to(private_root)): path.read_bytes()
+                for path in private_root.rglob("*") if path.is_file()}
+
+    for command in ("verify-approval", "verify-acquisition"):
+        before = snapshot()
+        assert G.main([command, *common]) == 0
+        assert snapshot() == before
+
+    manifest.write_bytes(manifest.read_bytes() + b"{broken-tail")
+    before_refusal = snapshot()
+    assert G.main(["verify-acquisition", *common]) == 2
+    assert snapshot() == before_refusal
+
+
 def test_gate_refuses_when_min_words_differs_from_smoke(tmp_path, mbox, monkeypatch):
     smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
     full = tmp_path / "ai-prose-baselines-private" / "full"

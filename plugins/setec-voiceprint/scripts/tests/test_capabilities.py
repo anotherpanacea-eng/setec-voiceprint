@@ -158,7 +158,8 @@ def test_filter_by_consumer_setec_voicewright():
     Plus narrative_decision_audit — added as a consumer for voicewright's
     spec-17 M3 work-level narrative diagnostic (a read-only check over the
     assembled draft, NOT a fitness-loop surface).
-    Plus variance_audit — the smoothing-diagnosis surface, added for
+    Plus gmail_author_pipeline — the closed producer facade consumed by the
+    registered-SFT recipe runner. Plus variance_audit — the smoothing-diagnosis surface, added for
     voicewright's spec-45 bake-off scorecard smoothing/diversity axis
     (MTLD/MATTR/burstiness). Like narrative_decision_audit it is a read-only
     scorecard observation, NOT a selection/held-out fitness-loop surface."""
@@ -166,7 +167,7 @@ def test_filter_by_consumer_setec_voicewright():
     out = cap.filter_entries(m["entries"], consumer="setec-voicewright")
     ids = {e["id"] for e in out}
     expected = {
-        "author_corpus_export",
+        "author_corpus_export", "gmail_author_pipeline",
         "voice_fingerprint", "voice_distance", "idiolect_detector",
         "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
         "narrative_decision_audit", "variance_audit",
