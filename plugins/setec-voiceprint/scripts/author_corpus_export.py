@@ -1588,6 +1588,40 @@ def _require_smoke_receipt(destination: Path, config_hash: str,
         raise PermissionError("bounded smoke receipt hash does not match its confirmation")
 
 
+def _verify_bounded_smoke_receipt(destination: Path, config_hash: str,
+                                  receipt: dict[str, Any], records: list[dict[str, Any]],
+                                  hmac_key: bytes) -> None:
+    """Read-only counterpart to the bounded publish receipt verification."""
+    path = _smoke_path(destination)
+    if path.is_symlink() or not path.is_file():
+        raise PermissionError("bounded package lacks its smoke receipt")
+    data = _load_json_object(path.read_text(encoding="utf-8"), "bounded live-smoke receipt")
+    if set(data) != SMOKE_KEYS or data.get("schema") != "setec-author-corpus-export-live-smoke/1":
+        raise PermissionError("bounded smoke receipt is malformed")
+    expected = {
+        "config_hash": config_hash, "producer_revision": receipt["producer_revision"],
+        "bounded_package_hash": receipt["package_hash"],
+        "bounded_receipt_hash": _digest(DOMAIN_RECEIPT, receipt),
+        "bounded_destination_name": destination.name,
+        "source_kinds": sorted(receipt["counts"]["by_source_kind"]),
+        "registers": sorted(receipt["counts"]["by_register"]),
+        "source_register_pairs": _source_register_pairs(records),
+    }
+    if any(data.get(key) != value for key, value in expected.items()):
+        raise PermissionError("bounded smoke receipt does not bind the current package")
+    try:
+        confirmed = dt.datetime.fromisoformat(data["confirmed_at"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise PermissionError("bounded smoke receipt time is malformed") from exc
+    now = dt.datetime.now(dt.timezone.utc)
+    if confirmed.tzinfo != dt.timezone.utc or data["confirmed_at"] != confirmed.isoformat(timespec="seconds") or not dt.timedelta(0) <= now - confirmed <= SMOKE_MAX_AGE:
+        raise PermissionError("bounded smoke receipt is stale or non-UTC")
+    got_records, got_texts, got_receipt = _load_published_package(destination)
+    if _verify_package(got_records, got_texts, got_receipt, hmac_key=hmac_key,
+                       config_hash=config_hash, producer_revision=receipt["producer_revision"]) != _digest(DOMAIN_RECEIPT, receipt):
+        raise PermissionError("bounded package does not match smoke receipt")
+
+
 def _claim_license(receipt: dict[str, Any]) -> ClaimLicense:
     return ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -1673,9 +1707,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         if args.max_records is None:
             _require_smoke_receipt(args.output_dir, config_hash, receipt, records, key)
         else:
-            smoke = _smoke_path(args.output_dir)
-            if smoke.is_symlink() or not smoke.is_file():
-                raise PermissionError("bounded package lacks its smoke receipt")
+            _verify_bounded_smoke_receipt(args.output_dir, config_hash, receipt, records, key)
         warnings.append("verify-existing: package was verified without publication")
     elif args.dry_run:
         warnings.append("dry-run: package was validated but not written")

@@ -15,7 +15,7 @@
   "outputs": {"schema_version": "1.0", "artifacts": ["normalized stage receipt identities only"]},
   "compute": {"tier": "acquisition", "cost_note": "dispatches existing local Gmail, manifest, dedup, and export tools", "length_floor_words": null},
   "registers": ["personal"],
-  "dependencies": {"python": []},
+  "dependencies": {"python": ["datasketch"]},
   "examples": [],
   "references": ["plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md"]
 }

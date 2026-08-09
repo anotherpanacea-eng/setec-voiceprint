@@ -122,7 +122,7 @@ _Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readi
 | `function_word_adjacency_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 250 |
 | `gecscore_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: language_tool_python, transformers, torch | CPU / stdlib (+ optional spaCy model) | 50 |
 | `general_imposters` | Literature-anchored | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | req: scipy | CPU / stdlib (+ optional spaCy model) | — |
-| `gmail_author_pipeline` | experimental | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU + network | — |
+| `gmail_author_pipeline` | experimental | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: datasketch | CPU + network | — |
 | `homogeneity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: numpy | CPU / stdlib (+ optional spaCy model) | 15 |
 | `house_style_decomposition` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: torch | CPU / stdlib (+ optional spaCy model) | 300 |
 | `intrinsic_dimension_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch, numpy, scipy | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 500 |

@@ -29,7 +29,8 @@ entries:
   registers:
   - personal
   dependencies:
-    python: []
+    python:
+    - datasketch
   examples: []
   references:
   - plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md
