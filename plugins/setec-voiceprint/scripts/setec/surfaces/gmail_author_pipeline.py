@@ -20,13 +20,15 @@ from pathlib import Path
 from typing import Any
 
 # Imported surfaces use the shared packaging resolver.  A direct nested-script
-# launch cannot import the package until bootstrapped; CPython supplies the
-# script directory as sys.path[0], from which the fixed setec/surfaces layout
-# reaches scripts/ without adding another sys.path mutation or __file__ anchor.
+# launch cannot import the package until bootstrapped, so fall back to this
+# file's own fixed position: scripts/setec/surfaces/<module>.py.  Anchoring on
+# __file__ rather than sys.path[0] keeps the fallback correct when the module is
+# imported, run with -m, or run with -c, none of which put the script directory
+# on sys.path[0].
 try:
     from setec.paths import scripts_dir
 except ModuleNotFoundError:  # direct launch with an empty PYTHONPATH
-    SCRIPTS = Path(sys.path[0]).resolve().parents[1]
+    SCRIPTS = Path(__file__).resolve().parents[2]
 else:
     SCRIPTS = scripts_dir()
 if not (SCRIPTS / "acquire_gmail_sent.py").is_file():  # pragma: no cover
@@ -372,7 +374,18 @@ def _strict_author_envelope(value: Any, receipt: dict[str, Any], *, verifying: b
         raise Refusal("author export warning posture refused")
     return value
 
-def _check_prior(root: Path, run_dir: Path, logs: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _check_prior(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any], stage: str, prior: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Authenticate every predecessor from its lineage receipt and real artifacts.
+
+    Each prior stage is re-hashed, not re-executed.  The lineage receipt embeds
+    the SHA-256 of that stage's own output files and its config; rebuilding the
+    receipt from the artifacts on disk and byte-comparing it detects any change
+    to either.  Re-running the predecessor's domain verifier would recompute a
+    pure function of those same bytes and that same config, so on unchanged
+    input its answer is fixed in advance -- it costs one child process per
+    predecessor to learn nothing.  The stage actually being acted on always runs
+    its own domain verifier; that is where real revalidation belongs.
+    """
     expected = list(STAGES[:STAGES.index(stage)])
     if [x["stage_id"] for x in prior] != expected: raise Refusal("prior ordering refused")
     inputs: list[dict[str, Any]] = []
@@ -391,11 +404,6 @@ def _check_prior(root: Path, run_dir: Path, logs: Path, s: dict[str, Any], c: di
                 or not _valid_identity_list(stored.get("input_identities"), prior=True)
                 or not _valid_identity_list(stored.get("output_identities"))):
             raise Refusal("prior lineage shape refused")
-        argv, _ = _argv(root, s, c, "verify", prior_stage)
-        proc = _run_child(logs, prior_stage, "verify", argv)
-        child_json = _safe_json(proc.stdout)
-        if proc.returncode or (type(child_json) is dict and child_json.get("available") is False):
-            raise Refusal("prior verifier refused")
         output = _output_identities(root, s, c, prior_stage)
         expected_lineage = _lineage(prior_stage, config, output, inputs)
         if (stored != expected_lineage or raw != _canon(expected_lineage)
@@ -447,7 +455,7 @@ def _execute(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any],
     prior_stages = [x["stage_id"] for x in prior]
     _preflight_logs(logs, prior_stages + [stage], root=run_dir)
     _preflight_receipts(receipt_dir, prior_stages, stage, root=run_dir)
-    inputs = _check_prior(root, run_dir, logs, s, c, stage, prior)
+    inputs = _check_prior(root, run_dir, s, c, stage, prior)
     current_receipt = receipt_dir / f"{stage}.json"
     try:
         current_receipt.lstat()

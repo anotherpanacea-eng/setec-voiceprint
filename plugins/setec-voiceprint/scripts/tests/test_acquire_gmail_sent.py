@@ -1517,7 +1517,13 @@ def test_approval_and_acquisition_verifiers_are_planted_write_clean(
     smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
     full = tmp_path / "ai-prose-baselines-private" / "full"
     manifest = full / "draft_manifest.jsonl"
-    assert _smoke(mbox, smoke_dir) == 0
+    # A name map is deliberately in play: display names are substituted into
+    # cleaned text, so they are part of every committed content_hash.  A
+    # verifier that rebuilds the recipient map without them recomputes
+    # different text and refuses a correctly committed acquisition.
+    name_map = tmp_path / "name-map.json"
+    name_map.write_text(json.dumps({bf.R_ALICE: "Friendo"}))
+    assert _smoke(mbox, smoke_dir, ["--name-map", str(name_map)]) == 0
     monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda: "yes")
     assert G.main([
@@ -1529,9 +1535,14 @@ def test_approval_and_acquisition_verifiers_are_planted_write_clean(
         "--persona", "joshua", "--register", "personal",
         "--consent-status", "author_consent", "--max-items", "100",
         "--min-words-per-piece", "5", "--sent-label-token", "Sent",
+        "--name-map", str(name_map),
         "--output-dir", str(full), "--emit-manifest", str(manifest),
     ]
     assert G.main(["acquire", *common]) == 0
+    rows = [json.loads(line) for line in
+            manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert any("Friendo" in (row.get("notes") or "") for row in rows), \
+        "name map did not reach the committed rows"
 
     private_root = tmp_path / "ai-prose-baselines-private"
     def snapshot():

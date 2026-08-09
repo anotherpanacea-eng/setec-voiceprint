@@ -377,10 +377,42 @@ def test_stage03_missing_lineage_verify_is_read_only_and_resume_continues(tmp_pa
     _private_file(case.root / case.source["manifest"], b"partial\n")
     before = len(fake.calls)
     rc, _ = P.run_request(_request(case, "03_source_acquire", "verify", _prior(case, 2)))
-    assert rc == 3 and len(fake.calls) == before + 2  # only the two prior verifiers
+    # Priors are authenticated from their receipts and artifacts, so refusing
+    # on the missing stage-03 receipt starts no domain child at all.
+    assert rc == 3 and len(fake.calls) == before
     rc, _ = P.run_request(_request(case, "03_source_acquire", "resume", _prior(case, 2)))
     assert rc == 0
     assert fake.calls[-1] == ("acquire_gmail_sent.py", "acquire")
+
+
+def test_each_call_starts_exactly_one_domain_child(tmp_path, monkeypatch):
+    """One request, one stage side effect, one child -- no per-prior fan-out.
+
+    Prior stages are authenticated by re-hashing their receipts and artifacts.
+    Re-running each predecessor's verifier instead made the cost quadratic in
+    the stage index: 28 children to drive a seven-stage run, and 28 more to
+    re-verify it, with stage 05 recomputing MinHash over the whole manifest
+    every time.
+    """
+    case = _case(tmp_path)
+    fake = FakeDomain(case)
+    monkeypatch.setattr(P.subprocess, "run", fake)
+    monkeypatch.setattr(P.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(builtins, "input", lambda: "yes")
+    for index, stage in enumerate(P.STAGES):
+        action = "approve" if stage in {"02_source_approval", "06_package_smoke"} else "run"
+        before = len(fake.calls)
+        rc, _ = P.run_request(_request(case, stage, action, _prior(case, index)))
+        assert rc == 0, stage
+        assert len(fake.calls) - before == 1, (stage, fake.calls[before:])
+    assert len(fake.calls) == len(P.STAGES)
+
+    # A full re-verification pass is likewise one child per stage.
+    before = len(fake.calls)
+    for index, stage in enumerate(P.STAGES):
+        rc, _ = P.run_request(_request(case, stage, "verify", _prior(case, index)))
+        assert rc == 0, stage
+    assert len(fake.calls) - before == len(P.STAGES)
 
 
 def test_repeated_stage03_verify_and_resume_never_reacquire(tmp_path, monkeypatch):
@@ -429,6 +461,35 @@ def test_foreign_cwd_direct_launch_with_empty_pythonpath(tmp_path):
     )
     assert proc.returncode == 2
     assert json.loads(proc.stdout)["results"]["reason_category"] == "bad_input"
+
+
+@pytest.mark.parametrize("mode", ["-c-import", "-m"])
+def test_bootstrap_resolves_scripts_dir_when_not_launched_as_a_script(tmp_path, mode):
+    """sys.path[0] is only the script directory for `python FILE`.
+
+    The fallback anchor must survive import, -m and -c, where sys.path[0] is
+    the caller's cwd or an unrelated package root.
+    """
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    foreign = _private_dir(tmp_path / "foreign")
+    if mode == "-c-import":
+        argv = [sys.executable, "-c", (
+            "import importlib.util as u, sys;"
+            f"s = u.spec_from_file_location('gap', {str(FACADE)!r});"
+            "m = u.module_from_spec(s); s.loader.exec_module(m);"
+            "print(m.SCRIPTS)"
+        )]
+        cwd = foreign
+    else:
+        argv = [sys.executable, "-m", "setec.surfaces.gmail_author_pipeline",
+                "--json", "--request", "/nonexistent"]
+        cwd = FACADE.parents[2]
+    proc = subprocess.run(argv, cwd=cwd, env=environment, capture_output=True, text=True)
+    assert proc.returncode in (0, 2), proc.stderr
+    assert "SETEC scripts directory not found" not in proc.stderr
+    if mode == "-c-import":
+        assert Path(proc.stdout.strip()) == FACADE.parents[2]
 
 
 def test_verifier_success_and_refusal_do_not_write(monkeypatch, tmp_path):

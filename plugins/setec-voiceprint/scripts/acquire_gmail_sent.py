@@ -966,6 +966,27 @@ def _validate_name_map(raw: object) -> dict[str, str]:
     return clean
 
 
+def _build_recipient_map(opts: Options) -> ac.StableRedactionMap:
+    """Build the recipient map exactly as acquisition does.
+
+    Display names come from `--name-map` and are substituted into cleaned text,
+    so they are part of every committed `content_hash`.  Acquisition and every
+    read-only verifier must construct this map the same way or the verifier
+    recomputes different text and refuses a correctly committed acquisition.
+    """
+    name_map: object = {}
+    if opts.name_map_path and opts.name_map_path.exists():
+        name_map = json.loads(opts.name_map_path.read_text(encoding="utf-8"))
+    return ac.StableRedactionMap(
+        opts.recipient_map_path,
+        label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        display_names=_validate_name_map(name_map or {}),
+        reuse_gaps=False,
+        map_name="recipient map",
+    )
+
+
 def _addresses(msg: Message, header: str) -> list[str]:
     out = []
     for _, addr in email.utils.getaddresses(msg.get_all(header, [])):
@@ -1989,22 +2010,8 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
         enforce_live_smoke_gate(opts, windowed=windowed, mbox_sha=mbox_sha)
 
     try:
-        name_map = None
-        if opts.name_map_path and opts.name_map_path.exists():
-            name_map = json.loads(opts.name_map_path.read_text(encoding="utf-8"))
+        recipients = _build_recipient_map(opts)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
-        sys.stderr.write(f"{TOOL_NAME}: invalid --name-map: {exc}\n")
-        return 2
-    try:
-        recipients = ac.StableRedactionMap(
-            opts.recipient_map_path,
-            label_prefix="recipient",
-            normalize_key=lambda address: address.strip().lower(),
-            display_names=_validate_name_map(name_map or {}),
-            reuse_gaps=False,
-            map_name="recipient map",
-        )
-    except ValueError as exc:
         sys.stderr.write(f"{TOOL_NAME}: invalid recipient map: {exc}\n")
         return 2
 
@@ -2564,11 +2571,7 @@ def run_verify_acquisition(args: argparse.Namespace) -> int:
         if _roots_sha256(roots) != index_data.get("thread_roots_sha256"):
             raise ManifestIntegrityError("checkpoint thread roots do not match source")
         opts.acquired_via_date = _dt.date.fromisoformat(index_data["acquired_via_date"])
-        recipients = ac.StableRedactionMap(
-            opts.recipient_map_path, label_prefix="recipient",
-            normalize_key=lambda address: address.strip().lower(),
-            display_names={}, reuse_gaps=False, map_name="recipient map",
-        )
+        recipients = _build_recipient_map(opts)
         _validate_committed_source_bindings(
             inspection.rows, opts=opts, recipients=recipients, box=box,
             thread_roots=roots, target_keys=target_keys,
