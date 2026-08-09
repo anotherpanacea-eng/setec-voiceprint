@@ -36,8 +36,47 @@ else:
 if not (SCRIPTS / "acquire_gmail_sent.py").is_file():  # pragma: no cover
     raise RuntimeError("SETEC scripts directory not found")
 
+
+# output_schema does `from claim_license import ...` at module scope, so its
+# dependency has to be in sys.modules before it executes.
+_CONTRACT_DEPENDENCIES = {"output_schema": ("claim_license",)}
+
+
+def _load_contract(name: str) -> Any:
+    """Load an L0 contract module (output_schema / claim_license) from SCRIPTS.
+
+    This surface builds the same normalized envelope every other surface does,
+    so it must reach the real builder rather than hand-rolling a twelfth-key
+    copy of the contract.  It is loaded by path rather than imported because a
+    directly launched nested script has only its own directory on sys.path:
+    `sys.path.insert` is out (check_syspath_ratchet.py is shrink-only) and a
+    __file__ anchor is out (check_packaging_migration.py --strict forbids new
+    ones).  Registering each module under its plain name lets output_schema's
+    own `from claim_license import ...` resolve.  When P2 moves these modules
+    into `setec/contract/`, this collapses to an ordinary package import.
+    """
+    if name in sys.modules:
+        return sys.modules[name]
+    import importlib.util
+    for dependency in _CONTRACT_DEPENDENCIES.get(name, ()):
+        _load_contract(dependency)  # must be in sys.modules before name executes
+    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f"{name}.py")
+    if spec is None or spec.loader is None:  # pragma: no cover
+        raise RuntimeError(f"SETEC contract module {name} not found")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 REQUEST_SCHEMA = "setec-gmail-author-pipeline-request/1"
+TOOL_NAME = "gmail_author_pipeline"
+SCRIPT_VERSION = "1.0"
 TASK_SURFACE = "voice_coherence_acquisition"
+DEGRADED_WARNING = (
+    "record_atomic_degraded: the author package was built without stable "
+    "grouping; consumers must restrict it to train-only, non-comparative use."
+)
 RESULT_KEYS = {"request_schema", "action", "stage_id", "status", "config_sha256",
                "input_identities", "domain_receipts", "output_identities", "lineage_receipt_sha256", "reason_category"}
 STAGES = ("01_source_smoke", "02_source_approval", "03_source_acquire",
@@ -295,13 +334,64 @@ def _lineage(stage: str, config: dict[str, Any], output: list[dict[str, Any]], i
             "domain_receipts":[{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}],
             "output_identities":output,"domain_identity":domain}
 
-def _envelope(action: str, stage: str, config: dict[str, Any], status: str, output: list[dict[str, Any]] | None = None, lineage_sha: str | None = None, reason: str | None = None, inputs: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def _claim_license(stage: str, degraded: bool) -> Any:
+    """What one stage response does and does not license.
+
+    A stage identity is easy to overread: "completed" attests that the named
+    stage ran and that its declared artifacts hash to the recorded values, and
+    nothing whatever about the text inside them.
+    """
+    ClaimLicense = _load_contract("claim_license").ClaimLicense
+    caveats = ["Identities are no-prose metadata; inspect the private artifacts locally."]
+    if degraded:
+        caveats.append(DEGRADED_WARNING)
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Confirms that the named producer stage ran to completion under this "
+            "exact recipe configuration and that its declared output artifacts "
+            "hash to the recorded identities."
+        ),
+        does_not_license=(
+            "Does not verify authorship, consent, or corpus quality, and supports "
+            "no AI/human, voice, or provenance verdict about the acquired text."
+        ),
+        comparison_set={"stage_id": stage},
+        additional_caveats=caveats,
+    )
+
+
+def _envelope(action: str, stage: str, config: dict[str, Any], status: str, output: list[dict[str, Any]] | None = None, lineage_sha: str | None = None, inputs: list[dict[str, Any]] | None = None, degraded: bool = False) -> dict[str, Any]:
+    """The normalized success envelope, via the same builder every surface uses.
+
+    target/baseline/ai_status are None for the same reason they are on
+    author_corpus_export: this surface packages and attests, it does not
+    analyse a target text.
+    """
     output = output or []
     config_sha = _config_sha(config)
-    domain = _domain_identity(stage, config_sha, output) if status == "completed" else None
-    receipts = [] if domain is None else [{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}]
-    results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":inputs or [],"domain_receipts":receipts,"output_identities":output,"lineage_receipt_sha256":lineage_sha,"reason_category":reason}
-    return {"schema_version":"1.0","available":status == "completed","results":results}
+    domain = _domain_identity(stage, config_sha, output)
+    receipts = [{"label":"domain_identity","relative_path":None,"sha256":None,"domain_identity":domain}]
+    results = {"request_schema":REQUEST_SCHEMA,"action":action,"stage_id":stage,"status":status,"config_sha256":config_sha,"input_identities":inputs or [],"domain_receipts":receipts,"output_identities":output,"lineage_receipt_sha256":lineage_sha,"reason_category":None}
+    return _load_contract("output_schema").build_output(
+        task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+        target_path=None, target_words=0, baseline=None,
+        results=results,
+        claim_license=_claim_license(stage, degraded),
+        available=True,
+        warnings=[DEGRADED_WARNING] if degraded else [],
+        ai_status=None,
+    )
+
+
+def _refusal_envelope(reason: str, category: str) -> dict[str, Any]:
+    """The R3 structured-error envelope.  `reason` is always one of this
+    module's closed literal refusal sentences -- never exception text, which
+    could carry a private path."""
+    return _load_contract("output_schema").build_error_output(
+        task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+        reason=reason, reason_category=category,
+    )
 
 def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
     directory = _safe_dir(run_dir, "producer-receipts", root=run_dir)
@@ -492,9 +582,13 @@ def _execute(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any],
     child_json = _safe_json(proc.stdout)
     if isinstance(child_json, dict) and child_json.get("available") is False:
         raise Refusal("domain child reported unavailable")
+    degraded = False
     if stage == "07_author_package":
         try:
             package_receipt = json.loads((_rel(root,c["package_dir"]) / "producer_receipt.json").read_text(encoding="utf-8"))
+            # The exporter's degradation flag has to reach the consumer: it is
+            # what makes the package train-only and non-comparative.
+            degraded = package_receipt.get("record_atomic_degraded") is True
             verified_envelope = _strict_author_envelope(child_json, package_receipt, verifying=action == "verify")
             if action == "verify":
                 producer_envelope = json.loads(_rel(root,c["producer_envelope"]).read_text(encoding="utf-8"))
@@ -511,22 +605,24 @@ def _execute(root: Path, run_dir: Path, s: dict[str, Any], c: dict[str, Any],
     output = _output_identities(root,s,c,stage)
     lineage = _lineage(stage,config,output,inputs)
     receipt_sha = _write_receipt(run_dir,stage,lineage)
-    return 0, _envelope(action,stage,config,"completed",output,receipt_sha,inputs=inputs)
+    return 0, _envelope(action,stage,config,"completed",output,receipt_sha,inputs=inputs,degraded=degraded)
 
 def run_request(request_path: Path) -> tuple[int, dict[str, Any]]:
     root, run_dir, s, c, action, stage, prior = _parse_request(request_path)
     try:
         return _execute(root, run_dir, s, c, action, stage, prior)
-    except Refusal:
-        return 3, _envelope(action, stage, {"source": s, "corpus": c},
-                            "refused", reason="policy_refused")
+    except Refusal as exc:
+        return 3, _refusal_envelope(str(exc), "policy_refused")
 
 def main(argv: list[str] | None = None) -> int:
     p=argparse.ArgumentParser(prog="gmail_author_pipeline", add_help=True); p.add_argument("--json",action="store_true"); p.add_argument("--request",required=True)
     args=p.parse_args(argv)
     try: rc,envelope=run_request(Path(args.request))
     except (Refusal, OSError, UnicodeError, subprocess.SubprocessError, ValueError, TypeError):
-        rc=2; envelope={"schema_version":"1.0","available":False,"results":{"request_schema":REQUEST_SCHEMA,"action":None,"stage_id":None,"status":"refused","config_sha256":None,"input_identities":[],"domain_receipts":[],"output_identities":[],"lineage_receipt_sha256":None,"reason_category":"bad_input"}}
+        # The request never validated, so there is no stage or action to name;
+        # the closed sentence still must not echo exception text.
+        rc = 2
+        envelope = _refusal_envelope("request refused before validation", "bad_input")
     print(json.dumps(envelope,sort_keys=True,separators=(",",":")))
     return rc
 
