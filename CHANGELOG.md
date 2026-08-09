@@ -7,6 +7,35 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.130.0] - 2026-08-09
+
+### Added
+
+**`gmail_author_pipeline` — closed producer facade for the Gmail author-corpus recipe.** It derives fixed domain argv vectors and returns only normalized receipt identities.
+
+### Fixed
+
+**Two safety gaps the claim-license guard was blocking.** (1) `claim_license.py`'s `TARGET_STATE_CAVEAT_TEMPLATES` covered 7 of `normalize_author_registry.py`'s 9 `ai_status` values; the two personal-manifest-only labels (`mixed_pre_and_post_ai`, `post_june_2025_uncertain`) got no caveat, and `state_routed_caveats()` silently dropped the caveat for ANY unrecognized status rather than erroring or falling back. Both labels now have templates, and an unrecognized status gets a generic fallback caveat naming it (mirroring `_comparison_caveat()`'s existing fallback) instead of silence. (2) `agd_move_scan.py` was the only judge-backed surface among `warrant_probe.py` / `argument_decision_audit.py` / `argquality_dimension_profile.py` / `fallacy_scan.py` missing the `agent_host:<host>:<model>` disjointness sentence those four carry byte-identically; it now carries the same sentence, verified via AST.
+
+**`gmail_author_pipeline` — policy refusals now exit 3, not 2.** The facade's
+public contract distinguishes an invalid request (exit 2, `bad_input`) from a
+policy or domain refusal (exit 3, `policy_refused`), but every refusal raised
+after request validation — a repeated side effect on a completed stage, a
+failed prior-lineage check, an unsafe log or receipt path, a declined approval —
+escaped to `main()` and was reported as `bad_input`. Request parsing and stage
+execution are now separate, with one refusal boundary each.
+
+**`acquire_gmail_sent.py verify-acquisition` no longer refuses acquisitions
+that used `--name-map`.** Display names are substituted into cleaned text and
+are therefore part of every committed `content_hash`, but the verifier rebuilt
+the recipient map with an empty display-name table. It recomputed different
+text than the one committed, and refused. Acquisition and verification now
+build the map through one shared `_build_recipient_map`, so they cannot drift.
+
+### Removed
+
+**`tools/check_claim_license_guard.py` — the no-change claim-license deficit lock (spec `svp-packaging-conversion` §3).** Removed by owner decision (Joshua, 2026-08-07): "strip off the freeze and the guard entirely. this is a set of tools, not a cryptography suite. each edit needs to be justified, but not frozen, guarded, or sealed." At removal the guard froze 110 of 252 production modules (93,039 of 203,133 LOC, 46% of non-test code) against any AST change, and P2's promised narrowly-scoped relocation support never landed to relax it. Also removed: its test (`test_check_claim_license_guard.py`), the P1 CI step in `.github/workflows/tests.yml`, and the now-dead `plugins/setec-voiceprint/packaging_move_map.json` (consumed only by the guard and its test). `specs/svp-packaging-conversion.md` §3 carries a short amendment note; the rest of the section is kept as a historical record of the removed gate's design.
+
 ## [1.129.0] - 2026-08-06
 
 ### Added
