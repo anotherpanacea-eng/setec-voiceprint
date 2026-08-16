@@ -285,26 +285,36 @@ def test_real_committed_fixtures_pass_all_validators():
 def test_build_contract_block_does_not_depend_on_tests_tree():
     """F12 regression: a BARE plugin copy (what actually ships to a
     consumer — no `scripts/tests/`, per the packaging spec's zero-install
-    contract) must still be able to run `emit`. Simulated by hiding
-    `scripts/tests/` for the duration of this test."""
+    contract) must still be able to run `emit`. Simulated by building that
+    bare copy under a temp dir. The live `scripts/tests/` must never be
+    touched: an earlier version moved the REAL directory aside and restored
+    it in `finally`, which raced other pytest-xdist workers — the whole
+    tests tree vanished mid-run for any concurrent test reading committed
+    fixtures (and pytest rendered their tracebacks as `???`)."""
     import shutil
     import subprocess
     import sys as _sys
 
-    scripts_dir = ROOT
-    tests_dir = scripts_dir / "tests"
-    assert tests_dir.is_dir(), "expected scripts/tests/ to exist before hiding it"
+    plugin_dir = ROOT.parent
+
+    def _bare_copy_ignore(src, names):
+        ignored = {"__pycache__", ".pytest_cache"}
+        if Path(src).resolve() == ROOT:
+            ignored.add("tests")
+        return ignored & set(names)
+
     with tempfile.TemporaryDirectory() as td:
-        moved_to = Path(td) / "tests"
-        shutil.move(str(tests_dir), str(moved_to))
-        try:
-            completed = subprocess.run(
-                [_sys.executable, "capabilities.py", "emit", "--json"],
-                cwd=scripts_dir, capture_output=True, text=True,
-            )
-            assert completed.returncode == 0, completed.stderr
-            env = json.loads(completed.stdout)
-            assert "contract" in env
-            assert env["contract"]["s5_identity"]["method"]
-        finally:
-            shutil.move(str(moved_to), str(tests_dir))
+        bare_plugin = Path(td) / "plugin"
+        shutil.copytree(plugin_dir, bare_plugin, ignore=_bare_copy_ignore)
+        bare_scripts = bare_plugin / "scripts"
+        assert not (bare_scripts / "tests").exists(), (
+            "bare consumer copy must ship without scripts/tests/"
+        )
+        completed = subprocess.run(
+            [_sys.executable, "capabilities.py", "emit", "--json"],
+            cwd=bare_scripts, capture_output=True, text=True,
+        )
+        assert completed.returncode == 0, completed.stderr
+        env = json.loads(completed.stdout)
+        assert "contract" in env
+        assert env["contract"]["s5_identity"]["method"]
