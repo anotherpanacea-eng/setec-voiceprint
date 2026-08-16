@@ -1069,8 +1069,9 @@ def _build_harness_command(
     bootstrap flag the user (or auto-detect) selected.
 
     Codex review (PR #53, P2): every interpolated value is shell-
-    quoted via ``shlex.quote``. The runtime workspace lives under
-    ``Claude Cowork Working Folder`` whose path contains a space,
+    quoted via ``shlex.quote``. Operator workspaces routinely sit
+    under directories whose paths contain spaces (``OCA Claude
+    Folder``, and historically ``Claude Cowork Working Folder``),
     so unquoted interpolation breaks copy-paste replay on the
     operator's primary machine. ``shlex.quote`` is a no-op on
     shell-safe tokens (``--use validation`` stays bare) and wraps

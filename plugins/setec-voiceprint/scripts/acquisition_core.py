@@ -71,7 +71,7 @@ PRIVATE_DIR_NAME = "ai-prose-baselines-private"
 # of the repo (the documented standard layout).
 DEFAULT_BASELINES_ENV = "SETEC_BASELINES_DIR"
 DEFAULT_BASELINES_FALLBACK = (
-    Path.home() / "Documents" / "Claude Cowork Working Folder"
+    Path.home() / "Library" / "CloudStorage" / "Dropbox" / "Cowork"
     / "ai-prose-baselines-private"
 )
 
