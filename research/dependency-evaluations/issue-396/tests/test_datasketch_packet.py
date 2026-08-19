@@ -12,16 +12,21 @@ from pathlib import Path
 import pytest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKER = (
-    REPO_ROOT
-    / "research"
-    / "dependency-evaluations"
-    / "issue-396"
-    / "workers"
-    / "datasketch_probe.py"
-)
+ROOT = Path(__file__).resolve().parents[1]
+WORKER = ROOT / "workers" / "datasketch_probe.py"
+REPO_ROOT = ROOT.parents[2]
 SCRIPTS = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+
+# The worker reads `datasketch`'s installed metadata at import time, so without
+# the packet's locked environment this module cannot even be loaded. Skip the
+# file rather than erroring, matching test_trafilatura_packet.py.
+_missing = [
+    name for name in ("datasketch",) if importlib.util.find_spec(name) is None
+]
+if _missing:
+    pytestmark = pytest.mark.skip(
+        reason="issue-396 locked dependencies missing: " + ", ".join(_missing)
+    )
 
 
 def _load_worker():
@@ -33,7 +38,7 @@ def _load_worker():
     return module
 
 
-probe = _load_worker()
+probe = None if _missing else _load_worker()
 
 
 def _request(*, scheme: str = "default") -> dict:
