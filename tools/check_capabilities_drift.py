@@ -91,6 +91,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 from r1_bundle import validate_r1_bundle  # type: ignore  # noqa: E402
+from seed_capabilities import DEFAULT_TODO_REASON  # noqa: E402
 
 # R5 contract-fixture drift (Check 9). Import the generator so the gate and
 # the generator share one definition of "what a golden should be" — they can
@@ -323,10 +324,7 @@ def check_drift(
                 r"^(?:todo|tbd|unknown|n/a)(?:$|[^a-z0-9])",
                 normalized,
             )
-            seeded_default = normalized == (
-                "auto-seeded manifest; maturity and operator readiness not "
-                "yet reviewed; hidden pending per-capability audit."
-            ).casefold()
+            seeded_default = normalized == DEFAULT_TODO_REASON.casefold()
             if not normalized or placeholder or seeded_default:
                 report.violations.append(Violation(
                     kind="todo_reason",

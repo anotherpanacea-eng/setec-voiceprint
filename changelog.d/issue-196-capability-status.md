@@ -13,4 +13,6 @@ The drift gate rejects the seeder default as well as missing/generic placeholder
 stale reasons retained after promotion. The generated readiness matrix groups
 acquisition under tooling, shows the real required source, and distinguishes local
 I/O from network acquisition.
-Acquisition runtime behavior is unchanged.
+The prose-intent `recommend` router is now analysis-only: acquisition, local
+corpus-hygiene, and export tools remain discoverable through `list` / `show` but
+are not returned as recommendations. Acquisition runtime behavior is unchanged.

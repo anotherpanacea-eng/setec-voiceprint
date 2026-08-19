@@ -12,8 +12,10 @@ The architectural narrative and the path from MVP to validated framework. Intern
   contract remains hidden. The residual set is bounded rather than an unexamined
   shipped-code count: 46 fragments name the exact unresolved auto-seeded operator
   fields, while the atomic entry names its live-smoke/durability/consumer gates.
-  The drift gate rejects the seeder default. Promotion changes capability discovery
-  only—the acquisition runtimes and their privacy/provenance gates are unchanged.
+  The drift gate rejects the seeder default. Promotion changes capability discovery;
+  separately, prose-intent `recommend` is now analysis-only, with acquisition,
+  corpus-hygiene, and export tooling discoverable through `list` / `show`. The
+  acquisition runtimes and their privacy/provenance gates are unchanged.
 
 ## Status reconciliation (2026-08-02)
 

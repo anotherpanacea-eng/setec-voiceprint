@@ -522,9 +522,9 @@ def recommend(
     """Return analytical recommendations ranked by curated/free-text match.
 
     Acquisition is intentionally browse-only through ``list`` / ``show``.
-    Recommending private-source or network tools from prose intent is too
-    ambiguous to be a safe default, so this router excludes the entire
-    ``voice_coherence_acquisition`` surface.
+    This router excludes the entire ``voice_coherence_acquisition`` surface,
+    including local corpus-hygiene and export tools, so prose intent cannot
+    silently cross from draft analysis into corpus operations.
     """
     normalized = _normalize(situation)
     all_entries = {e.get("id"): e for e in entries(manifest)}

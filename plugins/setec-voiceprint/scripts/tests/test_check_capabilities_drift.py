@@ -151,8 +151,7 @@ def test_todo_reason_is_required_and_placeholders_are_rejected():
         "TODO: review later", "TBD pending audit", "unknown - investigate",
         "TODO/review later", "TODO(review later)", "TODO—review",
         "TBD_review", "UNKNOWN_review",
-        "Auto-seeded manifest; maturity and operator readiness not yet "
-        "reviewed; hidden pending per-capability audit.",
+        ccd.DEFAULT_TODO_REASON,
     ):
         with tempfile.TemporaryDirectory() as td:
             manifest = Path(td) / "capabilities.yaml"

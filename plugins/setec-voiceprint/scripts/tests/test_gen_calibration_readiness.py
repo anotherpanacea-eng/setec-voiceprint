@@ -103,6 +103,13 @@ def test_curated_acquisition_rows_show_real_source_and_locality():
 
     remediation = gcr.derive(_entry("passage_remediation"))
     assert not any("labeled corpus" in item for item in remediation["supplies"])
+    assert len(remediation["supplies"]) == 2
+
+    shingle = gcr.derive(_entry("shingle_dedup"))
+    assert shingle["supplies"] == [
+        "explicit staged-descriptor JSONL or exact-pinned local index, as required by the selected mode (required)",
+        "for a compatible immutable checkpoint directory (optional)",
+    ]
 
     pipeline = gcr.derive(_entry("gmail_author_pipeline"))
     assert "--request (required)" in pipeline["supplies"]
@@ -114,9 +121,10 @@ def test_structured_non_corpus_required_inputs_are_preserved():
     export = gcr.derive(_entry("author_corpus_export"))
     for flag in (
         "--source-manifest", "--register-map", "--allowed-ai-status",
-        "--persona", "--hmac-key", "--output-dir",
+        "--persona", "--hmac-key",
     ):
         assert f"{flag} (required)" in export["supplies"]
+    assert "--output-dir (required)" not in export["supplies"]
 
 
 def test_block_has_both_tables_and_legend():

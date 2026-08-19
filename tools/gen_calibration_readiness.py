@@ -72,7 +72,8 @@ DEFAULT_DOC = (
 BEGIN_MARKER = "<!-- BEGIN GENERATED: tools/gen_calibration_readiness.py — do not edit by hand -->"
 END_MARKER = "<!-- END GENERATED -->"
 
-# status → (short label, what it licenses). Ordered weakest → strongest.
+# status → (short label, what it licenses). Analytical maturity entries are
+# ordered weakest → strongest; structural_only is a separate noninferential class.
 STATUS_READINESS: dict[str, tuple[str, str]] = {
     "structural_only": (
         "Operational tooling (calibration N/A)",
@@ -176,7 +177,9 @@ _CORPUS_FLAGS = frozenset({
     "--reference-manifest", "--reference-corpus", "--target-dir",
 })
 # Flags that are delivery / output plumbing, not user-supplied inputs.
-_NON_INPUT_FLAGS = frozenset({"--json", "--json-out", "--out", "--quiet"})
+_NON_INPUT_FLAGS = frozenset({
+    "--json", "--json-out", "--out", "--output-dir", "--quiet",
+})
 
 
 def _normalize_inputs(entry: dict[str, Any]) -> tuple[str, list[str], list[str]]:
@@ -309,7 +312,7 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
     # Acquisition entries use the legacy mapping shape and put their source in
     # `inputs.target`. That source is always required even when it is not a
     # baseline/manifest corpus.
-    if surface == "voice_coherence_acquisition" and target:
+    if surface == "voice_coherence_acquisition" and target and not required:
         supplies.append(f"{_friendly_input(target)} (required)")
     # Target-as-corpus cases (no explicit `required` list, requirement is the target).
     if (
