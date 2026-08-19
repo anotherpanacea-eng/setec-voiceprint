@@ -107,7 +107,7 @@ def test_curated_acquisition_rows_show_real_source_and_locality():
 
     shingle = gcr.derive(_entry("shingle_dedup"))
     assert shingle["supplies"] == [
-        "explicit staged-descriptor JSONL or exact-pinned local index, as required by the selected mode (required)",
+        "Mode-specific local inputs: explicit staged-descriptor JSONL for build-index; exact-pinned local index plus a named query document and query id for query-doc; exact-pinned local index for batch-report. (required)",
         "for a compatible immutable checkpoint directory (optional)",
     ]
 

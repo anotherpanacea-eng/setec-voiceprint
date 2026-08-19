@@ -181,7 +181,7 @@ _Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readi
 | `register_classifier` | Heuristic (uncalibrated) | No | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 100 |
 | `register_composition_sweep` | Heuristic (uncalibrated) | No | explicitly scoped corpus JSONL, no truth labels (required); committed H1 closeout receipt (in-repo) (required); receipt-bound classifier source (in-repo) (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `setec_run_set` | Heuristic (uncalibrated) | No | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
-| `shingle_dedup` | Heuristic (uncalibrated) | Yes | explicit staged-descriptor JSONL or exact-pinned local index, as required by the selected mode (required); for a compatible immutable checkpoint directory (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 8 |
+| `shingle_dedup` | Heuristic (uncalibrated) | Yes | Mode-specific local inputs: explicit staged-descriptor JSONL for build-index; exact-pinned local index plus a named query document and query id for query-doc; exact-pinned local index for batch-report. (required); for a compatible immutable checkpoint directory (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 8 |
 | `surface_disagreement_resolver` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `triage_agreement` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 
