@@ -1,0 +1,386 @@
+{
+  "files": [
+    {
+      "attribution": "The White House; minimal text-only reduction by the SETEC evaluation",
+      "content_selector": "main",
+      "expected_title": "Copyright — The White House",
+      "forbidden_markers": [
+        "Stay Connected",
+        "Contact the President"
+      ],
+      "kind": "html",
+      "license": "LicenseRef-US-Government-Work",
+      "license_evidence_url": "https://www.whitehouse.gov/copyright/",
+      "path": "html/white-house-copyright.html",
+      "required_markers": [
+        "government-produced materials appearing on this site are not copyright protected",
+        "third-party content on this site is licensed under a Creative Commons Attribution 3.0 License"
+      ],
+      "retrieved": "2026-08-19",
+      "score_bearing": true,
+      "sha256": "11aa2ea88e25849be5a214f67db60a5a3309555094ccfa65f87d9e28562e7a1e",
+      "source_url": "https://www.whitehouse.gov/copyright/",
+      "strip_selectors": [
+        ".comments",
+        ".comment-list",
+        ".comment-respond",
+        "#comments",
+        ".related-posts",
+        ".related",
+        ".post-footer",
+        ".entry-footer",
+        ".sharedaddy",
+        ".jp-relatedposts",
+        ".author-bio",
+        ".subscription-widget",
+        ".subscriber-content",
+        ".post-meta-share"
+      ],
+      "structure_class": "federal-government-article",
+      "transformation": "Reduced to government-authored policy paragraphs and a minimal locally authored main/article/chrome skeleton; no image, logo, script, or third-party work retained."
+    },
+    {
+      "attribution": "National Aeronautics and Space Administration; minimal text-only reduction by the SETEC evaluation",
+      "content_selector": "article",
+      "expected_title": "NASA Images and Media Usage Guidelines",
+      "forbidden_markers": [
+        "Explore NASA",
+        "Follow NASA"
+      ],
+      "kind": "html",
+      "license": "LicenseRef-US-Government-Work",
+      "license_evidence_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "path": "html/nasa-media-policy.html",
+      "required_markers": [
+        "NASA content",
+        "generally are not subject to copyright in the United States"
+      ],
+      "retrieved": "2026-08-19",
+      "score_bearing": true,
+      "sha256": "ad4c96e8b902983fed01a1032362f580bc049600375d1d1487e26d8cb18b39ad",
+      "source_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "strip_selectors": [
+        ".comments",
+        ".comment-list",
+        ".comment-respond",
+        "#comments",
+        ".related-posts",
+        ".related",
+        ".post-footer",
+        ".entry-footer",
+        ".sharedaddy",
+        ".jp-relatedposts",
+        ".author-bio",
+        ".subscription-widget",
+        ".subscriber-content",
+        ".post-meta-share"
+      ],
+      "structure_class": "federal-government-article",
+      "transformation": "Reduced to NASA-authored text and a minimal locally authored article/chrome skeleton; NASA identifiers, images, people, and third-party works are excluded."
+    },
+    {
+      "attribution": "United States Congress, 17 U.S.C. section 105; minimal text-only reduction by the SETEC evaluation",
+      "content_selector": null,
+      "expected_title": "17 U.S.C. § 105 — United States Government works",
+      "forbidden_markers": [
+        "Browse U.S. Code",
+        "GovInfo legal resources footer"
+      ],
+      "kind": "html",
+      "license": "LicenseRef-US-Government-Work",
+      "license_evidence_url": "https://www.govinfo.gov/about/policies",
+      "path": "html/uscode-section-105.html",
+      "required_markers": [
+        "Copyright protection under this title is not available",
+        "work of the United States Government"
+      ],
+      "retrieved": "2026-08-19",
+      "score_bearing": true,
+      "sha256": "a72dfaf0914750ec0a7e395901360768cb9b6f0936064130dbb0058bc6f5cca9",
+      "source_url": "https://www.govinfo.gov/app/details/USCODE-2018-title17/USCODE-2018-title17-chap1-sec105",
+      "strip_selectors": [
+        "nav",
+        "header",
+        "footer",
+        ".site-header",
+        ".site-footer"
+      ],
+      "structure_class": "legal-technical-document",
+      "transformation": "Reduced to statutory and revision-note text in a minimal locally authored GovInfo-style legal page; no government marks or assets retained."
+    },
+    {
+      "attribution": "Python Software Foundation; shortened HTML presentation by the SETEC evaluation",
+      "content_selector": "main",
+      "expected_title": "History and License — Python 3.13 documentation",
+      "forbidden_markers": [
+        "Python documentation navigation",
+        "Table of Contents"
+      ],
+      "kind": "html",
+      "license": "PSF-2.0",
+      "license_evidence_url": "https://docs.python.org/3.13/license.html",
+      "path": "html/python-psf-license.html",
+      "required_markers": [
+        "nonexclusive, royalty-free, world-wide license",
+        "a brief summary of the changes made to Python"
+      ],
+      "retrieved": "2026-08-19",
+      "score_bearing": true,
+      "sha256": "fcee85e22a5671d9f11f61658c0503916861e38e1bf1a554e670e62db6537eee",
+      "source_url": "https://docs.python.org/3.13/license.html",
+      "strip_selectors": [
+        ".comments",
+        ".comment-list",
+        ".comment-respond",
+        "#comments",
+        ".related-posts",
+        ".related",
+        ".post-footer",
+        ".entry-footer",
+        ".sharedaddy",
+        ".jp-relatedposts",
+        ".author-bio",
+        ".subscription-widget",
+        ".subscriber-content",
+        ".post-meta-share"
+      ],
+      "structure_class": "legal-technical-document",
+      "transformation": "Removed the historical-license sections and documentation chrome, retaining the complete Python Software Foundation License Version 2 text and copyright notice; this manifest entry is the required brief summary of the HTML-only structural change."
+    },
+    {
+      "attribution": "United States Government source text; locally authored EveryCRS-compatible fixture layout",
+      "content_selector": "#report",
+      "content_sources": [
+        "https://www.govinfo.gov/app/details/USCODE-2018-title17/USCODE-2018-title17-chap1-sec105",
+        "https://www.whitehouse.gov/copyright/",
+        "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+      ],
+      "expected_title": "Federal Copyright Policy — CRS report layout fixture",
+      "forbidden_markers": [
+        "Report R-FIXTURE",
+        "Download PDF"
+      ],
+      "kind": "html",
+      "layout_reference_url": "https://www.everycrsreport.com/reports/R47656.html",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "path": "html/everycrs-report-layout.html",
+      "required_markers": [
+        "Copyright protection under this title is not available",
+        "NASA content generally is not subject to copyright in the United States"
+      ],
+      "retrieved": "2026-08-19",
+      "score_bearing": true,
+      "sha256": "fcade1f9d7e246312d911d4389237d1fccb518c1671ee7f783b1629e7b4d12ad",
+      "source_url": "https://www.govinfo.gov/app/details/USCODE-2018-title17/USCODE-2018-title17-chap1-sec105",
+      "strip_selectors": [
+        "nav",
+        "header",
+        "footer",
+        ".site-header",
+        ".site-footer",
+        ".metadata",
+        ".cover",
+        ".sidebar",
+        ".report-metadata",
+        ".summary-box",
+        ".breadcrumb"
+      ],
+      "structure_class": "archive-publication-layout",
+      "transformation": "Composite of short federal public-domain policy passages in a locally authored minimal #report wrapper preserving the shipped EveryCRS selectors; no EveryCRS prose or assets copied. The local selection, paraphrase, and arrangement are dedicated under CC0-1.0.",
+      "underlying_license": "LicenseRef-US-Government-Work",
+      "underlying_license_evidence_urls": [
+        "https://www.govinfo.gov/about/policies",
+        "https://www.whitehouse.gov/copyright/",
+        "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+      ]
+    },
+    {
+      "attribution": "National Aeronautics and Space Administration and United States Government source text; locally authored GovInfo hearing layout",
+      "content_selector": null,
+      "content_sources": [
+        "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+        "https://www.whitehouse.gov/copyright/"
+      ],
+      "expected_title": "NASA’s Fiscal Year 2016 Budget Request — hearing layout fixture",
+      "forbidden_markers": [
+        "GovInfo congressional hearing navigation",
+        "Browse hearings and committee prints"
+      ],
+      "kind": "html",
+      "layout_reference_url": "https://www.govinfo.gov/content/pkg/CHRG-114shrg98478/html/CHRG-114shrg98478.htm",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "path": "html/govinfo-hearing-layout.html",
+      "required_markers": [
+        "PREPARED STATEMENT OF HON. CHARLES F. BOLDEN, JR.",
+        "NASA content generally is not subject to copyright in the United States"
+      ],
+      "retrieved": "2026-08-19",
+      "score_bearing": true,
+      "sha256": "63c6b2a905662a575fb2e2828d3a196b9dffd167087fa1f2b8a85dc949e971c3",
+      "source_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+      "strip_selectors": [
+        "nav",
+        "header",
+        "footer",
+        ".site-header",
+        ".site-footer"
+      ],
+      "structure_class": "archive-publication-layout",
+      "transformation": "Uses only federal public-domain policy text in a locally authored preformatted hearing-layout reduction; the official hearing heading is retained only as a structural marker, with no private-witness testimony or exhibit. The local selection, paraphrase, and arrangement are dedicated under CC0-1.0.",
+      "underlying_license": "LicenseRef-US-Government-Work",
+      "underlying_license_evidence_urls": [
+        "https://www.govinfo.gov/about/policies",
+        "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+        "https://www.whitehouse.gov/copyright/"
+      ]
+    },
+    {
+      "attribution": "SETEC dependency-evaluation failure fixture",
+      "content_selector": "main",
+      "expected_title": null,
+      "forbidden_markers": [],
+      "kind": "html",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "path": "html/empty.html",
+      "required_markers": [],
+      "retrieved": "2026-08-19",
+      "score_bearing": false,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_url": "https://github.com/anotherpanacea-eng/setec-voiceprint/issues/396",
+      "strip_selectors": [
+        ".comments",
+        ".comment-list",
+        ".comment-respond",
+        "#comments",
+        ".related-posts",
+        ".related",
+        ".post-footer",
+        ".entry-footer",
+        ".sharedaddy",
+        ".jp-relatedposts",
+        ".author-bio",
+        ".subscription-widget",
+        ".subscriber-content",
+        ".post-meta-share"
+      ],
+      "structure_class": "failure-only",
+      "transformation": "Purpose-built empty fail-soft input; dedicated to the public domain under CC0-1.0."
+    },
+    {
+      "attribution": "SETEC dependency-evaluation failure fixture",
+      "content_selector": "main",
+      "expected_title": "Malformed fixture",
+      "forbidden_markers": [],
+      "kind": "html",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "path": "html/malformed.html",
+      "required_markers": [],
+      "retrieved": "2026-08-19",
+      "score_bearing": false,
+      "sha256": "97a5c10b3a1f6b8d4b4f7243f1ec152386ef7954543c0694359333eae481544b",
+      "source_url": "https://github.com/anotherpanacea-eng/setec-voiceprint/issues/396",
+      "strip_selectors": [
+        ".comments",
+        ".comment-list",
+        ".comment-respond",
+        "#comments",
+        ".related-posts",
+        ".related",
+        ".post-footer",
+        ".entry-footer",
+        ".sharedaddy",
+        ".jp-relatedposts",
+        ".author-bio",
+        ".subscription-widget",
+        ".subscriber-content",
+        ".post-meta-share"
+      ],
+      "structure_class": "failure-only",
+      "transformation": "Purpose-built unclosed-tag fail-soft input; dedicated to the public domain under CC0-1.0."
+    },
+    {
+      "attribution": "National Aeronautics and Space Administration; reduced RSS fixture by the SETEC evaluation",
+      "expected_items": [
+        {
+          "body_html": "<p>NASA conducts science missions around the world and provides information about agency activities for educational and informational use.</p>",
+          "date": "2025-08-19",
+          "is_paid": false,
+          "link": "https://www.nasa.gov/news-release/nasa-round-the-world-science-mission-stops-in-new-zealand/",
+          "raw_byte_length": 142,
+          "title": "NASA Round-the-World Science Mission Stops in New Zealand"
+        },
+        {
+          "body_html": "<p>NASA content generally is not subject to copyright in the United States, but notices identify material owned by other people or organizations.</p>",
+          "date": "2025-08-18",
+          "is_paid": false,
+          "link": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "raw_byte_length": 149,
+          "title": "NASA Media Usage Guidance"
+        },
+        {
+          "body_html": "<p>NASA content generally is not subject to copyright in the United States, but notices identify material owned by other people or organizations.</p>",
+          "date": "2025-08-18",
+          "is_paid": false,
+          "link": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+          "raw_byte_length": 149,
+          "title": "NASA Media Usage Guidance (duplicate link)"
+        }
+      ],
+      "format": "rss",
+      "kind": "feed",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "path": "feeds/nasa-news-rss.xml",
+      "retrieved": "2026-08-19",
+      "sha256": "28f0fbfc4647e7700d242480641e7707fb8832e7ac41dc061c06151be9a1fb78",
+      "source_type": "wordpress",
+      "source_url": "https://www.nasa.gov/news-release/feed/",
+      "transformation": "Reduced to two text-only federal entries and one deliberate duplicate-link copy to measure deduplication; no image, logo, caption, or third-party work retained. The local paraphrase and feed arrangement are dedicated under CC0-1.0.",
+      "underlying_license": "LicenseRef-US-Government-Work",
+      "underlying_license_evidence_url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+    },
+    {
+      "attribution": "U.S. Geological Survey; reduced Atom fixture by the SETEC evaluation",
+      "expected_items": [
+        {
+          "body_html": "<p>Magnitude 2.4 earthquake event information from the U.S. Geological Survey.</p>",
+          "date": "2025-08-19",
+          "is_paid": false,
+          "link": "https://earthquake.usgs.gov/earthquakes/eventpage/fixture-two",
+          "raw_byte_length": 82,
+          "title": "M 2.4 — Alaska"
+        },
+        {
+          "body_html": "<p>Magnitude 1.8 earthquake event information from the U.S. Geological Survey.</p>",
+          "date": "2025-08-19",
+          "is_paid": false,
+          "link": "https://earthquake.usgs.gov/earthquakes/eventpage/fixture-one",
+          "raw_byte_length": 82,
+          "title": "M 1.8 — California"
+        }
+      ],
+      "format": "atom",
+      "kind": "feed",
+      "license": "CC0-1.0",
+      "license_evidence_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "path": "feeds/usgs-earthquakes.atom",
+      "retrieved": "2026-08-19",
+      "sha256": "332ec6d77f831ce176e798b603a2c58ca3b1ac0692e12c608deb783945f1593a",
+      "source_type": "wordpress",
+      "source_url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.atom",
+      "transformation": "Reduced to two synthetic factual event entries in the official Atom field layout; ordering is intentionally reverse lexical to expose order normalization; no maps or linked-page content retained. The local synthetic text and feed arrangement are dedicated under CC0-1.0.",
+      "underlying_license": "LicenseRef-US-Government-Work",
+      "underlying_license_evidence_url": "https://www.usgs.gov/data-management/data-licensing"
+    }
+  ],
+  "license_notes": {
+    "LicenseRef-US-Government-Work": "Only works prepared by United States Government officers or employees as part of official duties are treated as public domain under 17 U.S.C. 105. Third-party works, logos, insignia, publicity rights, and linked content are excluded.",
+    "PSF-2.0": "The Python fixture retains the PSF copyright notice, the operative license grant and conditions, and a summary of the structural shortening."
+  },
+  "normalization": "UTF-8; marker checks use Unicode NFC after CRLF-to-LF normalization and whitespace-run collapse, with case preserved.",
+  "schema": "setec-dependency-fixtures/1"
+}

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>NASA News Releases — reduced public-domain fixture</title>
+    <link>https://www.nasa.gov/news-release/feed/</link>
+    <description>Minimal structural reduction for offline parser evaluation.</description>
+    <item>
+      <title>NASA Round-the-World Science Mission Stops in New Zealand</title>
+      <link>https://www.nasa.gov/news-release/nasa-round-the-world-science-mission-stops-in-new-zealand/</link>
+      <guid>https://www.nasa.gov/news-release/nasa-round-the-world-science-mission-stops-in-new-zealand/</guid>
+      <pubDate>Tue, 19 Aug 2025 14:00:00 +0000</pubDate>
+      <content:encoded><![CDATA[<p>NASA conducts science missions around the world and provides information about agency activities for educational and informational use.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>NASA Media Usage Guidance</title>
+      <link>https://www.nasa.gov/nasa-brand-center/images-and-media/</link>
+      <guid>https://www.nasa.gov/nasa-brand-center/images-and-media/</guid>
+      <pubDate>Mon, 18 Aug 2025 13:00:00 +0000</pubDate>
+      <content:encoded><![CDATA[<p>NASA content generally is not subject to copyright in the United States, but notices identify material owned by other people or organizations.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>NASA Media Usage Guidance (duplicate link)</title>
+      <link>https://www.nasa.gov/nasa-brand-center/images-and-media/</link>
+      <guid>urn:setec:duplicate:nasa-media-policy</guid>
+      <pubDate>Mon, 18 Aug 2025 13:00:00 +0000</pubDate>
+      <content:encoded><![CDATA[<p>NASA content generally is not subject to copyright in the United States, but notices identify material owned by other people or organizations.</p>]]></content:encoded>
+    </item>
+  </channel>
+</rss>

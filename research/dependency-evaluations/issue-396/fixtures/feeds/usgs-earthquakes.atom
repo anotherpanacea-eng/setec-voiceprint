@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>USGS Earthquake Hazards Program — reduced public-domain fixture</title>
+  <id>https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.atom</id>
+  <updated>2025-08-19T14:30:00Z</updated>
+  <link rel="self" href="https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.atom"/>
+  <entry>
+    <title>M 2.4 — Alaska</title>
+    <id>urn:usgs-earthquake:fixture-two</id>
+    <updated>2025-08-19T14:20:00Z</updated>
+    <link rel="alternate" href="https://earthquake.usgs.gov/earthquakes/eventpage/fixture-two"/>
+    <content type="html">&lt;p&gt;Magnitude 2.4 earthquake event information from the U.S. Geological Survey.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <title>M 1.8 — California</title>
+    <id>urn:usgs-earthquake:fixture-one</id>
+    <updated>2025-08-19T14:10:00Z</updated>
+    <link rel="alternate" href="https://earthquake.usgs.gov/earthquakes/eventpage/fixture-one"/>
+    <content type="html">&lt;p&gt;Magnitude 1.8 earthquake event information from the U.S. Geological Survey.&lt;/p&gt;</content>
+  </entry>
+</feed>
