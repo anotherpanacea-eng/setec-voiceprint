@@ -154,6 +154,7 @@ def test_seeded_entries_use_status_todo():
                 f"{entry.get('id')}: seeded entries must use "
                 f"status: todo; got {entry.get('status')!r}"
             )
+            assert entry.get("todo_reason") == sc.DEFAULT_TODO_REASON
 
 
 def test_validate_r1_bundle_is_the_shared_single_source():

@@ -49,8 +49,10 @@ Usage:
 Exemptions:
 
     Entries with `status: todo` are allowed to skip *content-quality*
-    checks (use_when, do_not_use_when must be filled). The linter
-    still requires them to exist and to point at a real script.
+    checks (use_when, do_not_use_when must be filled), but must carry a
+    specific, non-placeholder `todo_reason`. Non-todo entries must not
+    retain that field. The linter still requires todo entries to exist
+    and point at a real script.
     Hand-curated entries (status != todo) must have non-TODO content
     in their use_when / do_not_use_when blocks.
 
@@ -89,6 +91,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 from r1_bundle import validate_r1_bundle  # type: ignore  # noqa: E402
+from seed_capabilities import DEFAULT_TODO_REASON  # noqa: E402
 
 # R5 contract-fixture drift (Check 9). Import the generator so the gate and
 # the generator share one definition of "what a golden should be" — they can
@@ -107,7 +110,7 @@ SKIP_FILE_PATTERNS = [
 
 @dataclass
 class Violation:
-    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo" | "fixture_drift" | "invalid_examples_shape"
+    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "todo_reason" | "stable_is_todo" | "fixture_drift" | "invalid_examples_shape"
     where: str  # path or entry id
     detail: str
 
@@ -312,9 +315,36 @@ def check_drift(
     # Check 4: hand-curated entries (status != todo) must have non-TODO
     # content in their use_when / do_not_use_when / family fields.
     for entry in manifest_entries:
-        if entry.get("status") == "todo":
-            continue
+        status = entry.get("status")
         eid = entry.get("id") or "(no id)"
+        reason = entry.get("todo_reason")
+        if status == "todo":
+            normalized = reason.strip().casefold() if isinstance(reason, str) else ""
+            placeholder = re.match(
+                r"^(?:todo|tbd|unknown|n/a)(?:$|[^a-z0-9])",
+                normalized,
+            )
+            seeded_default = normalized == DEFAULT_TODO_REASON.casefold()
+            if not normalized or placeholder or seeded_default:
+                report.violations.append(Violation(
+                    kind="todo_reason",
+                    where=eid,
+                    detail=(
+                        "status is 'todo' but `todo_reason` is missing, a "
+                        "placeholder, or the seeder default. Record the bounded "
+                        "reason this capability remains hidden."
+                    ),
+                ))
+            continue
+        if "todo_reason" in entry:
+            report.violations.append(Violation(
+                kind="todo_reason",
+                where=eid,
+                detail=(
+                    f"status is {status!r} but `todo_reason` is still present. "
+                    "Remove the deferral reason when promoting the capability."
+                ),
+            ))
         for field_name in ("family",):
             value = entry.get(field_name)
             if value == "TODO" or value is None:

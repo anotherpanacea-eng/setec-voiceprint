@@ -126,6 +126,7 @@ def test_todo_status_does_not_trip_content_check():
                     "script_path": real_script,
                     "surface": "narrative_decision_audit",
                     "status": "todo",
+                    "todo_reason": "Evidence maturity has not been reviewed.",
                     "family": "TODO",
                     "use_when": ["TODO"],
                     "do_not_use_when": ["TODO"],
@@ -139,6 +140,59 @@ def test_todo_status_does_not_trip_content_check():
         # should appear. todo_content must NOT appear.
         kinds = {v.kind for v in report.violations}
         assert "todo_content" not in kinds
+
+
+def test_todo_reason_is_required_and_placeholders_are_rejected():
+    if yaml is None:
+        return
+    real_script = "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+    for reason in (
+        None, "", "  ", "TODO", "tbd", "Unknown", "N/A",
+        "TODO: review later", "TBD pending audit", "unknown - investigate",
+        "TODO/review later", "TODO(review later)", "TODO—review",
+        "TBD_review", "UNKNOWN_review",
+        ccd.DEFAULT_TODO_REASON,
+    ):
+        with tempfile.TemporaryDirectory() as td:
+            manifest = Path(td) / "capabilities.yaml"
+            entry = {
+                "id": "narrative_decision_audit",
+                "script_path": real_script,
+                "surface": "narrative_decision_audit",
+                "status": "todo",
+                "family": "TODO",
+                "use_when": ["TODO"],
+                "do_not_use_when": ["TODO"],
+                "compute": {"tier": "api_llm"},
+            }
+            if reason is not None:
+                entry["todo_reason"] = reason
+            _write_yaml(manifest, {"schema_version": "0.4.0", "entries": [entry]})
+            kinds = {v.kind for v in ccd.check_drift(manifest).violations}
+            assert "todo_reason" in kinds, reason
+
+
+def test_promoted_entry_must_remove_todo_reason():
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.4.0",
+            "entries": [{
+                "id": "narrative_decision_audit",
+                "script_path": "plugins/setec-voiceprint/scripts/narrative_decision_audit.py",
+                "surface": "narrative_decision_audit",
+                "status": "heuristic",
+                "todo_reason": "stale deferral",
+                "family": "narrative",
+                "use_when": ["reviewing narrative decisions"],
+                "do_not_use_when": ["no prose is available"],
+                "compute": {"tier": "api_llm"},
+            }],
+        })
+        kinds = {v.kind for v in ccd.check_drift(manifest).violations}
+        assert "todo_reason" in kinds
 
 
 def test_surface_drift_detected():

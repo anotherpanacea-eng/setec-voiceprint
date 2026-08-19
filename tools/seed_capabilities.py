@@ -14,6 +14,7 @@ Auto-extracted fields:
   * surface — the `TASK_SURFACE` value
   * status — set to `todo` for every seeded entry so the linter
     can distinguish auto-seeded from hand-curated
+  * todo_reason — a bootstrap marker that the drift gate intentionally rejects
   * purpose — first paragraph of the module docstring, lightly cleaned
   * compute.tier — heuristic from imports (api_llm > surprisal > ocr
     > acquisition > calibration > optional > core)
@@ -25,10 +26,11 @@ Hand-curated fields left as TODO sentinels for the operator to fill:
   * family, use_when, do_not_use_when, inputs, outputs, registers,
     examples, references, cost_note, length_floor_words
 
-After seeding, operators promote `status: todo` → `status:
-<calibration-status>` by filling in the hand-curated fields. The
-drift linter rejects PRs that touch a TODO-status script without
-promoting its entry.
+After seeding, operators either promote `status: todo` → `status:
+<calibration-status>` by filling in the hand-curated fields, or replace
+`todo_reason` with the capability-specific bounded gate that keeps it hidden.
+The emitted default is deliberately not CI-valid: accepting the seeder's own
+marker would make the reason check circular.
 
 Usage:
 
@@ -50,6 +52,11 @@ from _console import enable_utf8_stdio  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+
+DEFAULT_TODO_REASON = (
+    "Auto-seeded manifest; maturity and operator readiness not yet reviewed; "
+    "hidden pending per-capability audit."
+)
 
 SKIP_FILE_PATTERNS = [
     re.compile(r"^test_"),
@@ -262,7 +269,8 @@ def render_yaml(seeds: list[Seed]) -> str:
     out.append("#   - empirically_oriented: local experimentation")
     out.append("#   - literature_anchored: peer-reviewed anchor")
     out.append("#   - calibrated: corpus-tested with FPR/TPR metrics")
-    out.append("#   - structural_only: feeds downstream signals, not user-facing")
+    out.append("#   - structural_only: non-inferential substrate or operator tooling;")
+    out.append("#     calibration is not applicable; may be user-facing")
     out.append("#")
     out.append("# dependencies vocabulary (v0.2.0):")
     out.append("#   - python:          required Python packages. Their absence means")
@@ -307,6 +315,7 @@ def render_yaml(seeds: list[Seed]) -> str:
         out.append(f"    script_path: {seed.script_path}")
         out.append(f"    surface: {seed.surface}")
         out.append("    status: todo")
+        out.append("    todo_reason: " + _yaml_escape(DEFAULT_TODO_REASON))
         out.append("    family: TODO")
         out.append("    purpose: " + _yaml_escape(seed.purpose))
         out.append("    use_when:")

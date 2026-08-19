@@ -8,7 +8,8 @@
   "consumers": [],
   "dependencies": {
     "python": [
-      "pypdf"
+      "pypdf",
+      "requests"
     ]
   },
   "do_not_use_when": [
@@ -37,7 +38,7 @@
     "expert_affidavit"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_pdf_urls.py",
-  "status": "todo",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
     "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs"

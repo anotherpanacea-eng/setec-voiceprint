@@ -2,7 +2,7 @@ entries:
 - id: acquire_imessage_sent
   script_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
   surface: voice_coherence_acquisition
-  status: todo
+  status: structural_only
   handoff: none
   consumers:
   - acquire_imessage_sent_atomic

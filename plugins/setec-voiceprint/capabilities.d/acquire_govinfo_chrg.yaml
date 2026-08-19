@@ -2,7 +2,7 @@ entries:
 - id: acquire_govinfo_chrg
   script_path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
   surface: voice_coherence_acquisition
-  status: todo
+  status: structural_only
   handoff: none
   consumers: []
   family: acquisition
@@ -30,6 +30,7 @@ entries:
   dependencies:
     python:
     - bs4
+    - requests
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md

@@ -2,7 +2,7 @@
   "id": "acquire_gmail_sent",
   "script_path": "plugins/setec-voiceprint/scripts/acquire_gmail_sent.py",
   "surface": "voice_coherence_acquisition",
-  "status": "todo",
+  "status": "structural_only",
   "handoff": "none",
   "consumers": [
     "gmail_locator_map"
