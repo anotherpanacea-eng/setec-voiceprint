@@ -519,9 +519,13 @@ def recommend(
     manifest: dict[str, Any],
     available_only: bool = False,
 ) -> list[tuple[str, dict[str, Any], list[str]]]:
-    """Return a list of (id, entry, matched_keywords) tuples ranked
-    by curated-route match strength, then by free-text match against
-    use_when text."""
+    """Return analytical recommendations ranked by curated/free-text match.
+
+    Acquisition is intentionally browse-only through ``list`` / ``show``.
+    Recommending private-source or network tools from prose intent is too
+    ambiguous to be a safe default, so this router excludes the entire
+    ``voice_coherence_acquisition`` surface.
+    """
     normalized = _normalize(situation)
     all_entries = {e.get("id"): e for e in entries(manifest)}
     matched: dict[str, list[str]] = {}
@@ -539,6 +543,8 @@ def recommend(
     # Free-text fallback: per-entry use_when keyword presence.
     for entry_id, entry in all_entries.items():
         if entry.get("status") == "todo":
+            continue
+        if entry.get("surface") == "voice_coherence_acquisition":
             continue
         use_when = " ".join(entry.get("use_when") or [])
         purpose = entry.get("purpose") or ""

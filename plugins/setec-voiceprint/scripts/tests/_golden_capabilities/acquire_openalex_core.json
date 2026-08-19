@@ -7,7 +7,9 @@
   },
   "consumers": [],
   "dependencies": {
-    "python": []
+    "python": [
+      "requests"
+    ]
   },
   "do_not_use_when": [
     "the discipline filter would admit STEM lab reports (tune --openalex-filter)"
@@ -34,7 +36,7 @@
     "scholarly_article"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_openalex_core.py",
-  "status": "todo",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
     "building the scholarly_article population baseline from open-access argumentative-discipline articles"

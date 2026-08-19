@@ -82,6 +82,43 @@ def test_tooling_grouping():
     assert gcr.derive(_entry("variance_audit"))["is_tooling"] is False
 
 
+def test_curated_acquisition_rows_show_real_source_and_locality():
+    gmail = gcr.derive(_entry("acquire_gmail_sent"))
+    assert gmail["readiness"] == "Operational tooling (calibration N/A)"
+    assert gmail["is_tooling"] is True
+    assert any("Google Takeout" in item for item in gmail["supplies"])
+    assert gmail["hardware"] == "CPU + local I/O"
+
+    courtlistener = gcr.derive(_entry("acquire_courtlistener"))
+    assert any("CourtListener" in item for item in courtlistener["supplies"])
+    assert courtlistener["hardware"] == "CPU + network"
+
+    # The source list is local, but the actual PDFs are fetched over the network.
+    assert gcr.derive(_entry("acquire_pdf_urls"))["hardware"] == "CPU + network"
+
+    near_dup = gcr.derive(_entry("near_dup_dedup"))
+    assert len(near_dup["supplies"]) == len(set(near_dup["supplies"]))
+    assert any("acquisition manifest" in item for item in near_dup["supplies"])
+    assert not any("labeled corpus" in item for item in near_dup["supplies"])
+
+    remediation = gcr.derive(_entry("passage_remediation"))
+    assert not any("labeled corpus" in item for item in remediation["supplies"])
+
+    pipeline = gcr.derive(_entry("gmail_author_pipeline"))
+    assert "--request (required)" in pipeline["supplies"]
+    assert pipeline["hardware"] == "CPU + local I/O"
+    assert near_dup["hardware"] == "CPU + local I/O"
+
+
+def test_structured_non_corpus_required_inputs_are_preserved():
+    export = gcr.derive(_entry("author_corpus_export"))
+    for flag in (
+        "--source-manifest", "--register-map", "--allowed-ai-status",
+        "--persona", "--hmac-key", "--output-dir",
+    ):
+        assert f"{flag} (required)" in export["supplies"]
+
+
 def test_block_has_both_tables_and_legend():
     block = gcr.render_block(gcr.load_manifest())
     assert "### Evidence surfaces (run on a draft)" in block

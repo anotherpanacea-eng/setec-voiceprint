@@ -74,6 +74,11 @@ END_MARKER = "<!-- END GENERATED -->"
 
 # status → (short label, what it licenses). Ordered weakest → strongest.
 STATUS_READINESS: dict[str, tuple[str, str]] = {
+    "structural_only": (
+        "Operational tooling (calibration N/A)",
+        "Non-inferential substrate or operator tooling. It may be user-facing, "
+        "but it does not emit a thresholded claim requiring calibration.",
+    ),
     "heuristic": (
         "Heuristic (uncalibrated)",
         "Shipped, not yet calibrated. Treat output as candidate-surfacing, not a score.",
@@ -107,7 +112,7 @@ TIER_HARDWARE: dict[str, str] = {
 
 # Tooling surfaces render in a second table (they help build/validate the
 # runway rather than produce evidence about a draft).
-TOOLING_SURFACES = {"validation", "setup"}
+TOOLING_SURFACES = {"validation", "setup", "voice_coherence_acquisition"}
 
 # Deterministic display order; unknown ids sort after, alphabetically.
 DISPLAY_ORDER = [
@@ -140,8 +145,8 @@ def _friendly_input(raw: str) -> str:
         return "pre-computed judge feature manifest"
     if "diagnostic" in low:
         return "diagnostic JSON from a prior Surface 1/2 run"
-    if "manifest" in low:
-        return "labeled corpus + valid `corpus_manifest.jsonl`"
+    if "corpus_manifest" in low or "corpus manifest" in low:
+        return "valid `corpus_manifest.jsonl`"
     # strip leading CLI flag noise and trailing parentheticals for prose use
     cleaned = re.sub(r"^-+\S+\s*", "", raw).strip()
     return cleaned or raw.strip()
@@ -253,6 +258,18 @@ def _normalize_inputs(entry: dict[str, Any]) -> tuple[str, list[str], list[str]]
             corpus_str = "--manifest labeled corpus"
         (required if corpus_required else optional).append(corpus_str)
 
+    # Preserve every other structured required input. The matrix is an
+    # operator runway, so discarding required non-corpus flags (request files,
+    # maps, policy choices, output destinations) makes a runnable tool look as
+    # though it needs nothing.
+    required.extend(
+        f for f, req in flags
+        if req
+        and f.startswith("--")
+        and f not in _CORPUS_FLAGS
+        and f not in _NON_INPUT_FLAGS
+    )
+
     # Judge-manifest is an optional pre-computed feature source (api_llm tier).
     if any(f == "--judge-manifest" for f, _ in flags):
         optional.append("--judge-manifest with pre-computed feature values")
@@ -289,8 +306,17 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
         if "baseline" in label and size_hint:
             label += f" ({size_hint})"
         supplies.append(f"{label} (required)")
+    # Acquisition entries use the legacy mapping shape and put their source in
+    # `inputs.target`. That source is always required even when it is not a
+    # baseline/manifest corpus.
+    if surface == "voice_coherence_acquisition" and target:
+        supplies.append(f"{_friendly_input(target)} (required)")
     # Target-as-corpus cases (no explicit `required` list, requirement is the target).
-    if not required and needs_corpus:
+    if (
+        surface != "voice_coherence_acquisition"
+        and not required
+        and needs_corpus
+    ):
         if "corpus manifest" in target.lower() or "corpus_manifest" in target.lower():
             supplies.append("labeled human/AI corpus + `corpus_manifest.jsonl` (required)")
         elif "manifest" in target.lower():
@@ -323,6 +349,16 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
 
     readiness_label = STATUS_READINESS.get(status, (status or "—", ""))[0]
     hardware = TIER_HARDWARE.get(tier, tier)
+    if tier == "acquisition":
+        # Network acquisition is declared structurally by its required client
+        # dependency. Acquisition-tier tools without one operate on local
+        # files/manifests even when they dispatch expensive local work.
+        network_clients = {"requests", "boto3"}
+        hardware = (
+            "CPU + network"
+            if network_clients.intersection(req_pkgs)
+            else "CPU + local I/O"
+        )
     if (
         tier == "core"
         and not opt_pkgs
@@ -410,7 +446,10 @@ def render_block(manifest: dict[str, Any]) -> str:
     parts.append(_render_table(tooling))
     parts.append("")
     parts.append("**Readiness legend.**")
-    for status in ("heuristic", "empirically_oriented", "literature_anchored", "calibrated"):
+    for status in (
+        "structural_only", "heuristic", "empirically_oriented",
+        "literature_anchored", "calibrated",
+    ):
         label, licenses = STATUS_READINESS[status]
         parts.append(f"- **{label}** — {licenses}")
     return "\n".join(parts)

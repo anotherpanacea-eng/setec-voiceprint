@@ -3,6 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
   surface: calibration
   status: todo
+  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
   handoff: none
   # consumers: threshold source — emits the operating point operators pass to
   # binoculars_audit. Also surfaced by skills: setec, setup.

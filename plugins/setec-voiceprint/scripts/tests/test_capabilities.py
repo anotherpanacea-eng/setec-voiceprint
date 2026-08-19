@@ -74,6 +74,22 @@ def test_filter_excludes_todo_by_default():
         )
 
 
+def test_curated_acquisition_cohort_is_discoverable_but_atomic_wip_is_hidden():
+    ids = {e["id"] for e in cap.filter_entries(_manifest()["entries"])}
+    assert {
+        "acquire_courtlistener", "acquire_everycrsreport", "acquire_gmail_sent",
+        "acquire_govinfo_chrg", "acquire_imessage_sent", "acquire_mirrulations",
+        "acquire_openalex_core", "acquire_pdf_urls",
+    } <= ids
+    assert "acquire_imessage_sent_atomic" not in ids
+
+
+def test_every_todo_has_a_bounded_reason():
+    todos = [e for e in _manifest()["entries"] if e.get("status") == "todo"]
+    assert todos
+    assert all(str(e.get("todo_reason", "")).strip() for e in todos)
+
+
 def test_filter_includes_todo_when_asked():
     m = _manifest()
     out = cap.filter_entries(m["entries"], include_todo=True)
@@ -334,6 +350,41 @@ def test_recommend_excludes_todo_entries():
         assert entry.get("status") != "todo", (
             f"todo entry leaked into recommendations: {entry_id}"
         )
+
+
+def test_recommend_is_analytical_only_and_never_routes_acquisition():
+    m = _manifest()
+    queries = (
+        "reviewing a policy brief for argument quality",
+        "collect evidence about argument quality in a policy brief",
+        "build a policy brief corpus from EveryCRSReport",
+        "building a policy_brief population baseline from public-domain CRS reports",
+        "get CRS reports from EveryCRSReport",
+        "get an argument quality review of this legal brief",
+        "get a structural analysis of this regulatory comment",
+        "pull together an argument review of these academic papers",
+        "get feedback on this CourtListener brief",
+        "pull citations from OpenAlex for a literature review",
+        "download regulatory comments into a corpus",
+        "build a corpus of academic papers",
+        "collect hearing transcripts for a voice baseline",
+        "fetch sent Gmail from my Takeout",
+    )
+    for query in queries:
+        assert all(
+            entry.get("surface") != "voice_coherence_acquisition"
+            for _, entry, _ in cap.recommend(query, manifest=m)
+        ), query
+
+
+def test_promoted_network_acquirers_declare_requests():
+    by_id = {e["id"]: e for e in _manifest()["entries"]}
+    for eid in {
+        "acquire_courtlistener", "acquire_everycrsreport",
+        "acquire_govinfo_chrg", "acquire_openalex_core", "acquire_pdf_urls",
+    }:
+        required = (by_id[eid].get("dependencies") or {}).get("python") or []
+        assert "requests" in required, eid
 
 
 # ---------- availability ------------------------------------------

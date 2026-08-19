@@ -30,7 +30,13 @@ drop-in directory; all consumers are order-independent or sort).
 - `empirically_oriented` — local experimentation
 - `literature_anchored` — peer-reviewed anchor
 - `calibrated` — corpus-tested with FPR/TPR metrics
-- `structural_only` — feeds downstream signals, not user-facing
+- `structural_only` — non-inferential substrate or operator tooling;
+  calibration is not applicable, and the capability may be user-facing
+
+Every `todo` entry must carry a non-placeholder `todo_reason` explaining why it
+remains hidden. The auto-seeder's default marker is itself a placeholder and is
+rejected by the drift gate; replace it with the concrete unresolved contract or
+evidence gate. Promoted entries must remove that field.
 
 Do not let fragments drift from the linter at
 `tools/check_capabilities_drift.py` (the `surface` field must match the

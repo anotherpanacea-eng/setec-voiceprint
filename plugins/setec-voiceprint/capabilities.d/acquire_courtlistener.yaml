@@ -2,7 +2,7 @@ entries:
 - id: acquire_courtlistener
   script_path: plugins/setec-voiceprint/scripts/acquire_courtlistener.py
   surface: voice_coherence_acquisition
-  status: todo
+  status: structural_only
   handoff: none
   consumers: []
   family: acquisition
@@ -32,7 +32,8 @@ entries:
   - legal_brief
   - expert_affidavit
   dependencies:
-    python: []
+    python:
+    - requests
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md

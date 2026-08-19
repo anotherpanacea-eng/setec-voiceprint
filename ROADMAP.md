@@ -2,6 +2,19 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-08-19)
+
+- **Capability-status audit (#196) completed.** The manifest now distinguishes
+  eight fully curated acquisition tools from the auto-seeded backlog: CourtListener,
+  EveryCRSReport, Gmail Takeout, GovInfo CHRG, legacy sent iMessage, Mirrulations,
+  OpenAlex/CORE, and direct-PDF acquisition are `structural_only` operator tooling
+  (non-inferential; calibration does not apply). The explicitly WIP atomic iMessage
+  contract remains hidden. The residual set is bounded rather than an unexamined
+  shipped-code count: 46 fragments name the exact unresolved auto-seeded operator
+  fields, while the atomic entry names its live-smoke/durability/consumer gates.
+  The drift gate rejects the seeder default. Promotion changes capability discovery
+  only—the acquisition runtimes and their privacy/provenance gates are unchanged.
+
 ## Status reconciliation (2026-08-02)
 
 - **Locked normalized S5 producer surface for Voicewright Spec 82.**

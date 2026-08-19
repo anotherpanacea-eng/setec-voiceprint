@@ -3,6 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/confounder_audit.py
   surface: validation
   status: todo
+  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
   handoff: none
   # consumers: named in the SHIPPED mimicry_cosplay_audit claim_license contract
   # fixture.
