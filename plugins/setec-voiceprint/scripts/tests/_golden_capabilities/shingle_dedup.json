@@ -23,7 +23,7 @@
   "inputs": {
     "target": "strict UTF-8 staged-descriptor JSONL plus local bounded UTF-8 documents; build-index writes a named index and checkpoint directory, query-doc reads an exact-pinned index plus a named query document and writes a report, and batch-report reads an exact-pinned index and writes a report/checkpoint.",
     "required": [
-      "explicit staged-descriptor JSONL or exact-pinned local index, as required by the selected mode"
+      "Mode-specific local inputs: explicit staged-descriptor JSONL for build-index; exact-pinned local index plus a named query document and query id for query-doc; exact-pinned local index for batch-report."
     ],
     "optional": [
       "--resume for a compatible immutable checkpoint directory"

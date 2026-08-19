@@ -2,7 +2,7 @@ entries:
 - id: acquire_pdf_urls
   script_path: plugins/setec-voiceprint/scripts/acquire_pdf_urls.py
   surface: voice_coherence_acquisition
-  status: todo
+  status: structural_only
   handoff: none
   consumers: []
   family: acquisition
@@ -31,6 +31,7 @@ entries:
   dependencies:
     python:
     - pypdf
+    - requests
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md

@@ -3,6 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
   surface: voice_coherence_acquisition
   status: todo
+  todo_reason: "WIP atomic acquisition remains hidden pending the owner-authorized live smoke, resumable-run durability, and paired-consumer contract gates."
   handoff: none
   consumers:
   - author_corpus_export

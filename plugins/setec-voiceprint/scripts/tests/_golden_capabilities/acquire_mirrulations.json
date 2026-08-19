@@ -36,7 +36,7 @@
     "regulatory_comment"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_mirrulations.py",
-  "status": "todo",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
     "building the regulatory_comment population baseline from pre-extracted comment-attachment text in the public Mirrulations bucket"

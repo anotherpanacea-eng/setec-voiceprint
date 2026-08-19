@@ -35,6 +35,7 @@
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_blog.py",
   "status": "todo",
+  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
   "surface": "voice_coherence_acquisition",
   "use_when": [
     "TODO"

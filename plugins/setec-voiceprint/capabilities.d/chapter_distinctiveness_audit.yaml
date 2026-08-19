@@ -3,6 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
   surface: smoothing_diagnosis
   status: todo
+  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
   handoff: none
   # consumers: no code importer; surfaced by skill: smoothing-diagnosis.
   consumers: []

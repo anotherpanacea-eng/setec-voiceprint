@@ -8,7 +8,8 @@
   "consumers": [],
   "dependencies": {
     "python": [
-      "bs4"
+      "bs4",
+      "requests"
     ]
   },
   "do_not_use_when": [
@@ -36,7 +37,7 @@
     "policy_brief"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_everycrsreport.py",
-  "status": "todo",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
     "building the policy_brief population baseline from public-domain CRS reports"

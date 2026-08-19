@@ -18,7 +18,10 @@ Each entry block carries the signal's metadata on a single line:
 - **literature_anchored** — Based on published metric behavior in peer-reviewed or recognized open-access work. Provenance cites the publication.
 - **empirically_oriented** — Based on local experimentation (`voice_profile.py` aggregation, internal fixture testing, the `references/calibration-findings-*.md` track). Provenance cites the local source.
 - **heuristic** — Plausible working value awaiting validation. Provenance is `null`. Default for new signals. The §5.4 calibration corpus track in `ROADMAP.md` is the named promotion path: `heuristic` → `calibrated` as corpus data lands.
-- **structural_only** — Feeds downstream signals; not thresholded directly (e.g., `function_word_ratio` feeds Burrows Delta).
+- **structural_only** — Non-inferential substrate for downstream work and not
+  thresholded directly (e.g., `function_word_ratio` feeds Burrows Delta). In the
+  capability registry this same status also covers operator tooling such as
+  acquisition: it can be user-facing, but it makes no calibration-maturity claim.
 
 **Length floors and dependencies** are noted per entry where they matter.
 
