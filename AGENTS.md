@@ -194,19 +194,27 @@ Worked example — `validation_harness` straddles the line:
   now emits a loud stderr warning naming the one-flag fix. (Within-CI resampling
   is still single-pass, but each CI is minutes, so a lost CI is bounded.)
 
-**Audit backlog** — full-corpus single-process surfaces to bring into
-compliance (tracked in #133; see that issue for the full 2026-06-14 audit):
+**2026-06-14 audit disposition (#133):** the three high-value audit
+remediations are complete.
+`validation_harness` warns when its opt-in `--metrics-cache` is absent (#211);
+single-process `check_corpus` can checkpoint and resume through the opt-in
+`--records-cache`, with content- and configuration-bound reuse (#212); and
+`calibration_survey.py` can checkpoint each completed signal through the opt-in
+`--survey-cache`, with exact compatibility/version checks (#213).
+Because all three cache paths remain opt-in, long runs must pass the applicable
+cache flag unless and until default-on behavior is chosen.
 
-- `validation_harness` metrics/bootstrap phase — checkpoint shipped; **opt-in**,
-  now with a discoverability warning. Open question: make `--metrics-cache` (and
-  the scoring cache) default-on rather than opt-in.
-- single-process `check_corpus` / `corpus_hygiene` at corpus scale — sharded
-  parity exists via `shard_runner`, but the default path is still uncheckpointed.
-- the standalone `calibration_survey.py` CLI (the bake-off driver) — corpus
-  scoring is cached, but the survey wrapper has no per-signal checkpoint.
-- when the `train_edit_magnitude` fine-tune loop is wired (currently a stub), it
-  must ship epoch-checkpoint + `--resume` from the start (GPU, hours).
-- any other surface that loads a full corpus into one process.
+What remains is deliberately trigger-bound rather than an active backlog:
+
+- Making the validation/scoring caches default-on is a separate product choice.
+- A crash inside one `derive_threshold` signal can still lose that signal's
+  bounded bootstrap work; the survey-level cache prevents completed signals
+  from being repeated, so no further checkpoint layer is planned now.
+- When the currently stubbed `train_edit_magnitude` fine-tune loop is wired, it
+  must ship epoch checkpoints and `--resume` from its first implementation.
+- RAID/MAGE-scale aggregators, adapters, extractors, and fetchers need their own
+  issue only when a real scale trigger makes their current bounded behavior a
+  long-running surface.
 
 ## Acquisition scripts (`acquire_*.py`)
 
