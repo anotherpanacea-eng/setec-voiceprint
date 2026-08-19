@@ -71,7 +71,16 @@ pypdf>=4.0
 # before the final JSONL manifest is committed. OPTIONAL within this tier:
 # the dedup pass is opt-in and lazy-imports datasketch, so base imports
 # stay clean and ordinary acquisition runs without it. Pulls numpy/scipy.
-datasketch>=1.6
+#
+# Upper bound (#396): the locked evaluation in
+# research/dependency-evaluations/issue-396/ showed that datasketch 2.0.0
+# changed the DEFAULT MinHash scheme, which changes signatures and the
+# resulting keep/drop outcomes relative to 1.6.5 on the same input. Because
+# this seam feeds a DESTRUCTIVE dedup decision, a silent major-version
+# upgrade would silently reinterpret which documents get dropped. Bound to
+# 1.x until that seam is exact-confirmed (#407); the bound is a stop-drift
+# measure, not a proof of equivalence across 1.x releases.
+datasketch>=1.6,<2.0
 
 # Optional: Wayback Machine access for shut-down blogs (Slate Star
 # Codex archive, defunct Substacks). The `wayback` package wraps the
