@@ -248,9 +248,12 @@ def evaluate_worker_result(
     truth, scores = exact_pair_oracle(records, threshold=threshold)
     oracle_groups = components(records, truth)
     oracle_drop = oracle_keep_drop(records, truth)
+    layer_names = ["raw_lsh", "estimated_pass", "co_cluster"]
+    if "exact_confirmed" in worker["layers"]:
+        layer_names.insert(2, "exact_confirmed")
     layers = {
         name: {pair(*row) for row in worker["layers"][name]}
-        for name in ("raw_lsh", "estimated_pass", "co_cluster")
+        for name in layer_names
     }
     result = {
         "layers": {name: layer_metrics(edges, truth) for name, edges in layers.items()},

@@ -20,12 +20,13 @@ Design:
   * **Model-free, opt-in.** This is an extra pass an operator runs on a staged
     manifest; the acquisition scripts do not call it automatically (their exact-
     hash dedup is unchanged). Invoke via the CLI or import `dedup_records`.
-  * **MinHash-LSH** (datasketch, MIT). Each document is shingled into
-    overlapping word k-grams, hashed into a MinHash signature, and indexed in an
-    LSH bucketed for a Jaccard threshold. Candidate near-dupe pairs are then
-    confirmed by their estimated Jaccard, and confirmed pairs are unioned into
-    clusters. O(n) index build + near-O(n) candidate lookup — it scales to a
-    corpus where an all-pairs cosine would not.
+  * **MinHash-LSH candidate generation** (datasketch, MIT). Each document is
+    shingled into overlapping word k-grams, hashed into a MinHash signature, and
+    indexed in an LSH bucketed for a Jaccard threshold. Every candidate edge is
+    then confirmed against the documents' exact normalized shingle sets before
+    it can join a cluster. LSH false negatives therefore remain possible — this
+    optional hygiene pass is not a proof that retained documents are unique —
+    but estimator drift cannot create a destructive false-positive edge.
   * **Deterministic representative.** Within a near-duplicate cluster the kept
     record is chosen by a stable rule (longest text, then lowest id) so a rerun
     on the same input drops the same records.
@@ -76,6 +77,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
@@ -105,6 +107,9 @@ TASK_SURFACE = "voice_coherence_acquisition"
 DEFAULT_NUM_PERM = 128
 DEFAULT_SHINGLE_SIZE = 5
 DEFAULT_THRESHOLD = 0.8
+DOCUMENT_NORMALIZATION = "near_dup_dedup.shingles/word-regex-lower-v1"
+MINHASH_SEED = 1
+DOCUMENT_INDEX_POLICY = "ephemeral-rebuild-only"
 
 # --- passage mode (spec 36) ---
 # Paragraphs below this many word tokens never enter the similarity index: they
@@ -342,6 +347,8 @@ class DedupResult:
     num_perm: int = DEFAULT_NUM_PERM
     shingle_size: int = DEFAULT_SHINGLE_SIZE
     total: int = 0
+    candidate_generation: dict[str, Any] = field(default_factory=dict)
+    exact_confirmation: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -354,6 +361,8 @@ class DedupResult:
             "threshold": self.threshold,
             "num_perm": self.num_perm,
             "shingle_size": self.shingle_size,
+            "candidate_generation": self.candidate_generation,
+            "exact_confirmation": self.exact_confirmation,
         }
 
 
@@ -369,11 +378,32 @@ def _require_datasketch():
     return MinHash, MinHashLSH
 
 
-def _build_minhash(MinHash, text: str, *, num_perm: int, k: int):
-    m = MinHash(num_perm=num_perm)
-    for sh in shingles(text, k=k):
+def _build_minhash(MinHash, shingle_set: set[str], *, num_perm: int):
+    m = MinHash(num_perm=num_perm, seed=MINHASH_SEED)
+    for sh in shingle_set:
         m.update(sh.encode("utf-8"))
     return m
+
+
+def _datasketch_version() -> str:
+    """Return the installed distribution identity for the JSON report."""
+    try:
+        return importlib.metadata.version("datasketch")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise RuntimeError(
+            "cannot bind the installed datasketch package identity; reinstall "
+            "from requirements-acquisition.txt"
+        ) from exc
+
+
+def _signature_identity(minhash: Any) -> dict[str, Any]:
+    """Record the determinants that make an LSH candidate run interpretable."""
+    return {
+        "package": "datasketch",
+        "package_version": _datasketch_version(),
+        "scheme": getattr(minhash, "scheme", "legacy"),
+        "seed": minhash.seed,
+    }
 
 
 def _pick_representative(
@@ -397,18 +427,18 @@ def dedup_records(
 ) -> DedupResult:
     """Find near-duplicate clusters in ``records`` and pick one keeper each.
 
-    ``records`` is an iterable of ``(id, text)``. Two documents are treated as
-    near-duplicates when their MinHash-estimated Jaccard similarity is at or
-    above ``threshold``. LSH buckets candidate pairs so this stays near-linear;
-    each candidate pair is confirmed by estimated Jaccard before it joins a
-    cluster (LSH banding admits some false candidates by design). Confirmed
-    pairs are unioned into clusters; each cluster keeps one representative
-    (:func:`_pick_representative`) and drops the rest.
+    ``records`` is an iterable of ``(id, text)``. MinHash-LSH proposes candidate
+    pairs; a pair joins a cluster only when exact Jaccard over the real
+    :func:`shingles` sets is at or above ``threshold``. The exact check prevents
+    a candidate false positive from causing a drop. An LSH false negative can
+    still leave a true near-duplicate unclustered, so this optional hygiene pass
+    must not be treated as proof that every retained document is unique.
 
     Returns a :class:`DedupResult`. Duplicate ids in the input raise
     ``ValueError`` — the manifest id is the join key, so a collision would make
     the keep/drop decision ambiguous.
     """
+    threshold_ratio = Fraction(str(threshold))
     MinHash, MinHashLSH = _require_datasketch()
 
     ids: list[str] = []
@@ -424,27 +454,78 @@ def dedup_records(
         threshold=threshold, num_perm=num_perm,
         shingle_size=shingle_size, total=len(ids),
     )
+    shingle_sets = {
+        rid: shingles(texts[rid], k=shingle_size)
+        for rid in ids
+    }
+    minhashes: dict[str, Any] = {}
+    for rid in ids:
+        mh = _build_minhash(MinHash, shingle_sets[rid], num_perm=num_perm)
+        minhashes[rid] = mh
+
+    identity_probe = (
+        minhashes[ids[0]] if ids else MinHash(num_perm=num_perm, seed=MINHASH_SEED)
+    )
+    identity = _signature_identity(identity_probe)
+    result.candidate_generation = {
+        "algorithm": "datasketch.MinHashLSH",
+        **identity,
+        "num_perm": num_perm,
+        "shingle_size": shingle_size,
+        "normalization": DOCUMENT_NORMALIZATION,
+        "index_policy": DOCUMENT_INDEX_POLICY,
+        "candidate_pairs": 0,
+        "limitation": (
+            "LSH candidate false negatives can leave near-duplicates retained; "
+            "a retained row is not proof of uniqueness"
+        ),
+    }
+    result.exact_confirmation = {
+        "algorithm": "exact-set-jaccard",
+        "threshold_decimal": str(threshold),
+        "threshold_fraction": (
+            f"{threshold_ratio.numerator}/{threshold_ratio.denominator}"
+        ),
+        "normalization": DOCUMENT_NORMALIZATION,
+        "confirmed_pairs": 0,
+        "clustering": "connected-components",
+    }
     if len(ids) <= 1:
         result.kept = list(ids)
         return result
 
     lsh = MinHashLSH(threshold=threshold, num_perm=num_perm)
-    minhashes: dict[str, Any] = {}
     for rid in ids:
-        mh = _build_minhash(MinHash, texts[rid], num_perm=num_perm, k=shingle_size)
-        minhashes[rid] = mh
+        mh = minhashes[rid]
         lsh.insert(rid, mh)
 
     union = _Union()
     for rid in ids:
         union.add(rid)
-    # Confirm LSH candidates by estimated Jaccard, then union.
+    # LSH is candidate generation only. Every destructive edge is confirmed
+    # against the exact normalized shingle sets before union.
+    candidate_pairs: set[tuple[str, str]] = set()
+    confirmed_pairs: set[tuple[str, str]] = set()
     for rid in ids:
         for cand in lsh.query(minhashes[rid]):
             if cand == rid:
                 continue
-            if minhashes[rid].jaccard(minhashes[cand]) >= threshold:
+            if cand not in minhashes:
+                raise RuntimeError(
+                    f"datasketch LSH returned an unknown record id: {cand!r}"
+                )
+            pair = tuple(sorted((rid, cand)))
+            if pair in candidate_pairs:
+                continue
+            candidate_pairs.add(pair)
+            if _meets_jaccard_threshold(
+                shingle_sets[rid], shingle_sets[cand], threshold_ratio,
+            ):
+                confirmed_pairs.add(pair)
                 union.union(rid, cand)
+
+    result.candidate_generation["candidate_pairs"] = len(candidate_pairs)
+    result.exact_confirmation["confirmed_pairs"] = len(confirmed_pairs)
 
     # Order ids by first appearance for deterministic output.
     order = {rid: i for i, rid in enumerate(ids)}

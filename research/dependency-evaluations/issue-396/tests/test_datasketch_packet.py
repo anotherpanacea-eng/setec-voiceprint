@@ -74,11 +74,11 @@ def test_traced_real_seam_matches_unwrapped_control_and_exposes_layers():
     assert result["dedup_result"]["dropped"] == ["duplicate-b"]
     expected = [["duplicate-a", "duplicate-b"]]
     assert result["layers"]["raw_lsh"] == expected
-    assert result["layers"]["estimated_pass"] == expected
+    # #407 removed estimated MinHash Jaccard from the production decision.
+    assert result["layers"]["estimated_pass"] == []
+    assert result["layers"]["exact_confirmed"] == expected
     assert result["layers"]["co_cluster"] == expected
-    assert result["estimated_scores"] == [
-        {"pair": expected[0], "score": 1.0},
-    ]
+    assert result["estimated_scores"] == []
 
 
 def test_signature_is_deterministic_and_bound_to_shipped_normalization():
