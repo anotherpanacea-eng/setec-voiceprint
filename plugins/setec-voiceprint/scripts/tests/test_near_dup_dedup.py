@@ -145,6 +145,14 @@ def test_duplicate_id_rejected():
         ndd.dedup_records([("dup", BASE), ("dup", DISTINCT_A)])
 
 
+def test_document_mode_rejects_zero_shingle_size_before_any_drop():
+    with pytest.raises(ValueError, match="shingle_size must be a positive integer"):
+        ndd.dedup_records(
+            [("ocean", "ocean policy text"), ("money", "monetary policy text")],
+            shingle_size=0,
+        )
+
+
 class _CandidateOnlyMinHash:
     """Test double whose estimate must never participate in a drop decision."""
 
@@ -200,6 +208,7 @@ def test_document_mode_rejects_lsh_false_positive_by_exact_jaccard(monkeypatch):
     assert result.dropped == []
     assert result.candidate_generation["candidate_pairs"] == 1
     assert result.exact_confirmation["confirmed_pairs"] == 0
+    assert result.exact_confirmation["confirmed_edges"] == []
 
 
 def test_document_mode_accepts_exact_threshold_despite_estimator(monkeypatch):
@@ -213,6 +222,7 @@ def test_document_mode_accepts_exact_threshold_despite_estimator(monkeypatch):
     assert result.dropped == ["a"]
     assert result.clusters == {"b": ["a"]}
     assert result.exact_confirmation["confirmed_pairs"] == 1
+    assert result.exact_confirmation["confirmed_edges"] == [["a", "b"]]
 
 
 def test_document_mode_transitive_exact_edges_form_one_component(monkeypatch):

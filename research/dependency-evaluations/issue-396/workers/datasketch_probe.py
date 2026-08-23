@@ -619,7 +619,7 @@ def _evaluate_accuracy(request: dict[str, Any]) -> dict[str, Any]:
         "layers": {
             "raw_lsh": _pair_rows(trace.raw_lsh),
             "estimated_pass": _pair_rows(trace.estimated_pass),
-            "exact_confirmed": _pair_rows(trace.raw_lsh & exact_truth),
+            "exact_confirmed": traced["exact_confirmation"]["confirmed_edges"],
             "co_cluster": _pair_rows(co_cluster),
         },
         "estimated_scores": estimated_scores,

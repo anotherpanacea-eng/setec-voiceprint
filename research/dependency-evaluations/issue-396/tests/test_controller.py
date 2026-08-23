@@ -70,3 +70,44 @@ def test_fixture_manifest_hashes_and_licenses():
     manifest = controller.load_fixture_manifest()
     assert len(manifest["files"]) >= 8
     assert all(row["license"] for row in manifest["files"])
+
+
+def _worker_result(*, dropped: list[str]) -> dict:
+    kept = [record_id for record_id in ("a", "b", "z") if record_id not in dropped]
+    return {
+        "layers": {
+            "raw_lsh": [],
+            "estimated_pass": [],
+            "exact_confirmed": [],
+            "co_cluster": [],
+        },
+        "dedup_result": {
+            "kept": kept,
+            "dropped": dropped,
+            "clusters": {},
+        },
+        "traced_matches_control": True,
+    }
+
+
+def test_destructive_safety_separates_false_drops_from_candidate_misses():
+    duplicate = "one two three four five six"
+    records = {"a": duplicate, "b": duplicate, "z": "red blue green gold black white"}
+
+    unsafe = controller.evaluate_worker_result(
+        records, _worker_result(dropped=["z"]), threshold=0.85,
+    )
+    assert unsafe["destructive_safety"] == {
+        "false_positive_drops": ["z"],
+        "retained_oracle_drops": ["b"],
+        "zero_false_positive_drops": False,
+    }
+
+    candidate_miss = controller.evaluate_worker_result(
+        records, _worker_result(dropped=[]), threshold=0.85,
+    )
+    assert candidate_miss["destructive_safety"] == {
+        "false_positive_drops": [],
+        "retained_oracle_drops": ["b"],
+        "zero_false_positive_drops": True,
+    }

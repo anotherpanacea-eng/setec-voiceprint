@@ -438,6 +438,8 @@ def dedup_records(
     ``ValueError`` — the manifest id is the join key, so a collision would make
     the keep/drop decision ambiguous.
     """
+    if shingle_size < 1:
+        raise ValueError("shingle_size must be a positive integer")
     threshold_ratio = Fraction(str(threshold))
     MinHash, MinHashLSH = _require_datasketch()
 
@@ -488,6 +490,7 @@ def dedup_records(
         ),
         "normalization": DOCUMENT_NORMALIZATION,
         "confirmed_pairs": 0,
+        "confirmed_edges": [],
         "clustering": "connected-components",
     }
     if len(ids) <= 1:
@@ -526,6 +529,9 @@ def dedup_records(
 
     result.candidate_generation["candidate_pairs"] = len(candidate_pairs)
     result.exact_confirmation["confirmed_pairs"] = len(confirmed_pairs)
+    result.exact_confirmation["confirmed_edges"] = [
+        list(pair) for pair in sorted(confirmed_pairs)
+    ]
 
     # Order ids by first appearance for deterministic output.
     order = {rid: i for i, rid in enumerate(ids)}

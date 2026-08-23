@@ -77,6 +77,9 @@ def test_traced_real_seam_matches_unwrapped_control_and_exposes_layers():
     # #407 removed estimated MinHash Jaccard from the production decision.
     assert result["layers"]["estimated_pass"] == []
     assert result["layers"]["exact_confirmed"] == expected
+    assert result["layers"]["exact_confirmed"] == (
+        result["dedup_result"]["exact_confirmation"]["confirmed_edges"]
+    )
     assert result["layers"]["co_cluster"] == expected
     assert result["estimated_scores"] == []
 

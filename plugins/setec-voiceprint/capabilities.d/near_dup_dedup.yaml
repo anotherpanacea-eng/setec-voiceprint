@@ -74,7 +74,7 @@ entries:
       threshold provenance), on stdout with --json. The report binds the
       datasketch package version, MinHash scheme and seed, normalization,
       ephemeral-rebuild-only index policy, candidate-pair count, and exact
-      confirmation count.
+      confirmation count and edge ids.
     - 'Passage mode: a JSON report (stdout with --json, or --report-out FILE)
       carrying the Stage-A cluster / Stage-B span inventory with per-occurrence
       provenance, plus a mandatory `assumptions` params-and-limits block and a real
