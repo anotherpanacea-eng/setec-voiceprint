@@ -1,6 +1,13 @@
 # Acquire-corpus pattern
 
-A reference for adapting SETEC's impostor-pool acquisition pipeline to a new source. The five acquisition scripts that ship with the framework (`acquire_blog.py`, `acquire_blogger_takeout.py`, `acquire_magazine.py`, `pdf_inventory.py` + `pdf_extract.py`) all share the same pipeline shape. This doc captures the shape so an LLM helping a user add a new source — a Slack export, an Obsidian vault, a Notion dump, a custom CMS, anything — has one place to ground from.
+A reference for adapting SETEC's impostor-pool acquisition pipeline to a new source. The framework's acquisition scripts share the same pipeline shape. This doc captures that shape so an LLM helping a user add a new source — a Slack export, an Obsidian vault, a Notion dump, a custom CMS, anything — has one place to ground from.
+
+`acquire_stackexchange.py` is the shipped offline path for official Stack Exchange
+data dumps. It streams an extracted dump directory or local `.7z`, requires each
+emitted post to retain its author attribution and row-level CC BY-SA version, and
+writes source/filter-bound resumable JSONL. It fails closed on an empty selection
+unless the operator explicitly passes `--allow-empty`; ordinary output paths still
+use the shared privacy guard unless `--allow-public-output` is explicit.
 
 ## When to reach for this
 
@@ -10,11 +17,11 @@ Use this pattern (and the companion `scripts/acquire_corpus_template.py`) when:
 - The source is a directory of files, an export archive, an API response, or a feed shape we don't yet support.
 - The work is one-off enough that landing a permanent acquisition script in the framework isn't justified, but the user still wants the pieces (manifest emission, privacy guard, preprocessing, content-hash dedupe) to work the same way.
 
-If the source is something that should ship as a permanent script (a popular blog platform, a major magazine), the pattern below is the implementation guide. Land it as `scripts/acquire_<source>.py` and add tests + fixtures matching the existing scripts' shape.
+If the source is something that should ship as a permanent script (a popular blog platform, a major magazine, or an official public data dump), the pattern below is the implementation guide. Land it as `scripts/acquire_<source>.py`, register the capability, and add tests + fixtures matching the existing scripts' shape.
 
 ## The pipeline
 
-Every acquisition script follows the same six-step pipeline. Three steps are the same for all sources (preprocess, hash, manifest emit); three are source-specific (fetch/discover, extract, source-specific dedupe).
+Most acquisition scripts follow the same six-step per-piece pipeline. Three steps are shared (preprocess, hash, manifest emit); three are source-specific (fetch/discover, extract, source-specific dedupe). Streaming public-dump tools can use a source-native record contract instead, but must document and test that exception.
 
 ```
 [1. fetch / discover items]   ← source-specific: list URLs, paths, items
@@ -37,6 +44,15 @@ Every acquisition script follows the same six-step pipeline. Three steps are the
 ```
 
 The shared steps are factored into `scripts/acquisition_core.py`. The source-specific steps are what a new acquisition script implements.
+
+### Stack Exchange streaming exception
+
+`acquire_stackexchange` preserves the official dump's post-level identity,
+attribution, effective date, and row-level license in one JSONL record per post.
+It therefore does not use the impostor manifest's `.txt` + `.meta.json` piece
+writer. It still uses the shared privacy and content-hash helpers, and it adds a
+source/filter-bound resume sidecar so an interrupted XML stream cannot be
+continued against a different dump or selection contract.
 
 ### Atomic-authorship exception
 

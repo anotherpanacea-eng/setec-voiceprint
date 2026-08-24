@@ -6,6 +6,7 @@
 # These are required by `scripts/acquire_blog.py`,
 # `scripts/acquire_blogger_takeout.py`,
 # `scripts/acquire_gmail_sent.py`, `scripts/acquire_magazine.py`,
+# `scripts/acquire_stackexchange.py`,
 # `scripts/pdf_inventory.py`, and `scripts/pdf_extract.py` only.
 # Ordinary SETEC variance audits, voice distance, validation harness,
 # and stylometry oracle runs do NOT need them. The core requirements
@@ -104,3 +105,7 @@ datasketch>=1.6,<2.0
 # acquisition script. The store abstraction falls back to a clear
 # "boto3 is not installed" message when absent.
 boto3>=1.28
+
+# Optional archive reader for official Stack Exchange data dumps. Extracted
+# dump directories need no extra dependency; only direct `.7z` input imports it.
+py7zr>=0.22

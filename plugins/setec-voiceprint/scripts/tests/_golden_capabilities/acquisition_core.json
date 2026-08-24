@@ -21,6 +21,7 @@
     "acquire_mirrulations",
     "acquire_openalex_core",
     "acquire_pdf_urls",
+    "acquire_stackexchange",
     "author_corpus_export",
     "fetch_pan24_voightkampff",
     "general_imposters",

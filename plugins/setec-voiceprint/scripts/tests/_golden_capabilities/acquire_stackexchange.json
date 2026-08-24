@@ -1,0 +1,54 @@
+{
+  "id": "acquire_stackexchange",
+  "script_path": "plugins/setec-voiceprint/scripts/acquire_stackexchange.py",
+  "surface": "voice_coherence_acquisition",
+  "status": "structural_only",
+  "handoff": "none",
+  "consumers": [],
+  "family": "acquisition",
+  "purpose": "stream an official per-site Stack Exchange data dump into attributed, per-post JSONL while preserving each row's actual CC BY-SA version and mutable-source effective date.",
+  "use_when": [
+    "building a public argumentative-prose or register baseline from an official Stack Exchange site dump with per-post attribution and licensing intact"
+  ],
+  "do_not_use_when": [
+    "live API or web crawling is required (this tool is offline and accepts only an extracted dump directory or local .7z archive)",
+    "authorship attribution or the per-row ContentLicense field is absent"
+  ],
+  "inputs": {
+    "target": "local Stack Exchange site data dump containing Posts.xml and Users.xml",
+    "optional": [
+      "py7zr is needed only when --dump is a .7z rather than an extracted directory"
+    ]
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "attributed per-post JSONL plus a source/filter-bound .resume.json sidecar",
+      "optional aggregate JSON run summary containing no post prose"
+    ]
+  },
+  "compute": {
+    "tier": "acquisition",
+    "cost_note": "local streaming Posts.xml parse plus an in-memory Users.xml attribution index whose size scales with the site's user count; no network, model, API key, or GPU",
+    "length_floor_words": 0
+  },
+  "registers": [
+    "online_forum.stackexchange"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "py7zr"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Inspect an extracted Philosophy Stack Exchange dump without writing",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/acquire_stackexchange.py --dump philosophy.stackexchange.com --site philosophy.stackexchange.com --dry-run"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+  ],
+  "_seeded_at": "2026-08-24"
+}

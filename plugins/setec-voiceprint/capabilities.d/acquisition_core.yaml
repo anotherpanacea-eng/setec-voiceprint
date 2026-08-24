@@ -5,7 +5,7 @@ entries:
   status: todo
   todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
   handoff: none
-  # consumers: shared acquisition library — all 22 in-repo importers; also surfaced by
+  # consumers: shared acquisition library — all 23 in-repo importers; also surfaced by
   # skill: corpus-acquisition.
   consumers:
   - acquire_blog
@@ -23,6 +23,7 @@ entries:
   - acquire_mirrulations
   - acquire_openalex_core
   - acquire_pdf_urls
+  - acquire_stackexchange
   - author_corpus_export
   - fetch_pan24_voightkampff
   - general_imposters
