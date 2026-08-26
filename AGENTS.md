@@ -81,6 +81,45 @@ Most cycles are:
 5. **Fix.** The writing agent applies the fixes, runs tests, commits.
 6. **Merge.** Via PR + merge commit. See below.
 
+## Test value convention
+
+Every test must justify its maintenance cost by protecting at least one of:
+observable behavior, a public or consumer contract, a reproduced bug, a
+safety/security property, or a stable architectural prohibition. Coverage,
+test count, and "this is how the source is written" are not sufficient reasons.
+
+Use this litmus test: **if behavior and contracts stay unchanged, could a
+reasonable refactor make the test fail?** If yes, the test is probably asserting
+implementation rather than behavior. Usually delete or rewrite tests that pin
+source/AST shape, hashes of implementation files, symbol location, exact internal
+inventories, workflow or documentation text, oversized internal snapshots, or a
+mock/monkeypatch seam that production would not otherwise need. Prefer black-box,
+metamorphic, adversarial, and bug-regression tests. Do not keep two tests that
+protect the same failure at different fidelity unless each catches a distinct
+regression class.
+
+Static inspection is justified only when it enforces a stable **negative** property
+that is impractical to observe dynamically--for example anti-Goodhart separation,
+held-out isolation, no forbidden dependency/network path, a security boundary, or
+canonical/generated parity. Such a test must name the prohibited coupling and
+should not pin incidental lines, helper names, or file layout. Frozen fixtures are
+appropriate for genuinely external compatibility contracts, not internal
+refactoring receipts.
+
+When deleting a test, inspect the production code for seams, wrappers, indirection,
+or exported helpers that existed only to satisfy it; simplify those in the same
+change when safe. Preserve or replace behavior coverage before deletion. In the PR,
+state why each deleted class was low-value and report the behavioral checks that
+remain.
+
+**Monthly sweep.** Once per month, audit the suite for source-reading tests, exact
+inventories/hashes, duplicate coverage, large brittle snapshots, and test-only
+production seams. Classify candidates as KEEP / REWRITE / DELETE with a one-line
+justification; there is no deletion quota. Make changes in a per-repo branch, run
+the relevant behavioral checks, and open a draft PR. Never merge sweep findings
+without review; after the required reviews and green checks, follow this repo's
+normal merge policy.
+
 ## Build pre-flight — root out the P1/P2 modes before review
 
 A retrospective over 350 review findings (68 P1 / 115 P2) found the same handful of
