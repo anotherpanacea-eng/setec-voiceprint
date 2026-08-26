@@ -7,6 +7,67 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.132.0] - 2026-08-26
+
+### Added
+
+- Add a network-free, resumable Stack Exchange data-dump acquirer that preserves
+  per-post CC BY-SA versions, author attribution, edit-aware effective dates, and
+  source/filter-bound JSONL continuation state (`acquire_stackexchange`).
+
+### Changed
+
+**Completed the `capabilities.d/` status audit (#196).** Eight fully curated
+`voice_coherence_acquisition` tools are now discoverable as `structural_only`
+operator tooling, a non-inferential status for which calibration is not applicable:
+`acquire_courtlistener`, `acquire_everycrsreport`, `acquire_gmail_sent`,
+`acquire_govinfo_chrg`, `acquire_imessage_sent`, `acquire_mirrulations`,
+`acquire_openalex_core`, and `acquire_pdf_urls`.
+The WIP `acquire_imessage_sent_atomic` contract remains hidden. Of the remaining
+`status: todo` entries, 46 now name their exact unresolved auto-seeded operator
+contract fields and the atomic entry names its live-smoke/durability/consumer gates.
+The drift gate rejects the seeder default as well as missing/generic placeholders or
+stale reasons retained after promotion. The generated readiness matrix groups
+acquisition under tooling, shows the real required source, and distinguishes local
+I/O from network acquisition.
+The prose-intent `recommend` router is now analysis-only: acquisition, local
+corpus-hygiene, and export tools remain discoverable through `list` / `show` but
+are not returned as recommendations. Acquisition runtime behavior is unchanged.
+
+**Evaluated the optional Trafilatura, datasketch, and RapidFuzz seams (#396).**
+The reproducible Mac packet separates hash-verified bootstrap from a mechanically
+network-denied run, exercises the shipped extraction and near-duplicate paths in
+version-isolated environments, and records exact-oracle accuracy, compatibility,
+fallback, and bounded scale evidence. It changes no production dependency or
+runtime behavior; the issue remains open pending the recorded datasketch
+pin/scheme decision.
+
+### Fixed
+
+**Bounded the optional `datasketch` dependency to 1.x (#396).** The locked
+evaluation in `research/dependency-evaluations/issue-396/` showed that datasketch
+2.0.0 changed the default MinHash scheme, which changes signatures and the
+resulting keep/drop outcomes relative to 1.6.5 on identical input. Because the
+optional document-mode `near_dup_dedup` seam uses that estimate as a
+**destructive** keep/drop decision, an unbounded `datasketch>=1.6` allowed a
+silent major-version upgrade to silently reinterpret which documents get dropped.
+The requirement is now `datasketch>=1.6,<2.0`.
+
+This is a stop-drift bound, not a correctness proof: it does not make destructive
+dedup exact, and it does not establish equivalence across 1.x releases. Making
+that seam exact-confirmed is tracked in #407.
+
+**Made `near_dup_dedup` document deletion exact-confirmed (#407).**
+MinHash-LSH now generates candidates only; every candidate edge must meet the
+configured threshold under exact Jaccard over the repository's normalized
+shingle sets before it can join a destructive cluster. Reports bind the actual
+datasketch version, MinHash scheme and seed, normalization, and
+ephemeral-rebuild-only index policy, and expose the confirmed edge ids.
+Nonpositive shingle sizes now refuse before candidate construction. LSH
+candidate false negatives can still leave duplicates retained, so the optional
+pass explicitly does not claim exhaustive uniqueness. Passage Stage A/B
+behavior is unchanged.
+
 ## [1.131.0] - 2026-08-09
 
 ### Fixed
