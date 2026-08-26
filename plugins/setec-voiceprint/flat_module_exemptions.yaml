@@ -196,4 +196,17 @@ baseline:
 - windows_portable_tree.py
 - within_doc_segmentation.py
 baseline_introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-exemptions: []
+exemptions:
+- module: acquire_stackexchange.py
+  reason: >-
+    New acquisition SURFACE, and surfaces stay flat until P4 relocates them family
+    by family (specs/svp-packaging-conversion.md P4). It sits beside the 22 sibling
+    acquire_*.py modules already in the frozen baseline, carries its own
+    capabilities.d card, and that card invokes it directly by this path. Its shared
+    logic was deliberately NOT added flat -- the content-hash and private-path
+    helpers it needs live in L1 setec.core.acquisition_primitives -- so this row
+    exempts the surface only, and the flat tree grows by one leaf carrying no new
+    shared code.
+  owner: packaging
+  introduced_sha: cec38a1dd665b39983bad632778e2c7398c7fcbf
+  removal_phase: P4

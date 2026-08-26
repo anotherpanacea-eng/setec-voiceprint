@@ -2,6 +2,14 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-08-24)
+
+- **Official Stack Exchange dump acquisition added.** The offline
+  `acquire_stackexchange` tool streams extracted or `.7z` site dumps into
+  attributed, license-preserving JSONL with source/filter-bound resume state,
+  explicit private-output protection, and fail-closed empty-run behavior. This
+  is corpus tooling only: it adds no detector, threshold, or evaluative claim.
+
 ## Status reconciliation (2026-08-19)
 
 - **Capability-status audit (#196) completed.** The manifest now distinguishes
