@@ -66,7 +66,13 @@ def test_real_repo_baseline_matches_current_flat_modules():
     assert not cnfm.validate_exemption_rows(rows)
     exempted = {r.get("module") for r in rows}
     assert current <= (baseline | exempted)
-    assert len(current) == 190
+    # Derived, not a magic inventory count: the flat tree is exactly its frozen
+    # baseline plus whatever has been granted a reviewed exemption row. That is
+    # the actual contract, and unlike a hardcoded 190 it does not need editing
+    # every time a reviewed surface lands -- while still failing loudly if a
+    # module appears with no baseline entry and no exemption, or if a baseline
+    # or exemption row goes stale against the tree.
+    assert len(current) == len(baseline) + len(exempted)
 
 
 def test_real_repo_check_passes():

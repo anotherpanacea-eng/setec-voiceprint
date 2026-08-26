@@ -46,6 +46,8 @@ import urllib.parse
 import urllib.robotparser
 import uuid
 from dataclasses import dataclass, field, asdict
+
+from setec.core import acquisition_primitives as _acq_primitives
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
@@ -62,9 +64,10 @@ DEFAULT_USER_AGENT = (
     "setec-voiceprint)"
 )
 
-# Marker directory name for the private-safe path check. Mirrors the
-# existing `voice_profile.is_private_output_path` convention.
-PRIVATE_DIR_NAME = "ai-prose-baselines-private"
+# Marker directory name for the private-safe path check. Owned by
+# `setec.core.acquisition_primitives` (L1) and re-exported here so this
+# surface's existing callers are unaffected; see that module for why.
+PRIVATE_DIR_NAME = _acq_primitives.PRIVATE_DIR_NAME
 
 # Default base directory for acquired text. Resolved through the
 # `SETEC_BASELINES_DIR` env var if set, else falls back to a sibling
@@ -151,15 +154,7 @@ def author_to_persona_slug(author: str, *, suffix: str = "personal") -> str:
     return f"{last}_{first}_{suffix}"
 
 
-def compute_content_hash(text: str) -> str:
-    """SHA-256 of cleaned text, prefixed ``sha256:``.
-
-    The prefix matches the manifest convention in
-    ``references/manifest-schema.md`` and lets future hash families
-    (e.g., a normalized-text fingerprint) coexist without ambiguity.
-    """
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
-    return f"sha256:{digest}"
+compute_content_hash = _acq_primitives.compute_content_hash
 
 
 # --------------- Date parsing -------------------------------------
@@ -366,46 +361,8 @@ class StableRedactionMap:
 # --------------- Privacy guard ------------------------------------
 
 
-def is_private_safe_path(path: Path) -> bool:
-    """Marker-based private-path check.
-
-    Returns True iff any component of the resolved absolute path is
-    named ``ai-prose-baselines-private``. Mirrors
-    ``voice_profile.is_private_output_path`` and
-    ``voice_drift_tracker._check_output_privacy``. Both repo-internal
-    and sibling private roots are accepted; the documented standard
-    layout uses a sibling directory.
-    """
-    return PRIVATE_DIR_NAME in path.expanduser().resolve().parts
-
-
-def check_output_privacy(
-    paths: Iterable[Path], *, allow_public: bool, tool: str,
-) -> None:
-    """Enforce the marker-based private-path rule across output paths.
-
-    Acquisition tools call this once after computing every path they
-    plan to write (output dir, manifest path, summary report). When
-    ``allow_public`` is False and any path is outside a private root,
-    the tool prints a refusal explaining both options (write into a
-    private root, or pass ``--allow-public-output`` for non-personal
-    corpora) and exits with code 2.
-    """
-    if allow_public:
-        return
-    for p in paths:
-        if p is None:
-            continue
-        if not is_private_safe_path(Path(p)):
-            sys.stderr.write(
-                f"Refusing to write {p}: not under any directory "
-                f"named '{PRIVATE_DIR_NAME}'. {tool} output is voice-"
-                f"cloning input. Either write into a directory named "
-                f"'{PRIVATE_DIR_NAME}' (repo-internal or sibling — "
-                f"both are accepted), or pass --allow-public-output "
-                f"for non-personal corpora.\n"
-            )
-            sys.exit(2)
+is_private_safe_path = _acq_primitives.is_private_safe_path
+check_output_privacy = _acq_primitives.check_output_privacy
 
 
 # --------------- Output-path conventions --------------------------

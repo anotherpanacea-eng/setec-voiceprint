@@ -80,11 +80,12 @@ import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
-import acquisition_core as ac  # noqa: E402
+# The shared content-identity and private-path helpers live in L1
+# `setec.core.acquisition_primitives`, not in the `acquisition_core`
+# SURFACE: an acquirer importing that surface is an l2_to_l2 edge, and the
+# layering ratchet refuses new ones ("a genuinely new violation in new code
+# must be fixed, never added here"). Same functions, same single source.
+from setec.core import acquisition_primitives as ac
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_stackexchange"
