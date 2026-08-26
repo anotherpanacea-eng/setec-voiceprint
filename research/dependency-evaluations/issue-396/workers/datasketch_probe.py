@@ -2,10 +2,11 @@
 """Version-local datasketch/RapidFuzz probe for Voiceprint issue #396.
 
 The worker deliberately calls :func:`near_dup_dedup.dedup_records` for both
-the control and traced runs.  A worker-local wrapper observes the three layers
-that the production return value does not expose (LSH query candidates,
-estimated-Jaccard passing edges, and final co-cluster pairs).  The traced result
-must remain byte-identical to its unwrapped control before any trace is emitted.
+the control and traced runs. A worker-local wrapper observes LSH query
+candidates and any legacy estimated-Jaccard calls; the worker also derives the
+current production exact-confirmed candidate edges and final co-cluster pairs.
+The traced result must remain byte-identical to its unwrapped control before any
+trace is emitted.
 
 Input and output are one canonical JSON object on stdin/stdout.  Diagnostics go
 to stderr and a failed request exits non-zero, so the controller can never
@@ -312,7 +313,9 @@ def _signature_report(
     seed: int | None = None
     for record_id, text in sorted(records):
         minhash = ndd._build_minhash(
-            minhash_class, text, num_perm=num_perm, k=shingle_size,
+            minhash_class,
+            ndd.shingles(text, k=shingle_size),
+            num_perm=num_perm,
         )
         values = [int(value) for value in minhash.hashvalues]
         digest = _sha256_json(values)
@@ -616,6 +619,7 @@ def _evaluate_accuracy(request: dict[str, Any]) -> dict[str, Any]:
         "layers": {
             "raw_lsh": _pair_rows(trace.raw_lsh),
             "estimated_pass": _pair_rows(trace.estimated_pass),
+            "exact_confirmed": traced["exact_confirmation"]["confirmed_edges"],
             "co_cluster": _pair_rows(co_cluster),
         },
         "estimated_scores": estimated_scores,

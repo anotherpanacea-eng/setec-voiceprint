@@ -145,6 +145,159 @@ def test_duplicate_id_rejected():
         ndd.dedup_records([("dup", BASE), ("dup", DISTINCT_A)])
 
 
+def test_document_mode_rejects_zero_shingle_size_before_any_drop():
+    with pytest.raises(ValueError, match="shingle_size must be a positive integer"):
+        ndd.dedup_records(
+            [("ocean", "ocean policy text"), ("money", "monetary policy text")],
+            shingle_size=0,
+        )
+
+
+class _CandidateOnlyMinHash:
+    """Test double whose estimate must never participate in a drop decision."""
+
+    scheme = "legacy"
+
+    def __init__(self, *, num_perm, seed):
+        self.num_perm = num_perm
+        self.seed = seed
+        self.values: set[bytes] = set()
+
+    def update(self, value):
+        self.values.add(value)
+
+    def jaccard(self, _other):
+        raise AssertionError("document mode must not consult estimated Jaccard")
+
+
+class _AllPairsLSH:
+    def __init__(self, **_kwargs):
+        self.keys: list[str] = []
+
+    def insert(self, key, _minhash):
+        self.keys.append(key)
+
+    def query(self, _minhash):
+        return list(self.keys)
+
+
+class _SelfOnlyLSH(_AllPairsLSH):
+    def insert(self, key, minhash):
+        super().insert(key, minhash)
+        minhash.record_id = key
+
+    def query(self, minhash):
+        return [minhash.record_id]
+
+
+def _candidate_classes(monkeypatch, minhash_class=_CandidateOnlyMinHash, lsh_class=_AllPairsLSH):
+    monkeypatch.setattr(
+        ndd, "_require_datasketch", lambda: (minhash_class, lsh_class),
+    )
+    monkeypatch.setattr(ndd, "_datasketch_version", lambda: "test-version")
+
+
+def test_document_mode_rejects_lsh_false_positive_by_exact_jaccard(monkeypatch):
+    """A candidate below threshold cannot become a destructive union edge."""
+    _candidate_classes(monkeypatch)
+    result = ndd.dedup_records(
+        [("a", "a b c d"), ("b", "a b c d e f")],
+        threshold=0.8,
+        shingle_size=1,
+    )
+    assert result.dropped == []
+    assert result.candidate_generation["candidate_pairs"] == 1
+    assert result.exact_confirmation["confirmed_pairs"] == 0
+    assert result.exact_confirmation["confirmed_edges"] == []
+
+
+def test_document_mode_accepts_exact_threshold_despite_estimator(monkeypatch):
+    """Acceptance is exact-set arithmetic; no MinHash estimate is consulted."""
+    _candidate_classes(monkeypatch)
+    result = ndd.dedup_records(
+        [("a", "a b c d"), ("b", "a b c d e")],
+        threshold=0.8,
+        shingle_size=1,
+    )
+    assert result.dropped == ["a"]
+    assert result.clusters == {"b": ["a"]}
+    assert result.exact_confirmation["confirmed_pairs"] == 1
+    assert result.exact_confirmation["confirmed_edges"] == [["a", "b"]]
+
+
+def test_document_mode_transitive_exact_edges_form_one_component(monkeypatch):
+    """A-B and B-C may union even when A-C itself is below threshold."""
+    _candidate_classes(monkeypatch)
+    a = "a1 a2 a3 a4 a5 a6 a7 a8 a9 a10"
+    b = "a1 a2 a3 a4 a5 a6 a7 a8 a9 bridge"
+    c = "a1 a2 a3 a4 a5 a6 a7 a8 end bridge"
+    assert ndd._exact_jaccard(ndd.shingles(a, k=1), ndd.shingles(b, k=1)) >= 0.8
+    assert ndd._exact_jaccard(ndd.shingles(b, k=1), ndd.shingles(c, k=1)) >= 0.8
+    assert ndd._exact_jaccard(ndd.shingles(a, k=1), ndd.shingles(c, k=1)) < 0.8
+    result = ndd.dedup_records(
+        [("a", a), ("b", b), ("c", c)], threshold=0.8, shingle_size=1,
+    )
+    assert len(result.clusters) == 1
+    representative, dropped = next(iter(result.clusters.items()))
+    assert {representative, *dropped} == {"a", "b", "c"}
+    assert result.exact_confirmation["confirmed_pairs"] == 2
+
+
+def test_document_mode_lsh_false_negative_only_reduces_optional_recall(monkeypatch):
+    """Candidate omissions retain duplicates; they can never fabricate a drop."""
+    _candidate_classes(monkeypatch, lsh_class=_SelfOnlyLSH)
+    result = ndd.dedup_records(
+        [("a", "same words"), ("b", "same words")],
+        threshold=1.0,
+        shingle_size=1,
+    )
+    assert result.dropped == []
+    assert result.candidate_generation["candidate_pairs"] == 0
+    assert "not proof of uniqueness" in result.candidate_generation["limitation"]
+
+
+def test_document_mode_normalization_is_lower_not_casefold(monkeypatch):
+    """Freeze the shipped Unicode lower() equivalence class (#407)."""
+    _candidate_classes(monkeypatch)
+    left = "Straße alpha beta gamma"
+    right = "STRASSE alpha beta gamma"
+    assert left.casefold() == right.casefold()
+    assert ndd.shingles(left, k=1) != ndd.shingles(right, k=1)
+    result = ndd.dedup_records(
+        [("left", left), ("right", right)], threshold=0.8, shingle_size=1,
+    )
+    assert result.dropped == []
+
+
+def test_document_mode_version_and_scheme_drift_are_bound_not_decisive(monkeypatch):
+    """Changing candidate signatures changes provenance, not exact decisions."""
+    class AffineMinHash(_CandidateOnlyMinHash):
+        scheme = "affine32"
+
+    _candidate_classes(monkeypatch)
+    monkeypatch.setattr(ndd, "_datasketch_version", lambda: "1.6.5")
+    legacy = ndd.dedup_records(
+        [("a", "a b c d"), ("b", "a b c d e")],
+        threshold=0.8,
+        shingle_size=1,
+    )
+    _candidate_classes(monkeypatch, minhash_class=AffineMinHash)
+    monkeypatch.setattr(ndd, "_datasketch_version", lambda: "2.0.0")
+    affine = ndd.dedup_records(
+        [("a", "a b c d"), ("b", "a b c d e")],
+        threshold=0.8,
+        shingle_size=1,
+    )
+    assert (legacy.kept, legacy.dropped, legacy.clusters) == (
+        affine.kept, affine.dropped, affine.clusters,
+    )
+    assert legacy.candidate_generation["package_version"] == "1.6.5"
+    assert legacy.candidate_generation["scheme"] == "legacy"
+    assert affine.candidate_generation["package_version"] == "2.0.0"
+    assert affine.candidate_generation["scheme"] == "affine32"
+    assert affine.candidate_generation["index_policy"] == "ephemeral-rebuild-only"
+
+
 @_needs_datasketch
 def test_dedup_manifest_round_trip(tmp_path):
     manifest = tmp_path / "draft_manifest.jsonl"
@@ -1299,8 +1452,8 @@ def test_self_guard_refuses_a_marked_manifest(tmp_path):
     assert rc == 2 and "passage-deduped export" in err.getvalue()
 
 
-def test_document_mode_cli_and_output_unchanged(tmp_path):
-    """Contract 12: adding passage mode must not move document mode."""
+def test_document_mode_cli_binds_candidate_and_exact_decision_identity(tmp_path):
+    """The document report makes candidate limits and exact deletion explicit."""
     m = tmp_path / "m.jsonl"
     m.write_text(
         json.dumps({"id": "base", "text": BASE}) + "\n"
@@ -1314,12 +1467,18 @@ def test_document_mode_cli_and_output_unchanged(tmp_path):
         rc = ndd.main([str(m), "--threshold", "0.6", "--dry-run", "--json"])
     assert rc == 0
     result = json.loads(out.getvalue())
-    # The frozen 9-key DedupResult shape, unchanged.
+    # #407 adds two provenance blocks to the former 9-key result.
     assert set(result) == {
         "total", "kept_count", "dropped_count", "kept", "dropped", "clusters",
         "threshold", "num_perm", "shingle_size",
+        "candidate_generation", "exact_confirmation",
     }
     assert result["dropped"] == ["base"]
+    assert result["candidate_generation"]["package"] == "datasketch"
+    assert result["candidate_generation"]["seed"] == 1
+    assert result["candidate_generation"]["index_policy"] == "ephemeral-rebuild-only"
+    assert result["exact_confirmation"]["algorithm"] == "exact-set-jaccard"
+    assert result["exact_confirmation"]["confirmed_pairs"] == 1
 
 
 @_needs_datasketch

@@ -77,10 +77,11 @@ pypdf>=4.0
 # research/dependency-evaluations/issue-396/ showed that datasketch 2.0.0
 # changed the DEFAULT MinHash scheme, which changes signatures and the
 # resulting keep/drop outcomes relative to 1.6.5 on the same input. Because
-# this seam feeds a DESTRUCTIVE dedup decision, a silent major-version
-# upgrade would silently reinterpret which documents get dropped. Bound to
-# 1.x until that seam is exact-confirmed (#407); the bound is a stop-drift
-# measure, not a proof of equivalence across 1.x releases.
+# this seam feeds candidate generation for a DESTRUCTIVE dedup decision, a
+# silent major-version upgrade can still change which true duplicates are
+# retrieved or missed. #407 made every retrieved edge exact-confirmed, so
+# signature drift can no longer create a false-positive drop; retain the 1.x
+# bound because candidate recall and the bound report identity can still move.
 datasketch>=1.6,<2.0
 
 # Optional: Wayback Machine access for shut-down blogs (Slate Star

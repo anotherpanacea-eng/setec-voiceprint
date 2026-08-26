@@ -248,10 +248,17 @@ def evaluate_worker_result(
     truth, scores = exact_pair_oracle(records, threshold=threshold)
     oracle_groups = components(records, truth)
     oracle_drop = oracle_keep_drop(records, truth)
+    layer_names = ["raw_lsh", "estimated_pass", "co_cluster"]
+    if "exact_confirmed" in worker["layers"]:
+        layer_names.insert(2, "exact_confirmed")
     layers = {
         name: {pair(*row) for row in worker["layers"][name]}
-        for name in ("raw_lsh", "estimated_pass", "co_cluster")
+        for name in layer_names
     }
+    observed_dropped = set(worker["dedup_result"]["dropped"])
+    oracle_dropped = set(oracle_drop["dropped"])
+    false_positive_drops = sorted(observed_dropped - oracle_dropped)
+    retained_oracle_drops = sorted(oracle_dropped - observed_dropped)
     result = {
         "layers": {name: layer_metrics(edges, truth) for name, edges in layers.items()},
         "oracle": {
@@ -261,6 +268,11 @@ def evaluate_worker_result(
             "pair_count": len(scores),
         },
         "observed_keep_drop": worker["dedup_result"],
+        "destructive_safety": {
+            "false_positive_drops": false_positive_drops,
+            "retained_oracle_drops": retained_oracle_drops,
+            "zero_false_positive_drops": not false_positive_drops,
+        },
         "keep_drop_matches_oracle": all(
             worker["dedup_result"][key] == oracle_drop[key]
             for key in ("kept", "dropped", "clusters")
@@ -640,8 +652,8 @@ def evaluate(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
     }
     destructive_gate = all(
         value["deterministic_across_five_runs"]
-        and value["evaluation"]["keep_drop_matches_oracle"]
-        and not value["evaluation"]["layers"]["co_cluster"]["fn"]
+        and value["evaluation"]["traced_matches_control"]
+        and value["evaluation"]["destructive_safety"]["zero_false_positive_drops"]
         for value in tracks.values()
     )
     rapidfuzz_200 = tracks["datasketch-200"]["rapidfuzz"]
@@ -681,8 +693,8 @@ def evaluate(args: argparse.Namespace) -> tuple[dict[str, Any], dict[str, Any]]:
         "tracks": tracks,
         "recommendations": {
             "datasketch_document_seam": (
-                "keep_optional_destructive" if destructive_gate
-                else "reject_destructive_retain_candidate_only_behind_exact_confirmation"
+                "keep_optional_destructive_exact_confirmed" if destructive_gate
+                else "reject_destructive_exact_confirmation_failed"
             ),
             "rapidfuzz_semantic_gate": rapid_semantic_gate,
             "rapidfuzz": (

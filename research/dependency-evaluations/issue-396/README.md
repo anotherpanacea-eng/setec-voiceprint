@@ -11,14 +11,16 @@ production dependencies or runtime behavior.
 | --- | --- | --- |
 | Trafilatura 2.1.0 main-content extraction | Reject as the preferred extraction path; leave production unchanged pending removal/fix | It was deterministic, fail-soft, retained every required marker, leaked no forbidden markers, and its 3.36x median runtime remained below the 5x ceiling. However, the shipped BeautifulSoup path retained all six expected titles while the Trafilatura-enabled seam retained only one. That fails the predeclared no-title-regression gate. |
 | Trafilatura feed extraction as a `feedparser` replacement | Reject | RSS and Atom link sets matched, but order differed for both and RSS deduplication differed. Link-only output also cannot provide the shipped `FeedItem` fields: title, date, body HTML, paid status, or raw byte length. |
-| Current destructive datasketch document seam | Reject; retain MinHash only as candidate infrastructure behind exact confirmation | Every locked track was deterministic, but none matched the exact oracle. Datasketch 1.6.5 and 2.0.0 legacy each produced 13 co-cluster false-positive pairs and missed 6 oracle pairs; 2.0.0 default produced 15 false positives and missed 3. The production keep/drop result therefore changes across the unbounded 1.x-to-2.x upgrade. |
+| Exact-confirmed datasketch document seam (#407) | Keep as optional destructive hygiene; MinHash remains candidate infrastructure only | All locked tracks produced zero false-positive drops because production exact-confirmed every candidate edge. Candidate false negatives remain: 1.6.5 and 2.0.0 legacy retained 6 oracle duplicates; 2.0.0 default retained 3. This is not an exhaustive uniqueness certificate, and candidate recall can still change across a version/scheme boundary. |
 | Persisted MinHash/LSH state | Rebuild or refuse across any unproven version/scheme boundary | The 1.6.5 signature matched 2.0.0 only with `scheme="legacy"`; 2.0.0's `affine32` default differed. The official 2.0 migration contract likewise requires rebuilding indexes when adopting the new default. |
 | RapidFuzz 3.14.5 | Reject; do not add the dependency | The predeclared `fuzz.ratio(..., processor=None)` cutoff of 85 failed the accuracy gate and cannot recover candidates omitted by LSH. Its median score-only time was 6.88 s versus 0.94 s for exact Jaccard over the same already-materialized inputs, about 7.29x slower. |
 | No-datasketch fallback | Keep current ownership | Base import remained clean; document mode and passage Stage A returned the existing clear optional-dependency error; exact passage Stage B remained available. Voiceprint may own approximate candidate generation, but a safety-relevant consumer must retain or recheck source-bound exact evidence. |
 
-This research packet is not enough to close #396. The issue stays open until a
-production pin/scheme remediation is merged and tested, or the owner explicitly
-accepts unbounded behavior drift.
+The #407 repair implements the packet's safe slice: explicit signature identity,
+ephemeral index rebuild policy, LSH candidate generation, and production-observed
+exact confirmation before destructive union. The locked rerun requires zero
+false-positive drops while recording candidate misses rather than treating them
+as permission to claim exhaustive uniqueness.
 
 ## Reproduce on macOS
 
@@ -59,16 +61,18 @@ boilerplate additions, reordered passages, examples immediately above and below
 the repository's real five-word shingle sets; cluster truth is the connected
 components of only those exact-positive edges.
 
-| Shipped/research track | Co-cluster precision | Co-cluster recall | False positives | False negatives | Exact keep/drop |
+| Shipped/research track | Exact-edge precision | Exact-edge recall | False-positive drops | Retained oracle drops | Exact keep/drop |
 | --- | ---: | ---: | ---: | ---: | --- |
-| datasketch 1.6.5 default | 0.831169 | 0.914286 | 13 | 6 | No |
-| datasketch 2.0.0 default (`affine32`) | 0.817073 | 0.957143 | 15 | 3 | No |
-| datasketch 2.0.0 research-only `legacy` adapter | 0.831169 | 0.914286 | 13 | 6 | No |
+| datasketch 1.6.5 default | 1.000000 | 0.914286 | 0 | 6 | No |
+| datasketch 2.0.0 default (`affine32`) | 1.000000 | 0.957143 | 0 | 3 | No |
+| datasketch 2.0.0 research-only `legacy` adapter | 1.000000 | 0.914286 | 0 | 6 | No |
 
-`results.json` separately records raw LSH candidates, estimated-MinHash passes,
-and all final co-clustered pairs, with precision, recall, and complete FP/FN
-ledgers for each layer. The tracing wrapper delegates to the real production
-classes, and every traced keep/drop result matched an unwrapped control run.
+`results.json` separately records raw LSH candidates, production-observed exact
+confirmation edges, and all final co-clustered pairs, with precision, recall,
+and complete FP/FN ledgers for each layer. It also records false-positive drops
+and oracle duplicates retained because of candidate misses. The tracing wrapper
+delegates to the real production classes, and every traced keep/drop result
+matched an unwrapped control run.
 
 ## Mac scale results
 
