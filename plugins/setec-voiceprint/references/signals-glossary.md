@@ -271,7 +271,7 @@ Density of 2+ adjacent paragraphs sharing an "A X may Y" opening clause structur
 
 ## AIC-8: Aesthetic Authority Laundering
 
-Image-conjunction and prestige-metaphor scatter detectors. Enable via `variance_audit.py --aic8`. Requires spaCy + `en_core_web_md` or `_lg` (word vectors) + Brysbaert concreteness norms (ship in-repo).
+Image-conjunction and prestige-metaphor scatter detectors. Enable via `variance_audit.py --aic8`. Requires spaCy + `en_core_web_md` or `_lg` (word vectors) + a locally acquired Brysbaert concreteness CSV; without it, AIC-8 is explicitly unavailable.
 
 ### Image conjunction density
 

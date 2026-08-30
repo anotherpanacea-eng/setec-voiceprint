@@ -1,10 +1,10 @@
-# Shipped data resources
+# Optional local data resources
 
-External datasets used by the framework at runtime. Each entry below names the source, license posture, and how to regenerate the local cache.
+External datasets that a user may acquire for optional runtime features. Each entry below names the source, license posture, and how to regenerate a local cache.
 
 ## `brysbaert_concreteness.csv`
 
-Per-word concreteness ratings on a 1-5 scale (5 = most concrete) covering 39,954 English words and two-word phrases. Used by `scripts/concreteness.py` as the concreteness lookup that drives the AIC-8 image-conjunction detector. Required when running `--aic8` or its component detectors.
+Per-word concreteness ratings on a 1-5 scale (5 = most concrete) covering 39,954 English words and two-word phrases. Used by `scripts/concreteness.py` as the optional concreteness lookup that drives the AIC-8 image-conjunction detector. SETEC does not distribute this converted CSV; without a locally acquired copy, the dependent AIC-8 detectors report `data_not_installed`.
 
 ### Citation
 
@@ -27,9 +27,7 @@ The dataset is the supplementary material (`MOESM1_ESM.xlsx`) attached to the pa
 
 ### License posture
 
-The original XLSX is hosted as Springer supplementary material attached to a published article. Springer does not attach an explicit redistribution license to supplementary data files. The framework ships this converted CSV in-repo under the assumption that academic-research supplementary data is intended for downstream research use; operators redistributing the framework with this data should cite Brysbaert et al. 2014 (citation above) and link the original record.
-
-If your local redistribution context cannot include this CSV, `scripts/fetch_brysbaert.py` re-downloads the XLSX from Springer and regenerates the CSV. Operators who delete the CSV and run the fetcher get the same data.
+The original XLSX is hosted as Springer supplementary material attached to a published article. Springer does not attach an explicit redistribution license to supplementary data files. SETEC therefore does not grant permission to download, use, or redistribute the source data. A person who chooses to fetch it is responsible for the publisher's source terms.
 
 ### Regenerating the cache
 
@@ -38,4 +36,4 @@ python3 plugins/setec-voiceprint/scripts/fetch_brysbaert.py \
     --output plugins/setec-voiceprint/data/brysbaert_concreteness.csv
 ```
 
-The fetcher downloads `MOESM1_ESM.xlsx` from Springer's static-content CDN, converts to CSV using the schema above, and writes to the target path. Requires `openpyxl` (listed in `requirements.txt`).
+The fetcher downloads `MOESM1_ESM.xlsx` from Springer's static-content CDN, converts to CSV using the schema above, and writes to the ignored target path. Requires `openpyxl` (listed in `requirements.txt`). Do not commit or redistribute the generated file.

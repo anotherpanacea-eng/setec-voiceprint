@@ -1075,6 +1075,8 @@ def _aic8_image_prestige_block(text: str) -> dict[str, Any]:
             "available": False,
             "reason": f"AIC-8 modules unimportable: {exc}",
         }
+    if not ic.concreteness.is_available():
+        return {"available": False, "reason": "data_not_installed"}
     try:
         nlp = ic._load_spacy_with_parsing()
     except emb.EmbeddingsBackendError as exc:
@@ -1328,6 +1330,9 @@ def audit_text(
                 aic8.get("diagnostics") or {}
             )
         else:
+            out["aic_8_9"].setdefault("diagnostics", {})[
+                "aic8_available"
+            ] = False
             out["aic_8_9"].setdefault("diagnostics", {})[
                 "aic8_unavailable_reason"
             ] = aic8.get("reason")
@@ -3712,8 +3717,8 @@ def main() -> int:
             "Enable AIC-8 image conjunction + prestige metaphor "
             "(Aesthetic Authority Laundering). Requires spaCy with "
             "`en_core_web_md` or `_lg` (~50-700 MB) for word vectors "
-            "and the Brysbaert concreteness norms (ship in-repo at "
-            "`plugins/setec-voiceprint/data/brysbaert_concreteness.csv`). "
+            "and an optional locally acquired Brysbaert concreteness CSV "
+            "(`fetch_brysbaert.py`; unavailable otherwise). "
             "Registers two load-bearing signals (image_conjunction_"
             "density, prestige_metaphor_scatter); PROVISIONAL bands."
         ),

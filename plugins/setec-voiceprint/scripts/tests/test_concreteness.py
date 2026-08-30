@@ -3,9 +3,9 @@
 
 Pins the Brysbaert loader's contract: O(1) lookups, case-
 insensitive, None for unknowns, gap computation, and graceful
-handling of a missing data file. Uses both the shipped Brysbaert
-CSV (for integration sanity) and a small synthetic fixture (for
-isolated unit tests).
+handling of a missing data file. Uses an optional locally fetched
+Brysbaert CSV when present and a small synthetic fixture for isolated
+unit tests.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import concreteness as c  # type: ignore
 
 
 # Synthetic fixture: enough rows to exercise every code path
-# without depending on the shipped 40K-row CSV. Each test that
+# without depending on the optional 40K-row CSV. Each test that
 # wants isolation uses this.
 _FIXTURE_CSV = """word,is_bigram,conc_mean,conc_sd,unknown_count,total_raters,percent_known,subtlex_freq
 machinery,0,4.75,1.10,0,28,1.000000,250
@@ -147,22 +147,12 @@ def test_is_loaded_false_for_missing(tmp_path: Path):
     assert c.is_loaded(missing) is False
 
 
-# --------------- Integration with the shipped CSV ---------------
+def test_default_data_is_optional_and_unavailable_in_a_clean_checkout(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(c, "_DEFAULT_DATA_PATH", tmp_path / "missing.csv")
+    assert c.is_available() is False
+    with pytest.raises(FileNotFoundError, match="fetch_brysbaert.py"):
+        c.vocab_size()
 
 
-def test_shipped_csv_loads_with_expected_size():
-    """The framework's shipped Brysbaert CSV has 39,954 entries."""
-    # Default path argument exercises the production code path.
-    assert c.vocab_size() == 39954
-
-
-def test_shipped_csv_known_words():
-    """Sanity check the shipped data against canonical concreteness anchors.
-
-    `grief` and `machinery` are the spec's running example pair for
-    AIC-8 image-conjunction; their values are pinned upstream by
-    Brysbaert 2014 and the framework must read them correctly.
-    """
-    assert c.get_concreteness("grief") == pytest.approx(2.70, abs=0.01)
-    assert c.get_concreteness("machinery") == pytest.approx(4.75, abs=0.01)
-    assert c.get_concreteness("table") == pytest.approx(4.90, abs=0.01)
+def test_is_available_accepts_a_locally_acquired_override(fixture_csv_path: Path):
+    assert c.is_available(fixture_csv_path) is True

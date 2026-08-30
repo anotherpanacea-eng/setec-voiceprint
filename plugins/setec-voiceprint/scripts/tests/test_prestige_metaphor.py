@@ -27,6 +27,12 @@ ROOT = Path(__file__).resolve().parents[1]
 import prestige_metaphor as pm  # type: ignore
 
 
+pytestmark = pytest.mark.skipif(
+    not pm.image_conjunction.concreteness.is_available(),
+    reason="optional Brysbaert data is not installed; fixture integration requires a local copy",
+)
+
+
 _FIXTURE_DIR = ROOT / "test_data" / "aic_8_9"
 
 

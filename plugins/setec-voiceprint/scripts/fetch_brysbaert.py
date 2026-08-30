@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """fetch_brysbaert.py — re-download and convert Brysbaert concreteness norms.
 
-Companion to `scripts/concreteness.py`. The framework ships
-`data/brysbaert_concreteness.csv` in-repo so operators don't need
-to refetch on install; this script regenerates the CSV from the
-upstream Springer source for operators whose redistribution
-context excludes the data file, or for periodic refresh against
-the canonical source.
+Companion to `scripts/concreteness.py`. SETEC does not distribute
+`data/brysbaert_concreteness.csv`; this explicit opt-in script
+downloads and converts the upstream Springer source for a user's
+local use. The user is responsible for the source terms.
 
 Usage::
 
@@ -46,7 +44,7 @@ _SOURCE_URL = (
 )
 
 
-# Output CSV schema; matches the in-repo CSV at
+# Output CSV schema; matches the ignored locally generated CSV at
 # plugins/setec-voiceprint/data/brysbaert_concreteness.csv.
 _OUT_HEADER = [
     "word",

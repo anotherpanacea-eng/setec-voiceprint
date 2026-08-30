@@ -34,6 +34,12 @@ ROOT = Path(__file__).resolve().parents[1]
 import image_conjunction as ic  # type: ignore
 
 
+pytestmark = pytest.mark.skipif(
+    not ic.concreteness.is_available(),
+    reason="optional Brysbaert data is not installed; fixture integration requires a local copy",
+)
+
+
 _FIXTURE_DIR = ROOT / "test_data" / "aic_8_9"
 
 

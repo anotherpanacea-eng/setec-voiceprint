@@ -48,8 +48,9 @@ Dependency requirements:
     ``en_core_web_lg``) for the cosine-similarity check. The
     ``embeddings.py`` helper raises a typed error if neither is
     installed.
-  * ``data/brysbaert_concreteness.csv`` (ships in-repo) for the
-    concreteness lookup.
+  * An optional locally acquired ``data/brysbaert_concreteness.csv`` for the
+    concreteness lookup. Run ``fetch_brysbaert.py`` explicitly if permitted by
+    the source terms.
 """
 
 from __future__ import annotations
@@ -265,6 +266,13 @@ def image_conjunction_density(
     provided, a ``baseline_comparison`` block is included with the
     elevation factor.
     """
+    if not concreteness.is_available(concreteness_path):
+        return {
+            "signal_path": "aic_8_9.image_conjunction_density",
+            "available": False,
+            "reason": "data_not_installed",
+        }
+
     # Split into paragraphs; parse each separately so we can track
     # paragraph_index alongside the dependency walk.
     paragraphs = paragraph_parser.split_paragraphs(text)
@@ -434,6 +442,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
+
+    if not concreteness.is_available():
+        print(json.dumps({
+            "signal_path": "aic_8_9.image_conjunction_density",
+            "available": False,
+            "reason": "data_not_installed",
+        }, indent=2))
+        return 0
 
     # Wrap both the model load AND the audit in a single try/except.
     # `_load_spacy_with_parsing` raises `EmbeddingsBackendError`

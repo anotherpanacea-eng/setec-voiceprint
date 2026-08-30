@@ -131,6 +131,13 @@ def aesthetic_authority_audit(
     baselines (passed via ``explicit_baselines={"kicker_density":
     0.10, ...}``) take precedence.
     """
+    if not image_conjunction.concreteness.is_available():
+        return {
+            "signal_path": "aic_8_9.aesthetic_authority_audit",
+            "available": False,
+            "reason": "data_not_installed",
+        }
+
     # Resolve per-signal baselines.
     explicit_baselines = explicit_baselines or {}
 
@@ -372,6 +379,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
+
+    if not image_conjunction.concreteness.is_available():
+        payload = build_audit_payload({
+            "signal_path": "aic_8_9.aesthetic_authority_audit",
+            "available": False,
+            "reason": "data_not_installed",
+        }, target_path=args.input, text=text)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0
 
     explicit = {}
     if args.kicker_baseline is not None:

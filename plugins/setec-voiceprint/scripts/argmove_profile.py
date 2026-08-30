@@ -98,6 +98,8 @@ def agd_markers(text: str) -> dict[str, float]:
 
 def mean_concreteness(text: str) -> float | None:
     """Mean Brysbaert concreteness over in-vocab words (B3); None if no word is in-vocab."""
+    if not concreteness.is_available():
+        return None
     vals = [c for w in _WORD_RE.findall(text.lower())
             if (c := concreteness.get_concreteness(w)) is not None]
     return round(statistics.fmean(vals), 4) if vals else None
@@ -288,10 +290,12 @@ def run_self_test() -> int:
     chk("agd_zero_clean", agd_markers("The cat sat on the warm stone wall in the bright sun.")
         ["abusive_assuring_per_1k"] == 0.0)
 
-    # 2) concreteness orders concrete > abstract
-    chk("concreteness_order",
-        (mean_concreteness("table chair stone house dog") or 0)
-        > (mean_concreteness("freedom justice essence concept theory") or 0))
+    # 2) Concreteness is optional; when locally installed it retains its
+    # ordering property, and otherwise its omission is the expected state.
+    if concreteness.is_available():
+        chk("concreteness_order",
+            (mean_concreteness("table chair stone house dog") or 0)
+            > (mean_concreteness("freedom justice essence concept theory") or 0))
 
     # 3) vector contract + shape
     vec = argmove_vector("This clearly works, but it might be somewhat wrong. Studies show "
