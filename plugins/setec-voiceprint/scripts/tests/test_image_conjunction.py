@@ -34,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 import image_conjunction as ic  # type: ignore
 
 
-pytestmark = pytest.mark.skipif(
+_skip_no_data = pytest.mark.skipif(
     not ic.concreteness.is_available(),
     reason="optional Brysbaert data is not installed; fixture integration requires a local copy",
 )
@@ -126,6 +126,15 @@ def mock_concreteness_and_embeddings(monkeypatch: pytest.MonkeyPatch):
     )
     monkeypatch.setattr(
         "embeddings.cosine_similarity", fake_cosine_similarity,
+    )
+    monkeypatch.setattr(
+        "embeddings.model_identifier", lambda: "synthetic-test",
+    )
+    monkeypatch.setattr(
+        "concreteness.is_available", lambda data_path=None: True,
+    )
+    monkeypatch.setattr(
+        "concreteness.vocab_size", lambda data_path=None: len(concreteness_map),
     )
     return concreteness_map, similarity_map
 
@@ -271,6 +280,7 @@ def test_spacing_variance_zero_for_uniform_distances():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_runs_on_idiom_fixture():
     """End-to-end: idiom fixture should produce few or zero
     conjunctions at default thresholds (the compound filter rejects
@@ -292,6 +302,7 @@ def test_density_runs_on_idiom_fixture():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_runs_on_ai_fixture():
     """End-to-end: AI-image-conjunction fixture at T1=2.0 (which
     catches the spec's canonical positive examples per ROADMAP
@@ -309,6 +320,7 @@ def test_density_runs_on_ai_fixture():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_threshold_tuning_changes_count():
     """T1=2.0 catches more conjunctions than T1=2.5 on the AI fixture."""
     import spacy
@@ -323,7 +335,6 @@ def test_density_threshold_tuning_changes_count():
     )
 
 
-@_skip_no_vectors
 def test_density_empty_input(mock_concreteness_and_embeddings):
     """Empty input returns zero density with valid schema."""
     fake_nlp = mock.MagicMock()
@@ -336,6 +347,7 @@ def test_density_empty_input(mock_concreteness_and_embeddings):
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_json_schema_complete():
     """JSON output carries every key the spec specifies."""
     import spacy
@@ -363,6 +375,7 @@ def test_density_json_schema_complete():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_baseline_comparison_emitted_when_provided():
     """Passing baseline_value adds a baseline_comparison block."""
     import spacy
@@ -384,6 +397,7 @@ def test_density_baseline_comparison_emitted_when_provided():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_cli_runs_on_fixture_and_emits_json():
     fixture = _FIXTURE_DIR / "ai_image_conjunction_positive.md"
     result = subprocess.run(
@@ -424,6 +438,7 @@ def test_cli_help_runs_cleanly():
     )
     assert result.returncode == 0
     assert "AIC-8" in result.stdout
+    assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in result.stdout
 
 
 def test_load_spacy_raises_typed_error_when_no_model(
@@ -453,6 +468,7 @@ def test_load_spacy_raises_typed_error_when_no_model(
     assert "spacy download" in msg
 
 
+@_skip_no_data
 def test_cli_clean_exit_when_no_spacy_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ):

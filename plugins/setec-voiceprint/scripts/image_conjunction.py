@@ -393,6 +393,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "register baseline. Per "
             "`internal/SPEC_aic_8_9_implementation.md` Step 6."
         ),
+        epilog=concreteness.MISSING_DATA_GUIDANCE,
     )
     parser.add_argument(
         "input", type=Path,
@@ -444,11 +445,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     text = args.input.read_text(encoding="utf-8")
 
     if not concreteness.is_available():
-        print(json.dumps({
+        print(concreteness.MISSING_DATA_GUIDANCE, file=sys.stderr)
+        output = json.dumps({
             "signal_path": "aic_8_9.image_conjunction_density",
             "available": False,
             "reason": "data_not_installed",
-        }, indent=2))
+        }, indent=2)
+        if args.out is None:
+            print(output)
+        else:
+            args.out.write_text(output + "\n", encoding="utf-8")
         return 0
 
     # Wrap both the model load AND the audit in a single try/except.
