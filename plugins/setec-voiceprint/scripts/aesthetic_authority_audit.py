@@ -314,6 +314,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "and computes joint co-occurrence metrics. Per "
             "`internal/SPEC_aic_8_9_implementation.md` Step 8."
         ),
+        epilog=image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
     )
     parser.add_argument(
         "input", type=Path,
@@ -381,6 +382,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     text = args.input.read_text(encoding="utf-8")
 
     if not image_conjunction.concreteness.is_available():
+        print(
+            image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
+            file=sys.stderr,
+        )
         payload = build_audit_payload({
             "signal_path": "aic_8_9.aesthetic_authority_audit",
             "available": False,

@@ -473,6 +473,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "High entropy + elevated density = AIC-8 prestige-"
             "metaphor signature ('metaphor confetti')."
         ),
+        epilog=image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
     )
     parser.add_argument(
         "input", type=Path,
@@ -526,6 +527,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     text = args.input.read_text(encoding="utf-8")
 
     if not image_conjunction.concreteness.is_available():
+        print(
+            image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
+            file=sys.stderr,
+        )
         envelope = build_audit_payload({
             "signal_path": "aic_8_9.prestige_metaphor_density",
             "available": False,

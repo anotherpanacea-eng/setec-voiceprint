@@ -42,6 +42,9 @@ def test_synthetic_local_csv_reenables_image_detector_path(tmp_path, monkeypatch
     data.write_text(
         "word,conc_mean\nmachinery,4.5\ngrieF,1.5\n", encoding="utf-8",
     )
+    monkeypatch.setattr(
+        image_conjunction.embeddings, "model_identifier", lambda: "synthetic-test",
+    )
     result = image_conjunction.image_conjunction_density(
         "", nlp=None, concreteness_path=data,
     )
@@ -81,18 +84,21 @@ def test_unavailable_compound_clis_honor_out_file(tmp_path, capsys):
     source = tmp_path / "source.txt"
     source.write_text("A short public test sentence.\n", encoding="utf-8")
 
-    for main, filename in (
-        (prestige_metaphor.main, "prestige.json"),
-        (aaa.main, "aesthetic.json"),
+    for main, filename, result_path in (
+        (image_conjunction.main, "image.json", None),
+        (prestige_metaphor.main, "prestige.json", "results"),
+        (aaa.main, "aesthetic.json", "results"),
     ):
         destination = tmp_path / filename
         assert main([str(source), "--out", str(destination)]) == 0
         captured = capsys.readouterr()
         assert captured.out == ""
-        assert captured.err == ""
+        assert "Optional Brysbaert concreteness data" in captured.err
+        assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in captured.err
         payload = json.loads(destination.read_text(encoding="utf-8"))
-        assert payload["results"]["available"] is False
-        assert payload["results"]["reason"] == "data_not_installed"
+        result = payload if result_path is None else payload[result_path]
+        assert result["available"] is False
+        assert result["reason"] == "data_not_installed"
 
 
 def test_variance_aic8_marks_only_aic8_unavailable():

@@ -56,6 +56,11 @@ from typing import Optional
 _DEFAULT_DATA_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "brysbaert_concreteness.csv"
 )
+MISSING_DATA_GUIDANCE = (
+    "Optional Brysbaert concreteness data is not installed. Fetch it explicitly "
+    "for local use with: python3 "
+    "plugins/setec-voiceprint/scripts/fetch_brysbaert.py"
+)
 
 
 @lru_cache(maxsize=1)
