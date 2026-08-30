@@ -78,6 +78,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+plugins/setec-voiceprint/data/brysbaert_concreteness.csv
 *~
 
 # Local environment files

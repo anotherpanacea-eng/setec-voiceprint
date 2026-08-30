@@ -20,8 +20,8 @@ lemmas. *Behavior Research Methods*, 46(3), 904-911.
 https://doi.org/10.3758/s13428-013-0403-5
 
 Cache location: `plugins/setec-voiceprint/data/brysbaert_concreteness.csv`.
-The CSV ships with the framework. If absent, regenerate via
-`scripts/fetch_brysbaert.py` which re-downloads from Springer.
+The CSV is optional and is not distributed with the framework. If absent, an
+individual user may obtain it from its publisher via `scripts/fetch_brysbaert.py`.
 
 Design notes:
 
@@ -151,3 +151,8 @@ def is_loaded(data_path: Optional[Path | str] = None) -> bool:
         return True
     except (FileNotFoundError, OSError):
         return False
+
+
+def is_available(data_path: Optional[Path | str] = None) -> bool:
+    """Return whether optional concreteness data is locally available."""
+    return is_loaded(data_path)

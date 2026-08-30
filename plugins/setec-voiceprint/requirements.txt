@@ -83,10 +83,9 @@ statsmodels>=0.14
 # in subsequent releases. Three additional requirements:
 #
 #   1. openpyxl: re-fetcher for the Brysbaert concreteness norms
-#      (`scripts/fetch_brysbaert.py`). The norms ship in-repo at
-#      `data/brysbaert_concreteness.csv`; openpyxl is only needed when
-#      regenerating from the upstream XLSX. Listed as a soft requirement
-#      because the in-repo CSV satisfies most operators.
+#      (`scripts/fetch_brysbaert.py`). SETEC does not ship the optional
+#      `data/brysbaert_concreteness.csv`; openpyxl is needed only when a
+#      user explicitly acquires and converts the upstream XLSX.
 #   2. spaCy vectors-bearing model: `en_core_web_md` (~50 MB) or
 #      `en_core_web_lg` (~700 MB). The framework's other Tier 2/3 work
 #      uses `en_core_web_sm` which has no word vectors. AIC-8 image-

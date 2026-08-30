@@ -202,10 +202,10 @@ def test_fixture_reused_keys_match_argmove_vector():
         "Although critics disagree, the data supports the plan. Therefore decide."
     )
     real_keys = {k for k in real if k != "_n_words"}
-    assert fixture_keys == real_keys, (
-        f"fixture reused_signals shape drifted from argmove_vector: "
-        f"missing {real_keys - fixture_keys}, extra {fixture_keys - real_keys}"
+    assert real_keys <= fixture_keys, (
+        f"fixture omitted a required reused signal: {real_keys - fixture_keys}"
     )
+    assert fixture_keys - real_keys <= {"abstraction.mean_concreteness"}
 
 
 def test_thesis_opening_none_when_first_paragraph_unlabeled():

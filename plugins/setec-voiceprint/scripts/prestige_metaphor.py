@@ -69,7 +69,7 @@ CLI usage::
 Requirements:
 
   * Everything `image_conjunction.py` requires (spaCy with parsing
-    + vectors, Brysbaert CSV).
+    + vectors, and an optional locally acquired Brysbaert CSV).
   * Optional: NLTK + WordNet data for the WordNet fallback. If
     NLTK isn't installed, the detector runs hardcoded-only with a
     diagnostic note in the JSON output.
@@ -325,6 +325,13 @@ def prestige_metaphor_density(
     image_conjunction_density > baseline_value (if provided). The
     raw entropy is emitted regardless of whether the flag fires.
     """
+    if not image_conjunction.concreteness.is_available(concreteness_path):
+        return {
+            "signal_path": "aic_8_9.prestige_metaphor_density",
+            "available": False,
+            "reason": "data_not_installed",
+        }
+
     ic_block = image_conjunction.image_conjunction_density(
         text,
         nlp=nlp, t1=t1, t2=t2,
@@ -517,6 +524,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
+
+    if not image_conjunction.concreteness.is_available():
+        envelope = build_audit_payload({
+            "signal_path": "aic_8_9.prestige_metaphor_density",
+            "available": False,
+            "reason": "data_not_installed",
+        }, target_path=str(args.input))
+        print(json.dumps(envelope, indent=2))
+        return 0
 
     # Wrap both the spaCy load (which raises EmbeddingsBackendError
     # when no model is installed) AND the audit (which raises the

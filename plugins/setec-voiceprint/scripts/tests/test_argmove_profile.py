@@ -34,6 +34,6 @@ def test_vector_contract_keys_present():
         assert k in vec
 
 
-def test_concreteness_orders_concrete_above_abstract():
-    assert (amp.mean_concreteness("table chair stone house dog") or 0) \
-        > (amp.mean_concreteness("freedom justice essence concept theory") or 0)
+def test_vector_omits_optional_concreteness_when_data_is_absent():
+    vec = amp.argmove_vector("This clearly works, but it might be somewhat wrong.")
+    assert "abstraction.mean_concreteness" not in vec
