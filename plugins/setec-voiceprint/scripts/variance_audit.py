@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import Any
 
 from claim_license import ClaimLicense  # type: ignore
+import concreteness  # type: ignore
 from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import (
     aggregate_preprocessing_metadata,
@@ -3230,6 +3231,12 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
             )
     if not s.get("reliable", True):
         lines.append("WARNING: Document below 200 words; results are noisy.")
+    aic8_diagnostics = (audit.get("aic_8_9") or {}).get("diagnostics") or {}
+    if (
+        aic8_diagnostics.get("aic8_available") is False
+        and aic8_diagnostics.get("aic8_unavailable_reason") == "data_not_installed"
+    ):
+        lines.append(f"AIC-8 unavailable: {concreteness.MISSING_DATA_GUIDANCE}")
     lines.append("")
     fraction = compression.get("compression_fraction")
     fraction_str = (

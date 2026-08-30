@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import aesthetic_authority_audit as aaa
@@ -108,3 +109,27 @@ def test_variance_aic8_marks_only_aic8_unavailable():
     assert diagnostics["aic8_unavailable_reason"] == "data_not_installed"
     assert "image_conjunction_density" not in result["aic_8_9"]
     assert "prestige_metaphor_density" not in result["aic_8_9"]
+
+
+def test_variance_human_cli_names_optional_data_and_fetch_command(tmp_path):
+    source = tmp_path / "source.txt"
+    source.write_text("This is a valid synthetic test sentence. " * 60, encoding="utf-8")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "plugins/setec-voiceprint/scripts/variance_audit.py"),
+            str(source),
+            "--aic8",
+            "--no-tier2",
+            "--no-tier3",
+        ],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    combined = result.stdout + result.stderr
+    assert "Optional Brysbaert concreteness data" in combined
+    assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in combined
