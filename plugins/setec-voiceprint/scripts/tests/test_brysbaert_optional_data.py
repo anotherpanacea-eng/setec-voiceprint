@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -74,6 +75,24 @@ def test_direct_detectors_report_explicit_unavailability_without_parsing():
     assert "value" not in image and "conjunctions" not in image
     assert "value" not in prestige and "conjunctions" not in prestige
     assert "compound" not in aesthetic
+
+
+def test_unavailable_compound_clis_honor_out_file(tmp_path, capsys):
+    source = tmp_path / "source.txt"
+    source.write_text("A short public test sentence.\n", encoding="utf-8")
+
+    for main, filename in (
+        (prestige_metaphor.main, "prestige.json"),
+        (aaa.main, "aesthetic.json"),
+    ):
+        destination = tmp_path / filename
+        assert main([str(source), "--out", str(destination)]) == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == ""
+        payload = json.loads(destination.read_text(encoding="utf-8"))
+        assert payload["results"]["available"] is False
+        assert payload["results"]["reason"] == "data_not_installed"
 
 
 def test_variance_aic8_marks_only_aic8_unavailable():
