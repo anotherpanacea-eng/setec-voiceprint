@@ -531,7 +531,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             "available": False,
             "reason": "data_not_installed",
         }, target_path=str(args.input))
-        print(json.dumps(envelope, indent=2))
+        output = json.dumps(envelope, indent=2)
+        if args.out is None:
+            print(output)
+        else:
+            args.out.write_text(output + "\n", encoding="utf-8")
         return 0
 
     # Wrap both the spaCy load (which raises EmbeddingsBackendError

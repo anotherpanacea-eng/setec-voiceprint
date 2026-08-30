@@ -386,7 +386,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             "available": False,
             "reason": "data_not_installed",
         }, target_path=args.input, text=text)
-        print(json.dumps(payload, indent=2, default=str))
+        output = json.dumps(payload, indent=2, default=str)
+        if args.out is None:
+            print(output)
+        else:
+            args.out.write_text(output + "\n", encoding="utf-8")
         return 0
 
     explicit = {}
