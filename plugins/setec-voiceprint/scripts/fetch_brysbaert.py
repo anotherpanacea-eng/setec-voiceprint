@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import shutil
 import subprocess
 import sys
@@ -138,7 +139,20 @@ def download_xlsx(url: str = _SOURCE_URL, dest: Path | None = None) -> Path:
         ) from exc
 
 
-def convert_xlsx_to_csv(xlsx_path: Path, csv_path: Path) -> int:
+# Minimum data rows a converted Brysbaert CSV must carry to be accepted.
+# The published 2014 dataset has 39,954; the floor is set well below that so
+# an upstream revision does not fail the fetcher, while a truncated write
+# (Ctrl-C, disk-full, a non-float Conc.M cell aborting the stream) cannot
+# leave a plausible-looking partial file at the target path.
+MIN_CONVERTED_ROWS = 10_000
+
+
+def convert_xlsx_to_csv(
+    xlsx_path: Path,
+    csv_path: Path,
+    *,
+    min_rows: int = MIN_CONVERTED_ROWS,
+) -> int:
     """Convert the Brysbaert XLSX to the framework's CSV schema.
 
     Returns the number of data rows written. The output schema is
@@ -146,6 +160,13 @@ def convert_xlsx_to_csv(xlsx_path: Path, csv_path: Path) -> int:
     is expected to follow Brysbaert 2014's published layout (Sheet1
     with columns Word / Bigram / Conc.M / Conc.SD / Unknown / Total
     / Percent_known / SUBTLEX).
+
+    The write is atomic and validated: rows stream into a temp file in
+    ``csv_path``'s own directory and are moved onto ``csv_path`` with
+    ``os.replace`` ONLY after the row count clears ``min_rows``. A
+    Ctrl-C, a full disk, or a non-float ``Conc.M`` cell therefore leaves
+    the previous file (or no file) rather than a header-only or truncated
+    CSV that ``concreteness.is_available()`` would have to reject.
     """
     try:
         import openpyxl  # type: ignore
@@ -170,25 +191,47 @@ def convert_xlsx_to_csv(xlsx_path: Path, csv_path: Path) -> int:
             f"expected {expected!r}"
         )
     csv_path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(csv_path.parent), prefix=csv_path.name + ".", suffix=".part",
+    )
+    tmp_path = Path(tmp_name)
     n_data = 0
-    with open(csv_path, "w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f, lineterminator="\n")
-        writer.writerow(_OUT_HEADER)
-        for row in rows:
-            if row[0] is None:
-                continue
-            word, bigram, conc_m, conc_sd, unk, total, pct, subtlex = row
-            writer.writerow([
-                word,
-                int(bigram) if bigram is not None else 0,
-                f"{conc_m:.2f}" if conc_m is not None else "",
-                f"{conc_sd:.2f}" if conc_sd is not None else "",
-                int(unk) if unk is not None else "",
-                int(total) if total is not None else "",
-                f"{pct:.6f}" if pct is not None else "",
-                int(subtlex) if subtlex is not None else 0,
-            ])
-            n_data += 1
+    try:
+        with open(fd, "w", encoding="utf-8", newline="") as f:
+            writer = csv.writer(f, lineterminator="\n")
+            writer.writerow(_OUT_HEADER)
+            for row in rows:
+                if row[0] is None:
+                    continue
+                word, bigram, conc_m, conc_sd, unk, total, pct, subtlex = row
+                writer.writerow([
+                    word,
+                    int(bigram) if bigram is not None else 0,
+                    f"{conc_m:.2f}" if conc_m is not None else "",
+                    f"{conc_sd:.2f}" if conc_sd is not None else "",
+                    int(unk) if unk is not None else "",
+                    int(total) if total is not None else "",
+                    f"{pct:.6f}" if pct is not None else "",
+                    int(subtlex) if subtlex is not None else 0,
+                ])
+                n_data += 1
+            f.flush()
+            os.fsync(f.fileno())
+        if n_data < min_rows:
+            raise ValueError(
+                f"{xlsx_path}: converted only {n_data:,} data rows "
+                f"(expected at least {min_rows:,}); refusing to install a "
+                f"partial concreteness table at {csv_path}"
+            )
+        os.replace(tmp_path, csv_path)
+    except BaseException:
+        # Ctrl-C included: never leave the temp file, and never leave a
+        # partial table at the target path.
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
     return n_data
 
 
@@ -218,27 +261,48 @@ def main(argv: list[str] | None = None) -> int:
         help="Override the upstream XLSX URL (rarely needed).",
     )
     parser.add_argument(
+        "--min-rows", type=int, default=MIN_CONVERTED_ROWS, metavar="N",
+        help=(
+            "Refuse to install the converted CSV unless it carries at least "
+            f"N data rows (default: {MIN_CONVERTED_ROWS:,}). The guard is what "
+            "stops an interrupted or truncated conversion from leaving a "
+            "header-only table at the install path; lower it only if the "
+            "publisher genuinely ships a smaller file."
+        ),
+    )
+    parser.add_argument(
         "--keep-xlsx", action="store_true",
         help=(
-            "Keep the downloaded XLSX next to the output CSV "
-            "(default: deleted after conversion)."
+            "On a SUCCESSFUL conversion, keep the downloaded XLSX next "
+            "to the output CSV (default: deleted after conversion). A "
+            "failed conversion always deletes it."
         ),
     )
     args = parser.parse_args(argv)
 
     xlsx_path = download_xlsx(url=args.source_url)
     try:
-        n = convert_xlsx_to_csv(xlsx_path, args.output)
-    finally:
-        if not args.keep_xlsx:
-            try:
-                xlsx_path.unlink()
-            except OSError:
-                pass
-        elif args.keep_xlsx:
-            kept = args.output.with_suffix(".xlsx")
-            xlsx_path.rename(kept)
-            print(f"Kept XLSX at {kept}", file=sys.stderr)
+        n = convert_xlsx_to_csv(xlsx_path, args.output, min_rows=args.min_rows)
+    except BaseException:
+        # Conversion failed (or was interrupted): the raw XLSX is not a
+        # deliverable, so it is always discarded — --keep-xlsx keeps the
+        # source of a SUCCESSFUL conversion, never the debris of a failed
+        # one. (Previously the rename lived in a `finally`, so a failed run
+        # still parked the publisher's XLSX beside the CSV.)
+        try:
+            xlsx_path.unlink()
+        except OSError:
+            pass
+        raise
+    if args.keep_xlsx:
+        kept = args.output.with_suffix(".xlsx")
+        shutil.move(str(xlsx_path), str(kept))
+        print(f"Kept XLSX at {kept}", file=sys.stderr)
+    else:
+        try:
+            xlsx_path.unlink()
+        except OSError:
+            pass
     print(
         f"Wrote {n:,} concreteness rows to {args.output}",
         file=sys.stderr,

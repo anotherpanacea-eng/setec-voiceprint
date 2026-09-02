@@ -78,7 +78,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
-plugins/setec-voiceprint/data/brysbaert_concreteness.csv
+# Locally acquired Brysbaert concreteness norms — the converted CSV AND
+# the publisher's raw XLSX that `fetch_brysbaert.py --keep-xlsx` parks
+# beside it. SETEC redistributes neither.
+plugins/setec-voiceprint/data/brysbaert_concreteness.*
 *~
 
 # Local environment files
