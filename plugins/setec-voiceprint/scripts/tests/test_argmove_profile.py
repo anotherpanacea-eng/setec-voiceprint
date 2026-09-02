@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import argmove_profile as amp  # noqa: E402
+import concreteness  # noqa: E402
 
 
 def test_self_test_passes():
@@ -34,6 +35,59 @@ def test_vector_contract_keys_present():
         assert k in vec
 
 
-def test_vector_omits_optional_concreteness_when_data_is_absent():
+def test_vector_omits_optional_concreteness_when_data_is_absent(tmp_path, monkeypatch):
+    """P2-4: absence is driven through the loader's default-path seam, so
+    this FAILS only on a real regression — not on a machine where the user
+    has legitimately fetched the publisher's file."""
+    concreteness._load_concreteness_dict.cache_clear()
+    monkeypatch.setattr(
+        concreteness, "_DEFAULT_DATA_PATH", tmp_path / "absent" / "brysbaert.csv",
+    )
     vec = amp.argmove_vector("This clearly works, but it might be somewhat wrong.")
     assert "abstraction.mean_concreteness" not in vec
+    concreteness._load_concreteness_dict.cache_clear()
+
+
+# P2-8: the "concrete words rank above abstract words" behavior the train
+# deleted, restored against a test-owned CSV of INVENTED words and ratings
+# (spec §4: no upstream rating row is copied into tests). This is the
+# ordering property B3 actually claims; without it `mean_concreteness`
+# could return a constant and every other test would still pass.
+_INVENTED_CSV = """word,is_bigram,conc_mean,conc_sd,unknown_count,total_raters,percent_known,subtlex_freq
+plimber,0,4.80,0.30,0,30,1.000000,2400
+gralnet,0,4.60,1.10,0,28,1.000000,250
+korvane,0,4.40,0.95,0,28,1.000000,310
+drennock,0,4.20,0.90,0,28,1.000000,120
+morvane,0,4.05,0.85,0,28,1.000000,140
+themblish,0,1.55,1.05,2,30,0.933333,420
+vurnish,0,1.70,1.25,0,29,1.000000,180
+sprellik,0,1.90,1.15,0,29,1.000000,160
+quilth,0,2.05,1.20,0,29,1.000000,150
+brastine,0,2.20,1.30,0,29,1.000000,130
+"""
+
+
+def test_concreteness_orders_concrete_above_abstract(tmp_path):
+    data = tmp_path / "invented_concreteness.csv"
+    data.write_text(_INVENTED_CSV, encoding="utf-8")
+    concreteness._load_concreteness_dict.cache_clear()
+    try:
+        concrete = amp.mean_concreteness(
+            "plimber gralnet korvane drennock morvane", data_path=data,
+        )
+        abstract = amp.mean_concreteness(
+            "themblish vurnish sprellik quilth brastine", data_path=data,
+        )
+        assert concrete is not None and abstract is not None
+        assert concrete > abstract
+    finally:
+        concreteness._load_concreteness_dict.cache_clear()
+
+
+def test_mean_concreteness_is_none_without_data(tmp_path):
+    missing = tmp_path / "absent" / "brysbaert.csv"
+    concreteness._load_concreteness_dict.cache_clear()
+    try:
+        assert amp.mean_concreteness("plimber gralnet", data_path=missing) is None
+    finally:
+        concreteness._load_concreteness_dict.cache_clear()

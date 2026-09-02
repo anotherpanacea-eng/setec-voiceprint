@@ -96,12 +96,20 @@ def agd_markers(text: str) -> dict[str, float]:
     }
 
 
-def mean_concreteness(text: str) -> float | None:
-    """Mean Brysbaert concreteness over in-vocab words (B3); None if no word is in-vocab."""
-    if not concreteness.is_available():
+def mean_concreteness(text: str, data_path: Path | str | None = None) -> float | None:
+    """Mean Brysbaert concreteness over in-vocab words (B3); None if no word is in-vocab.
+
+    ``data_path`` overrides the optional dataset's location — the same
+    loader seam ``concreteness.get_concreteness`` exposes, so a caller with
+    a locally acquired file (or a test with a small invented CSV) exercises
+    the real scoring path. ``None`` (the default) uses the conventional
+    install location, and ``None`` is returned whenever that data is
+    unavailable — the composite vector then omits only this field.
+    """
+    if not concreteness.is_available(data_path):
         return None
     vals = [c for w in _WORD_RE.findall(text.lower())
-            if (c := concreteness.get_concreteness(w)) is not None]
+            if (c := concreteness.get_concreteness(w, data_path)) is not None]
     return round(statistics.fmean(vals), 4) if vals else None
 
 
@@ -293,9 +301,17 @@ def run_self_test() -> int:
     # 2) Concreteness is optional; when locally installed it retains its
     # ordering property, and otherwise its omission is the expected state.
     if concreteness.is_available():
-        chk("concreteness_order",
-            (mean_concreteness("table chair stone house dog") or 0)
-            > (mean_concreteness("freedom justice essence concept theory") or 0))
+        # Gate on `is not None`, never on `or 0`: with an acquired file that
+        # happens to lack the probe words BOTH means are None, `or 0` turns
+        # them into 0 > 0 and the check fails for a reason that is not a
+        # regression. Missing probe words => skip, not fail.
+        concrete = mean_concreteness("table chair stone house dog")
+        abstract = mean_concreteness("freedom justice essence concept theory")
+        if concrete is not None and abstract is not None:
+            chk("concreteness_order", concrete > abstract)
+        else:
+            print("  concreteness_order: SKIP "
+                  "(acquired concreteness data lacks the probe words)")
 
     # 3) vector contract + shape
     vec = argmove_vector("This clearly works, but it might be somewhat wrong. Studies show "
