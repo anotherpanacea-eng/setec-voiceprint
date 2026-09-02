@@ -279,6 +279,24 @@ def render_compare_md(cmp: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------- self-test
+# Probe table for the self-test's concreteness-ordering check. INVENTED
+# words and ratings (spec: no upstream rating row is copied into the repo),
+# fed through the documented `data_path` seam so the check is deterministic
+# and never depends on -- or fails because of -- a user's acquired dataset.
+_SELF_TEST_CONCRETENESS_CSV = (
+    "word,is_bigram,conc_mean,conc_sd,unknown_count,total_raters,"
+    "percent_known,subtlex_freq\n"
+    "plimber,0,4.80,0.30,0,30,1.000000,2400\n"
+    "gralnet,0,4.60,1.10,0,28,1.000000,250\n"
+    "korvane,0,4.40,0.95,0,28,1.000000,310\n"
+    "drennock,0,4.20,0.90,0,28,1.000000,120\n"
+    "themblish,0,1.55,1.05,2,30,0.933333,420\n"
+    "vurnish,0,1.70,1.25,0,29,1.000000,180\n"
+    "sprellik,0,1.90,1.15,0,29,1.000000,160\n"
+    "brastine,0,2.20,1.30,0,29,1.000000,130\n"
+)
+
+
 def run_self_test() -> int:
     import tempfile
     import shutil
@@ -298,20 +316,29 @@ def run_self_test() -> int:
     chk("agd_zero_clean", agd_markers("The cat sat on the warm stone wall in the bright sun.")
         ["abusive_assuring_per_1k"] == 0.0)
 
-    # 2) Concreteness is optional; when locally installed it retains its
-    # ordering property, and otherwise its omission is the expected state.
-    if concreteness.is_available():
-        # Gate on `is not None`, never on `or 0`: with an acquired file that
-        # happens to lack the probe words BOTH means are None, `or 0` turns
-        # them into 0 > 0 and the check fails for a reason that is not a
-        # regression. Missing probe words => skip, not fail.
-        concrete = mean_concreteness("table chair stone house dog")
-        abstract = mean_concreteness("freedom justice essence concept theory")
-        if concrete is not None and abstract is not None:
-            chk("concreteness_order", concrete > abstract)
-        else:
-            print("  concreteness_order: SKIP "
-                  "(acquired concreteness data lacks the probe words)")
+    # 2) Concreteness ordering. The self-test asserts this against its OWN
+    # invented probe table through the documented `data_path` seam, never
+    # against a user's acquired dataset: whether the user's copy happens to
+    # contain the probe words, or which ratings it gives them, is not a
+    # property of this code, and a self-check that a user's data can fail is
+    # a false alarm generator. The user's file is reported, not asserted on.
+    with tempfile.TemporaryDirectory() as probe_dir:
+        probe = Path(probe_dir) / "concreteness_probe.csv"
+        probe.write_text(_SELF_TEST_CONCRETENESS_CSV, encoding="utf-8")
+        concrete = mean_concreteness(
+            "plimber gralnet korvane drennock", data_path=probe,
+        )
+        abstract = mean_concreteness(
+            "themblish vurnish sprellik brastine", data_path=probe,
+        )
+        chk("concreteness_order",
+            concrete is not None and abstract is not None
+            and concrete > abstract)
+    print(
+        "  concreteness_data: "
+        + ("installed (optional; not asserted on)"
+           if concreteness.is_available() else "not installed (optional)")
+    )
 
     # 3) vector contract + shape
     vec = argmove_vector("This clearly works, but it might be somewhat wrong. Studies show "

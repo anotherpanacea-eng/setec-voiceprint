@@ -91,3 +91,36 @@ def test_mean_concreteness_is_none_without_data(tmp_path):
         assert amp.mean_concreteness("plimber gralnet", data_path=missing) is None
     finally:
         concreteness._load_concreteness_dict.cache_clear()
+
+
+def test_self_test_passes_with_an_installed_dataset(tmp_path, monkeypatch):
+    """Fold-in (c): `run_self_test` used to assert concrete > abstract
+    against whatever concreteness data the user had installed, so a real
+    dataset that lacked the probe words (or rated them unexpectedly) made
+    the self-check report FAIL for something that is not a regression. It
+    now asserts against its own invented probe table through the data_path
+    seam; an installed dataset is reported, never asserted on. This drives
+    that branch with a deliberately hostile 'installed' file."""
+    # A hostile-but-legal "user dataset": it CONTAINS the words the old
+    # self-check probed with, and rates them the other way round. The old
+    # code asserted concrete > abstract on exactly these values and
+    # reported FAIL; nothing about that is a regression in this module.
+    inverted = {
+        "table": 1.10, "chair": 1.20, "stone": 1.30, "house": 1.40, "dog": 1.50,
+        "freedom": 4.90, "justice": 4.80, "essence": 4.70,
+        "concept": 4.60, "theory": 4.50,
+    }
+    installed = tmp_path / "brysbaert_concreteness.csv"
+    installed.write_text(
+        "word,conc_mean\n"
+        + "".join(f"{w},{v:.2f}\n" for w, v in inverted.items())
+        + "".join(f"filler{i},3.00\n" for i in range(concreteness.MIN_USABLE_ROWS)),
+        encoding="utf-8",
+    )
+    concreteness._load_concreteness_dict.cache_clear()
+    monkeypatch.setattr(concreteness, "_DEFAULT_DATA_PATH", installed)
+    try:
+        assert concreteness.is_available() is True
+        assert amp.run_self_test() == 0
+    finally:
+        concreteness._load_concreteness_dict.cache_clear()
