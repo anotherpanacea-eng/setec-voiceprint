@@ -167,12 +167,28 @@ def convert_xlsx_to_csv(
     with columns Word / Bigram / Conc.M / Conc.SD / Unknown / Total
     / Percent_known / SUBTLEX).
 
-    The write is atomic and validated: rows stream into a temp file in
-    ``csv_path``'s own directory and are moved onto ``csv_path`` with
-    ``os.replace`` ONLY after the row count clears ``min_rows``. A
-    Ctrl-C, a full disk, or a non-float ``Conc.M`` cell therefore leaves
-    the previous file (or no file) rather than a header-only or truncated
-    CSV that ``concreteness.is_available()`` would have to reject.
+    The write is atomic and validated on BOTH axes the loader validates,
+    using the loader's own constants, so this function cannot install a
+    file ``concreteness`` would then reject:
+
+      * **values** — every non-empty ``Conc.M`` cell must satisfy
+        ``concreteness.is_valid_rating`` (finite, within
+        ``CONC_SCALE_MIN``..``CONC_SCALE_MAX``). One bad cell aborts the
+        conversion. Without this the converter happily installed, say,
+        12,001 rows containing a 7.5, which the loader reported as
+        ``data_malformed`` — and the malformed guidance used to name this
+        very command as the remedy, a loop.
+      * **cardinality** — the count of USABLE rows (a parsable, in-scale
+        rating) must clear ``min_rows``, which defaults to the loader's
+        own floor. Rows whose ``Conc.M`` is empty are written but do not
+        count, exactly as the loader does not count them.
+
+    Rows stream into a temp file in ``csv_path``'s own directory and are
+    moved onto ``csv_path`` with ``os.replace`` ONLY after both checks
+    pass. A Ctrl-C, a full disk, a bad cell, or a short table therefore
+    leaves the previous file (or no file) untouched.
+
+    Returns the number of data rows written.
     """
     try:
         import openpyxl  # type: ignore
@@ -202,6 +218,7 @@ def convert_xlsx_to_csv(
     )
     tmp_path = Path(tmp_name)
     n_data = 0
+    n_usable = 0
     try:
         with open(fd, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f, lineterminator="\n")
@@ -210,6 +227,24 @@ def convert_xlsx_to_csv(
                 if row[0] is None:
                     continue
                 word, bigram, conc_m, conc_sd, unk, total, pct, subtlex = row
+                if conc_m is not None:
+                    try:
+                        rating = float(conc_m)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f"{xlsx_path}: row for {word!r} carries a "
+                            f"non-numeric Conc.M {conc_m!r}; refusing to "
+                            f"install it at {csv_path}"
+                        ) from None
+                    if not concreteness.is_valid_rating(rating):
+                        raise ValueError(
+                            f"{xlsx_path}: row for {word!r} carries rating "
+                            f"{conc_m!r}, which is not a finite value on the "
+                            f"documented {concreteness.CONC_SCALE_MIN}-"
+                            f"{concreteness.CONC_SCALE_MAX} scale; refusing to "
+                            f"install it at {csv_path}"
+                        )
+                    n_usable += 1
                 writer.writerow([
                     word,
                     int(bigram) if bigram is not None else 0,
@@ -223,11 +258,11 @@ def convert_xlsx_to_csv(
                 n_data += 1
             f.flush()
             os.fsync(f.fileno())
-        if n_data < min_rows:
+        if n_usable < min_rows:
             raise ValueError(
-                f"{xlsx_path}: converted only {n_data:,} data rows "
-                f"(expected at least {min_rows:,}); refusing to install a "
-                f"partial concreteness table at {csv_path}"
+                f"{xlsx_path}: converted only {n_usable:,} usable rating "
+                f"row(s) (expected at least {min_rows:,}); refusing to "
+                f"install a partial concreteness table at {csv_path}"
             )
         os.replace(tmp_path, csv_path)
     except BaseException:
@@ -239,6 +274,14 @@ def convert_xlsx_to_csv(
             pass
         raise
     return n_data
+
+
+def _is_conventional_path(output: Path) -> bool:
+    """True when ``output`` is the install path the loader reads by default."""
+    try:
+        return output.resolve() == concreteness._DEFAULT_DATA_PATH.resolve()
+    except OSError:
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,10 +313,14 @@ def main(argv: list[str] | None = None) -> int:
         "--min-rows", type=int, default=MIN_CONVERTED_ROWS, metavar="N",
         help=(
             "Refuse to install the converted CSV unless it carries at least "
-            f"N data rows (default: {MIN_CONVERTED_ROWS:,}). The guard is what "
-            "stops an interrupted or truncated conversion from leaving a "
-            "header-only table at the install path; lower it only if the "
-            "publisher genuinely ships a smaller file."
+            f"N usable rating rows (default: {MIN_CONVERTED_ROWS:,}, which is "
+            "concreteness.MIN_USABLE_ROWS — the loader's own floor). The guard "
+            "is what stops an interrupted or truncated conversion from leaving "
+            "a header-only table at the install path. Lowering it below the "
+            "loader floor is REFUSED for the conventional install path, "
+            "because the result would be a file the loader reports as "
+            "data_malformed; it is allowed for any other --output path, which "
+            "is the bring-your-own / experiment seam."
         ),
     )
     parser.add_argument(
@@ -285,6 +332,22 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+
+    # Clamp: a floor below the loader's own would install a file the loader
+    # rejects at the conventional path — the exact "fetcher and loader can
+    # disagree" gap this guard exists to close. Any other --output path is
+    # the bring-your-own / experiment seam and keeps the override.
+    if args.min_rows < concreteness.MIN_USABLE_ROWS and _is_conventional_path(
+        args.output
+    ):
+        print(
+            f"error: --min-rows {args.min_rows:,} is below the loader's floor "
+            f"({concreteness.MIN_USABLE_ROWS:,}), so the installed file would "
+            f"be reported as {concreteness.DATA_MALFORMED} at the conventional "
+            f"path {args.output}. Pass a different --output to experiment.",
+            file=sys.stderr,
+        )
+        return 2
 
     xlsx_path = download_xlsx(url=args.source_url)
     try:

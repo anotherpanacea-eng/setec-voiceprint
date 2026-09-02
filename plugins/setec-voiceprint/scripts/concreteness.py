@@ -112,6 +112,17 @@ MIN_USABLE_ROWS_OVERRIDE = 1
 CONC_SCALE_MIN = 1.0
 CONC_SCALE_MAX = 5.0
 
+
+def is_valid_rating(value: float) -> bool:
+    """True when ``value`` is a plausible Brysbaert concreteness rating.
+
+    The single value oracle. ``fetch_brysbaert.convert_xlsx_to_csv`` calls
+    THIS function before it installs a converted CSV, so the fetcher cannot
+    write a file this loader would then reject — the two halves of "is this
+    file usable" cannot drift apart.
+    """
+    return math.isfinite(value) and CONC_SCALE_MIN <= value <= CONC_SCALE_MAX
+
 MISSING_DATA_GUIDANCE = (
     "Optional Brysbaert concreteness data is not installed. Fetch it explicitly "
     "for local use with: python3 "
@@ -119,9 +130,10 @@ MISSING_DATA_GUIDANCE = (
 )
 MALFORMED_DATA_GUIDANCE = (
     "Optional Brysbaert concreteness data is present but unusable: it is missing "
-    "the required word/conc_mean columns, carries no usable rating rows, or is "
-    "not valid UTF-8 CSV. Inspect or delete the file before regenerating it "
-    "with: python3 plugins/setec-voiceprint/scripts/fetch_brysbaert.py"
+    "the required word/conc_mean columns, carries no usable rating rows, holds a "
+    "rating that is not a finite 1-5 value, or is not valid UTF-8 CSV. Delete the "
+    "file and re-acquire the publisher's supplementary XLSX; do not simply re-run "
+    "the converter over the same source, which would reproduce the same file."
 )
 UNREADABLE_DATA_GUIDANCE = (
     "Optional Brysbaert concreteness data is present but could not be read "
@@ -232,9 +244,7 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
                 except (KeyError, ValueError, TypeError):
                     # No parsable rating on this row: absent, not asserted.
                     continue
-                if not math.isfinite(conc) or not (
-                    CONC_SCALE_MIN <= conc <= CONC_SCALE_MAX
-                ):
+                if not is_valid_rating(conc):
                     raise ConcretenessDataError(
                         f"Brysbaert concreteness CSV at {csv_path} carries "
                         f"rating {row['conc_mean']!r} for {raw_word!r}, which "
