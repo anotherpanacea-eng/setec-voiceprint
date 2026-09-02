@@ -415,3 +415,39 @@ def test_explicit_path_override_keeps_the_small_test_owned_seam(fixture_csv_path
     carries the full floor."""
     assert c.is_available(fixture_csv_path) is True
     assert c.vocab_size(fixture_csv_path) == 6
+
+
+# --------------- the specific diagnostic reaches the operator ----
+#
+# Fold-in (a): `guidance_for()` discarded the loader's specific finding
+# ("carries rating '1000000' for 'gralnet'") and printed only the generic
+# class of problem, leaving an operator to guess which of the malformed
+# conditions their copy actually hit.
+
+
+def test_guidance_carries_the_specific_finding(tmp_path: Path):
+    path = _write(
+        tmp_path, "bad_values.csv",
+        "word,conc_mean\ngralnet,4.60\nvurnish,1000000\n",
+    )
+    reason, detail = c.availability_status(path)
+    assert reason == c.DATA_MALFORMED
+    assert "1000000" in detail and "vurnish" in detail
+    guidance = c.unavailable_guidance(path)
+    assert c.MALFORMED_DATA_GUIDANCE in guidance
+    assert "1000000" in guidance
+
+
+def test_guidance_names_the_missing_column(tmp_path: Path):
+    path = _write(tmp_path, "wrong.csv", "term,rating\ngralnet,4.6\n")
+    guidance = c.unavailable_guidance(path)
+    assert "conc_mean" in guidance and "term" in guidance
+
+
+def test_status_is_clean_when_the_data_is_usable(fixture_csv_path: Path):
+    assert c.availability_status(fixture_csv_path) == (None, "")
+    assert c.unavailable_guidance(fixture_csv_path) == ""
+
+
+def test_guidance_for_without_a_detail_is_unchanged():
+    assert c.guidance_for(c.DATA_NOT_INSTALLED) == c.MISSING_DATA_GUIDANCE

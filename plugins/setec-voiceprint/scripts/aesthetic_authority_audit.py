@@ -382,9 +382,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     text = args.input.read_text(encoding="utf-8")
 
-    unavailable = image_conjunction.concreteness.availability_reason()
+    unavailable, detail = image_conjunction.concreteness.availability_status()
     if unavailable is not None:
-        guidance = image_conjunction.concreteness.guidance_for(unavailable)
+        guidance = image_conjunction.concreteness.guidance_for(unavailable, detail)
         print(guidance, file=sys.stderr)
         # R3 shape (references/setec-normalized-entrypoint-spec.md §4): ONE
         # envelope shape for success and failure. The optional dataset is a

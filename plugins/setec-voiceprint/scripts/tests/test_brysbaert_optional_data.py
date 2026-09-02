@@ -319,3 +319,39 @@ def test_aic9_diagnostics_are_symmetric_with_aic8(monkeypatch):
     diagnostics = audit["aic_8_9"]["diagnostics"]
     assert diagnostics["aic9_available"] is False
     assert diagnostics["aic9_unavailable_reason"] == "kicker_density unimportable"
+
+
+def test_unavailable_envelope_warning_carries_the_specific_finding(
+    tmp_path, capsys, monkeypatch,
+):
+    """Fold-in (a) at the envelope boundary: the warnings entry must say
+    WHICH content made the file unusable, not only that it is."""
+    rows = "\n".join(
+        f"gralnet{i},4.60" for i in range(concreteness.MIN_USABLE_ROWS)
+    )
+    path = tmp_path / "brysbaert_concreteness.csv"
+    path.write_text(f"word,conc_mean\n{rows}\nvurnish,1000000\n", encoding="utf-8")
+    concreteness._load_concreteness_dict.cache_clear()
+    monkeypatch.setattr(concreteness, "_DEFAULT_DATA_PATH", path)
+    try:
+        source = tmp_path / "source.txt"
+        source.write_text(_NINETY_WORDS.strip() + "\n", encoding="utf-8")
+        destination = tmp_path / "out.json"
+        assert prestige_metaphor.main([str(source), "--out", str(destination)]) == 0
+        captured = capsys.readouterr()
+        payload = json.loads(destination.read_text(encoding="utf-8"))
+        assert "1000000" in payload["warnings"][0]
+        assert "vurnish" in payload["warnings"][0]
+        assert "1000000" in captured.err
+
+        audit = variance_audit.audit_text(
+            "This is a valid synthetic test sentence. " * 30, do_aic8=True,
+        )
+        diagnostics = audit["aic_8_9"]["diagnostics"]
+        assert "1000000" in diagnostics["aic8_unavailable_detail"]
+        summary = variance_audit.format_summary(
+            audit, variance_audit.classify_compression(audit),
+        )
+        assert "1000000" in summary
+    finally:
+        concreteness._load_concreteness_dict.cache_clear()

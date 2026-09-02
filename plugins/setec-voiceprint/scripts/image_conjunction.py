@@ -445,9 +445,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     text = args.input.read_text(encoding="utf-8")
 
-    unavailable = concreteness.availability_reason()
+    unavailable, detail = concreteness.availability_status()
     if unavailable is not None:
-        print(concreteness.guidance_for(unavailable), file=sys.stderr)
+        print(concreteness.guidance_for(unavailable, detail), file=sys.stderr)
         output = json.dumps({
             "signal_path": "aic_8_9.image_conjunction_density",
             "available": False,

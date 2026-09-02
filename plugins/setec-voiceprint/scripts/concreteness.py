@@ -154,16 +154,24 @@ class ConcretenessDataError(RuntimeError):
 
     Carries the machine-readable ``reason`` (``data_malformed`` or
     ``data_unreadable``) so a caller names it in an envelope without
-    string-matching the message.
+    string-matching the message, and the SPECIFIC ``detail`` (which row,
+    which value, which column) so an operator is not left to guess which
+    of the malformed conditions their file hit.
     """
 
-    def __init__(self, message: str, reason: str) -> None:
-        super().__init__(message)
+    def __init__(self, detail: str, reason: str) -> None:
+        super().__init__(f"{detail} {_REASON_GUIDANCE.get(reason, '')}".strip())
         self.reason = reason
+        self.detail = detail
 
 
-def guidance_for(reason: Optional[str]) -> str:
+def guidance_for(reason: Optional[str], detail: str = "") -> str:
     """Human guidance for an unavailability ``reason``.
+
+    ``detail`` is the specific diagnostic the loader produced (e.g. "carries
+    rating '1000000' for 'gralnet'"). It is APPENDED rather than discarded:
+    the generic guidance says what class of problem this is, the detail says
+    which file content caused it, and an operator needs both to act.
 
     An unrecognized reason (e.g. variance_audit's "AIC-8 modules
     unimportable: ...") is returned verbatim, so a summary line can print
@@ -171,7 +179,8 @@ def guidance_for(reason: Optional[str]) -> str:
     """
     if reason is None:
         return ""
-    return _REASON_GUIDANCE.get(reason, reason)
+    base = _REASON_GUIDANCE.get(reason, reason)
+    return f"{base} [{detail}]" if detail else base
 
 
 @lru_cache(maxsize=1)
@@ -231,8 +240,7 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
             if missing:
                 raise ConcretenessDataError(
                     f"Brysbaert concreteness CSV at {csv_path} is missing "
-                    f"required column(s) {missing!r}; found {fieldnames!r}. "
-                    f"{MALFORMED_DATA_GUIDANCE}",
+                    f"required column(s) {missing!r}; found {fieldnames!r}",
                     DATA_MALFORMED,
                 )
             for row in reader:
@@ -249,8 +257,7 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
                         f"Brysbaert concreteness CSV at {csv_path} carries "
                         f"rating {row['conc_mean']!r} for {raw_word!r}, which "
                         f"is not a finite value on the documented "
-                        f"{CONC_SCALE_MIN}-{CONC_SCALE_MAX} scale. "
-                        f"{MALFORMED_DATA_GUIDANCE}",
+                        f"{CONC_SCALE_MIN}-{CONC_SCALE_MAX} scale",
                         DATA_MALFORMED,
                     )
                 result[raw_word.lower()] = conc
@@ -260,13 +267,13 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
     except UnicodeDecodeError as exc:
         raise ConcretenessDataError(
             f"Brysbaert concreteness CSV at {csv_path} is not valid UTF-8 "
-            f"({exc}). {MALFORMED_DATA_GUIDANCE}",
+            f"({exc})",
             DATA_MALFORMED,
         ) from exc
     except OSError as exc:
         raise ConcretenessDataError(
             f"Brysbaert concreteness CSV at {csv_path} could not be read "
-            f"({type(exc).__name__}: {exc}). {UNREADABLE_DATA_GUIDANCE}",
+            f"({type(exc).__name__}: {exc})",
             DATA_UNREADABLE,
         ) from exc
     floor = MIN_USABLE_ROWS_OVERRIDE if path else MIN_USABLE_ROWS
@@ -274,7 +281,7 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
         raise ConcretenessDataError(
             f"Brysbaert concreteness CSV at {csv_path} carries "
             f"{len(result)} usable rating row(s); at least "
-            f"{floor} is required. {MALFORMED_DATA_GUIDANCE}",
+            f"{floor} is required",
             DATA_MALFORMED,
         )
     return result
@@ -329,6 +336,31 @@ def vocab_size(data_path: Optional[Path | str] = None) -> int:
     return len(_load_concreteness_dict(path_str))
 
 
+def availability_status(
+    data_path: Optional[Path | str] = None,
+) -> tuple[Optional[str], str]:
+    """Return ``(reason, detail)`` — ``(None, "")`` when the data is usable.
+
+    ``detail`` is the loader's SPECIFIC diagnostic for this file, which
+    callers append to the generic guidance so an operator learns which of
+    the malformed conditions their copy actually hit. Never raises.
+    """
+    path_str = str(data_path) if data_path else ""
+    try:
+        _load_concreteness_dict(path_str)
+    except FileNotFoundError:
+        return DATA_NOT_INSTALLED, ""
+    except ConcretenessDataError as exc:
+        return exc.reason, exc.detail
+    except OSError as exc:
+        # A permissions / IO problem is never "malformed": its guidance
+        # must not tell the operator to delete a good dataset.
+        return DATA_UNREADABLE, f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — never raise out of the guard
+        return DATA_MALFORMED, f"{type(exc).__name__}: {exc}"
+    return None, ""
+
+
 def availability_reason(data_path: Optional[Path | str] = None) -> Optional[str]:
     """Return ``None`` when the optional data is usable, else the reason code.
 
@@ -341,25 +373,13 @@ def availability_reason(data_path: Optional[Path | str] = None) -> Optional[str]
     Never raises — every failure becomes a reason code, so an audit that
     calls this at import time (or in a pytest ``skipif``) cannot explode.
     """
-    path_str = str(data_path) if data_path else ""
-    try:
-        _load_concreteness_dict(path_str)
-    except FileNotFoundError:
-        return DATA_NOT_INSTALLED
-    except ConcretenessDataError as exc:
-        return exc.reason
-    except OSError:
-        # A permissions / IO problem is never "malformed": its guidance
-        # must not tell the operator to delete a good dataset.
-        return DATA_UNREADABLE
-    except Exception:  # noqa: BLE001 — never raise out of the guard
-        return DATA_MALFORMED
-    return None
+    return availability_status(data_path)[0]
 
 
 def unavailable_guidance(data_path: Optional[Path | str] = None) -> str:
     """Human guidance for why the data is unusable (``""`` when it is fine)."""
-    return guidance_for(availability_reason(data_path))
+    reason, detail = availability_status(data_path)
+    return guidance_for(reason, detail)
 
 
 def is_available(data_path: Optional[Path | str] = None) -> bool:
