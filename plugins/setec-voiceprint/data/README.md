@@ -29,8 +29,12 @@ The dataset is the supplementary material (`MOESM1_ESM.xlsx`) attached to the pa
 
 `scripts/concreteness.py` accepts a file at this conventional path only if it carries at least
 `MIN_USABLE_ROWS` (10,000) usable `(word, rating)` rows — well below the published table's
-39,954, and the SAME constant `fetch_brysbaert.MIN_CONVERTED_ROWS` enforces before installing,
-so the fetcher can never leave a file the loader would reject. This matters because the CSV may
+39,954, and the SAME constant `fetch_brysbaert.MIN_CONVERTED_ROWS` enforces before installing.
+The fetcher also applies the loader's own value oracle (`concreteness.is_valid_rating`) to every
+`Conc.M` cell and refuses a `--min-rows` below the loader floor when writing to this
+conventional path, so a fetch that succeeds cannot leave a file the loader would reject. (A
+`--min-rows` override IS allowed for any other `--output`: that is the experiment seam, and a
+file produced that way is not expected to load from the conventional path.) This matters because the CSV may
 legitimately be acquired by a route other than the fetcher: a truncated or hand-assembled table
 would otherwise load, and every AIC-8 detector would score confidently against a handful of
 rows. A caller that passes an explicit `data_path` (the bring-your-own / test seam) is held to a
