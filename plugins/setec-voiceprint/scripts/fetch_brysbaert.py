@@ -37,6 +37,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+import concreteness  # type: ignore
+
 
 _SOURCE_URL = (
     "https://static-content.springer.com/esm/"
@@ -140,11 +142,15 @@ def download_xlsx(url: str = _SOURCE_URL, dest: Path | None = None) -> Path:
 
 
 # Minimum data rows a converted Brysbaert CSV must carry to be accepted.
-# The published 2014 dataset has 39,954; the floor is set well below that so
-# an upstream revision does not fail the fetcher, while a truncated write
-# (Ctrl-C, disk-full, a non-float Conc.M cell aborting the stream) cannot
-# leave a plausible-looking partial file at the target path.
-MIN_CONVERTED_ROWS = 10_000
+# There is ONE floor, and the loader owns it: `concreteness.MIN_USABLE_ROWS`
+# is what decides whether an installed file is usable, so the fetcher must
+# not install anything the loader would then reject (nor accept something
+# the loader would). The published 2014 dataset has 39,954 rows; the floor
+# sits well below that so an upstream revision does not fail the fetcher,
+# while a truncated write (Ctrl-C, disk-full, a non-float Conc.M cell
+# aborting the stream) cannot leave a plausible-looking partial file at the
+# target path.
+MIN_CONVERTED_ROWS = concreteness.MIN_USABLE_ROWS
 
 
 def convert_xlsx_to_csv(
