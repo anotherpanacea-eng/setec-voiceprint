@@ -1076,8 +1076,9 @@ def _aic8_image_prestige_block(text: str) -> dict[str, Any]:
             "available": False,
             "reason": f"AIC-8 modules unimportable: {exc}",
         }
-    if not ic.concreteness.is_available():
-        return {"available": False, "reason": "data_not_installed"}
+    unavailable = ic.concreteness.availability_reason()
+    if unavailable is not None:
+        return {"available": False, "reason": unavailable}
     try:
         nlp = ic._load_spacy_with_parsing()
     except emb.EmbeddingsBackendError as exc:
@@ -3232,11 +3233,14 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
     if not s.get("reliable", True):
         lines.append("WARNING: Document below 200 words; results are noisy.")
     aic8_diagnostics = (audit.get("aic_8_9") or {}).get("diagnostics") or {}
-    if (
-        aic8_diagnostics.get("aic8_available") is False
-        and aic8_diagnostics.get("aic8_unavailable_reason") == "data_not_installed"
-    ):
-        lines.append(f"AIC-8 unavailable: {concreteness.MISSING_DATA_GUIDANCE}")
+    if aic8_diagnostics.get("aic8_available") is False:
+        # Fire for EVERY unavailable reason, not only the missing-file one:
+        # a malformed/unreadable local CSV, an unimportable AIC-8 module, and
+        # a missing spaCy model all left the human summary silent before.
+        # `guidance_for` maps a known data reason to its operator fix and
+        # passes any other reason through verbatim.
+        reason = aic8_diagnostics.get("aic8_unavailable_reason")
+        lines.append(f"AIC-8 unavailable: {concreteness.guidance_for(reason)}")
     lines.append("")
     fraction = compression.get("compression_fraction")
     fraction_str = (

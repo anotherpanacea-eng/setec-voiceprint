@@ -266,11 +266,12 @@ def image_conjunction_density(
     provided, a ``baseline_comparison`` block is included with the
     elevation factor.
     """
-    if not concreteness.is_available(concreteness_path):
+    unavailable = concreteness.availability_reason(concreteness_path)
+    if unavailable is not None:
         return {
             "signal_path": "aic_8_9.image_conjunction_density",
             "available": False,
-            "reason": "data_not_installed",
+            "reason": unavailable,
         }
 
     # Split into paragraphs; parse each separately so we can track
@@ -444,12 +445,13 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     text = args.input.read_text(encoding="utf-8")
 
-    if not concreteness.is_available():
-        print(concreteness.MISSING_DATA_GUIDANCE, file=sys.stderr)
+    unavailable = concreteness.availability_reason()
+    if unavailable is not None:
+        print(concreteness.guidance_for(unavailable), file=sys.stderr)
         output = json.dumps({
             "signal_path": "aic_8_9.image_conjunction_density",
             "available": False,
-            "reason": "data_not_installed",
+            "reason": unavailable,
         }, indent=2)
         if args.out is None:
             print(output)

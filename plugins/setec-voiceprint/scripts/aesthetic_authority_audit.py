@@ -131,11 +131,12 @@ def aesthetic_authority_audit(
     baselines (passed via ``explicit_baselines={"kicker_density":
     0.10, ...}``) take precedence.
     """
-    if not image_conjunction.concreteness.is_available():
+    unavailable = image_conjunction.concreteness.availability_reason()
+    if unavailable is not None:
         return {
             "signal_path": "aic_8_9.aesthetic_authority_audit",
             "available": False,
-            "reason": "data_not_installed",
+            "reason": unavailable,
         }
 
     # Resolve per-signal baselines.
@@ -381,16 +382,21 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     text = args.input.read_text(encoding="utf-8")
 
-    if not image_conjunction.concreteness.is_available():
-        print(
-            image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
-            file=sys.stderr,
+    unavailable = image_conjunction.concreteness.availability_reason()
+    if unavailable is not None:
+        guidance = image_conjunction.concreteness.guidance_for(unavailable)
+        print(guidance, file=sys.stderr)
+        # R3 shape (references/setec-normalized-entrypoint-spec.md §4): ONE
+        # envelope shape for success and failure. The optional dataset is a
+        # missing dependency, so the refusal is top-level `available: false`
+        # with a branchable `reason_category` and an explaining `warnings`
+        # entry — not `available: true` hiding a nested results.available.
+        payload = build_unavailable_payload(
+            reason=unavailable,
+            guidance=guidance,
+            target_path=args.input,
+            text=text,
         )
-        payload = build_audit_payload({
-            "signal_path": "aic_8_9.aesthetic_authority_audit",
-            "available": False,
-            "reason": "data_not_installed",
-        }, target_path=args.input, text=text)
         output = json.dumps(payload, indent=2, default=str)
         if args.out is None:
             print(output)
@@ -534,6 +540,39 @@ def build_audit_payload(
             {"register": diagnostics["register"]}
             if diagnostics.get("register") else None
         ),
+    )
+
+
+def build_unavailable_payload(
+    *,
+    reason: str,
+    guidance: str,
+    target_path: Path | str,
+    text: str,
+) -> dict[str, Any]:
+    """Build the R3 ``available: false`` envelope for absent optional data.
+
+    Per ``plugins/setec-voiceprint/scripts/output_schema.py``: ``available``
+    is False when the script could not produce a result, ``results`` may then
+    be minimal, and ``warnings`` MUST explain. ``reason`` /
+    ``reason_category`` are the additive R3 keys
+    ``setec_run._emit_surface_envelope`` branches on.
+    """
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=sum(1 for w in text.split() if w.strip()),
+        baseline=None,
+        results={
+            "signal_path": "aic_8_9.aesthetic_authority_audit",
+            "reason": reason,
+        },
+        claim_license=None,
+        available=False,
+        warnings=[f"{reason}: {guidance}"],
+        extra={"reason": guidance, "reason_category": "missing_dependency"},
     )
 
 

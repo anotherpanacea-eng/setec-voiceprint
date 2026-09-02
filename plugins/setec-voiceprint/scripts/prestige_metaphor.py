@@ -325,11 +325,14 @@ def prestige_metaphor_density(
     image_conjunction_density > baseline_value (if provided). The
     raw entropy is emitted regardless of whether the flag fires.
     """
-    if not image_conjunction.concreteness.is_available(concreteness_path):
+    unavailable = image_conjunction.concreteness.availability_reason(
+        concreteness_path
+    )
+    if unavailable is not None:
         return {
             "signal_path": "aic_8_9.prestige_metaphor_density",
             "available": False,
-            "reason": "data_not_installed",
+            "reason": unavailable,
         }
 
     ic_block = image_conjunction.image_conjunction_density(
@@ -526,16 +529,22 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     text = args.input.read_text(encoding="utf-8")
 
-    if not image_conjunction.concreteness.is_available():
-        print(
-            image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
-            file=sys.stderr,
+    unavailable = image_conjunction.concreteness.availability_reason()
+    if unavailable is not None:
+        guidance = image_conjunction.concreteness.guidance_for(unavailable)
+        print(guidance, file=sys.stderr)
+        # R3 shape (references/setec-normalized-entrypoint-spec.md §4): ONE
+        # envelope shape for success and failure. The optional dataset is a
+        # missing dependency, so the refusal is top-level `available: false`
+        # with a branchable `reason_category` and a `warnings` entry that
+        # explains it — not a `available: true` envelope hiding an ad-hoc
+        # `results.available: false` a consumer would never look at.
+        envelope = build_unavailable_payload(
+            reason=unavailable,
+            guidance=guidance,
+            target_path=str(args.input),
+            text=text,
         )
-        envelope = build_audit_payload({
-            "signal_path": "aic_8_9.prestige_metaphor_density",
-            "available": False,
-            "reason": "data_not_installed",
-        }, target_path=str(args.input))
         output = json.dumps(envelope, indent=2)
         if args.out is None:
             print(output)
@@ -628,6 +637,40 @@ def build_audit_payload(
         baseline=None,
         results=block,
         claim_license=structured,
+    )
+
+
+def build_unavailable_payload(
+    *,
+    reason: str,
+    guidance: str,
+    target_path: Any,
+    text: str,
+) -> dict[str, Any]:
+    """Build the R3 ``available: false`` envelope for absent optional data.
+
+    Per ``plugins/setec-voiceprint/scripts/output_schema.py``: ``available``
+    is False when the script could not produce a result, ``results`` may then
+    be ``{}``, and ``warnings`` MUST explain. ``reason`` / ``reason_category``
+    are the additive R3 keys ``setec_run._emit_surface_envelope`` branches on.
+    ``target.words`` is the target's REAL word count — a 90-word document
+    reports 90, not 0.
+    """
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=sum(1 for w in text.split() if w.strip()),
+        baseline=None,
+        results={
+            "signal_path": "aic_8_9.prestige_metaphor_density",
+            "reason": reason,
+        },
+        claim_license=None,
+        available=False,
+        warnings=[f"{reason}: {guidance}"],
+        extra={"reason": guidance, "reason_category": "missing_dependency"},
     )
 
 
