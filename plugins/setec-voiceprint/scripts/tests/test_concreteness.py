@@ -10,6 +10,8 @@ unit tests.
 
 from __future__ import annotations
 
+import builtins
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -265,3 +267,151 @@ def test_is_loaded_is_an_alias_for_is_available(tmp_path, fixture_csv_path: Path
     assert c.is_loaded(fixture_csv_path) is c.is_available(fixture_csv_path) is True
     bad = _write(tmp_path, "header_only.csv", "word,conc_mean\n")
     assert c.is_loaded(bad) is c.is_available(bad) is False
+
+
+# --------------- rating VALUES, not just structure ---------------
+#
+# Re-review P1 repro: the validator checked structure and cardinality but
+# never the numbers. A CSV of 1000000 / -1000000 passed `is_available()`
+# and produced a fully valid `available: true`, `status: provisional`
+# AIC-8 envelope reporting ~125 conjunctions per 1000 tokens against a
+# 5-7/1000 register baseline — a fabricated damning result. "nan"/"inf"
+# parse as float and escaped as an unhandled OutputValidityError traceback
+# out of prestige_metaphor, aesthetic_authority_audit and
+# variance_audit --aic8. Fail CLOSED: one bad rating condemns the file.
+
+
+@pytest.mark.parametrize(
+    "rating",
+    ["nan", "inf", "-inf", "1000000", "-1000000", "0", "5.0001", "0.9999"],
+)
+def test_out_of_scale_or_non_finite_rating_makes_the_file_malformed(
+    tmp_path: Path, rating: str,
+):
+    path = _write(
+        tmp_path, "bad_values.csv",
+        f"word,conc_mean\ngralnet,4.60\nvurnish,{rating}\n",
+    )
+    assert c.availability_reason(path) == c.DATA_MALFORMED
+    assert c.is_available(path) is False
+
+
+@pytest.mark.parametrize("rating", ["1.0", "5.0", "2.55", "4.60"])
+def test_in_scale_ratings_stay_available(tmp_path: Path, rating: str):
+    path = _write(
+        tmp_path, "good_values.csv",
+        f"word,conc_mean\ngralnet,4.60\nvurnish,{rating}\n",
+    )
+    assert c.availability_reason(path) is None
+    assert c.is_available(path) is True
+
+
+def test_explicit_load_of_out_of_scale_data_raises_the_typed_error(tmp_path: Path):
+    path = _write(
+        tmp_path, "bad_values.csv", "word,conc_mean\ngralnet,1000000\n",
+    )
+    with pytest.raises(c.ConcretenessDataError) as exc:
+        c._load_concreteness_dict(str(path))
+    assert exc.value.reason == c.DATA_MALFORMED
+
+
+# --------------- unreadable != malformed -------------------------
+#
+# Re-review P2 repro: the `csv_path.exists()` probe sat OUTSIDE the
+# guarded region. Path.exists() propagates PermissionError, so an
+# unreadable path escaped the explicit load as a bare PermissionError
+# (not the typed error concreteness.py and specs/80 promise) and, through
+# the guard's catch-all, was reported as `data_malformed` — whose guidance
+# is "inspect or delete the file", advice that would destroy a good
+# dataset behind a permissions problem.
+
+
+def test_permission_error_from_the_existence_probe_is_unreadable(
+    tmp_path: Path, monkeypatch,
+):
+    """Runs on every uid, including this container's root."""
+    path = tmp_path / "brysbaert_concreteness.csv"
+    path.write_text("word,conc_mean\ngralnet,4.60\n", encoding="utf-8")
+
+    def boom(self):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(Path, "exists", boom)
+    assert c.availability_reason(path) == c.DATA_UNREADABLE
+    assert "could not be read" in c.unavailable_guidance(path)
+    c._load_concreteness_dict.cache_clear()
+    with pytest.raises(c.ConcretenessDataError) as exc:
+        c._load_concreteness_dict(str(path))
+    assert exc.value.reason == c.DATA_UNREADABLE
+
+
+def test_permission_error_from_the_open_is_unreadable(tmp_path: Path, monkeypatch):
+    path = tmp_path / "brysbaert_concreteness.csv"
+    path.write_text("word,conc_mean\ngralnet,4.60\n", encoding="utf-8")
+    real_open = builtins.open
+
+    def boom(file, *args, **kwargs):
+        if str(file) == str(path):
+            raise PermissionError(13, "Permission denied")
+        return real_open(file, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", boom)
+    assert c.availability_reason(path) == c.DATA_UNREADABLE
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="root bypasses mode bits; the monkeypatched probes cover the branch",
+)
+def test_mode_000_file_is_unreadable_not_malformed(tmp_path: Path):
+    path = tmp_path / "brysbaert_concreteness.csv"
+    path.write_text("word,conc_mean\ngralnet,4.60\n", encoding="utf-8")
+    path.chmod(0o000)
+    try:
+        assert c.availability_reason(path) == c.DATA_UNREADABLE
+    finally:
+        path.chmod(0o600)
+
+
+# --------------- the conventional install path carries the real floor ----
+#
+# Re-review residue: the loader floor was 1 while the fetcher refuses to
+# install fewer than 10,000 rows, and the docs permit acquiring the CSV by
+# a non-fetcher route — so a truncated file with a handful of rows was
+# accepted at the install path. One constant now governs both.
+
+
+def _table_csv(n_rows: int) -> str:
+    rows = "\n".join(f"gralnet{i},4.60" for i in range(n_rows))
+    return f"word,conc_mean\n{rows}\n"
+
+
+def test_fetcher_and_loader_share_one_content_floor():
+    import fetch_brysbaert as fb  # noqa: PLC0415
+
+    assert fb.MIN_CONVERTED_ROWS == c.MIN_USABLE_ROWS
+    assert c.MIN_USABLE_ROWS > c.MIN_USABLE_ROWS_OVERRIDE
+
+
+def test_truncated_table_at_the_default_path_is_malformed(tmp_path: Path, monkeypatch):
+    path = _write(tmp_path, "brysbaert_concreteness.csv", _table_csv(25))
+    monkeypatch.setattr(c, "_DEFAULT_DATA_PATH", path)
+    assert c.availability_reason() == c.DATA_MALFORMED
+    assert c.is_available() is False
+
+
+def test_full_table_at_the_default_path_is_available(tmp_path: Path, monkeypatch):
+    path = _write(
+        tmp_path, "brysbaert_concreteness.csv", _table_csv(c.MIN_USABLE_ROWS),
+    )
+    monkeypatch.setattr(c, "_DEFAULT_DATA_PATH", path)
+    assert c.availability_reason() is None
+    assert c.is_available() is True
+
+
+def test_explicit_path_override_keeps_the_small_test_owned_seam(fixture_csv_path: Path):
+    """spec §4's tiny test-owned CSV must still work: naming a path is the
+    documented bring-your-own seam, and only the conventional install path
+    carries the full floor."""
+    assert c.is_available(fixture_csv_path) is True
+    assert c.vocab_size(fixture_csv_path) == 6

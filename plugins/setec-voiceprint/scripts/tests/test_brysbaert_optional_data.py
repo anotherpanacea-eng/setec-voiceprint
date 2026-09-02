@@ -241,3 +241,81 @@ def test_variance_summary_names_every_unavailable_aic8_reason(no_local_data):
         summary = variance_audit.format_summary(audit, compression)
         assert "AIC-8 unavailable" in summary, reason
         assert expected in summary, reason
+
+
+# ---- re-review P1: bad VALUES must not reach a detector -------------
+#
+# Repro: a table whose ratings were 1000000 / -1000000 passed the
+# structural validator and produced a fully valid `available: true`,
+# `status: provisional` AIC-8 envelope at ~125 conjunctions per 1000
+# tokens against a 5-7/1000 register baseline — a fabricated damning
+# result. "nan" parsed as a float and escaped as an unhandled
+# OutputValidityError traceback out of these same entry points. The table
+# is full-length so the row-count floor passes and the VALUE check is what
+# is under test.
+
+
+@pytest.fixture
+def poisoned_local_data(request, tmp_path, monkeypatch):
+    rows = "\n".join(
+        f"gralnet{i},4.60" for i in range(concreteness.MIN_USABLE_ROWS)
+    )
+    path = tmp_path / "brysbaert_concreteness.csv"
+    path.write_text(
+        f"word,conc_mean\n{rows}\nvurnish,{request.param}\n", encoding="utf-8",
+    )
+    concreteness._load_concreteness_dict.cache_clear()
+    monkeypatch.setattr(concreteness, "_DEFAULT_DATA_PATH", path)
+    yield path
+    concreteness._load_concreteness_dict.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "poisoned_local_data", ["1000000", "-1000000", "nan", "inf"], indirect=True,
+)
+def test_out_of_scale_data_yields_no_detector_value(
+    tmp_path, capsys, poisoned_local_data,
+):
+    assert concreteness.availability_reason() == concreteness.DATA_MALFORMED
+
+    source = tmp_path / "source.txt"
+    source.write_text(_NINETY_WORDS.strip() + "\n", encoding="utf-8")
+    for main_fn, name in (
+        (prestige_metaphor.main, "prestige.json"),
+        (aaa.main, "aesthetic.json"),
+    ):
+        destination = tmp_path / name
+        assert main_fn([str(source), "--out", str(destination)]) == 0
+        capsys.readouterr()
+        payload = json.loads(destination.read_text(encoding="utf-8"))
+        assert payload["available"] is False
+        assert payload["reason_category"] == "missing_dependency"
+        assert concreteness.DATA_MALFORMED in payload["warnings"][0]
+        assert "value" not in payload["results"]
+        assert "conjunctions" not in payload["results"]
+
+    audit = variance_audit.audit_text(
+        "This is a valid synthetic test sentence. " * 30, do_aic8=True,
+    )
+    diagnostics = audit["aic_8_9"]["diagnostics"]
+    assert diagnostics["aic8_available"] is False
+    assert diagnostics["aic8_unavailable_reason"] == concreteness.DATA_MALFORMED
+    assert "image_conjunction_density" not in audit["aic_8_9"]
+    assert "prestige_metaphor_density" not in audit["aic_8_9"]
+
+
+def test_aic9_diagnostics_are_symmetric_with_aic8(monkeypatch):
+    """Nit: the AIC-8 branch wrote `aic8_available: False` alongside its
+    reason while AIC-9 wrote only `aic9_unavailable_reason`, so a consumer
+    had to branch on the presence of a string for one and on a boolean for
+    the other."""
+    monkeypatch.setattr(
+        variance_audit, "_aic9_kicker_block",
+        lambda text: {"available": False, "reason": "kicker_density unimportable"},
+    )
+    audit = variance_audit.audit_text(
+        "This is a valid synthetic test sentence. " * 30, do_aic9=True,
+    )
+    diagnostics = audit["aic_8_9"]["diagnostics"]
+    assert diagnostics["aic9_available"] is False
+    assert diagnostics["aic9_unavailable_reason"] == "kicker_density unimportable"

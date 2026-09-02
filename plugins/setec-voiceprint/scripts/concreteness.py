@@ -52,6 +52,7 @@ Design notes:
 from __future__ import annotations
 
 import csv
+import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -75,12 +76,41 @@ DATA_UNREADABLE = "data_unreadable"
 # missing — re-fetching is the wrong advice.
 REQUIRED_COLUMNS = ("word", "conc_mean")
 
-# Content floor for "available". A file that opens but yields no usable
-# (word, rating) pair -- a 0-byte file, a header-only file, an all-empty
-# ``conc_mean`` column -- is NOT a dataset. Reporting it as available made
-# every AIC-8 detector emit value 0.0 / status provisional and let
-# variance_audit band it "within typical range": a fail-OPEN.
-MIN_USABLE_ROWS = 1
+# Content floor for "available" at the CONVENTIONAL install path. A file
+# that opens but yields no usable (word, rating) pair -- a 0-byte file, a
+# header-only file, an all-empty ``conc_mean`` column -- is NOT a dataset.
+# Reporting it as available made every AIC-8 detector emit value 0.0 /
+# status provisional and let variance_audit band it "within typical range":
+# a fail-OPEN. A handful of rows is the same failure with a smaller number,
+# and the docs permit acquiring the CSV by a route other than the fetcher,
+# so the loader holds a truncated file to the SAME floor the fetcher
+# enforces before it installs one. ``fetch_brysbaert.MIN_CONVERTED_ROWS``
+# is this constant; there is one floor, defined here. The published
+# Brysbaert 2014 table has 39,954 rows, so the floor sits well below any
+# genuine copy.
+MIN_USABLE_ROWS = 10_000
+
+# Floor for an EXPLICITLY overridden ``data_path``. The override is the
+# documented bring-your-own / test seam (spec §4's "tiny test-owned CSV
+# with the documented header schema and invented rows"), so a caller that
+# names a path is trusted to know what it named; only the conventional
+# install path -- the one no caller chose -- carries the full floor.
+MIN_USABLE_ROWS_OVERRIDE = 1
+
+# Rating bounds. Brysbaert 2014 is a 1-5 scale (1 = most abstract, 5 = most
+# concrete) and the framework's whole AIC-8 signal is the GAP between two
+# ratings, so an out-of-scale value is not a smaller error than a missing
+# one: a table of 1000000/-1000000 produced a fully valid
+# ``available: true`` envelope reporting ~125 image-conjunctions per 1000
+# tokens against a 5-7/1000 register baseline -- a fabricated damning
+# result -- and a NaN/inf escaped as an unhandled OutputValidityError
+# traceback out of prestige_metaphor / aesthetic_authority_audit /
+# variance_audit --aic8. Fail CLOSED: ONE non-finite or out-of-scale rating
+# condemns the whole file as ``data_malformed``, because a file carrying
+# such a value is not the published dataset and no threshold of "how many
+# fabricated ratings are tolerable" is defensible in a forensics tool.
+CONC_SCALE_MIN = 1.0
+CONC_SCALE_MAX = 5.0
 
 MISSING_DATA_GUIDANCE = (
     "Optional Brysbaert concreteness data is not installed. Fetch it explicitly "
@@ -149,21 +179,39 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
         (permissions, a directory in place of the file).
       * ``data_malformed`` — it opened but is not this dataset: the
         required ``word`` / ``conc_mean`` columns are absent, the bytes
-        are not UTF-8, or it yields fewer than ``MIN_USABLE_ROWS``
-        usable (word, rating) pairs. A 0-byte file, a header-only file,
-        and an all-empty ``conc_mean`` column all land here rather than
-        loading to ``{}`` and reporting success.
+        are not UTF-8, ANY parsed rating is non-finite or outside the
+        documented ``CONC_SCALE_MIN``..``CONC_SCALE_MAX`` scale, or it
+        yields fewer usable (word, rating) pairs than the applicable floor
+        (``MIN_USABLE_ROWS`` at the conventional install path,
+        ``MIN_USABLE_ROWS_OVERRIDE`` when the caller named an explicit
+        ``path``). A 0-byte file, a header-only file, an all-empty
+        ``conc_mean`` column, and a table of out-of-scale numbers all land
+        here rather than loading and reporting success.
+
+    Cells that do not parse as a number at all (empty, ``"n/a"``) are
+    SKIPPED, not condemning: they mean a rating is absent for that row,
+    which the floor then catches if it is the whole file. A cell that DOES
+    parse but is not a plausible rating is a different claim — it asserts
+    a value — and fails the file closed.
     """
     csv_path = Path(path) if path else _DEFAULT_DATA_PATH
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"Brysbaert concreteness CSV not found at {csv_path}. "
-            "Regenerate via: python3 "
-            "plugins/setec-voiceprint/scripts/fetch_brysbaert.py "
-            f"--output {csv_path}"
-        )
     result: dict[str, float] = {}
     try:
+        # The existence probe is INSIDE the guarded region. Path.exists()
+        # only swallows ENOENT-class errors — it PROPAGATES PermissionError
+        # — so probing outside let an unreadable path escape the explicit
+        # load as a bare PermissionError (not the typed error this module
+        # and specs/80 promise) and, through the availability guard's
+        # catch-all, be reported as `data_malformed`, whose guidance is
+        # "inspect or delete the file": advice that would destroy a good
+        # dataset sitting behind a permissions problem.
+        if not csv_path.exists():
+            raise FileNotFoundError(
+                f"Brysbaert concreteness CSV not found at {csv_path}. "
+                "Regenerate via: python3 "
+                "plugins/setec-voiceprint/scripts/fetch_brysbaert.py "
+                f"--output {csv_path}"
+            )
         with open(csv_path, "r", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f)
             fieldnames = reader.fieldnames or []
@@ -182,10 +230,22 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
                 try:
                     conc = float(row["conc_mean"])
                 except (KeyError, ValueError, TypeError):
+                    # No parsable rating on this row: absent, not asserted.
                     continue
+                if not math.isfinite(conc) or not (
+                    CONC_SCALE_MIN <= conc <= CONC_SCALE_MAX
+                ):
+                    raise ConcretenessDataError(
+                        f"Brysbaert concreteness CSV at {csv_path} carries "
+                        f"rating {row['conc_mean']!r} for {raw_word!r}, which "
+                        f"is not a finite value on the documented "
+                        f"{CONC_SCALE_MIN}-{CONC_SCALE_MAX} scale. "
+                        f"{MALFORMED_DATA_GUIDANCE}",
+                        DATA_MALFORMED,
+                    )
                 result[raw_word.lower()] = conc
     except FileNotFoundError:
-        # Raced away between exists() and open(): still "not installed".
+        # Absent (probed above, or raced away before open()): not installed.
         raise
     except UnicodeDecodeError as exc:
         raise ConcretenessDataError(
@@ -199,11 +259,12 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
             f"({type(exc).__name__}: {exc}). {UNREADABLE_DATA_GUIDANCE}",
             DATA_UNREADABLE,
         ) from exc
-    if len(result) < MIN_USABLE_ROWS:
+    floor = MIN_USABLE_ROWS_OVERRIDE if path else MIN_USABLE_ROWS
+    if len(result) < floor:
         raise ConcretenessDataError(
             f"Brysbaert concreteness CSV at {csv_path} carries "
             f"{len(result)} usable rating row(s); at least "
-            f"{MIN_USABLE_ROWS} is required. {MALFORMED_DATA_GUIDANCE}",
+            f"{floor} is required. {MALFORMED_DATA_GUIDANCE}",
             DATA_MALFORMED,
         )
     return result
@@ -277,6 +338,10 @@ def availability_reason(data_path: Optional[Path | str] = None) -> Optional[str]
         return DATA_NOT_INSTALLED
     except ConcretenessDataError as exc:
         return exc.reason
+    except OSError:
+        # A permissions / IO problem is never "malformed": its guidance
+        # must not tell the operator to delete a good dataset.
+        return DATA_UNREADABLE
     except Exception:  # noqa: BLE001 — never raise out of the guard
         return DATA_MALFORMED
     return None
