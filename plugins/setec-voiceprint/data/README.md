@@ -18,12 +18,23 @@ The dataset is the supplementary material (`MOESM1_ESM.xlsx`) attached to the pa
 |---|---|---|
 | `word` | string | Single word or two-word phrase. |
 | `is_bigram` | 0 or 1 | 1 if the entry is a two-word phrase (e.g., "zero tolerance"); 0 otherwise. |
-| `conc_mean` | float | Mean concreteness rating across raters. 1.0 = most abstract; 5.0 = most concrete. |
+| `conc_mean` | float | Mean concreteness rating across raters. 1.0 = most abstract; 5.0 = most concrete. **Validated on load:** every parsed value must be finite and within 1.0-5.0 inclusive; one value outside that scale marks the whole file `data_malformed` and every dependent detector reports unavailable rather than scoring against fabricated ratings. |
 | `conc_sd` | float | Standard deviation across raters. High SD = disagreement. |
 | `unknown_count` | int | Number of raters who marked the word unknown. |
 | `total_raters` | int | Total raters who saw the word. |
 | `percent_known` | float | `(total_raters - unknown_count) / total_raters`. |
 | `subtlex_freq` | int | SUBTLEX-US frequency count for context; 0 for words not in SUBTLEX. |
+
+### Content floor
+
+`scripts/concreteness.py` accepts a file at this conventional path only if it carries at least
+`MIN_USABLE_ROWS` (10,000) usable `(word, rating)` rows — well below the published table's
+39,954, and the SAME constant `fetch_brysbaert.MIN_CONVERTED_ROWS` enforces before installing,
+so the fetcher can never leave a file the loader would reject. This matters because the CSV may
+legitimately be acquired by a route other than the fetcher: a truncated or hand-assembled table
+would otherwise load, and every AIC-8 detector would score confidently against a handful of
+rows. A caller that passes an explicit `data_path` (the bring-your-own / test seam) is held to a
+floor of 1 instead — naming a path is a deliberate act; the conventional path is not.
 
 ### License posture
 
