@@ -23,34 +23,58 @@ The concreteness loader exposes an availability check and raises its existing cl
 data error when a caller explicitly asks it to load data that is absent. It accepts an
 overridden path so tests and users with a locally acquired file can exercise the same loader.
 
+Availability is a statement about the file's CONTENTS, not about whether it opens. A path that
+exists but is a 0-byte file, a header-only CSV, a table whose `conc_mean` column is entirely
+empty, or a file whose columns are not `word` / `conc_mean` is UNAVAILABLE, because loading it
+to an empty table and reporting success made every dependent detector emit a confident `0.0`
+that `variance_audit` then banded "within typical range" — a fail-open. The unavailability
+reason is named, and the three reasons are distinct because the operator fix differs:
+
+| Reason | Condition | Operator fix |
+| --- | --- | --- |
+| `data_not_installed` | no file at the path | run the fetcher |
+| `data_malformed` | present, but not this dataset (wrong columns, non-UTF-8 bytes, no usable rating rows) | inspect or delete the file, then re-fetch — re-fetching onto it is not the advice |
+| `data_unreadable` | present, but cannot be opened (permissions, a directory in its place) | fix the path or its permissions; re-fetching does not help |
+
+The availability check never raises. It is called at module import time by test markers and by
+composite audits, so a `KeyError` or `UnicodeDecodeError` escaping it takes down every entry
+point (and pytest collection) rather than degrading one optional signal.
+
 Callers divide into two groups:
 
 - Composite profiles such as `argmove_profile` omit only the concreteness-derived field when
   the file is absent. Other stance, agency, abstract-general-domain, and aggregate signals
   continue to run; their scores must not be replaced by zero.
 - Concreteness-dependent detector entry points (`image_conjunction`, `prestige_metaphor`, the
-  opt-in AIC-8 portion of `variance_audit`, and `aesthetic_authority_audit`) return their normal
-  top-level envelope with an explicit `available: false` / `reason: data_not_installed` result,
-  rather than a traceback, fabricated zero score, or silent success.
+  opt-in AIC-8 portion of `variance_audit`, and `aesthetic_authority_audit`) report explicit
+  unavailability rather than a traceback, fabricated zero score, or silent success. For the two
+  that emit the `schema_version` 1.0 envelope, that means the R3 shape of
+  `plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md` §4 — ONE envelope shape for success and
+  failure — with **top-level** `available: false`, a `warnings` entry that explains it, and
+  `reason_category: missing_dependency`, so `setec_run._emit_surface_envelope` can branch on it.
+  A top-level `available: true` carrying a nested `results.available: false` is NOT the
+  contract: a consumer branching on R3 never reads it.
 
 The exact unavailable shape should follow each command's existing JSON/output conventions.
 Human-readable CLI output names the missing optional dataset and the explicit fetch command.
 No command downloads data automatically.
 
-The authoritative dependency inventory applies to both identical trees, `scripts/` and
-`plugins/setec-voiceprint/scripts/`:
+The authoritative dependency inventory below is written against
+`plugins/setec-voiceprint/scripts/`. The repo-root `scripts` is a **symlink** to that directory,
+not a second copy, so there is exactly one tree to change and nothing to keep in sync:
 
 | Module/entry point | Exact missing-data contract |
 | --- | --- |
-| `concreteness.py` | `is_available()` is false; explicit load raises `FileNotFoundError` containing the fetch command |
+| `concreteness.py` | `is_available()` is false (contents-validating, never raising); explicit load raises `FileNotFoundError` containing the fetch command when the file is absent, and a typed present-but-unusable error carrying `data_malformed` / `data_unreadable` otherwise |
 | `argmove_profile.py` | returned vector omits only `abstraction.mean_concreteness`; CLI still exits 0 |
 | `argument_decision_audit.py` (indirect) | `results.reused_signals.available` stays true, B1/B2 remain, and only `results.reused_signals.signals.abstraction.mean_concreteness` is absent |
 | `image_conjunction.py` | function/CLI JSON is `{signal_path, available:false, reason:"data_not_installed"}`; CLI exits 0 and emits no `value`/`conjunctions` |
-| `prestige_metaphor.py` | envelope `results.available` is false with the same reason; CLI exits 0 and emits no density/domain fields |
-| `variance_audit.py --aic8` | `results.aic_8_9.diagnostics.aic8_available=false` and `aic8_unavailable_reason="data_not_installed"`; the two AIC-8 signal blocks are absent and the rest exits 0 |
-| `aesthetic_authority_audit.py` | envelope `results.available=false` with the same reason; CLI exits 0 and emits no component/compound blocks |
+| `prestige_metaphor.py` | envelope top-level `available: false` + `reason_category: missing_dependency` + a `warnings` entry naming the reason; `target.words` is the target's real word count; CLI exits 0 and emits no density/domain fields |
+| `variance_audit.py --aic8` | `results.aic_8_9.diagnostics.aic8_available=false` and `aic8_unavailable_reason` carrying the named reason; the human summary names it for EVERY unavailable reason, not only the missing-file one; the two AIC-8 signal blocks are absent and the rest exits 0 |
+| `aesthetic_authority_audit.py` | envelope top-level `available: false` + `reason_category: missing_dependency` + a `warnings` entry naming the reason; CLI exits 0 and emits no component/compound blocks |
 
-The two script trees must remain byte-identical for every changed mirrored file. A repository
+There is no second script tree to mirror: the repo-root `scripts` is a symlink to
+`plugins/setec-voiceprint/scripts`, so a single edit is visible under both paths. A repository
 search for imports of the four foundation modules above is the completion backstop.
 
 ## 3. Acquisition and documentation
@@ -58,12 +82,18 @@ search for imports of the four foundation modules above is the completion backst
 `plugins/setec-voiceprint/scripts/fetch_brysbaert.py` remains an opt-in convenience. Its default
 output is the conventional ignored local path
 `plugins/setec-voiceprint/data/brysbaert_concreteness.csv`. It downloads directly from the
-publisher and converts locally. Documentation must state that SETEC does not grant permission
+publisher and converts locally. The conversion is atomic and validated: rows stream into a temp
+file in the output's own directory and are moved onto the output path only after the row count
+clears a floor, so an interruption, a full disk, or a bad cell cannot leave a header-only or
+truncated table at the install path. `--keep-xlsx` keeps the publisher's raw file only when the
+conversion SUCCEEDED, and the ignore rule covers the whole `brysbaert_concreteness.*` family so
+neither the CSV nor the XLSX can be committed. Documentation must state that SETEC does not grant permission
 to download, use, or redistribute the source data and that the user is responsible for the
 source terms.
 
-Add the generated CSV path to `.gitignore` (or the closest scoped ignore file) so a locally
-fetched copy cannot be accidentally committed. The fetcher may print the citation/source URL
+Add the generated local paths to `.gitignore` (or the closest scoped ignore file) — the CSV and
+the raw XLSX `--keep-xlsx` parks beside it — so a locally fetched copy cannot be accidentally
+committed. The fetcher may print the citation/source URL
 and final local path; it needs no manifest, checksum ledger, token, background job, registry,
 or receipt.
 
