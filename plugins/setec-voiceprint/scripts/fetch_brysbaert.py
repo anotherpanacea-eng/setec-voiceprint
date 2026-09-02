@@ -178,10 +178,14 @@ def convert_xlsx_to_csv(
         12,001 rows containing a 7.5, which the loader reported as
         ``data_malformed`` — and the malformed guidance used to name this
         very command as the remedy, a loop.
-      * **cardinality** — the count of USABLE rows (a parsable, in-scale
-        rating) must clear ``min_rows``, which defaults to the loader's
-        own floor. Rows whose ``Conc.M`` is empty are written but do not
-        count, exactly as the loader does not count them.
+      * **cardinality** — the count of DISTINCT usable words (keyed by
+        ``concreteness.rating_key``, i.e. lowercased) must clear
+        ``min_rows``, which defaults to the loader's own floor. Rows whose
+        ``Conc.M`` is empty are written but do not count, exactly as the
+        loader does not count them; and duplicated rows count ONCE, exactly
+        as they collapse in the loader's dict. Counting rows instead let a
+        duplicated upstream table (12,000 rows, 6,000 distinct words)
+        install and then read as ``data_malformed``.
 
     Rows stream into a temp file in ``csv_path``'s own directory and are
     moved onto ``csv_path`` with ``os.replace`` ONLY after both checks
@@ -218,7 +222,7 @@ def convert_xlsx_to_csv(
     )
     tmp_path = Path(tmp_name)
     n_data = 0
-    n_usable = 0
+    usable_keys: set[str] = set()
     try:
         with open(fd, "w", encoding="utf-8", newline="") as f:
             writer = csv.writer(f, lineterminator="\n")
@@ -244,7 +248,9 @@ def convert_xlsx_to_csv(
                             f"{concreteness.CONC_SCALE_MAX} scale; refusing to "
                             f"install it at {csv_path}"
                         )
-                    n_usable += 1
+                    key = concreteness.rating_key(str(word))
+                    if key:
+                        usable_keys.add(key)
                 writer.writerow([
                     word,
                     int(bigram) if bigram is not None else 0,
@@ -258,11 +264,12 @@ def convert_xlsx_to_csv(
                 n_data += 1
             f.flush()
             os.fsync(f.fileno())
-        if n_usable < min_rows:
+        if len(usable_keys) < min_rows:
             raise ValueError(
-                f"{xlsx_path}: converted only {n_usable:,} usable rating "
-                f"row(s) (expected at least {min_rows:,}); refusing to "
-                f"install a partial concreteness table at {csv_path}"
+                f"{xlsx_path}: converted only {len(usable_keys):,} distinct "
+                f"usable word(s) from {n_data:,} row(s) (expected at least "
+                f"{min_rows:,}); refusing to install a partial concreteness "
+                f"table at {csv_path}"
             )
         os.replace(tmp_path, csv_path)
     except BaseException:

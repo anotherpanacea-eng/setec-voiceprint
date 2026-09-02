@@ -113,6 +113,18 @@ CONC_SCALE_MIN = 1.0
 CONC_SCALE_MAX = 5.0
 
 
+def rating_key(word: str) -> str:
+    """Normalize ``word`` to the key its rating is stored under.
+
+    The loaded table is a dict keyed by the lowercased word, so the content
+    floor measures DISTINCT KEYS, not rows: a duplicated upstream table of
+    12,000 rows over 6,000 distinct words is a 6,000-entry table.
+    ``fetch_brysbaert.convert_xlsx_to_csv`` counts with THIS helper, so its
+    pre-install check measures the same quantity the loader will.
+    """
+    return word.lower()
+
+
 def is_valid_rating(value: float) -> bool:
     """True when ``value`` is a plausible Brysbaert concreteness rating.
 
@@ -260,7 +272,7 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
                         f"{CONC_SCALE_MIN}-{CONC_SCALE_MAX} scale",
                         DATA_MALFORMED,
                     )
-                result[raw_word.lower()] = conc
+                result[rating_key(raw_word)] = conc
     except FileNotFoundError:
         # Absent (probed above, or raced away before open()): not installed.
         raise

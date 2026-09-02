@@ -46,13 +46,16 @@ Two properties of `data_malformed` are load-bearing:
   as a number at all (empty, `n/a`) means the rating is ABSENT for that row and is skipped; the
   row-count floor catches it when it is the whole file. The unavailability report names the
   specific finding (which word, which value, which column), not only the class of problem.
-- **One content floor AND one value oracle, shared with the fetcher.**
+- **One content floor, one value oracle, and one counted quantity, shared with the fetcher.**
   `concreteness.MIN_USABLE_ROWS` (10,000 — well below the published table's 39,954) is the floor
   at the conventional install path and `fetch_brysbaert.MIN_CONVERTED_ROWS` IS that constant;
   `concreteness.is_valid_rating` is the single value check and `convert_xlsx_to_csv` calls it on
-  every `Conc.M` cell before `os.replace`. Sharing only the row floor was not enough: an XLSX
-  with one out-of-scale cell installed a full-length table the loader then rejected, while the
-  malformed guidance named the converter as the remedy — a loop. `--min-rows` below the loader
+  every `Conc.M` cell before `os.replace`; and both sides count DISTINCT lowercased words via
+  `concreteness.rating_key`, because the loaded table is a dict and duplicated rows collapse in
+  it. Sharing only the row floor was not enough, on two axes: an XLSX with one out-of-scale cell
+  installed a full-length table the loader then rejected (while the malformed guidance named the
+  converter as the remedy — a loop), and a duplicated upstream table of 12,000 rows over 6,000
+  distinct words cleared a row floor the loader's distinct-key floor then failed. `--min-rows` below the loader
   floor is refused for the conventional path for the same reason; it stays available for any
   other `--output`, which is the experiment seam and is not expected to load from the
   conventional path. A caller that names an explicit `data_path` gets the
@@ -112,9 +115,9 @@ output is the conventional ignored local path
 `plugins/setec-voiceprint/data/brysbaert_concreteness.csv`. It downloads directly from the
 publisher and converts locally. The conversion is atomic and validated: rows stream into a temp
 file in the output's own directory and are moved onto the output path only after the row count
-clears `concreteness.MIN_USABLE_ROWS` (the loader's floor) and every rating cell passes
-`concreteness.is_valid_rating`, so a successful conversion cannot install a file the loader
-rejects; `--min-rows` overrides the floor if the publisher ever ships a smaller table, but is
+clears `concreteness.MIN_USABLE_ROWS` counted as the loader counts it (distinct
+`concreteness.rating_key` values) and every rating cell passes `concreteness.is_valid_rating`,
+so a successful conversion cannot install a file the loader rejects; `--min-rows` overrides the floor if the publisher ever ships a smaller table, but is
 refused for the conventional install path, so an interruption, a full disk, or a bad cell cannot leave a header-only or
 truncated table at the install path. `--keep-xlsx` keeps the publisher's raw file only when the
 conversion SUCCEEDED, and the ignore rule covers the whole `brysbaert_concreteness.*` family so

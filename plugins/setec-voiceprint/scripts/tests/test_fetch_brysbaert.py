@@ -176,15 +176,63 @@ def test_out_of_scale_cell_preserves_a_previously_good_file(tmp_path: Path):
     assert c.get_concreteness("gralnet", out) == pytest.approx(4.60)
 
 
-def test_everything_the_fetcher_installs_the_loader_accepts(tmp_path: Path):
+def _write_duplicated_xlsx(path: Path, n_distinct: int, n_repeats: int) -> Path:
+    """A Brysbaert-layout workbook with duplicated words.
+
+    Real upstream tables carry case variants and repeats; the loader keys
+    its dict by the lowercased word, so duplicates COLLAPSE and the file's
+    real size is its distinct-word count.
+    """
+    openpyxl = pytest.importorskip("openpyxl")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws.append(list(_HEADER))
+    for repeat in range(n_repeats):
+        for i in range(n_distinct):
+            word = f"gralnet{i}" if repeat % 2 == 0 else f"GRALNET{i}"
+            ws.append([word, 0, 4.60, 1.10, 0, 28, 1.0, 250])
+    wb.save(path)
+    return path
+
+
+def test_duplicated_table_below_the_distinct_floor_is_refused(tmp_path: Path):
+    """P3 repro: the fetcher counted usable ROWS while the loader counts
+    DISTINCT lowercased words, so a duplicated upstream table of 12,000
+    rows over 6,000 distinct words installed and then read as
+    data_malformed — a third axis on which the docs' "a fetch that succeeds
+    cannot leave a file the loader would reject" was absolute."""
+    n_distinct = c.MIN_USABLE_ROWS // 2 + 1000  # 6,000 distinct
+    xlsx = _write_duplicated_xlsx(
+        tmp_path / "src.xlsx", n_distinct=n_distinct, n_repeats=2,
+    )
+    out = tmp_path / "data" / "brysbaert_concreteness.csv"
+    with pytest.raises(ValueError, match="distinct usable word"):
+        fb.convert_xlsx_to_csv(xlsx, out)
+    assert not out.exists()
+    assert list(out.parent.glob("*.part")) == []
+
+
+@pytest.mark.parametrize("shape", ["unique", "duplicated"])
+def test_everything_the_fetcher_installs_the_loader_accepts(tmp_path: Path, shape):
     """The claim the three docs make, asserted rather than asserted-about:
     a conversion that succeeds produces a file `is_available()` accepts at
-    the conventional path (same floor, same value oracle)."""
-    xlsx = _write_xlsx(tmp_path / "src.xlsx", n_rows=c.MIN_USABLE_ROWS)
+    the conventional path — same floor, same value oracle, same counted
+    quantity — for a unique table AND for one carrying case-variant
+    duplicates."""
+    if shape == "unique":
+        xlsx = _write_xlsx(tmp_path / "src.xlsx", n_rows=c.MIN_USABLE_ROWS)
+        expected_rows = c.MIN_USABLE_ROWS
+    else:
+        xlsx = _write_duplicated_xlsx(
+            tmp_path / "src.xlsx", n_distinct=c.MIN_USABLE_ROWS, n_repeats=2,
+        )
+        expected_rows = c.MIN_USABLE_ROWS * 2
     out = tmp_path / "brysbaert_concreteness.csv"
-    assert fb.convert_xlsx_to_csv(xlsx, out) == c.MIN_USABLE_ROWS
+    assert fb.convert_xlsx_to_csv(xlsx, out) == expected_rows
     c._load_concreteness_dict.cache_clear()
     assert c.availability_reason(out) is None
+    assert c.vocab_size(out) == c.MIN_USABLE_ROWS
 
 
 def test_min_rows_below_the_loader_floor_is_refused_at_the_conventional_path(

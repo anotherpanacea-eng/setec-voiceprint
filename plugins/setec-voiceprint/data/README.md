@@ -28,11 +28,14 @@ The dataset is the supplementary material (`MOESM1_ESM.xlsx`) attached to the pa
 ### Content floor
 
 `scripts/concreteness.py` accepts a file at this conventional path only if it carries at least
-`MIN_USABLE_ROWS` (10,000) usable `(word, rating)` rows — well below the published table's
+`MIN_USABLE_ROWS` (10,000) **distinct** usable words — the loaded table is a dict keyed by the
+lowercased word, so duplicated rows collapse and a 12,000-row table over 6,000 distinct words is
+a 6,000-entry table — well below the published table's
 39,954, and the SAME constant `fetch_brysbaert.MIN_CONVERTED_ROWS` enforces before installing.
-The fetcher also applies the loader's own value oracle (`concreteness.is_valid_rating`) to every
-`Conc.M` cell and refuses a `--min-rows` below the loader floor when writing to this
-conventional path, so a fetch that succeeds cannot leave a file the loader would reject. (A
+The fetcher counts the same quantity with the same helper (`concreteness.rating_key`), applies
+the loader's own value oracle (`concreteness.is_valid_rating`) to every `Conc.M` cell, and
+refuses a `--min-rows` below the loader floor when writing to this conventional path, so a fetch
+that succeeds cannot leave a file the loader would reject. (A
 `--min-rows` override IS allowed for any other `--output`: that is the experiment seam, and a
 file produced that way is not expected to load from the conventional path.) This matters because the CSV may
 legitimately be acquired by a route other than the fetcher: a truncated or hand-assembled table
