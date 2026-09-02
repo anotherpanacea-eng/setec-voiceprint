@@ -471,10 +471,23 @@ def compute_reused_signals(text: str) -> dict[str, Any]:
     the deterministic audits via ``argmove_profile.argmove_vector``. These are
     DESCRIPTIVE / `heuristic` — no anchor, not in the contributions or the
     aggregate (D2/D5); they sit beside the anchored B1/B2 structure as texture
-    context. Lazy-imported so the surface module stays cheap; degrades to
-    ``available: false`` if a reused audit's schema drifted (ContractError) or an
-    optional dep (e.g. the concreteness data file) is unavailable — a missing
-    reuse signal is descriptive context, never a hard failure of the audit."""
+    context. Lazy-imported so the surface module stays cheap.
+
+    Two DIFFERENT degradations, distinguished (they were conflated before):
+
+    * A reused audit's schema drifted (``ContractError``) => the whole block
+      degrades to ``available: false``.
+    * The OPTIONAL, locally acquired Brysbaert concreteness data is absent —
+      the default install — => the block stays ``available: true`` and only
+      the ``signals["abstraction.mean_concreteness"]`` KEY is omitted. Every
+      other reused signal, and the B1/B2 aggregate, are unchanged. That key
+      is therefore CONDITIONAL: a consumer must treat it as optional and key
+      off its presence, never assume it. The committed golden
+      ``references/contract_fixtures/argument_decision_audit.json`` carries
+      it as the superset shape; see that directory's README ("Conditional
+      keys") and
+      ``tests/test_argument_decision_audit.py::test_only_documented_conditional_key_is_golden_only``.
+    """
     try:
         import argmove_profile  # lazy
         vec = dict(argmove_profile.argmove_vector(text))

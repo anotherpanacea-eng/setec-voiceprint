@@ -57,6 +57,7 @@ from pathlib import Path
 from typing import Any
 
 from claim_license import ClaimLicense  # type: ignore
+import concreteness  # type: ignore
 from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import (
     aggregate_preprocessing_metadata,
@@ -1075,6 +1076,9 @@ def _aic8_image_prestige_block(text: str) -> dict[str, Any]:
             "available": False,
             "reason": f"AIC-8 modules unimportable: {exc}",
         }
+    unavailable, detail = ic.concreteness.availability_status()
+    if unavailable is not None:
+        return {"available": False, "reason": unavailable, "detail": detail}
     try:
         nlp = ic._load_spacy_with_parsing()
     except emb.EmbeddingsBackendError as exc:
@@ -1329,14 +1333,26 @@ def audit_text(
             )
         else:
             out["aic_8_9"].setdefault("diagnostics", {})[
+                "aic8_available"
+            ] = False
+            out["aic_8_9"].setdefault("diagnostics", {})[
                 "aic8_unavailable_reason"
             ] = aic8.get("reason")
+            if aic8.get("detail"):
+                out["aic_8_9"].setdefault("diagnostics", {})[
+                    "aic8_unavailable_detail"
+                ] = aic8["detail"]
     if do_aic9:
         out.setdefault("aic_8_9", {})
         aic9 = _aic9_kicker_block(text)
         if aic9.get("available"):
             out["aic_8_9"]["kicker_density"] = aic9["kicker_density"]
         else:
+            # Symmetric with the AIC-8 branch above: a consumer branches on
+            # the boolean, not on the presence of a reason string.
+            out["aic_8_9"].setdefault("diagnostics", {})[
+                "aic9_available"
+            ] = False
             out["aic_8_9"].setdefault("diagnostics", {})[
                 "aic9_unavailable_reason"
             ] = aic9.get("reason")
@@ -3225,6 +3241,18 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
             )
     if not s.get("reliable", True):
         lines.append("WARNING: Document below 200 words; results are noisy.")
+    aic8_diagnostics = (audit.get("aic_8_9") or {}).get("diagnostics") or {}
+    if aic8_diagnostics.get("aic8_available") is False:
+        # Fire for EVERY unavailable reason, not only the missing-file one:
+        # a malformed/unreadable local CSV, an unimportable AIC-8 module, and
+        # a missing spaCy model all left the human summary silent before.
+        # `guidance_for` maps a known data reason to its operator fix and
+        # passes any other reason through verbatim.
+        reason = aic8_diagnostics.get("aic8_unavailable_reason")
+        detail = aic8_diagnostics.get("aic8_unavailable_detail") or ""
+        lines.append(
+            f"AIC-8 unavailable: {concreteness.guidance_for(reason, detail)}"
+        )
     lines.append("")
     fraction = compression.get("compression_fraction")
     fraction_str = (
@@ -3712,8 +3740,8 @@ def main() -> int:
             "Enable AIC-8 image conjunction + prestige metaphor "
             "(Aesthetic Authority Laundering). Requires spaCy with "
             "`en_core_web_md` or `_lg` (~50-700 MB) for word vectors "
-            "and the Brysbaert concreteness norms (ship in-repo at "
-            "`plugins/setec-voiceprint/data/brysbaert_concreteness.csv`). "
+            "and an optional locally acquired Brysbaert concreteness CSV "
+            "(`fetch_brysbaert.py`; unavailable otherwise). "
             "Registers two load-bearing signals (image_conjunction_"
             "density, prestige_metaphor_scatter); PROVISIONAL bands."
         ),

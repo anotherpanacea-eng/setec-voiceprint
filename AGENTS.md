@@ -27,15 +27,15 @@ clean + green, then merge. Merge commits, never squash; version + changelog are 
 at release (a PR ships a `changelog.d/` fragment), tagged from `main`. (Full detail
 in §The flow below.)
 
-**Actions conservation windows:** when the maintainer declares one, keep code
-candidates on local branches after local tests and exact-head review. Do not open,
-reopen, or synchronize even a draft PR: this repo's `pull_request` trigger runs the
-full hosted test job for drafts too. Near the end of the window, rebuild one
-integration train from fresh `origin/main`, include only independently cleared
-commits, run the local gates again, then open or update that single PR once and
-merge it with a merge commit only after its exact head is green. Urgent security
-fixes may bypass the cadence with explicit authorization, but not the normal
-review, data-boundary, or hosted-CI requirements.
+**Actions conservation windows:** draft PRs may be opened and synchronized without
+running hosted test jobs; every job refuses draft PRs, and `ready_for_review`
+starts the full suite on that exact head. Keep candidates draft after local tests
+and exact-head review. Near the end of the window, rebuild one integration train
+from fresh `origin/main`, include only independently cleared commits, run the local
+gates again, then mark that single PR ready once and merge it with a merge commit
+only after its exact head is green. Urgent security fixes may bypass the cadence
+with explicit authorization, but not the normal review, data-boundary, or
+hosted-CI requirements.
 
 **Cloud-reachable coordination hub** (added 2026-07-19):
 [`anotherpanacea-eng/fleet-coordination`](https://github.com/anotherpanacea-eng/fleet-coordination)

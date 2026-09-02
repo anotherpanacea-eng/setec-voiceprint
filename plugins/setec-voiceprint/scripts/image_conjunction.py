@@ -48,8 +48,9 @@ Dependency requirements:
     ``en_core_web_lg``) for the cosine-similarity check. The
     ``embeddings.py`` helper raises a typed error if neither is
     installed.
-  * ``data/brysbaert_concreteness.csv`` (ships in-repo) for the
-    concreteness lookup.
+  * An optional locally acquired ``data/brysbaert_concreteness.csv`` for the
+    concreteness lookup. Run ``fetch_brysbaert.py`` explicitly if permitted by
+    the source terms.
 """
 
 from __future__ import annotations
@@ -265,6 +266,14 @@ def image_conjunction_density(
     provided, a ``baseline_comparison`` block is included with the
     elevation factor.
     """
+    unavailable = concreteness.availability_reason(concreteness_path)
+    if unavailable is not None:
+        return {
+            "signal_path": "aic_8_9.image_conjunction_density",
+            "available": False,
+            "reason": unavailable,
+        }
+
     # Split into paragraphs; parse each separately so we can track
     # paragraph_index alongside the dependency walk.
     paragraphs = paragraph_parser.split_paragraphs(text)
@@ -385,6 +394,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "register baseline. Per "
             "`internal/SPEC_aic_8_9_implementation.md` Step 6."
         ),
+        epilog=concreteness.MISSING_DATA_GUIDANCE,
     )
     parser.add_argument(
         "input", type=Path,
@@ -434,6 +444,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
+
+    unavailable, detail = concreteness.availability_status()
+    if unavailable is not None:
+        print(concreteness.guidance_for(unavailable, detail), file=sys.stderr)
+        output = json.dumps({
+            "signal_path": "aic_8_9.image_conjunction_density",
+            "available": False,
+            "reason": unavailable,
+        }, indent=2)
+        if args.out is None:
+            print(output)
+        else:
+            args.out.write_text(output + "\n", encoding="utf-8")
+        return 0
 
     # Wrap both the model load AND the audit in a single try/except.
     # `_load_spacy_with_parsing` raises `EmbeddingsBackendError`

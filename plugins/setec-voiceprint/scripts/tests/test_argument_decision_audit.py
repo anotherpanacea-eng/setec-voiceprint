@@ -202,10 +202,10 @@ def test_fixture_reused_keys_match_argmove_vector():
         "Although critics disagree, the data supports the plan. Therefore decide."
     )
     real_keys = {k for k in real if k != "_n_words"}
-    assert fixture_keys == real_keys, (
-        f"fixture reused_signals shape drifted from argmove_vector: "
-        f"missing {real_keys - fixture_keys}, extra {fixture_keys - real_keys}"
+    assert real_keys <= fixture_keys, (
+        f"fixture omitted a required reused signal: {real_keys - fixture_keys}"
     )
+    assert fixture_keys - real_keys <= {"abstraction.mean_concreteness"}
 
 
 def test_thesis_opening_none_when_first_paragraph_unlabeled():
@@ -538,3 +538,60 @@ def test_end_to_end_doc_level_field_in_envelope(tmp_path):
     by = {c["signal_key"]: c for c in env["results"]["contributions"]}
     assert by["disappearing_guard_flag"]["observed_value"] is True
     assert by["discounting_straw_men_flag"]["observed_value"] is None
+
+
+# ---- conditional golden key (P2-7) ---------------------------------------
+#
+# `references/contract_fixtures/argument_decision_audit.json` is a SUPERSET
+# shape: `gen_contract_fixtures.py` hardcodes
+# `results.reused_signals.signals["abstraction.mean_concreteness"]` into the
+# canonical input, so generator and golden agree with each other while both
+# differ from a DEFAULT install (which, since SETEC stopped redistributing
+# the Brysbaert CSV, never emits that key). The `fixture_drift` gate cannot
+# see that gap — it compares the generator to the golden, never to a live
+# run. Keeping the key is a deliberate decision (dropping it would be a
+# consumer-visible contract change), so the stance is pinned HERE instead of
+# left as prose: exactly ONE golden-only signal key is permitted, and it is
+# the one documented as conditional in
+# references/contract_fixtures/README.md ("Conditional keys").
+
+DOCUMENTED_CONDITIONAL_SIGNAL_KEYS = {"abstraction.mean_concreteness"}
+
+_GOLDEN = (
+    Path(__file__).resolve().parents[2]
+    / "references" / "contract_fixtures" / "argument_decision_audit.json"
+)
+
+
+def test_only_documented_conditional_key_is_golden_only(tmp_path, monkeypatch):
+    import concreteness  # noqa: PLC0415
+
+    concreteness._load_concreteness_dict.cache_clear()
+    monkeypatch.setattr(
+        concreteness, "_DEFAULT_DATA_PATH", tmp_path / "absent" / "brysbaert.csv",
+    )
+    try:
+        text = "\n\n".join(
+            "This paragraph clearly argues a point, although it might be "
+            "somewhat wrong, because the evidence indicates progress."
+            for _ in range(5)
+        )
+        live = ada.compute_reused_signals(text)
+    finally:
+        concreteness._load_concreteness_dict.cache_clear()
+
+    assert live["available"] is True, (
+        "absent OPTIONAL data must not make the reused-signals block "
+        "unavailable — only the one conditional key may drop out"
+    )
+    golden_signals = set(
+        json.loads(_GOLDEN.read_text(encoding="utf-8"))
+        ["results"]["reused_signals"]["signals"]
+    )
+    golden_only = golden_signals - set(live["signals"])
+    assert golden_only == DOCUMENTED_CONDITIONAL_SIGNAL_KEYS, (
+        "the golden carries signal key(s) a default install never emits and "
+        "that are not documented as conditional in "
+        "references/contract_fixtures/README.md: "
+        f"{sorted(golden_only - DOCUMENTED_CONDITIONAL_SIGNAL_KEYS)}"
+    )

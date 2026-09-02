@@ -20,8 +20,8 @@ lemmas. *Behavior Research Methods*, 46(3), 904-911.
 https://doi.org/10.3758/s13428-013-0403-5
 
 Cache location: `plugins/setec-voiceprint/data/brysbaert_concreteness.csv`.
-The CSV ships with the framework. If absent, regenerate via
-`scripts/fetch_brysbaert.py` which re-downloads from Springer.
+The CSV is optional and is not distributed with the framework. If absent, an
+individual user may obtain it from its publisher via `scripts/fetch_brysbaert.py`.
 
 Design notes:
 
@@ -29,6 +29,12 @@ Design notes:
     dict of ~40K entries. Loading takes ~100ms; subsequent lookups
     are O(1). The loader caches the dict at module level so
     repeated `get_concreteness()` calls don't re-read the file.
+  * **Presence is not availability.** ``is_available()`` validates the
+    file's CONTENTS, not just that it opens: required columns present
+    and at least ``MIN_USABLE_ROWS`` parsed ratings. A 0-byte,
+    header-only, or all-empty-``conc_mean`` CSV is reported unavailable
+    (``data_malformed``) instead of loading to ``{}`` and letting the
+    detectors emit a confident 0.0.
   * **Unknown words return None, not zero.** A zero concreteness
     would be a falsy interpretable value (extremely abstract);
     `None` is the typed missing-data signal. Callers handle the
@@ -46,6 +52,7 @@ Design notes:
 from __future__ import annotations
 
 import csv
+import math
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -57,6 +64,136 @@ _DEFAULT_DATA_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "brysbaert_concreteness.csv"
 )
 
+# Reason codes for "the optional dataset is not usable". They are distinct
+# on purpose: the operator fix differs per code, and reporting
+# ``data_not_installed`` for a file that IS installed but corrupt sends the
+# operator to re-run the fetcher on top of a file the fetcher already wrote.
+DATA_NOT_INSTALLED = "data_not_installed"
+DATA_MALFORMED = "data_malformed"
+DATA_UNREADABLE = "data_unreadable"
+
+# Columns the loader needs. A CSV missing either one is malformed, not
+# missing — re-fetching is the wrong advice.
+REQUIRED_COLUMNS = ("word", "conc_mean")
+
+# Content floor for "available" at the CONVENTIONAL install path. A file
+# that opens but yields no usable (word, rating) pair -- a 0-byte file, a
+# header-only file, an all-empty ``conc_mean`` column -- is NOT a dataset.
+# Reporting it as available made every AIC-8 detector emit value 0.0 /
+# status provisional and let variance_audit band it "within typical range":
+# a fail-OPEN. A handful of rows is the same failure with a smaller number,
+# and the docs permit acquiring the CSV by a route other than the fetcher,
+# so the loader holds a truncated file to the SAME floor the fetcher
+# enforces before it installs one. ``fetch_brysbaert.MIN_CONVERTED_ROWS``
+# is this constant; there is one floor, defined here. The published
+# Brysbaert 2014 table has 39,954 rows, so the floor sits well below any
+# genuine copy.
+MIN_USABLE_ROWS = 10_000
+
+# Floor for an EXPLICITLY overridden ``data_path``. The override is the
+# documented bring-your-own / test seam (spec §4's "tiny test-owned CSV
+# with the documented header schema and invented rows"), so a caller that
+# names a path is trusted to know what it named; only the conventional
+# install path -- the one no caller chose -- carries the full floor.
+MIN_USABLE_ROWS_OVERRIDE = 1
+
+# Rating bounds. Brysbaert 2014 is a 1-5 scale (1 = most abstract, 5 = most
+# concrete) and the framework's whole AIC-8 signal is the GAP between two
+# ratings, so an out-of-scale value is not a smaller error than a missing
+# one: a table of 1000000/-1000000 produced a fully valid
+# ``available: true`` envelope reporting ~125 image-conjunctions per 1000
+# tokens against a 5-7/1000 register baseline -- a fabricated damning
+# result -- and a NaN/inf escaped as an unhandled OutputValidityError
+# traceback out of prestige_metaphor / aesthetic_authority_audit /
+# variance_audit --aic8. Fail CLOSED: ONE non-finite or out-of-scale rating
+# condemns the whole file as ``data_malformed``, because a file carrying
+# such a value is not the published dataset and no threshold of "how many
+# fabricated ratings are tolerable" is defensible in a forensics tool.
+CONC_SCALE_MIN = 1.0
+CONC_SCALE_MAX = 5.0
+
+
+def rating_key(word: str) -> str:
+    """Normalize ``word`` to the key its rating is stored under.
+
+    The loaded table is a dict keyed by the lowercased word, so the content
+    floor measures DISTINCT KEYS, not rows: a duplicated upstream table of
+    12,000 rows over 6,000 distinct words is a 6,000-entry table.
+    ``fetch_brysbaert.convert_xlsx_to_csv`` counts with THIS helper, so its
+    pre-install check measures the same quantity the loader will.
+    """
+    return word.lower()
+
+
+def is_valid_rating(value: float) -> bool:
+    """True when ``value`` is a plausible Brysbaert concreteness rating.
+
+    The single value oracle. ``fetch_brysbaert.convert_xlsx_to_csv`` calls
+    THIS function before it installs a converted CSV, so the fetcher cannot
+    write a file this loader would then reject — the two halves of "is this
+    file usable" cannot drift apart.
+    """
+    return math.isfinite(value) and CONC_SCALE_MIN <= value <= CONC_SCALE_MAX
+
+MISSING_DATA_GUIDANCE = (
+    "Optional Brysbaert concreteness data is not installed. Fetch it explicitly "
+    "for local use with: python3 "
+    "plugins/setec-voiceprint/scripts/fetch_brysbaert.py"
+)
+MALFORMED_DATA_GUIDANCE = (
+    "Optional Brysbaert concreteness data is present but unusable: it is missing "
+    "the required word/conc_mean columns, carries no usable rating rows, holds a "
+    "rating that is not a finite 1-5 value, or is not valid UTF-8 CSV. Delete the "
+    "file and re-acquire the publisher's supplementary XLSX; do not simply re-run "
+    "the converter over the same source, which would reproduce the same file."
+)
+UNREADABLE_DATA_GUIDANCE = (
+    "Optional Brysbaert concreteness data is present but could not be read "
+    "(permissions, or a directory in place of the file). Fix the path or its "
+    "permissions; re-running "
+    "plugins/setec-voiceprint/scripts/fetch_brysbaert.py will not help."
+)
+
+_REASON_GUIDANCE = {
+    DATA_NOT_INSTALLED: MISSING_DATA_GUIDANCE,
+    DATA_MALFORMED: MALFORMED_DATA_GUIDANCE,
+    DATA_UNREADABLE: UNREADABLE_DATA_GUIDANCE,
+}
+
+
+class ConcretenessDataError(RuntimeError):
+    """The optional CSV is present but unusable.
+
+    Carries the machine-readable ``reason`` (``data_malformed`` or
+    ``data_unreadable``) so a caller names it in an envelope without
+    string-matching the message, and the SPECIFIC ``detail`` (which row,
+    which value, which column) so an operator is not left to guess which
+    of the malformed conditions their file hit.
+    """
+
+    def __init__(self, detail: str, reason: str) -> None:
+        super().__init__(f"{detail} {_REASON_GUIDANCE.get(reason, '')}".strip())
+        self.reason = reason
+        self.detail = detail
+
+
+def guidance_for(reason: Optional[str], detail: str = "") -> str:
+    """Human guidance for an unavailability ``reason``.
+
+    ``detail`` is the specific diagnostic the loader produced (e.g. "carries
+    rating '1000000' for 'gralnet'"). It is APPENDED rather than discarded:
+    the generic guidance says what class of problem this is, the detail says
+    which file content caused it, and an operator needs both to act.
+
+    An unrecognized reason (e.g. variance_audit's "AIC-8 modules
+    unimportable: ...") is returned verbatim, so a summary line can print
+    EVERY unavailable reason rather than only the missing-file one.
+    """
+    if reason is None:
+        return ""
+    base = _REASON_GUIDANCE.get(reason, reason)
+    return f"{base} [{detail}]" if detail else base
+
 
 @lru_cache(maxsize=1)
 def _load_concreteness_dict(path: str = "") -> dict[str, float]:
@@ -67,25 +204,98 @@ def _load_concreteness_dict(path: str = "") -> dict[str, float]:
 
     Raises ``FileNotFoundError`` with operator-facing guidance when
     the CSV is missing — the message names the fetcher as the fix.
+
+    Raises ``ConcretenessDataError`` when the file is PRESENT but
+    unusable, with a distinct ``reason``:
+
+      * ``data_unreadable`` — the path could not be opened at all
+        (permissions, a directory in place of the file).
+      * ``data_malformed`` — it opened but is not this dataset: the
+        required ``word`` / ``conc_mean`` columns are absent, the bytes
+        are not UTF-8, ANY parsed rating is non-finite or outside the
+        documented ``CONC_SCALE_MIN``..``CONC_SCALE_MAX`` scale, or it
+        yields fewer usable (word, rating) pairs than the applicable floor
+        (``MIN_USABLE_ROWS`` at the conventional install path,
+        ``MIN_USABLE_ROWS_OVERRIDE`` when the caller named an explicit
+        ``path``). A 0-byte file, a header-only file, an all-empty
+        ``conc_mean`` column, and a table of out-of-scale numbers all land
+        here rather than loading and reporting success.
+
+    Cells that do not parse as a number at all (empty, ``"n/a"``) are
+    SKIPPED, not condemning: they mean a rating is absent for that row,
+    which the floor then catches if it is the whole file. A cell that DOES
+    parse but is not a plausible rating is a different claim — it asserts
+    a value — and fails the file closed.
     """
     csv_path = Path(path) if path else _DEFAULT_DATA_PATH
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"Brysbaert concreteness CSV not found at {csv_path}. "
-            "Regenerate via: python3 "
-            "plugins/setec-voiceprint/scripts/fetch_brysbaert.py "
-            f"--output {csv_path}"
-        )
     result: dict[str, float] = {}
-    with open(csv_path, "r", encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            word = row["word"].lower()
-            try:
-                conc = float(row["conc_mean"])
-            except (KeyError, ValueError, TypeError):
-                continue
-            result[word] = conc
+    try:
+        # The existence probe is INSIDE the guarded region. Path.exists()
+        # only swallows ENOENT-class errors — it PROPAGATES PermissionError
+        # — so probing outside let an unreadable path escape the explicit
+        # load as a bare PermissionError (not the typed error this module
+        # and specs/80 promise) and, through the availability guard's
+        # catch-all, be reported as `data_malformed`, whose guidance is
+        # "inspect or delete the file": advice that would destroy a good
+        # dataset sitting behind a permissions problem.
+        if not csv_path.exists():
+            raise FileNotFoundError(
+                f"Brysbaert concreteness CSV not found at {csv_path}. "
+                "Regenerate via: python3 "
+                "plugins/setec-voiceprint/scripts/fetch_brysbaert.py "
+                f"--output {csv_path}"
+            )
+        with open(csv_path, "r", encoding="utf-8", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames or []
+            missing = [c for c in REQUIRED_COLUMNS if c not in fieldnames]
+            if missing:
+                raise ConcretenessDataError(
+                    f"Brysbaert concreteness CSV at {csv_path} is missing "
+                    f"required column(s) {missing!r}; found {fieldnames!r}",
+                    DATA_MALFORMED,
+                )
+            for row in reader:
+                raw_word = row.get("word")
+                if not raw_word:
+                    continue
+                try:
+                    conc = float(row["conc_mean"])
+                except (KeyError, ValueError, TypeError):
+                    # No parsable rating on this row: absent, not asserted.
+                    continue
+                if not is_valid_rating(conc):
+                    raise ConcretenessDataError(
+                        f"Brysbaert concreteness CSV at {csv_path} carries "
+                        f"rating {row['conc_mean']!r} for {raw_word!r}, which "
+                        f"is not a finite value on the documented "
+                        f"{CONC_SCALE_MIN}-{CONC_SCALE_MAX} scale",
+                        DATA_MALFORMED,
+                    )
+                result[rating_key(raw_word)] = conc
+    except FileNotFoundError:
+        # Absent (probed above, or raced away before open()): not installed.
+        raise
+    except UnicodeDecodeError as exc:
+        raise ConcretenessDataError(
+            f"Brysbaert concreteness CSV at {csv_path} is not valid UTF-8 "
+            f"({exc})",
+            DATA_MALFORMED,
+        ) from exc
+    except OSError as exc:
+        raise ConcretenessDataError(
+            f"Brysbaert concreteness CSV at {csv_path} could not be read "
+            f"({type(exc).__name__}: {exc})",
+            DATA_UNREADABLE,
+        ) from exc
+    floor = MIN_USABLE_ROWS_OVERRIDE if path else MIN_USABLE_ROWS
+    if len(result) < floor:
+        raise ConcretenessDataError(
+            f"Brysbaert concreteness CSV at {csv_path} carries "
+            f"{len(result)} usable rating row(s); at least "
+            f"{floor} is required",
+            DATA_MALFORMED,
+        )
     return result
 
 
@@ -138,16 +348,66 @@ def vocab_size(data_path: Optional[Path | str] = None) -> int:
     return len(_load_concreteness_dict(path_str))
 
 
-def is_loaded(data_path: Optional[Path | str] = None) -> bool:
-    """Return True if the CSV at ``data_path`` exists and is loadable.
+def availability_status(
+    data_path: Optional[Path | str] = None,
+) -> tuple[Optional[str], str]:
+    """Return ``(reason, detail)`` — ``(None, "")`` when the data is usable.
 
-    Does not raise; useful for graceful degradation in audits that
-    don't strictly require concreteness (the AIC-8 detector should
-    fail loud, but composite audits may want a soft check).
+    ``detail`` is the loader's SPECIFIC diagnostic for this file, which
+    callers append to the generic guidance so an operator learns which of
+    the malformed conditions their copy actually hit. Never raises.
     """
+    path_str = str(data_path) if data_path else ""
     try:
-        path_str = str(data_path) if data_path else ""
         _load_concreteness_dict(path_str)
-        return True
-    except (FileNotFoundError, OSError):
-        return False
+    except FileNotFoundError:
+        return DATA_NOT_INSTALLED, ""
+    except ConcretenessDataError as exc:
+        return exc.reason, exc.detail
+    except OSError as exc:
+        # A permissions / IO problem is never "malformed": its guidance
+        # must not tell the operator to delete a good dataset.
+        return DATA_UNREADABLE, f"{type(exc).__name__}: {exc}"
+    except Exception as exc:  # noqa: BLE001 — never raise out of the guard
+        return DATA_MALFORMED, f"{type(exc).__name__}: {exc}"
+    return None, ""
+
+
+def availability_reason(data_path: Optional[Path | str] = None) -> Optional[str]:
+    """Return ``None`` when the optional data is usable, else the reason code.
+
+    This is the availability oracle: it does not merely prove the file
+    opens, it proves the file IS a concreteness table (required columns
+    present, at least ``MIN_USABLE_ROWS`` parsed ratings). A 0-byte or
+    header-only CSV therefore reports ``data_malformed`` instead of
+    loading to ``{}`` and letting every AIC-8 detector emit 0.0.
+
+    Never raises — every failure becomes a reason code, so an audit that
+    calls this at import time (or in a pytest ``skipif``) cannot explode.
+    """
+    return availability_status(data_path)[0]
+
+
+def unavailable_guidance(data_path: Optional[Path | str] = None) -> str:
+    """Human guidance for why the data is unusable (``""`` when it is fine)."""
+    reason, detail = availability_status(data_path)
+    return guidance_for(reason, detail)
+
+
+def is_available(data_path: Optional[Path | str] = None) -> bool:
+    """Return whether optional concreteness data is locally available AND usable.
+
+    The public name. ``True`` only when the file exists, opens, and parses
+    into a real rating table — presence alone is not availability.
+    """
+    return availability_reason(data_path) is None
+
+
+def is_loaded(data_path: Optional[Path | str] = None) -> bool:
+    """Backwards-compatible alias for :func:`is_available`.
+
+    The AIC-8 detectors and the composite audits all call the public
+    ``is_available()`` soft check; ``is_loaded`` is retained only so
+    older callers keep working. Like ``is_available`` it never raises.
+    """
+    return is_available(data_path)

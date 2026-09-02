@@ -27,6 +27,12 @@ ROOT = Path(__file__).resolve().parents[1]
 import prestige_metaphor as pm  # type: ignore
 
 
+_skip_no_data = pytest.mark.skipif(
+    not pm.image_conjunction.concreteness.is_available(),
+    reason="optional Brysbaert data is not installed; fixture integration requires a local copy",
+)
+
+
 _FIXTURE_DIR = ROOT / "test_data" / "aic_8_9"
 
 
@@ -184,6 +190,7 @@ def test_entropy_handles_zero_count_categories():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_density_runs_on_ai_fixture():
     """The AI-image-conjunction fixture should produce some hits
     at T1=2.0 and a non-zero scatter entropy."""
@@ -199,6 +206,7 @@ def test_density_runs_on_ai_fixture():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_scatter_entropy_ordering_ai_vs_concentrated():
     """Diagnostic ordering: AI fixture (scattered domains) should
     have HIGHER scatter entropy than concentrated fixture (single
@@ -221,6 +229,7 @@ def test_scatter_entropy_ordering_ai_vs_concentrated():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_json_schema_complete():
     import spacy
     nlp = spacy.load("en_core_web_sm")
@@ -248,6 +257,7 @@ def test_json_schema_complete():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_flag_fires_combines_entropy_and_baseline():
     """The joint flag (entropy > t3 AND density > baseline) requires
     both conditions. With no baseline, only entropy matters."""
@@ -272,6 +282,7 @@ def test_flag_fires_combines_entropy_and_baseline():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_scaffolding_word_is_higher_concreteness_member():
     """Per the spec-interpretation rationale in the module
     docstring: the scaffolding_word is the HIGHER-concreteness
@@ -297,6 +308,7 @@ def test_scaffolding_word_is_higher_concreteness_member():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_cli_runs_on_fixture():
     fixture = _FIXTURE_DIR / "ai_image_conjunction_positive.md"
     result = subprocess.run(
@@ -344,8 +356,10 @@ def test_cli_help_runs_cleanly():
     )
     assert result.returncode == 0
     assert "prestige" in result.stdout.lower() or "AIC-8" in result.stdout
+    assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in result.stdout
 
 
+@_skip_no_data
 def test_cli_clean_exit_when_no_spacy_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ):

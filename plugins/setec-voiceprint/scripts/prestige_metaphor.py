@@ -69,7 +69,7 @@ CLI usage::
 Requirements:
 
   * Everything `image_conjunction.py` requires (spaCy with parsing
-    + vectors, Brysbaert CSV).
+    + vectors, and an optional locally acquired Brysbaert CSV).
   * Optional: NLTK + WordNet data for the WordNet fallback. If
     NLTK isn't installed, the detector runs hardcoded-only with a
     diagnostic note in the JSON output.
@@ -92,7 +92,10 @@ import embeddings  # type: ignore
 import image_conjunction  # type: ignore
 
 from claim_license import ClaimLicense  # type: ignore
-from output_schema import build_output  # type: ignore
+from output_schema import (  # type: ignore
+    REASON_CATEGORIES,
+    build_output,
+)
 
 TASK_SURFACE = "smoothing_diagnosis"
 TOOL_NAME = "prestige_metaphor"
@@ -325,6 +328,16 @@ def prestige_metaphor_density(
     image_conjunction_density > baseline_value (if provided). The
     raw entropy is emitted regardless of whether the flag fires.
     """
+    unavailable = image_conjunction.concreteness.availability_reason(
+        concreteness_path
+    )
+    if unavailable is not None:
+        return {
+            "signal_path": "aic_8_9.prestige_metaphor_density",
+            "available": False,
+            "reason": unavailable,
+        }
+
     ic_block = image_conjunction.image_conjunction_density(
         text,
         nlp=nlp, t1=t1, t2=t2,
@@ -466,6 +479,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             "High entropy + elevated density = AIC-8 prestige-"
             "metaphor signature ('metaphor confetti')."
         ),
+        epilog=image_conjunction.concreteness.MISSING_DATA_GUIDANCE,
     )
     parser.add_argument(
         "input", type=Path,
@@ -517,6 +531,29 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
+
+    unavailable, detail = image_conjunction.concreteness.availability_status()
+    if unavailable is not None:
+        guidance = image_conjunction.concreteness.guidance_for(unavailable, detail)
+        print(guidance, file=sys.stderr)
+        # R3 shape (references/setec-normalized-entrypoint-spec.md §4): ONE
+        # envelope shape for success and failure. The optional dataset is a
+        # missing dependency, so the refusal is top-level `available: false`
+        # with a branchable `reason_category` and a `warnings` entry that
+        # explains it — not a `available: true` envelope hiding an ad-hoc
+        # `results.available: false` a consumer would never look at.
+        envelope = build_unavailable_payload(
+            reason=unavailable,
+            guidance=guidance,
+            target_path=str(args.input),
+            text=text,
+        )
+        output = json.dumps(envelope, indent=2)
+        if args.out is None:
+            print(output)
+        else:
+            args.out.write_text(output + "\n", encoding="utf-8")
+        return 0
 
     # Wrap both the spaCy load (which raises EmbeddingsBackendError
     # when no model is installed) AND the audit (which raises the
@@ -603,6 +640,46 @@ def build_audit_payload(
         baseline=None,
         results=block,
         claim_license=structured,
+    )
+
+
+def build_unavailable_payload(
+    *,
+    reason: str,
+    guidance: str,
+    target_path: Any,
+    text: str,
+    reason_category: str = "missing_dependency",
+) -> dict[str, Any]:
+    """Build the R3 ``available: false`` envelope for absent optional data.
+
+    Per ``plugins/setec-voiceprint/scripts/output_schema.py``: ``available``
+    is False when the script could not produce a result, ``results`` may then
+    be ``{}``, and ``warnings`` MUST explain. ``reason`` / ``reason_category``
+    are the additive R3 keys ``setec_run._emit_surface_envelope`` branches on.
+    ``target.words`` is the target's REAL word count — a 90-word document
+    reports 90, not 0.
+    """
+    if reason_category not in REASON_CATEGORIES:
+        raise ValueError(
+            f"Unknown reason_category {reason_category!r}; expected one of "
+            f"{sorted(REASON_CATEGORIES)!r}"
+        )
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=sum(1 for w in text.split() if w.strip()),
+        baseline=None,
+        results={
+            "signal_path": "aic_8_9.prestige_metaphor_density",
+            "reason": reason,
+        },
+        claim_license=None,
+        available=False,
+        warnings=[f"{reason}: {guidance}"],
+        extra={"reason": guidance, "reason_category": reason_category},
     )
 
 

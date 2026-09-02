@@ -38,7 +38,8 @@
 # What IS research-grounded in the framework (cited so the primer
 # / operator-facing docs can be honest about epistemic status):
 #
-#   * Brysbaert concreteness norms (data/brysbaert_concreteness.csv):
+#   * Locally acquired Brysbaert concreteness norms
+#     (data/brysbaert_concreteness.csv; not distributed by SETEC):
 #     Brysbaert, Warriner & Kuperman (2014), Behavior Research
 #     Methods, 46(3): 904-911. 39,954 ratings from a labeled-rater
 #     study. Real research, cited in data/README.md.

@@ -211,7 +211,7 @@ A full pass over the 1.42 → 1.109 CHANGELOG and the shipped script catalog, re
 - **Post-R12 items A, B, C all shipped.** (A) README "Why no verdict" section is live. (B) The Costa-derived authorship-state taxonomy shipped end-to-end — spec (`internal/SPEC_authorship_states.md`), `manifest_validator` `authorship_state` field, and B.3 per-state claim-license routing across all 10 `claim_license`-using scripts (waves 1–4). (C) The DivEye surprisal signal shipped — `surprisal_audit.py`, `surprisal_backend.py`, Tier-4 wiring in `variance_audit`, a dedicated `surprisal` dependency tier, and calibration-pipeline integration.
 - **The Phase 7+ "horizon" cross-perplexity surface shipped as Surface 5** — `binoculars_audit.py` + `binoculars_calibrate.py`, uncalibrated by default.
 - **A sixth surface that postdates this doc: narrative decision audit** — `narrative_decision_audit.py` + `narrative_judge.py` + `narrative_feature_schema.py` (Surface 6), plus `aesthetic_authority_audit.py` (AIC-8 prestige-metaphor + AIC-9 kicker composite).
-- **Calibration corpus fetchers shipped** — RAID, MAGE, Pangram EditLens, and Brysbaert concreteness norms, each with a `*_to_manifest.py` adapter; sharded calibration toolchain; per-comparator-class + per-(judge × generator) routing.
+- **Calibration corpus fetchers shipped** — RAID, MAGE, Pangram EditLens, and an opt-in Brysbaert concreteness fetcher (the source data is not redistributed), each with a `*_to_manifest.py` adapter; sharded calibration toolchain; per-comparator-class + per-(judge × generator) routing.
 - **A discoverability layer that postdates this doc** — `capabilities.py` manifest + query CLI + drift linter + the APODICTIC handoff contract (v0.3, in `Unreleased`).
 
 ### What's left

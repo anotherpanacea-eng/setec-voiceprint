@@ -838,6 +838,22 @@ def _build_argument_decision_audit() -> dict[str, Any]:
     # byte-stable regardless of whether the Brysbaert concreteness data file is
     # installed in the gen env (the one env-variant signal). Mirrors how the
     # voice_fingerprint / binoculars builders feed representative values.
+    #
+    # CONDITIONAL KEY — `abstraction.mean_concreteness`. Since SETEC stopped
+    # redistributing the Brysbaert CSV, the DEFAULT install does not emit that
+    # key; a user who fetches the publisher's file locally does. The fixture
+    # deliberately carries it as the SUPERSET shape (dropping it would be a
+    # consumer-visible contract change, and the key is honest for an installed
+    # dataset), so generator and golden agree here while both differ from a
+    # default install. `fixture_drift` structurally cannot see that gap — it
+    # compares the generator against the golden, not against a live run — so
+    # the stance is enforced instead by
+    # tests/test_argument_decision_audit.py::
+    #   test_only_documented_conditional_key_is_golden_only,
+    # which runs the surface with the data absent and fails if ANY golden-only
+    # signal key appears that is not the one documented as conditional in
+    # references/contract_fixtures/README.md ("Conditional keys"). Consumers
+    # must key off the key's PRESENCE, never assume it.
     reused_signals = {
         "available": True,
         "calibration_status": "heuristic",

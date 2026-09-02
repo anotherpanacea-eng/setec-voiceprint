@@ -21,6 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 import aesthetic_authority_audit as aaa  # type: ignore
 
 
+_skip_no_data = pytest.mark.skipif(
+    not aaa.image_conjunction.concreteness.is_available(),
+    reason="optional Brysbaert data is not installed; fixture integration requires a local copy",
+)
+
+
 _FIXTURE_DIR = ROOT / "test_data" / "aic_8_9"
 
 
@@ -49,6 +55,7 @@ _skip_no_vectors = pytest.mark.skipif(
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_compound_runs_on_ai_fixture():
     """The AI fixture should fire kicker density, image conjunction
     density, and prestige metaphor scatter all together."""
@@ -73,6 +80,7 @@ def test_compound_runs_on_ai_fixture():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_compound_resolves_register_baselines():
     """Passing a register should resolve baselines for all three signals."""
     import spacy
@@ -93,6 +101,7 @@ def test_compound_resolves_register_baselines():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_explicit_baseline_overrides_register():
     """Explicit baseline takes precedence over register-typical lookup."""
     import spacy
@@ -110,6 +119,7 @@ def test_explicit_baseline_overrides_register():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_compound_no_register_no_baselines():
     """register=None + no explicit baselines → no baseline_comparison."""
     import spacy
@@ -127,6 +137,7 @@ def test_compound_no_register_no_baselines():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_compound_diagnostics_populated():
     """The diagnostics block names the register and thresholds."""
     import spacy
@@ -148,6 +159,7 @@ def test_compound_diagnostics_populated():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_joint_rates_are_proportions():
     """All three joint rates are in [0, 1]."""
     import spacy
@@ -168,6 +180,7 @@ def test_joint_rates_are_proportions():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_all_three_rate_less_than_or_equal_to_pairwise_rates():
     """Joint rate of all three is bounded by each pairwise rate."""
     import spacy
@@ -194,6 +207,7 @@ def test_all_three_rate_less_than_or_equal_to_pairwise_rates():
 
 
 @_skip_no_vectors
+@_skip_no_data
 def test_cli_runs_on_fixture():
     fixture = _FIXTURE_DIR / "ai_image_conjunction_positive.md"
     result = subprocess.run(
@@ -229,8 +243,10 @@ def test_cli_help_runs():
     )
     assert result.returncode == 0
     assert "compound" in result.stdout.lower() or "AIC-8" in result.stdout
+    assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in result.stdout
 
 
+@_skip_no_data
 def test_cli_clean_exit_when_no_spacy_model(tmp_path: Path):
     """End-to-end: the compound CLI exits cleanly with exit code 2
     and an install hint when no spaCy model is installed, instead

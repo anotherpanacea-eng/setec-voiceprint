@@ -9,6 +9,7 @@ name: tests
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
@@ -21,6 +22,7 @@ concurrency:
 
 jobs:
   pytest:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -137,6 +139,7 @@ jobs:
           python3 tools/check_changed_spec_anchors.py --repo . --base "$base"
 
   macos-descriptor-confinement:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -159,6 +162,7 @@ jobs:
             -q -rs
 
   windows-descriptor-backend:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -193,6 +197,7 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-descriptor"
 
   windows-owner-corrections:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -214,6 +219,7 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-owner-corrections"
 
   windows-shingle-dedup:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
@@ -239,6 +245,7 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-shingle-dedup"
 
   windows-nonprose-sweep:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -261,6 +268,7 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-nonprose"
 
   windows-private-writer-guards:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     # The private-corpus writers harden file modes with POSIX-only os.fchmod,
     # which does not exist on native Windows, so an unguarded call raises
     # AttributeError. The Linux/macOS lanes never see it and the other focused

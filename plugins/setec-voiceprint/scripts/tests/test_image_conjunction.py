@@ -34,6 +34,12 @@ ROOT = Path(__file__).resolve().parents[1]
 import image_conjunction as ic  # type: ignore
 
 
+_skip_no_data = pytest.mark.skipif(
+    not ic.concreteness.is_available(),
+    reason="optional Brysbaert data is not installed; fixture integration requires a local copy",
+)
+
+
 _FIXTURE_DIR = ROOT / "test_data" / "aic_8_9"
 
 
@@ -78,35 +84,38 @@ _skip_no_sm = pytest.mark.skipif(
 @pytest.fixture
 def mock_concreteness_and_embeddings(monkeypatch: pytest.MonkeyPatch):
     """Replace concreteness + embeddings lookups with deterministic
-    values for the pair-evaluation unit tests. Pairs:
+    values for the pair-evaluation unit tests. The words and the ratings
+    are INVENTED (spec: no upstream rating row is copied into tests); only
+    the gaps and similarities the assertions depend on are load-bearing.
+    Pairs:
 
-      * machinery (4.75) + grief (2.7), sim=0.10 → high gap, low sim
-      * architecture (3.59) + grief (2.7), sim=0.20 → modest gap
-      * heavy (3.37) + burden (2.63), sim=0.60 → low gap, high sim
+      * gralnet (4.60) + vurnish (2.55), sim=0.10 → high gap, low sim
+      * korvane (3.44) + vurnish (2.55), sim=0.20 → modest gap
+      * plimber (3.30) + drennock (2.56), sim=0.60 → low gap, high sim
       * xyzzy_unknown → None for everything
     """
     concreteness_map = {
-        "machinery": 4.75,
-        "grief": 2.70,
-        "architecture": 3.59,
-        "desire": 1.70,
-        "heavy": 3.37,
-        "burden": 2.63,
-        "sharp": 3.86,
-        "decline": 2.76,
-        "grammar": 3.19,
+        "gralnet": 4.60,
+        "vurnish": 2.55,
+        "korvane": 3.44,
+        "themblish": 1.55,
+        "plimber": 3.30,
+        "drennock": 2.56,
+        "quilth": 3.71,
+        "morvane": 2.61,
+        "sprellik": 3.04,
     }
     similarity_map = {
-        ("machinery", "grief"): 0.10,
-        ("grief", "machinery"): 0.10,
-        ("architecture", "grief"): 0.20,
-        ("grief", "architecture"): 0.20,
-        ("heavy", "burden"): 0.60,
-        ("burden", "heavy"): 0.60,
-        ("sharp", "decline"): 0.55,
-        ("decline", "sharp"): 0.55,
-        ("grammar", "desire"): 0.15,
-        ("desire", "grammar"): 0.15,
+        ("gralnet", "vurnish"): 0.10,
+        ("vurnish", "gralnet"): 0.10,
+        ("korvane", "vurnish"): 0.20,
+        ("vurnish", "korvane"): 0.20,
+        ("plimber", "drennock"): 0.60,
+        ("drennock", "plimber"): 0.60,
+        ("quilth", "morvane"): 0.55,
+        ("morvane", "quilth"): 0.55,
+        ("sprellik", "themblish"): 0.15,
+        ("themblish", "sprellik"): 0.15,
     }
 
     def fake_get_concreteness(word, data_path=None):
@@ -121,6 +130,18 @@ def mock_concreteness_and_embeddings(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(
         "embeddings.cosine_similarity", fake_cosine_similarity,
     )
+    monkeypatch.setattr(
+        "embeddings.model_identifier", lambda: "synthetic-test",
+    )
+    monkeypatch.setattr(
+        "concreteness.is_available", lambda data_path=None: True,
+    )
+    monkeypatch.setattr(
+        "concreteness.availability_reason", lambda data_path=None: None,
+    )
+    monkeypatch.setattr(
+        "concreteness.vocab_size", lambda data_path=None: len(concreteness_map),
+    )
     return concreteness_map, similarity_map
 
 
@@ -130,15 +151,15 @@ def mock_concreteness_and_embeddings(monkeypatch: pytest.MonkeyPatch):
 def test_evaluate_pair_canonical_positive(
     mock_concreteness_and_embeddings,
 ):
-    """machinery + grief: gap 2.05 (below T1=2.5), sim 0.10 (passes T2)."""
+    """gralnet + vurnish: gap 2.05 (below T1=2.5), sim 0.10 (passes T2)."""
     # Default thresholds (T1=2.5, T2=0.4) — fails on gap.
-    result = ic.evaluate_pair("machinery", "grief", "prep_of")
+    result = ic.evaluate_pair("gralnet", "vurnish", "prep_of")
     assert result is None
     # Lower T1 to catch the canonical AI example.
-    result = ic.evaluate_pair("machinery", "grief", "prep_of", t1=2.0)
+    result = ic.evaluate_pair("gralnet", "vurnish", "prep_of", t1=2.0)
     assert result is not None
-    assert result["word_a"] == "machinery"
-    assert result["word_b"] == "grief"
+    assert result["word_a"] == "gralnet"
+    assert result["word_b"] == "vurnish"
     assert result["concreteness_gap"] == pytest.approx(2.05, abs=0.01)
     assert result["embedding_similarity"] == pytest.approx(0.10)
     assert result["relation"] == "prep_of"
@@ -147,8 +168,8 @@ def test_evaluate_pair_canonical_positive(
 def test_evaluate_pair_idiom_negative(
     mock_concreteness_and_embeddings,
 ):
-    """heavy + burden: gap 0.74 (low), sim 0.60 (high). Fails both."""
-    result = ic.evaluate_pair("heavy", "burden", "amod")
+    """plimber + drennock: gap 0.74 (low), sim 0.60 (high). Fails both."""
+    result = ic.evaluate_pair("plimber", "drennock", "amod")
     assert result is None
 
 
@@ -158,7 +179,7 @@ def test_evaluate_pair_high_gap_high_similarity_still_fails(
     """Even with a high gap, high similarity disqualifies (treated as
     a conventional collocation rather than a deliberate juxtaposition)."""
     # Reuse a hypothetical pair via monkeypatch
-    # machinery + grief but force similarity high → should fail.
+    # gralnet + vurnish but force similarity high → should fail.
     # Patch one-off:
     pass  # tested via the mock fixture's existing pairs
 
@@ -166,18 +187,18 @@ def test_evaluate_pair_high_gap_high_similarity_still_fails(
 def test_evaluate_pair_unknown_concreteness_returns_none(
     mock_concreteness_and_embeddings,
 ):
-    result = ic.evaluate_pair("machinery", "xyzzy_unknown", "prep_of")
+    result = ic.evaluate_pair("gralnet", "xyzzy_unknown", "prep_of")
     assert result is None
-    result = ic.evaluate_pair("xyzzy_unknown", "grief", "prep_of")
+    result = ic.evaluate_pair("xyzzy_unknown", "vurnish", "prep_of")
     assert result is None
 
 
 def test_evaluate_pair_unknown_embedding_returns_none(
     mock_concreteness_and_embeddings,
 ):
-    """Word in Brysbaert but not in embedding model → return None."""
-    # machinery + sharp: both in concreteness but not in similarity map
-    result = ic.evaluate_pair("machinery", "sharp", "compound", t1=0.5)
+    """Word in the concreteness table but not in the embedding model → None."""
+    # gralnet + quilth: both in concreteness but not in similarity map
+    result = ic.evaluate_pair("gralnet", "quilth", "compound", t1=0.5)
     assert result is None
 
 
@@ -186,13 +207,13 @@ def test_evaluate_pair_threshold_tuning(
 ):
     """Lowering T1 lets more pairs through; raising T2 also lets more
     pairs through (because T2 is a max-similarity threshold)."""
-    # heavy + burden: gap 0.74, sim 0.60
+    # plimber + drennock: gap 0.74, sim 0.60
     result_strict = ic.evaluate_pair(
-        "heavy", "burden", "amod", t1=2.5, t2=0.4,
+        "plimber", "drennock", "amod", t1=2.5, t2=0.4,
     )
     assert result_strict is None
     result_loose = ic.evaluate_pair(
-        "heavy", "burden", "amod", t1=0.5, t2=0.7,
+        "plimber", "drennock", "amod", t1=0.5, t2=0.7,
     )
     assert result_loose is not None
 
@@ -204,32 +225,32 @@ def test_image_conjunction_abstract_concrete_resolution():
     """The lower-concreteness member is `abstract_word`; the higher
     is `concrete_word`. Regardless of syntactic order."""
     conj_a_lower = ic.ImageConjunction(
-        word_a="grief", word_b="machinery",
-        concreteness_a=2.70, concreteness_b=4.75,
+        word_a="vurnish", word_b="gralnet",
+        concreteness_a=2.55, concreteness_b=4.60,
         concreteness_gap=2.05, embedding_similarity=0.10,
         relation="prep_of",
         paragraph_index=0, sentence_position=0,
         is_paragraph_final_sentence=False,
     )
-    assert conj_a_lower.abstract_word == "grief"
-    assert conj_a_lower.concrete_word == "machinery"
+    assert conj_a_lower.abstract_word == "vurnish"
+    assert conj_a_lower.concrete_word == "gralnet"
 
     conj_a_higher = ic.ImageConjunction(
-        word_a="machinery", word_b="grief",
-        concreteness_a=4.75, concreteness_b=2.70,
+        word_a="gralnet", word_b="vurnish",
+        concreteness_a=4.60, concreteness_b=2.55,
         concreteness_gap=2.05, embedding_similarity=0.10,
         relation="prep_of",
         paragraph_index=0, sentence_position=0,
         is_paragraph_final_sentence=False,
     )
-    assert conj_a_higher.abstract_word == "grief"
-    assert conj_a_higher.concrete_word == "machinery"
+    assert conj_a_higher.abstract_word == "vurnish"
+    assert conj_a_higher.concrete_word == "gralnet"
 
 
 def test_image_conjunction_is_frozen():
     conj = ic.ImageConjunction(
-        word_a="machinery", word_b="grief",
-        concreteness_a=4.75, concreteness_b=2.70,
+        word_a="gralnet", word_b="vurnish",
+        concreteness_a=4.60, concreteness_b=2.55,
         concreteness_gap=2.05, embedding_similarity=0.10,
         relation="prep_of",
         paragraph_index=0, sentence_position=0,
@@ -265,6 +286,7 @@ def test_spacing_variance_zero_for_uniform_distances():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_runs_on_idiom_fixture():
     """End-to-end: idiom fixture should produce few or zero
     conjunctions at default thresholds (the compound filter rejects
@@ -286,6 +308,7 @@ def test_density_runs_on_idiom_fixture():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_runs_on_ai_fixture():
     """End-to-end: AI-image-conjunction fixture at T1=2.0 (which
     catches the spec's canonical positive examples per ROADMAP
@@ -303,6 +326,7 @@ def test_density_runs_on_ai_fixture():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_threshold_tuning_changes_count():
     """T1=2.0 catches more conjunctions than T1=2.5 on the AI fixture."""
     import spacy
@@ -317,7 +341,6 @@ def test_density_threshold_tuning_changes_count():
     )
 
 
-@_skip_no_vectors
 def test_density_empty_input(mock_concreteness_and_embeddings):
     """Empty input returns zero density with valid schema."""
     fake_nlp = mock.MagicMock()
@@ -330,6 +353,7 @@ def test_density_empty_input(mock_concreteness_and_embeddings):
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_json_schema_complete():
     """JSON output carries every key the spec specifies."""
     import spacy
@@ -357,6 +381,7 @@ def test_density_json_schema_complete():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_density_baseline_comparison_emitted_when_provided():
     """Passing baseline_value adds a baseline_comparison block."""
     import spacy
@@ -378,6 +403,7 @@ def test_density_baseline_comparison_emitted_when_provided():
 
 @_skip_no_sm
 @_skip_no_vectors
+@_skip_no_data
 def test_cli_runs_on_fixture_and_emits_json():
     fixture = _FIXTURE_DIR / "ai_image_conjunction_positive.md"
     result = subprocess.run(
@@ -418,6 +444,7 @@ def test_cli_help_runs_cleanly():
     )
     assert result.returncode == 0
     assert "AIC-8" in result.stdout
+    assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in result.stdout
 
 
 def test_load_spacy_raises_typed_error_when_no_model(
@@ -447,6 +474,7 @@ def test_load_spacy_raises_typed_error_when_no_model(
     assert "spacy download" in msg
 
 
+@_skip_no_data
 def test_cli_clean_exit_when_no_spacy_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ):
