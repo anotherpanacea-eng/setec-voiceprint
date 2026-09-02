@@ -1344,6 +1344,11 @@ def audit_text(
         if aic9.get("available"):
             out["aic_8_9"]["kicker_density"] = aic9["kicker_density"]
         else:
+            # Symmetric with the AIC-8 branch above: a consumer branches on
+            # the boolean, not on the presence of a reason string.
+            out["aic_8_9"].setdefault("diagnostics", {})[
+                "aic9_available"
+            ] = False
             out["aic_8_9"].setdefault("diagnostics", {})[
                 "aic9_unavailable_reason"
             ] = aic9.get("reason")
