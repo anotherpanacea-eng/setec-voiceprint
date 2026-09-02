@@ -216,3 +216,28 @@ def test_variance_human_cli_names_optional_data_and_fetch_command(tmp_path):
     combined = result.stdout + result.stderr
     assert "Optional Brysbaert concreteness data" in combined
     assert "plugins/setec-voiceprint/scripts/fetch_brysbaert.py" in combined
+
+
+def test_variance_summary_names_every_unavailable_aic8_reason(no_local_data):
+    """P3-12 repro: the human summary line was gated on
+    `aic8_unavailable_reason == "data_not_installed"`, so a malformed or
+    unreadable local CSV, an unimportable AIC-8 module, or a missing spaCy
+    model left the operator with a silent, AIC-8-less report."""
+    audit = variance_audit.audit_text(
+        "This is a valid synthetic test sentence. " * 30, do_aic8=True,
+    )
+    diagnostics = audit["aic_8_9"]["diagnostics"]
+    assert diagnostics["aic8_available"] is False
+    compression = variance_audit.classify_compression(audit)
+
+    for reason, expected in (
+        (concreteness.DATA_NOT_INSTALLED, "is not installed"),
+        (concreteness.DATA_MALFORMED, "present but unusable"),
+        (concreteness.DATA_UNREADABLE, "could not be read"),
+        ("AIC-8 modules unimportable: no module named 'embeddings'",
+         "AIC-8 modules unimportable"),
+    ):
+        diagnostics["aic8_unavailable_reason"] = reason
+        summary = variance_audit.format_summary(audit, compression)
+        assert "AIC-8 unavailable" in summary, reason
+        assert expected in summary, reason
