@@ -13,6 +13,7 @@ import aesthetic_authority_audit as aaa
 import argmove_profile
 import concreteness
 import image_conjunction
+import output_schema
 import prestige_metaphor
 import setec_run
 import variance_audit
@@ -355,3 +356,25 @@ def test_unavailable_envelope_warning_carries_the_specific_finding(
         assert "1000000" in summary
     finally:
         concreteness._load_concreteness_dict.cache_clear()
+
+
+@pytest.mark.parametrize("builder", [
+    prestige_metaphor.build_unavailable_payload,
+    aaa.build_unavailable_payload,
+])
+def test_unavailable_payload_validates_its_reason_category(tmp_path, builder):
+    """Fold-in (b): the R3 category was a hardcoded literal, so a typo would
+    have shipped an envelope the dispatcher rewrites into an internal_error
+    instead of the refusal the script meant. It is now checked against
+    output_schema.REASON_CATEGORIES at the point of construction."""
+    kwargs = dict(
+        reason=concreteness.DATA_NOT_INSTALLED,
+        guidance="guidance",
+        target_path=tmp_path / "x.txt",
+        text="one two three",
+    )
+    good = builder(**kwargs)
+    assert good["reason_category"] in output_schema.REASON_CATEGORIES
+    assert good["target"]["words"] == 3
+    with pytest.raises(ValueError, match="Unknown reason_category"):
+        builder(**kwargs, reason_category="missing_dependancy")

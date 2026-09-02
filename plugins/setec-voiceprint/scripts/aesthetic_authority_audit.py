@@ -58,7 +58,10 @@ import prestige_metaphor  # type: ignore
 import register_typical_baselines  # type: ignore
 
 from claim_license import ClaimLicense  # type: ignore
-from output_schema import build_output  # type: ignore
+from output_schema import (  # type: ignore
+    REASON_CATEGORIES,
+    build_output,
+)
 
 TASK_SURFACE = "smoothing_diagnosis"
 TOOL_NAME = "aesthetic_authority_audit"
@@ -549,6 +552,7 @@ def build_unavailable_payload(
     guidance: str,
     target_path: Path | str,
     text: str,
+    reason_category: str = "missing_dependency",
 ) -> dict[str, Any]:
     """Build the R3 ``available: false`` envelope for absent optional data.
 
@@ -558,6 +562,11 @@ def build_unavailable_payload(
     ``reason_category`` are the additive R3 keys
     ``setec_run._emit_surface_envelope`` branches on.
     """
+    if reason_category not in REASON_CATEGORIES:
+        raise ValueError(
+            f"Unknown reason_category {reason_category!r}; expected one of "
+            f"{sorted(REASON_CATEGORIES)!r}"
+        )
     return build_output(
         task_surface=TASK_SURFACE,
         tool=TOOL_NAME,
@@ -572,7 +581,7 @@ def build_unavailable_payload(
         claim_license=None,
         available=False,
         warnings=[f"{reason}: {guidance}"],
-        extra={"reason": guidance, "reason_category": "missing_dependency"},
+        extra={"reason": guidance, "reason_category": reason_category},
     )
 
 

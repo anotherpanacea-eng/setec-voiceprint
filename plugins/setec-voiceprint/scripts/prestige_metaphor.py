@@ -92,7 +92,10 @@ import embeddings  # type: ignore
 import image_conjunction  # type: ignore
 
 from claim_license import ClaimLicense  # type: ignore
-from output_schema import build_output  # type: ignore
+from output_schema import (  # type: ignore
+    REASON_CATEGORIES,
+    build_output,
+)
 
 TASK_SURFACE = "smoothing_diagnosis"
 TOOL_NAME = "prestige_metaphor"
@@ -646,6 +649,7 @@ def build_unavailable_payload(
     guidance: str,
     target_path: Any,
     text: str,
+    reason_category: str = "missing_dependency",
 ) -> dict[str, Any]:
     """Build the R3 ``available: false`` envelope for absent optional data.
 
@@ -656,6 +660,11 @@ def build_unavailable_payload(
     ``target.words`` is the target's REAL word count — a 90-word document
     reports 90, not 0.
     """
+    if reason_category not in REASON_CATEGORIES:
+        raise ValueError(
+            f"Unknown reason_category {reason_category!r}; expected one of "
+            f"{sorted(REASON_CATEGORIES)!r}"
+        )
     return build_output(
         task_surface=TASK_SURFACE,
         tool=TOOL_NAME,
@@ -670,7 +679,7 @@ def build_unavailable_payload(
         claim_license=None,
         available=False,
         warnings=[f"{reason}: {guidance}"],
-        extra={"reason": guidance, "reason_category": "missing_dependency"},
+        extra={"reason": guidance, "reason_category": reason_category},
     )
 
 
