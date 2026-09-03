@@ -118,8 +118,12 @@ mistaken for admission.
    `conflict-resolution` is permitted only when that automatic merge reports a
    conflict; it records a nonempty resolution description, and the final tree may
    differ from Git's conflicted automatic tree only on paths Git reported
-   conflicting—every non-conflict path must remain identical. A valid choice of
-   one materialized side may leave a conflict path tree-identical. The exact
+   conflicting—every non-conflict path must remain identical. A conflict path
+   left tree-identical to Git's intermediate tree is valid only when that entry
+   is byte-identical to one parent's materialized side (including deletion);
+   otherwise synthetic intermediate content refuses. Any final conflict-path blob
+   retaining Git's standard three-way marker lines also refuses.
+   The exact
    conflict-bearing merge commit and its tree receive local tests plus independent
    review. Git replacement refs and graft files are refused and all plumbing runs
    with replacement views disabled. This closes the otherwise-uninventoried
@@ -401,7 +405,8 @@ exists, the automatic same-repository train path is the only arming path.
    constituent merges plus inventoried integration commits. They require clean
    automatic merge-tree equality or a genuinely conflicting, explicitly
    described and exact-commit conflict resolution whose changed paths are a
-   subset of the reported conflict paths; correctly parented commits with arbitrary extra tree
+   subset of the reported conflict paths, and unchanged conflict entries must
+   equal one parent's entry; correctly parented commits with arbitrary extra tree
    edits fail. Replacement refs and graft views also fail. They reject every malformed,
    duplicated, reordered, missing, base-contained, moved-base, unlisted-step,
    unlisted-parent, and skip-instruction case above.

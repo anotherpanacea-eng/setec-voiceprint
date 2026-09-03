@@ -175,6 +175,38 @@ def test_modify_delete_conflict_may_resolve_to_materialized_side(tmp_path: Path)
     assert verify_train(repo, inventory)["conflict_resolution_count"] == 1
 
 
+def test_content_conflict_markers_are_not_a_resolution(tmp_path: Path):
+    repo = tmp_path / "unresolved-markers"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Train Test")
+    _git(repo, "config", "user.email", "train@example.invalid")
+    base = _commit(repo, "shared.txt", "base\n")
+    _git(repo, "switch", "-c", "candidate")
+    candidate = _commit(repo, "shared.txt", "candidate\n")
+    _git(repo, "switch", "main")
+    prior = _commit(repo, "shared.txt", "train-side\n")
+    _git(repo, "merge", "--no-ff", "candidate", "--no-commit", check=False)
+    marker_text = (repo / "shared.txt").read_text(encoding="utf-8")
+    assert "<<<<<<<" in marker_text and ">>>>>>>" in marker_text
+    _git(repo, "add", "shared.txt")
+    _git(repo, "commit", "-m", "commit unresolved markers")
+    merge = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "update-ref", "refs/remotes/origin/main", base)
+    inventory = {
+        "schema": "setec-merge-train/1", "base": base,
+        "base_ref": "refs/remotes/origin/main", "head": merge,
+        "steps": [
+            {"kind": "train", "label": "prior integration", "commit": prior},
+            {"kind": "constituent", "pr": 8, "head": candidate, "merge": merge,
+             "tree_mode": "conflict-resolution",
+             "resolution": "claimed resolution without changing conflict markers"},
+        ],
+    }
+    with pytest.raises(TrainError, match="retains standard conflict markers"):
+        verify_train(repo, inventory)
+
+
 def test_conflict_resolution_cannot_smuggle_an_unrelated_tree_edit(tmp_path: Path):
     repo = tmp_path / "conflict-smuggle"
     repo.mkdir()
