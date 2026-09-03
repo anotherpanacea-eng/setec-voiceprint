@@ -70,6 +70,9 @@ from output_schema import (  # type: ignore
     build_baseline_metadata,
     build_output,
 )
+from setec.core.textprims import (  # type: ignore
+    DIALOGUE_FUNCTION_WORDS as FUNCTION_WORDS,
+)
 
 # spaCy is loaded lazily and tolerantly. The model is only needed to
 # tag dialogue-tag verbs and tokenize turns for POS-aware counts; the
@@ -120,22 +123,6 @@ DISCOURSE_MARKERS = {
     "now", "so", "anyway", "actually", "honestly", "really", "right",
     "sure", "hey", "please", "alright", "fine", "maybe", "perhaps",
     "indeed", "of course", "you know", "i mean", "i guess", "i think",
-}
-
-# Function words for the per-character distribution (Mosteller-Wallace
-# core; mirrors variance_audit.FUNCTION_WORDS but kept local so this
-# module has no hard dependency on that file's internals).
-FUNCTION_WORDS = {
-    "a", "about", "after", "again", "all", "am", "an", "and", "any",
-    "are", "as", "at", "be", "because", "been", "but", "by", "can",
-    "could", "did", "do", "does", "for", "from", "had", "has", "have",
-    "he", "her", "here", "him", "his", "how", "i", "if", "in", "into",
-    "is", "it", "its", "just", "me", "more", "my", "no", "not", "now",
-    "of", "off", "on", "one", "or", "our", "out", "over", "she",
-    "should", "so", "some", "than", "that", "the", "their", "them",
-    "then", "there", "these", "they", "this", "to", "too", "up", "us",
-    "very", "was", "we", "were", "what", "when", "where", "which",
-    "who", "why", "will", "with", "would", "yes", "you", "your",
 }
 
 # Vocative cue words that, when followed by a capitalized token or

@@ -16,6 +16,7 @@ extraction, bucketing, and divergence paths all have signal.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -25,6 +26,43 @@ except ImportError:  # pragma: no cover
     pytest = None  # type: ignore
 
 import dialogue_voice_audit as dva  # type: ignore
+
+
+def test_function_words_reexport_final_owner_without_drift() -> None:
+    import stylometry_core
+    import variance_audit
+    from setec.core.textprims import DIALOGUE_FUNCTION_WORDS, FUNCTION_WORDS
+
+    assert dva.FUNCTION_WORDS is DIALOGUE_FUNCTION_WORDS
+    assert variance_audit.FUNCTION_WORDS is FUNCTION_WORDS
+    assert stylometry_core.FUNCTION_WORDS is FUNCTION_WORDS
+    assert type(DIALOGUE_FUNCTION_WORDS) is set
+    assert type(FUNCTION_WORDS) is set
+    assert len(DIALOGUE_FUNCTION_WORDS) == 89
+    assert len(FUNCTION_WORDS) == 135
+    assert DIALOGUE_FUNCTION_WORDS is not FUNCTION_WORDS
+    assert {"can", "yes"} <= DIALOGUE_FUNCTION_WORDS
+    assert {"above", "against", "before"}.isdisjoint(DIALOGUE_FUNCTION_WORDS)
+    assert {"above", "against", "before"} <= FUNCTION_WORDS
+    assert {"can", "yes"}.isdisjoint(FUNCTION_WORDS)
+
+
+def test_textprims_import_does_not_load_model_stack() -> None:
+    scripts_dir = Path(dva.__file__).resolve().parent
+    probe = (
+        "import sys; import setec.core.textprims; "
+        "blocked={'spacy','nltk','torch','transformers','sentence_transformers'}; "
+        "loaded=sorted(blocked.intersection(sys.modules)); "
+        "raise SystemExit('loaded model modules: '+repr(loaded) if loaded else 0)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-S", "-c", probe],
+        cwd=scripts_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
 
 
 # A compact, deterministic two-speaker dialogue with distinct voices
