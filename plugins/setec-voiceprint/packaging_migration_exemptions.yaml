@@ -3245,19 +3245,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/dependency_distance_audit.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
