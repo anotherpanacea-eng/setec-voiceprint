@@ -8,6 +8,8 @@ import random
 import sys
 from pathlib import Path
 
+import pytest
+
 import conformal_gate as cg  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
@@ -131,6 +133,23 @@ def test_json_list_and_newline_parse_equal(tmp_path):
     n = tmp_path / "b.txt"
     n.write_text("1\n2\n3\n4\n5\n", encoding="utf-8")
     assert cg.load_scores(j) == cg.load_scores(n) == [1.0, 2.0, 3.0, 4.0, 5.0]
+
+
+@pytest.mark.parametrize(
+    ("name", "content"),
+    [
+        ("nonfinite.json", "[1, NaN, 3]"),
+        ("nonfinite.txt", "1\n-Infinity\n3\n"),
+    ],
+)
+def test_nonfinite_calibration_input_is_rejected(tmp_path, name, content):
+    calibration = tmp_path / name
+    calibration.write_text(content, encoding="utf-8")
+    with pytest.raises(ValueError, match="must be finite"):
+        cg.load_scores(calibration)
+    assert cg.main([
+        "--calibration", str(calibration), "--score", "1.0", "--json",
+    ]) == 2
 
 
 def test_deterministic():
