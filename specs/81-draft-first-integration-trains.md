@@ -123,7 +123,8 @@ mistaken for admission.
    is byte-identical to one parent's materialized side (including deletion);
    otherwise synthetic intermediate content refuses. Any final conflict-path blob
    retaining Git's standard three-way marker lines also refuses.
-   The exact
+   Marker width is derived from Git's automatic conflict blob, including a
+   versioned `conflict-marker-size` attribute. The exact
    conflict-bearing merge commit and its tree receive local tests plus independent
    review. Git replacement refs and graft files are refused and all plumbing runs
    with replacement views disabled. This closes the otherwise-uninventoried

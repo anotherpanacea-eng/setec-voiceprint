@@ -17,11 +17,6 @@ SKIP_RE = re.compile(
     r"\[(?:skip ci|ci skip|no ci|skip actions|actions skip)\]|^skip-checks:\s*true\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
-CONFLICT_MARKERS = (
-    re.compile(rb"(?m)^<<<<<<<(?: .*)?\r?$"),
-    re.compile(rb"(?m)^=======\r?$"),
-    re.compile(rb"(?m)^>>>>>>>(?: .*)?\r?$"),
-)
 AUTHORITATIVE_BASE_REF = "refs/remotes/origin/main"
 
 
@@ -187,9 +182,9 @@ def _git_bytes(repo: Path, *args: str) -> bytes:
     return result.stdout
 
 
-def _marker_bearing_conflict_paths(
-    repo: Path, commit: str, conflict_paths: set[bytes],
-) -> set[bytes]:
+def _tree_blob_ids(
+    repo: Path, commit: str, wanted_paths: set[bytes],
+) -> dict[bytes, bytes]:
     entries: dict[bytes, bytes] = {}
     for record in _git_bytes(
         repo, "ls-tree", "-r", "-z", "--full-tree", commit,
@@ -201,16 +196,58 @@ def _marker_bearing_conflict_paths(
             _mode, object_type, object_id = metadata.split(b" ", 2)
         except ValueError as exc:
             raise TrainError("git ls-tree emitted malformed output") from exc
-        if path in conflict_paths and object_type == b"blob":
+        if path in wanted_paths and object_type == b"blob":
             entries[path] = object_id
+    return entries
+
+
+def _blob(repo: Path, object_id: bytes) -> bytes:
+    try:
+        oid = object_id.decode("ascii")
+    except UnicodeDecodeError as exc:
+        raise TrainError("git ls-tree emitted a non-ASCII object id") from exc
+    return _git_bytes(repo, "cat-file", "blob", oid)
+
+
+def _automatic_marker_widths(content: bytes) -> set[int]:
+    starts = {
+        len(match.group(1))
+        for match in re.finditer(rb"(?m)^(<+)(?: .*)?\r?$", content)
+    }
+    middles = {
+        len(match.group(1))
+        for match in re.finditer(rb"(?m)^(=+)\r?$", content)
+    }
+    ends = {
+        len(match.group(1))
+        for match in re.finditer(rb"(?m)^(>+)(?: .*)?\r?$", content)
+    }
+    return starts & middles & ends
+
+
+def _contains_marker_width(content: bytes, width: int) -> bool:
+    start = re.compile(
+        rb"(?m)^" + re.escape(b"<" * width) + rb"(?!<)(?: .*)?\r?$",
+    )
+    middle = re.compile(
+        rb"(?m)^" + re.escape(b"=" * width) + rb"(?![=])\r?$",
+    )
+    end = re.compile(
+        rb"(?m)^" + re.escape(b">" * width) + rb"(?!>)(?: .*)?\r?$",
+    )
+    return bool(start.search(content) and middle.search(content) and end.search(content))
+
+
+def _marker_bearing_conflict_paths(
+    repo: Path, commit: str, automatic_tree: str, conflict_paths: set[bytes],
+) -> set[bytes]:
+    automatic_entries = _tree_blob_ids(repo, automatic_tree, conflict_paths)
+    final_entries = _tree_blob_ids(repo, commit, conflict_paths)
     bearing: set[bytes] = set()
-    for path, object_id in entries.items():
-        try:
-            oid = object_id.decode("ascii")
-        except UnicodeDecodeError as exc:
-            raise TrainError("git ls-tree emitted a non-ASCII object id") from exc
-        content = _git_bytes(repo, "cat-file", "blob", oid)
-        if all(pattern.search(content) for pattern in CONFLICT_MARKERS):
+    for path in automatic_entries.keys() & final_entries.keys():
+        widths = _automatic_marker_widths(_blob(repo, automatic_entries[path]))
+        final_content = _blob(repo, final_entries[path])
+        if any(_contains_marker_width(final_content, width) for width in widths):
             bearing.add(path)
     return bearing
 
@@ -358,7 +395,9 @@ def verify_train(repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
                         f"constituent step {index} resolution may change only paths "
                         "reported conflicting by git merge-tree"
                     )
-                if _marker_bearing_conflict_paths(repo, current, conflict_paths):
+                if _marker_bearing_conflict_paths(
+                    repo, current, automatic_tree, conflict_paths,
+                ):
                     raise TrainError(
                         f"constituent step {index} retains standard conflict markers"
                     )

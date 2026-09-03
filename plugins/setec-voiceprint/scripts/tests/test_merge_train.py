@@ -207,6 +207,47 @@ def test_content_conflict_markers_are_not_a_resolution(tmp_path: Path):
         verify_train(repo, inventory)
 
 
+def test_configured_width_conflict_markers_are_not_a_resolution(tmp_path: Path):
+    repo = tmp_path / "configured-markers"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Train Test")
+    _git(repo, "config", "user.email", "train@example.invalid")
+    (repo / ".gitattributes").write_text(
+        "shared.txt conflict-marker-size=10\n", encoding="ascii",
+    )
+    (repo / "shared.txt").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", ".gitattributes", "shared.txt")
+    _git(repo, "commit", "-m", "base with custom marker width")
+    base = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "-c", "candidate")
+    candidate = _commit(repo, "shared.txt", "candidate\n")
+    _git(repo, "switch", "main")
+    prior = _commit(repo, "shared.txt", "train-side\n")
+    _git(repo, "merge", "--no-ff", "candidate", "--no-commit", check=False)
+    marker_text = (repo / "shared.txt").read_text(encoding="utf-8")
+    assert "<<<<<<<<<<" in marker_text and ">>>>>>>>>>" in marker_text
+    (repo / "shared.txt").write_text(
+        marker_text.replace("train-side", "train-side edited", 1), encoding="utf-8",
+    )
+    _git(repo, "add", "shared.txt")
+    _git(repo, "commit", "-m", "retain configured-width conflict markers")
+    merge = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "update-ref", "refs/remotes/origin/main", base)
+    inventory = {
+        "schema": "setec-merge-train/1", "base": base,
+        "base_ref": "refs/remotes/origin/main", "head": merge,
+        "steps": [
+            {"kind": "train", "label": "prior integration", "commit": prior},
+            {"kind": "constituent", "pr": 8, "head": candidate, "merge": merge,
+             "tree_mode": "conflict-resolution",
+             "resolution": "claimed edit retaining custom markers"},
+        ],
+    }
+    with pytest.raises(TrainError, match="retains standard conflict markers"):
+        verify_train(repo, inventory)
+
+
 def test_conflict_resolution_cannot_smuggle_an_unrelated_tree_edit(tmp_path: Path):
     repo = tmp_path / "conflict-smuggle"
     repo.mkdir()
