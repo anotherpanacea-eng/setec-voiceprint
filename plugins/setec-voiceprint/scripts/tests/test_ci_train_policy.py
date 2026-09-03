@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[4]
 WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
+RELEASE_SHA256 = "2d5385b0793ad82dcb28e9d2ecf7feb95a5da1f01c2afdab672a20e4c49d5b05"
 EVENTS = [
     "opened", "synchronize", "reopened", "ready_for_review",
     "converted_to_draft", "labeled", "unlabeled",
@@ -245,6 +247,18 @@ def _step_id(step: dict) -> str:
     return step.get("name") or step.get("uses") or ""
 
 
+def _workflow_names(directory: Path) -> set[str]:
+    return {
+        path.name for path in directory.iterdir()
+        if path.is_file() and path.suffix.lower() in {".yml", ".yaml"}
+    }
+
+
+def _release_digest(text: str) -> str:
+    normalized = text.replace("\r\n", "\n")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def _violations(text: str) -> list[str]:
     problems = []
     try:
@@ -324,13 +338,41 @@ def _violations(text: str) -> list[str]:
 
 
 def test_current_workflow_holds_closed_train_policy():
-    assert set(path.name for path in (ROOT / ".github" / "workflows").glob("*.yml")) == {
+    workflow_paths = _workflow_names(ROOT / ".github" / "workflows")
+    assert workflow_paths == {
         "release.yml", "tests.yml",
     }
     assert _violations(WORKFLOW.read_text(encoding="utf-8")) == []
-    release = _load(RELEASE.read_text(encoding="utf-8"))
+    release_text = RELEASE.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert _release_digest(release_text) == RELEASE_SHA256
+    release = _load(release_text)
     assert release["on"] == {"push": {"tags": ["v*"]}}
     assert set(release["jobs"]) == {"publish"}
+
+
+def test_workflow_inventory_includes_yaml_extension(tmp_path: Path):
+    (tmp_path / "tests.yml").write_text("name: tests\n", encoding="utf-8")
+    (tmp_path / "hidden.yaml").write_text("name: hidden\n", encoding="utf-8")
+    assert _workflow_names(tmp_path) == {"tests.yml", "hidden.yaml"}
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (
+            "    runs-on: ubuntu-latest",
+            "    strategy:\n      matrix:\n        copy: [1, 2]\n    runs-on: ubuntu-latest",
+        ),
+        (
+            "          set -euo pipefail",
+            "          set -euo pipefail\n          curl https://example.invalid",
+        ),
+    ],
+)
+def test_release_workflow_cost_or_command_mutation_fails_closed(old: str, new: str):
+    text = RELEASE.read_text(encoding="utf-8")
+    assert old in text
+    assert _release_digest(text.replace(old, new, 1)) != RELEASE_SHA256
 
 
 @pytest.mark.parametrize(

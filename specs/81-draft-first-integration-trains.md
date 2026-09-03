@@ -4,7 +4,7 @@
 > independently reviewed draft constituents, one fresh exact-head integration
 > train, one complete hosted run, and one merge to `main`.
 
-- **Status:** Ready for independent spec review
+- **Status:** Implementation review in progress on `codex/draft-first-integration-trains`
 - **Tier:** repository process / CI policy
 - **GPU required:** no
 - **Upstream / prior art:** the repo's existing `AGENTS.md` Actions-conservation
@@ -116,9 +116,13 @@ mistaken for admission.
    one of two tree modes. `clean` requires the merge commit's tree to equal Git's
    independently computed automatic merge tree for its exact two parents.
    `conflict-resolution` is permitted only when that automatic merge reports a
-   conflict; it records a nonempty resolution description, and the exact
+   conflict; it records a nonempty resolution description, and the final tree may
+   differ from Git's conflicted automatic tree on exactly the paths Git reported
+   conflicting—every non-conflict path must remain identical. The exact
    conflict-bearing merge commit and its tree receive local tests plus independent
-   review. This closes the otherwise-uninventoried merge-tree seam.
+   review. Git replacement refs and graft files are refused and all plumbing runs
+   with replacement views disabled. This closes the otherwise-uninventoried
+   merge-tree seam.
    One-parent train-only commits are reserved for separately inventoried
    post-merge integration or release adjustments, not for pretending a conflict
    was resolved outside its merge commit.
@@ -217,8 +221,10 @@ history downloads.
 A narrow workflow-policy regression suite is justified as a stable negative-
 property gate. It parses a closed active workflow topology and rejects:
 
-- any workflow other than the one PR-only test workflow and the separately
-  specified tag-only release workflow;
+- any `.yml` or `.yaml` workflow other than the one PR-only test workflow and
+  the separately specified tag-only release workflow; the unchanged release
+  workflow's normalized content is itself pinned so matrix, permission, runner,
+  step, or command growth cannot hide there;
 - a `push`/schedule/dispatch test trigger or missing PR activity type;
 - missing/malformed activity-class `run-name`, unbounded user-controlled text in
   it, or disagreement between its exact action/train/`ci-ready` Boolean fields
@@ -281,8 +287,10 @@ be the newest **clearance** run for that head (a run with any expected job not
 skipped), its attempt must be the latest attempt for that run, and there may be
 no later failed, cancelled, or pending clearance occurrence of an expected job
 on the head. An all-skipped train-label or unrelated-standalone-label event is
-not a clearance run and does not invalidate one. Current live
-draft/head-repository/branch/label arming
+not a clearance run and does not invalidate one only when its API state is a
+completed success and all exact seven job records are completed/skipped. Missing
+job metadata, pending/cancelled/failed state, or any non-skipped work fails
+closed. Current live base SHA/base ref/draft/head-repository/branch/label arming
 state is separately mandatory, so converting to draft or removing `ci-ready`
 from a standalone candidate still revokes clearance. Mixed-run or stale-attempt
 greens are refused. A green head-attached check without its in-job receipt is
@@ -292,7 +300,7 @@ insufficient.
 it reads the PR, workflow run/attempt, jobs, conclusions, and job logs through the
 authenticated GitHub CLI; its pure validation layer also accepts fixture evidence
 for offline tests. Evidence selection is bound to the exact GitHub repository,
-PR number, `main` base ref, `pull_request` event, workflow path
+PR number, exact current `main` base SHA and base ref, `pull_request` event, workflow path
 `.github/workflows/tests.yml`, train head SHA, newest run for that identity,
 latest run attempt, exact current arming state, and the exact seven job IDs. It
 parses the bounded activity class from the run's GitHub API `display_title`,
@@ -391,8 +399,9 @@ exists, the automatic same-repository train path is the only arming path.
 2. Closed-topology tests construct real repositories and accept exact no-ff
    constituent merges plus inventoried integration commits. They require clean
    automatic merge-tree equality or a genuinely conflicting, explicitly
-   described and exact-commit conflict resolution; correctly parented commits
-   with arbitrary extra tree edits fail. They also reject every malformed,
+   described and exact-commit conflict resolution whose changed paths equal the
+   reported conflict paths; correctly parented commits with arbitrary extra tree
+   edits fail. Replacement refs and graft views also fail. They reject every malformed,
    duplicated, reordered, missing, base-contained, moved-base, unlisted-step,
    unlisted-parent, and skip-instruction case above.
 3. Merge-binding tests construct real repositories and reject dirty, non-merge,
@@ -406,13 +415,15 @@ exists, the automatic same-repository train path is the only arming path.
    standalone label event and every train label event neither arm a job nor
    collide with/cancel the canonical group. Exact standalone `ci-ready`
    add/remove events do use that group; only the add can arm. A matrix/job-key
-   addition fails. Activity-class run metadata is exact and excludes raw
-   untrusted event text.
+   addition fails. Both `.yml` and `.yaml` workflow files are inventoried, and
+   release-workflow matrix/step/command mutations fail. Activity-class run
+   metadata is exact and excludes raw untrusted event text.
 5. Receipt-aggregation tests reject mixed workflow runs, mixed or stale attempts,
    missing/duplicate jobs, later non-success occurrences, malformed/duplicate
    receipt lines, base/head/synthetic-merge disagreement, and wrong repository,
-   PR, base ref, event, workflow path, head identity, or activity class. They
-   prove the class distinguishes ignored train/unrelated label noise from
+   PR, live base SHA/ref, event, workflow path, head identity, or activity class.
+   They prove the class distinguishes verified completed/all-skipped
+   train/unrelated label noise from failed, pending, or unproven label runs and
    relevant all-skipped clearance/revocation attempts.
 6. A local landing test proves an unchanged base accepts an exact two-parent,
    tree-identical fast-forward and a concurrent fast-forward movement rejects the

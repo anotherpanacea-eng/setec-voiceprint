@@ -84,6 +84,32 @@ def test_clean_merge_with_arbitrary_tree_edit_is_refused(tmp_path: Path):
         verify_train(repo, inventory)
 
 
+def test_replacement_ref_cannot_hide_the_actual_merge_tree(tmp_path: Path):
+    repo, inventory, ids = _clean_train(tmp_path)
+    expected_tree = _git(repo, "rev-parse", f"{ids['head']}^{{tree}}")
+    _git(repo, "reset", "--hard", ids["integration"])
+    _git(repo, "merge", "--no-ff", "two", "--no-commit")
+    (repo / "unreviewed.txt").write_text("hidden\n", encoding="utf-8")
+    _git(repo, "add", "unreviewed.txt")
+    _git(repo, "commit", "-m", "actual wrong tree")
+    actual = _git(repo, "rev-parse", "HEAD")
+    parents = _git(repo, "rev-list", "--parents", "-n", "1", actual).split()[1:]
+    replacement = _git(
+        repo, "commit-tree", expected_tree,
+        "-p", parents[0], "-p", parents[1], "-m", "replacement view",
+    )
+    _git(repo, "replace", actual, replacement)
+    inventory["head"] = actual
+    inventory["steps"][2]["merge"] = actual
+    with pytest.raises(TrainError, match="replacement refs"):
+        verify_train(repo, inventory)
+    _git(repo, "replace", "-d", actual)
+    grafts = repo / ".git" / "info" / "grafts"
+    grafts.write_text(f"{actual} {' '.join(parents)}\n", encoding="ascii")
+    with pytest.raises(TrainError, match="grafts file"):
+        verify_train(repo, inventory)
+
+
 def test_real_conflict_requires_explicit_resolution_mode(tmp_path: Path):
     repo = tmp_path / "conflict"
     repo.mkdir()
@@ -115,6 +141,40 @@ def test_real_conflict_requires_explicit_resolution_mode(tmp_path: Path):
     inventory["steps"][1]["tree_mode"] = "clean"
     inventory["steps"][1]["resolution"] = None
     with pytest.raises(TrainError, match="conflicting"):
+        verify_train(repo, inventory)
+
+
+def test_conflict_resolution_cannot_smuggle_an_unrelated_tree_edit(tmp_path: Path):
+    repo = tmp_path / "conflict-smuggle"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Train Test")
+    _git(repo, "config", "user.email", "train@example.invalid")
+    base = _commit(repo, "shared.txt", "base\n")
+    _commit(repo, "untouched.txt", "reviewed\n")
+    base = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "switch", "-c", "candidate")
+    candidate = _commit(repo, "shared.txt", "candidate\n")
+    _git(repo, "switch", "main")
+    prior = _commit(repo, "shared.txt", "train-side\n")
+    _git(repo, "merge", "--no-ff", "candidate", "--no-commit", check=False)
+    (repo / "shared.txt").write_text("reviewed resolution\n", encoding="utf-8")
+    (repo / "untouched.txt").write_text("smuggled\n", encoding="utf-8")
+    _git(repo, "add", "shared.txt", "untouched.txt")
+    _git(repo, "commit", "-m", "resolve with unrelated edit")
+    merge = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "update-ref", "refs/remotes/origin/main", base)
+    inventory = {
+        "schema": "setec-merge-train/1", "base": base,
+        "base_ref": "refs/remotes/origin/main", "head": merge,
+        "steps": [
+            {"kind": "train", "label": "prior integration", "commit": prior},
+            {"kind": "constituent", "pr": 8, "head": candidate, "merge": merge,
+             "tree_mode": "conflict-resolution",
+             "resolution": "resolved shared.txt using combined behavior"},
+        ],
+    }
+    with pytest.raises(TrainError, match="exactly the paths"):
         verify_train(repo, inventory)
 
 

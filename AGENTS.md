@@ -374,7 +374,7 @@ spec→review→write→review→fix structure durable on GitHub and gives
 - **`gh` OAuth workflow-scope merge block (public repo).** A PR that touches
   `.github/workflows/` can't be merged with the `gh` OAuth token (403 "refusing to
   allow an OAuth App to create or update workflow"). The *git* credential keeps the
-  scope (it pushed the branch fine), so the fallback is a local
+  scope (it pushed the branch fine), so the fallback is to
   use Spec 81's local tree-identical two-parent merge and exact-base leased push,
   or merge via the GitHub web UI when its strict-current-base guard is reliable.
 
@@ -404,7 +404,7 @@ count (`N tests pass + 1 skipped`).
 
 Bodies should name what changed and (briefly) why. Reviewer-P2 fix
 commits should name the reviewer's reproduction in one or two lines
-per issue so the audit trail survives the squash.
+per issue so the audit trail survives the integration-train merge.
 
 ## Co-authorship
 

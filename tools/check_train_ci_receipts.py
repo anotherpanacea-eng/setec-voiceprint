@@ -93,6 +93,30 @@ def _parse_job_receipt(log: object) -> dict[str, Any]:
     return receipt
 
 
+def _validate_noise_jobs(run: dict[str, Any]) -> None:
+    if run["status"] != "completed" or run["conclusion"] != "success":
+        raise ReceiptError("ignored label run is not a completed all-skipped success")
+    jobs = run["jobs"]
+    if not isinstance(jobs, list):
+        raise ReceiptError("ignored label run has no job metadata")
+    by_name: dict[str, dict[str, Any]] = {}
+    for job in jobs:
+        if not isinstance(job, dict):
+            raise ReceiptError("ignored label run job must be an object")
+        _exact_keys(job, {"name", "status", "conclusion", "log"}, where="noise job")
+        name = job["name"]
+        if not isinstance(name, str) or name in by_name:
+            raise ReceiptError("ignored label run job names must be unique strings")
+        by_name[name] = job
+    if set(by_name) != EXPECTED_JOBS:
+        raise ReceiptError("ignored label run does not contain the exact seven jobs")
+    if any(
+        job["status"] != "completed" or job["conclusion"] != "skipped" or job["log"] != ""
+        for job in by_name.values()
+    ):
+        raise ReceiptError("ignored label run contains non-skipped work")
+
+
 def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
@@ -127,10 +151,18 @@ def validate_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(current, dict):
         raise ReceiptError("current must be an object")
     _exact_keys(
-        current, {"draft", "head_repo", "head_ref", "labels", "base_ref", "head_sha"},
+        current,
+        {
+            "draft", "head_repo", "head_ref", "labels", "base_ref",
+            "base_sha", "head_sha",
+        },
         where="current",
     )
-    if current["base_ref"] != "main" or current["head_sha"] != head:
+    if (
+        current["base_ref"] != "main"
+        or current["base_sha"] != base
+        or current["head_sha"] != head
+    ):
         raise ReceiptError("live PR base/head does not match evidence")
     if current["draft"] is not False:
         raise ReceiptError("PR is not currently promoted")
@@ -174,12 +206,7 @@ def validate_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
             raise ReceiptError("workflow run has wrong head")
         activity = _activity(run, pr=pr, current_train=current_train)
         if activity["noise"]:
-            if run["jobs"] not in ([], None):
-                if not all(
-                    isinstance(job, dict) and job.get("conclusion") == "skipped"
-                    for job in run["jobs"]
-                ):
-                    raise ReceiptError("ignored label run contains non-skipped work")
+            _validate_noise_jobs(run)
             continue
         clearance.append(run)
     if not clearance:
@@ -257,6 +284,7 @@ def collect_live(repository: str, pr: int, *, base: str, head: str) -> dict[str,
     labels = [item["name"] for item in pull.get("labels", [])]
     current = {
         "base_ref": pull.get("base", {}).get("ref"),
+        "base_sha": pull.get("base", {}).get("sha"),
         "draft": pull.get("draft"),
         "head_ref": pull.get("head", {}).get("ref"),
         "head_repo": (pull.get("head", {}).get("repo") or {}).get("full_name"),
@@ -284,7 +312,22 @@ def collect_live(repository: str, pr: int, *, base: str, head: str) -> dict[str,
             "jobs": [],
         }
         activity = _activity(run, pr=pr, current_train=current_train)
-        if not activity["noise"]:
+        if activity["noise"]:
+            attempt = run["attempt"]
+            raw_jobs = _run_json(
+                "gh", "api",
+                f"repos/{repository}/actions/runs/{run['id']}/attempts/{attempt}/jobs?per_page=100",
+            ).get("jobs", [])
+            run["jobs"] = [
+                {
+                    "name": raw_job.get("name"),
+                    "status": raw_job.get("status"),
+                    "conclusion": raw_job.get("conclusion"),
+                    "log": "",
+                }
+                for raw_job in raw_jobs
+            ]
+        else:
             clearance_ids.append(run["id"])
         runs.append(run)
     if clearance_ids:

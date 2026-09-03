@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -21,6 +22,21 @@ AUTHORITATIVE_BASE_REF = "refs/remotes/origin/main"
 
 class TrainError(ValueError):
     """The proposed train does not satisfy its closed inventory."""
+
+
+def _git_environment() -> dict[str, str]:
+    environment = {
+        key: value for key, value in os.environ.items()
+        if not key.upper().startswith("GIT_")
+    }
+    environment.update({
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_TERMINAL_PROMPT": "0",
+    })
+    return environment
 
 
 def _canonical(value: object) -> str:
@@ -52,12 +68,13 @@ def _oid(value: object, *, name: str) -> str:
 def _git_result(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
-            ["git", "-C", str(repo), *args],
+            ["git", "--no-replace-objects", "-C", str(repo), *args],
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="strict",
             check=False,
+            env=_git_environment(),
         )
     except UnicodeDecodeError as exc:
         raise TrainError(f"git {' '.join(args)} returned non-UTF-8 output") from exc
@@ -87,15 +104,69 @@ def _tree(repo: Path, commit: str) -> str:
     return _git(repo, "rev-parse", "--verify", f"{commit}^{{tree}}").strip().lower()
 
 
-def _automatic_merge(repo: Path, first: str, second: str) -> tuple[bool, str | None]:
-    result = _git_result(repo, "merge-tree", "--write-tree", "--messages", first, second)
-    lines = result.stdout.splitlines()
-    tree = lines[0].strip().lower() if lines and OID_RE.fullmatch(lines[0].strip()) else None
+def _refuse_object_rewrites(repo: Path) -> None:
+    replacements = _git(repo, "for-each-ref", "--format=%(refname)", "refs/replace")
+    if replacements.strip():
+        raise TrainError("repository contains replacement refs")
+    graft_path_text = _git(repo, "rev-parse", "--git-path", "info/grafts").strip()
+    graft_path = Path(graft_path_text)
+    if not graft_path.is_absolute():
+        graft_path = repo / graft_path
+    if graft_path.exists():
+        raise TrainError("repository contains a grafts file")
+
+
+def _automatic_merge(repo: Path, first: str, second: str) -> tuple[bool, str, set[bytes]]:
+    result = subprocess.run(
+        [
+            "git", "--no-replace-objects", "-C", str(repo),
+            "merge-tree", "--write-tree",
+            "--name-only", "-z", "--messages", first, second,
+        ],
+        capture_output=True,
+        check=False,
+        env=_git_environment(),
+    )
     if result.returncode not in {0, 1}:
-        raise TrainError(f"git merge-tree failed: {result.stderr.strip()}")
-    if tree is None:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise TrainError(f"git merge-tree failed: {detail}")
+    fields = result.stdout.split(b"\0")
+    try:
+        tree = fields[0].decode("ascii").lower()
+    except UnicodeDecodeError as exc:
+        raise TrainError("git merge-tree emitted a non-ASCII tree object id") from exc
+    if not OID_RE.fullmatch(tree):
         raise TrainError("git merge-tree did not emit an exact tree object id")
-    return result.returncode == 0, tree
+    try:
+        boundary = fields.index(b"", 1)
+    except ValueError as exc:
+        raise TrainError("git merge-tree did not terminate its conflict-path list") from exc
+    conflict_paths = set(fields[1:boundary])
+    if b"" in conflict_paths:
+        raise TrainError("git merge-tree emitted an empty conflict path")
+    clean = result.returncode == 0
+    if clean and conflict_paths:
+        raise TrainError("clean git merge-tree unexpectedly emitted conflict paths")
+    if not clean and not conflict_paths:
+        raise TrainError("conflicting git merge-tree emitted no conflict paths")
+    return clean, tree, conflict_paths
+
+
+def _tree_diff_paths(repo: Path, first_tree: str, second_tree: str) -> set[bytes]:
+    result = subprocess.run(
+        [
+            "git", "--no-replace-objects", "-C", str(repo),
+            "diff-tree", "--no-commit-id",
+            "--name-only", "-r", "-z", first_tree, second_tree,
+        ],
+        capture_output=True,
+        check=False,
+        env=_git_environment(),
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise TrainError(f"git diff-tree failed: {detail}")
+    return {field for field in result.stdout.split(b"\0") if field}
 
 
 def load_inventory(path: Path) -> dict[str, Any]:
@@ -113,6 +184,7 @@ def load_inventory(path: Path) -> dict[str, Any]:
 
 
 def verify_train(repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
+    _refuse_object_rewrites(repo)
     _exact_keys(
         inventory, {"schema", "base", "base_ref", "head", "steps"}, where="inventory",
     )
@@ -217,7 +289,9 @@ def verify_train(repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
                     f"constituent step {index} second parent is {parents[1]}, "
                     f"expected {step['head']}"
                 )
-            clean, automatic_tree = _automatic_merge(repo, parents[0], parents[1])
+            clean, automatic_tree, conflict_paths = _automatic_merge(
+                repo, parents[0], parents[1],
+            )
             if step["tree_mode"] == "clean":
                 if not clean:
                     raise TrainError(f"constituent step {index} is conflicting, not clean")
@@ -229,6 +303,14 @@ def verify_train(repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
                 if clean:
                     raise TrainError(
                         f"constituent step {index} claims a conflict but merges cleanly"
+                    )
+                resolution_paths = _tree_diff_paths(
+                    repo, automatic_tree, _tree(repo, current),
+                )
+                if resolution_paths != conflict_paths:
+                    raise TrainError(
+                        f"constituent step {index} resolution changes must be exactly "
+                        "the paths reported conflicting by git merge-tree"
                     )
                 conflicts += 1
             current = parents[0]

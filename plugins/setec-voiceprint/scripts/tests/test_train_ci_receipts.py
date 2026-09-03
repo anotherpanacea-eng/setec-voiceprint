@@ -74,6 +74,7 @@ def _evidence() -> dict:
             "head_ref": "train/2026-09-03",
             "labels": [],
             "base_ref": "main",
+            "base_sha": BASE,
             "head_sha": HEAD,
         },
         "runs": [_run()],
@@ -98,6 +99,16 @@ def test_train_label_noise_is_ignored_without_replacing_clearance():
     assert validate_evidence(evidence)["run_id"] == 200
 
 
+def test_failed_or_unproven_label_run_is_not_ignorable_noise():
+    evidence = _evidence()
+    noise = _run(201, action="labeled", train=True, ci_ready_event=True)
+    noise["conclusion"] = "failure"
+    noise["jobs"] = []
+    evidence["runs"].append(noise)
+    with pytest.raises(ReceiptError, match="all-skipped success"):
+        validate_evidence(evidence)
+
+
 def test_unrelated_standalone_label_noise_is_ignored():
     evidence = _evidence()
     evidence["current"].update({
@@ -118,7 +129,7 @@ def test_unrelated_standalone_label_noise_is_ignored():
         "mixed_run", "stale_attempt", "missing_job", "duplicate_job",
         "later_failure", "duplicate_receipt", "wrong_merge", "wrong_repo",
         "wrong_pr", "wrong_base", "wrong_event", "wrong_path", "wrong_head",
-        "bad_activity", "unarmed",
+        "bad_activity", "unarmed", "live_base_moved",
     ],
 )
 def test_receipt_evidence_mutations_fail_closed(mutation: str):
@@ -157,6 +168,8 @@ def test_receipt_evidence_mutations_fail_closed(mutation: str):
         run["head_sha"] = "d" * 40
     elif mutation == "bad_activity":
         run["display_title"] += " raw-label=attacker"
+    elif mutation == "live_base_moved":
+        evidence["current"]["base_sha"] = "d" * 40
     else:
         evidence["current"]["draft"] = True
     with pytest.raises(ReceiptError):
