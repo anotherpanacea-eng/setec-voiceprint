@@ -10,13 +10,15 @@ description: >
   "do not normalize these phrases," or any request to audit voice coherence
   against a personal or register-matched corpus. Also triggers on
   "voice distance," "voice profile," "voiceprint," "stylometric
-  drift," "directional cluster," or "idiolect."
-version: 1.0.0
+  drift," "directional cluster," "productive roughness," "roughness
+  drift," "compare my fragments or contractions to my baseline," "did
+  editing sand off my roughness," or "idiolect."
+version: 1.0.1
 ---
 
 # Voice-Coherence Comparison (SETEC Surface 2)
 
-This skill measures the stylometric distance between a target text and a writer-shaped or register-shaped baseline. It is a *coherence* surface, not a *provenance* surface: it answers "how far is this draft from the baseline" and reports the cluster-level direction of the drift, but does not adjudicate whether AI involvement, register shift, time drift, or genuine voice change caused the divergence.
+This skill primarily measures the stylometric distance between a target text and a writer-shaped or register-shaped baseline. It also routes to the sibling `productive_roughness` surface when the operator wants six sentence-level roughness features compared with the writer's own stable work. These are *coherence* diagnostics, not *provenance* diagnostics: they do not adjudicate whether AI involvement, editing, register shift, time drift, or genuine voice change caused a divergence.
 
 ## What this surface licenses, and what it does not
 
@@ -30,6 +32,7 @@ This skill measures the stylometric distance between a target text and a writer-
 | `voice_distance.py` | Target vs. baseline corpus | Asking how far a draft has drifted from a writer or register voiceprint |
 | `voice_profile.py` | Baseline corpus | Producing a private human-readable voiceprint document from the writer's own prior work |
 | `idiolect_detector.py` | Target corpus vs. reference corpus | Extracting distinctive words/phrases and a preservation list for revision prompts |
+| `productive_roughness_audit.py` | Draft vs. writer baseline; sibling `productive_roughness` surface | Asking whether fragments, initial conjunctions, contractions, repetition, asides, or very-short sentences differ from this writer's stable pattern |
 
 ## Quick CLI
 
@@ -55,11 +58,26 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/idiolect_detector.py" \
     --reference-dir path/to/register-reference-corpus/ \
     --out path/to/ai-prose-baselines-private/target_idiolect.md \
     --preservation-output path/to/ai-prose-baselines-private/target_preserve.txt
+
+# Baseline-relative productive-roughness deviations (writer baseline is required)
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/productive_roughness_audit.py" \
+    path/to/draft.md --baseline-dir path/to/writer-baseline/ --json
+
+# Write the same audit as Markdown instead
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/productive_roughness_audit.py" \
+    path/to/draft.md --baseline-dir path/to/writer-baseline/ \
+    --out path/to/ai-prose-baselines-private/productive_roughness.md
 ```
 
 ## Privacy notice
 
-Voice profiles, idiolect reports, preservation lists, and personal baseline corpora are voice-cloning inputs. The signals these scripts compute (function-word distribution, character n-grams, POS trigrams, dependency-label n-grams, idiolectic phrases) are exactly what a stylometric voice-cloning system consumes. The `voice_profile.py` and `idiolect_detector.py` scripts default to refusing output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed explicitly; the `manifest_validator.py` enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged manifest entries. Treat voiceprints as cloning-grade inputs by default and keep them out of any public repository.
+Voice profiles, idiolect reports, productive-roughness reports, preservation lists, and personal baseline corpora are voice-cloning inputs. The signals these scripts compute (function-word distribution, character n-grams, POS trigrams, dependency-label n-grams, idiolectic phrases, and writer-specific roughness patterns) are exactly what a stylometric voice-cloning system consumes. The `voice_profile.py` and `idiolect_detector.py` scripts default to refusing output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed explicitly; `productive_roughness_audit.py` does not add that path guard, so keep its personal baseline and report private by operator practice. The `manifest_validator.py` enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged manifest entries. Treat voiceprints as cloning-grade inputs by default and keep them out of any public repository.
+
+## Productive-roughness follow-up
+
+`productive_roughness_audit.py` requires `--baseline-dir` containing the writer's own stable work; omitting it is a CLI usage error (exit 2), and there is no single-document or register-baseline mode. It reports exactly six per-sentence rates — fragments, sentence-initial coordinating conjunctions, contractions, adjacent-word repetition, interjections/asides, and very-short sentences — as `{draft, baseline_mean, baseline_sd, z}` for each feature.
+
+A large `|z|` means only "different from this writer's baseline." It does not mean worse, smoother, AI-written, less authentic, or in need of revision, and movement toward `z=0` is not a pass criterion. `z: null` means the baseline has zero variance for that feature, so the deviation magnitude is undefined rather than zero. Drafts below 1,000 words receive a soft stability warning; read their per-sentence rates as directional and noisy. The audit requires spaCy plus `en_core_web_sm`; a missing parser/model or unusable baseline produces a clean `available: false` report and currently exits 0.
 
 ## Feature-cluster mode
 

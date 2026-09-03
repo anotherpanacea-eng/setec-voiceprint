@@ -4,6 +4,7 @@ entries:
   surface: productive_roughness
   status: heuristic
   handoff: experimental
+  # consumers: no code importer; surfaced by skill: voice-coherence.
   consumers: []
   family: voice-coherence
   purpose: 'Strictly baseline-relative productive-roughness deviation profile — fragment
