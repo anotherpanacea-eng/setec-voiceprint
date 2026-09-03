@@ -66,12 +66,20 @@ def load_scores(path: Path) -> list[float]:
     except json.JSONDecodeError:
         data = None
     if isinstance(data, list):
-        try:
-            return [float(x) for x in data]
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{path}: calibration is a JSON list with a non-numeric entry"
-            ) from exc
+        parsed: list[float] = []
+        for index, value in enumerate(data):
+            try:
+                score = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: calibration JSON entry {index} is not numeric"
+                ) from exc
+            if not math.isfinite(score):
+                raise ValueError(
+                    f"{path}: calibration JSON entry {index} must be finite"
+                )
+            parsed.append(score)
+        return parsed
     # Newline-delimited (or a single scalar) fallback.
     out: list[float] = []
     for lineno, line in enumerate(raw.splitlines(), 1):
@@ -80,12 +88,36 @@ def load_scores(path: Path) -> list[float]:
             continue
         token = line.split(",")[0]
         try:
-            out.append(float(token))
+            score = float(token)
         except ValueError as exc:
             raise ValueError(
                 f"{path}:{lineno}: cannot parse calibration score {token!r}"
             ) from exc
+        if not math.isfinite(score):
+            raise ValueError(
+                f"{path}:{lineno}: calibration score must be finite; got {token!r}"
+            )
+        out.append(score)
     return out
+
+
+def _require_finite_scores(values: list[float], *, name: str) -> None:
+    for index, value in enumerate(values):
+        try:
+            finite = math.isfinite(value)
+        except TypeError as exc:
+            raise ValueError(f"{name}[{index}] must be a finite number") from exc
+        if not finite:
+            raise ValueError(f"{name}[{index}] must be finite")
+
+
+def _require_finite_score(value: float, *, name: str) -> None:
+    try:
+        finite = math.isfinite(value)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be a finite number") from exc
+    if not finite:
+        raise ValueError(f"{name} must be finite")
 
 
 def _nonconformity(values: list[float], direction: str,
@@ -104,6 +136,8 @@ def conformal_p(calibration: list[float], score: float, *,
     Super-uniform under exchangeability: P(p <= alpha) <= alpha for any
     underlying distribution. Higher nonconformity => smaller p.
     """
+    _require_finite_scores(calibration, name="calibration")
+    _require_finite_score(score, name="score")
     n = len(calibration)
     if n == 0:
         return 1.0
@@ -145,6 +179,7 @@ def threshold_at_fpr_bound(
     Pinned to the two ONE-TAILED directions; ``two_sided`` has no single
     tail and is rejected. Pure stdlib; no model. Returns a dict; an empty
     calibration set yields ``available=False``."""
+    _require_finite_scores(calibration, name="calibration")
     if direction not in FPR_BOUND_DIRECTIONS:
         return {
             "available": False,
@@ -262,6 +297,8 @@ def gate_fpr_bound(
     """FPR-bound result. ``score`` is optional: with no target the mode
     returns just the bounded threshold; with a target it also reports
     whether the target is inside/outside the bounded reference set."""
+    if score is not None:
+        _require_finite_score(score, name="score")
     result = threshold_at_fpr_bound(
         calibration, fpr_bound=fpr_bound, direction=direction,
     )

@@ -14,6 +14,8 @@ import math
 import sys
 from pathlib import Path
 
+import pytest
+
 import conformal_gate as cg  # type: ignore  # noqa: E402
 
 
@@ -36,6 +38,15 @@ def test_empirical_fpr_within_bound():
             CAL, fpr_bound=q, direction="higher_is_nonconforming")
         assert r["available"] is True
         assert r["empirical_reference_fpr_at_threshold"] <= q + 1e-12
+
+
+def test_programmatic_fpr_bound_rejects_nonfinite_calibration():
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="must be finite"):
+            cg.threshold_at_fpr_bound(
+                [bad, *CAL], fpr_bound=0.1,
+                direction="higher_is_nonconforming",
+            )
 
 
 def test_ties_do_not_violate_fpr_bound():
