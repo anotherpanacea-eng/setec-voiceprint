@@ -4,6 +4,7 @@ entries:
   surface: sound_texture
   status: heuristic
   handoff: experimental
+  # consumers: no code importer; surfaced by skill: craft-restoration.
   consumers: []
   family: voice-coherence
   purpose: 'Descriptive sound-texture profile of prose — alliteration / assonance
