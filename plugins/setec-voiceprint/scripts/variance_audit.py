@@ -64,6 +64,7 @@ from preprocessing import (
     available_rule_names,
     strip_non_prose,
 )
+from setec.core import dependency_primitives as _dependency_primitives
 
 # ---------- Optional dependencies ----------
 try:
@@ -85,17 +86,8 @@ try:
 except ImportError:
     HAS_NLTK = False
 
-try:
-    import spacy  # type: ignore
-    try:
-        _NLP = spacy.load("en_core_web_sm")
-        HAS_SPACY = True
-    except Exception:
-        HAS_SPACY = False
-        _NLP = None
-except ImportError:
-    HAS_SPACY = False
-    _NLP = None
+HAS_SPACY = _dependency_primitives.HAS_SPACY
+_NLP = _dependency_primitives._NLP
 
 try:
     from sentence_transformers import SentenceTransformer  # type: ignore
@@ -527,32 +519,10 @@ def pos_bigram_kl_contributions(
 
 
 def mdd_stats(text: str) -> dict[str, Any] | None:
+    """Compatibility wrapper over the parser-only L1 primitive."""
     if not HAS_SPACY or _NLP is None:
         return None
-    doc = _NLP(text)
-    per_sentence = []
-    for sent in doc.sents:
-        toks = [t for t in sent if not t.is_space]
-        if len(toks) < 2:
-            continue
-        distances = []
-        for t in toks:
-            if t.dep_ == "ROOT" or t.head is t:
-                continue
-            distances.append(abs(t.i - t.head.i))
-        if distances:
-            per_sentence.append(sum(distances) / len(distances))
-    if len(per_sentence) < 2:
-        return {
-            "n_sentences": len(per_sentence),
-            "mean": per_sentence[0] if per_sentence else 0.0,
-            "sd": 0.0,
-        }
-    return {
-        "n_sentences": len(per_sentence),
-        "mean": statistics.mean(per_sentence),
-        "sd": statistics.stdev(per_sentence),
-    }
+    return _dependency_primitives.mdd_stats(text, nlp=_NLP)
 
 
 # ---------- Tier 3 metrics (embeddings) ----------

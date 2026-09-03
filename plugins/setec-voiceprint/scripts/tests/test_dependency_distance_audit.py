@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -17,10 +18,10 @@ from pathlib import Path
 import pytest
 
 import dependency_distance_audit as dd  # type: ignore  # noqa: E402
-import variance_audit as va  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
+from setec.core import dependency_primitives as dp  # type: ignore  # noqa: E402
 
-_needs_parser = pytest.mark.skipif(not va.HAS_SPACY or va._NLP is None,
+_needs_parser = pytest.mark.skipif(not dp.HAS_SPACY or dp._NLP is None,
                                    reason="needs spaCy + en_core_web_sm")
 
 _TEXT = ("The cat sat on the mat. The rat the cat chased ran. "
@@ -64,7 +65,7 @@ def test_deterministic():
 @_needs_parser
 def test_mdd_scalars_reuse_mdd_stats():
     r = dd.audit_dependency_distance(_TEXT)
-    s = va.mdd_stats(_TEXT)
+    s = dp.mdd_stats(_TEXT)
     assert r["mdd_mean"] == pytest.approx(round(s["mean"], 6))    # reused, not re-derived
     assert r["mdd_sd"] == pytest.approx(round(s["sd"], 6))
 
@@ -220,8 +221,6 @@ def _flat_numbers(obj):
 
 def test_no_numpy_scipy_import():
     """AC 11: the stdlib shape path runs when heavy modules are unavailable."""
-    import subprocess
-
     code = (
         "import sys; "
         "[sys.modules.__setitem__(name, None) for name in "
@@ -237,6 +236,29 @@ def test_no_numpy_scipy_import():
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_import_stays_on_parser_only_dependency_seam():
+    """A parser-only surface must not load unrelated Tier-3/model stacks."""
+    scripts_dir = Path(dd.__file__).resolve().parent
+    code = (
+        "import json,sys; "
+        f"sys.path.insert(0, {str(scripts_dir)!r}); "
+        "import dependency_distance_audit; "
+        "names=('sentence_transformers','transformers','sklearn','nltk'); "
+        "print(json.dumps({name: any(m == name or m.startswith(name + '.') "
+        "for m in sys.modules) for name in names}))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=scripts_dir,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    loaded = json.loads(result.stdout)
+    assert not any(loaded.values()), loaded
 
 
 def test_dependency_distance_not_imported_by_detectors():
