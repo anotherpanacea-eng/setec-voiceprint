@@ -64,6 +64,7 @@ from preprocessing import (
     available_rule_names,
     strip_non_prose,
 )
+from setec.core.textprims import FUNCTION_WORDS  # type: ignore
 
 # ---------- Optional dependencies ----------
 try:
@@ -113,25 +114,6 @@ except ImportError:
 
 
 # ---------- Resource lists ----------
-
-# Top function words (Mosteller-Wallace + extensions).
-FUNCTION_WORDS = {
-    "a", "about", "above", "after", "again", "against", "all", "am", "an",
-    "and", "any", "are", "as", "at", "be", "because", "been", "before",
-    "being", "below", "between", "both", "but", "by", "could", "did", "do",
-    "does", "doing", "down", "during", "each", "few", "for", "from",
-    "further", "had", "has", "have", "having", "he", "her", "here", "hers",
-    "herself", "him", "himself", "his", "how", "i", "if", "in", "into", "is",
-    "it", "its", "itself", "just", "me", "might", "mine", "more", "most",
-    "must", "my", "myself", "no", "nor", "not", "now", "of", "off", "on",
-    "once", "one", "only", "or", "other", "ought", "our", "ours", "ourselves",
-    "out", "over", "own", "same", "shall", "she", "should", "so", "some",
-    "such", "than", "that", "the", "their", "theirs", "them", "themselves",
-    "then", "there", "these", "they", "this", "those", "through", "to", "too",
-    "under", "until", "up", "upon", "us", "very", "was", "we", "were", "what",
-    "when", "where", "which", "while", "who", "whom", "whose", "why", "will",
-    "with", "would", "yet", "you", "your", "yours", "yourself", "yourselves",
-}
 
 # Discourse markers / connectives flagged for over-density.
 CONNECTIVES = {
