@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+"""Validate a Voiceprint merge train against a closed ordered inventory."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+from pathlib import Path
+from typing import Any, Sequence
+
+
+OID_RE = re.compile(r"[0-9a-fA-F]{40}\Z")
+SKIP_RE = re.compile(
+    r"\[(?:skip ci|ci skip|no ci|skip actions|actions skip)\]|^skip-checks:\s*true\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+AUTHORITATIVE_BASE_REF = "refs/remotes/origin/main"
+
+
+class TrainError(ValueError):
+    """The proposed train does not satisfy its closed inventory."""
+
+
+def _canonical(value: object) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _no_duplicate_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise TrainError(f"duplicate JSON member: {key}")
+        result[key] = value
+    return result
+
+
+def _exact_keys(value: dict[str, Any], expected: set[str], *, where: str) -> None:
+    if set(value) != expected:
+        raise TrainError(
+            f"{where} keys must be exactly {sorted(expected)}; got {sorted(value)}"
+        )
+
+
+def _oid(value: object, *, name: str) -> str:
+    if not isinstance(value, str) or not OID_RE.fullmatch(value) or set(value) == {"0"}:
+        raise TrainError(f"{name} must be a nonzero full 40-hex object id")
+    return value.lower()
+
+
+def _git_result(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            check=False,
+        )
+    except UnicodeDecodeError as exc:
+        raise TrainError(f"git {' '.join(args)} returned non-UTF-8 output") from exc
+
+
+def _git(repo: Path, *args: str) -> str:
+    completed = _git_result(repo, *args)
+    if completed.returncode:
+        raise TrainError(f"git {' '.join(args)} failed: {completed.stderr.strip()}")
+    return completed.stdout
+
+
+def _resolve(repo: Path, value: str, *, name: str) -> str:
+    if value.startswith("-") or any(ch in value for ch in "\r\n\0"):
+        raise TrainError(f"unsafe {name}")
+    return _git(repo, "rev-parse", "--verify", f"{value}^{{commit}}").strip().lower()
+
+
+def _parents(repo: Path, commit: str) -> list[str]:
+    fields = _git(repo, "rev-list", "--parents", "-n", "1", commit).split()
+    if not fields or fields[0].lower() != commit:
+        raise TrainError(f"could not inspect exact commit {commit}")
+    return [field.lower() for field in fields[1:]]
+
+
+def _tree(repo: Path, commit: str) -> str:
+    return _git(repo, "rev-parse", "--verify", f"{commit}^{{tree}}").strip().lower()
+
+
+def _automatic_merge(repo: Path, first: str, second: str) -> tuple[bool, str | None]:
+    result = _git_result(repo, "merge-tree", "--write-tree", "--messages", first, second)
+    lines = result.stdout.splitlines()
+    tree = lines[0].strip().lower() if lines and OID_RE.fullmatch(lines[0].strip()) else None
+    if result.returncode not in {0, 1}:
+        raise TrainError(f"git merge-tree failed: {result.stderr.strip()}")
+    if tree is None:
+        raise TrainError("git merge-tree did not emit an exact tree object id")
+    return result.returncode == 0, tree
+
+
+def load_inventory(path: Path) -> dict[str, Any]:
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise TrainError(f"cannot read inventory: {exc}") from exc
+    try:
+        value = json.loads(raw, object_pairs_hook=_no_duplicate_object)
+    except (json.JSONDecodeError, TrainError) as exc:
+        raise TrainError(f"invalid inventory JSON: {exc}") from exc
+    if not isinstance(value, dict):
+        raise TrainError("inventory root must be an object")
+    return value
+
+
+def verify_train(repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
+    _exact_keys(
+        inventory, {"schema", "base", "base_ref", "head", "steps"}, where="inventory",
+    )
+    if inventory["schema"] != "setec-merge-train/1":
+        raise TrainError("unknown inventory schema")
+    if inventory["base_ref"] != AUTHORITATIVE_BASE_REF:
+        raise TrainError(f"base_ref must be exactly {AUTHORITATIVE_BASE_REF}")
+    if not isinstance(inventory["steps"], list) or not inventory["steps"]:
+        raise TrainError("steps must be a nonempty array")
+    base = _oid(inventory["base"], name="base")
+    head = _oid(inventory["head"], name="head")
+    if _resolve(repo, base, name="base") != base or _resolve(repo, head, name="head") != head:
+        raise TrainError("base and head must resolve to exact declared commits")
+    live_base = _git(
+        repo, "show-ref", "--verify", "--hash", AUTHORITATIVE_BASE_REF,
+    ).strip().lower()
+    if live_base != base:
+        raise TrainError("base_ref moved after the inventory was sealed")
+    if SKIP_RE.search(_git(repo, "log", "-1", "--format=%B", head)):
+        raise TrainError("train HEAD commit message contains a CI skip instruction")
+
+    normalized: list[dict[str, Any]] = []
+    prs: set[int] = set()
+    heads: set[str] = set()
+    commits: set[str] = set()
+    labels: set[str] = set()
+    for index, raw in enumerate(inventory["steps"]):
+        if not isinstance(raw, dict):
+            raise TrainError(f"step {index} must be an object")
+        if raw.get("kind") == "constituent":
+            _exact_keys(
+                raw,
+                {"kind", "pr", "head", "merge", "tree_mode", "resolution"},
+                where=f"step {index}",
+            )
+            pr = raw["pr"]
+            if not isinstance(pr, int) or isinstance(pr, bool) or pr < 1:
+                raise TrainError(f"step {index} pr must be a positive integer")
+            candidate = _oid(raw["head"], name=f"step {index} head")
+            merge = _oid(raw["merge"], name=f"step {index} merge")
+            mode = raw["tree_mode"]
+            resolution = raw["resolution"]
+            if mode == "clean":
+                if resolution is not None:
+                    raise TrainError("clean merge resolution must be null")
+            elif mode == "conflict-resolution":
+                if (
+                    not isinstance(resolution, str)
+                    or not resolution.strip()
+                    or any(ch in resolution for ch in "\r\n")
+                ):
+                    raise TrainError("conflict resolution must be a nonempty single line")
+            else:
+                raise TrainError(f"step {index} has unknown tree_mode")
+            if pr in prs or candidate in heads or merge in commits or candidate in commits:
+                raise TrainError("constituent PRs, heads, and merge commits must be unique")
+            if _resolve(repo, candidate, name=f"step {index} head") != candidate:
+                raise TrainError(f"constituent {pr} did not resolve exactly")
+            if _resolve(repo, merge, name=f"step {index} merge") != merge:
+                raise TrainError(f"constituent merge {pr} did not resolve exactly")
+            ancestor = _git_result(repo, "merge-base", "--is-ancestor", candidate, base)
+            if ancestor.returncode == 0:
+                raise TrainError(f"constituent {pr} is already an ancestor of the train base")
+            if ancestor.returncode != 1:
+                raise TrainError(f"could not compare constituent {pr} with the train base")
+            prs.add(pr)
+            heads.add(candidate)
+            commits.add(merge)
+            normalized.append({
+                "kind": "constituent", "pr": pr, "head": candidate,
+                "merge": merge, "tree_mode": mode, "resolution": resolution,
+            })
+        elif raw.get("kind") == "train":
+            _exact_keys(raw, {"kind", "label", "commit"}, where=f"step {index}")
+            label = raw["label"]
+            if not isinstance(label, str) or not label or any(ch in label for ch in "\r\n"):
+                raise TrainError(f"step {index} label must be a nonempty single line")
+            commit = _oid(raw["commit"], name=f"step {index} commit")
+            if label in labels or commit in commits or commit in heads:
+                raise TrainError("train labels and inventoried commits must be unique")
+            if _resolve(repo, commit, name=f"step {index} commit") != commit:
+                raise TrainError(f"train-only step {label!r} did not resolve exactly")
+            labels.add(label)
+            commits.add(commit)
+            normalized.append({"kind": "train", "label": label, "commit": commit})
+        else:
+            raise TrainError(f"step {index} has unknown kind {raw.get('kind')!r}")
+
+    current = head
+    conflicts = 0
+    for index, step in reversed(list(enumerate(normalized))):
+        if step["kind"] == "constituent":
+            if current != step["merge"]:
+                raise TrainError(
+                    f"constituent step {index} merge is {current}, expected {step['merge']}"
+                )
+            parents = _parents(repo, current)
+            if len(parents) != 2:
+                raise TrainError(f"constituent step {index} is not a two-parent merge")
+            if parents[1] != step["head"]:
+                raise TrainError(
+                    f"constituent step {index} second parent is {parents[1]}, "
+                    f"expected {step['head']}"
+                )
+            clean, automatic_tree = _automatic_merge(repo, parents[0], parents[1])
+            if step["tree_mode"] == "clean":
+                if not clean:
+                    raise TrainError(f"constituent step {index} is conflicting, not clean")
+                if _tree(repo, current) != automatic_tree:
+                    raise TrainError(
+                        f"constituent step {index} tree differs from automatic clean merge"
+                    )
+            else:
+                if clean:
+                    raise TrainError(
+                        f"constituent step {index} claims a conflict but merges cleanly"
+                    )
+                conflicts += 1
+            current = parents[0]
+        else:
+            if current != step["commit"]:
+                raise TrainError(
+                    f"train-only step {index} is {current}, expected {step['commit']}"
+                )
+            parents = _parents(repo, current)
+            if len(parents) != 1:
+                raise TrainError(f"train-only step {index} must have exactly one parent")
+            current = parents[0]
+    if current != base:
+        raise TrainError(f"first-parent inventory ends at {current}, not declared base {base}")
+    return {
+        "base": base,
+        "base_ref": AUTHORITATIVE_BASE_REF,
+        "conflict_resolution_count": conflicts,
+        "constituent_count": len(heads),
+        "head": head,
+        "schema": "setec-merge-train-receipt/1",
+        "step_count": len(normalized),
+        "train_commit_count": len(labels),
+    }
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", type=Path, default=Path.cwd())
+    parser.add_argument("--inventory", type=Path, required=True)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
+    try:
+        receipt = verify_train(args.repo, load_inventory(args.inventory))
+    except TrainError as exc:
+        print(f"merge-train: REFUSED: {exc}")
+        return 1
+    print("merge-train: " + _canonical(receipt))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
