@@ -149,7 +149,12 @@ def test_end_to_end_identity_baseline(tmp_path):
         assert e["use"] == ["voice_profile"]
         assert e["persona"] == "test_fiction_persona"
         assert e["ai_status"] == "ai_assisted"
+        assert e["consent_status"] == "author_consent"
+        assert e["era"] == "undated"
+        assert e["acquired_via"].startswith("acquire_manuscript_")
         assert "impostor_for" not in e
+        assert "register_match" not in e
+        assert "topic_match" not in e
         assert "<p>" not in (out / e["path"]).read_text(encoding="utf-8")
     report = mv.validate_manifest(out / "draft_manifest.jsonl")
     assert [i for i in report["issues"] if i["severity"] == "error"] == []
