@@ -11,9 +11,11 @@ OpenGrants YAML -> Zenodo-PDF resolver, an NEH FOIA scraper) are follow-ups
 that *feed* this acquirer's URL list.
 
 Input (``urls_file``): one entry per line, each either a JSON object
-``{"url": "...", "title": "...", "author": "...", "date": "YYYY-MM-DD"}``
+``{"url": "...", "title": "...", "author": "...", "date": "YYYY-MM-DD",
+"artifact_profile": "tanner"}``
 (only ``url`` is required) or a bare PDF URL. Blank lines and ``#``
-comments are skipped.
+comments are skipped. ``artifact_profile`` is optional and accepts only
+``tanner``; it opts that source into the bounded Tanner extraction repairs.
 
 PDF text comes from ``acquisition_core.pdf_text_from_bytes`` (which reuses
 ``pdf_extract.extract_text_layer`` / pypdf). Image-only PDFs yield no text
@@ -70,6 +72,7 @@ class ItemMeta:
     title: str = ""
     date: _dt.date | None = None
     author: str = ""
+    artifact_profile: str | None = None
 
 
 @dataclass
@@ -153,11 +156,15 @@ def discover_items(
             continue
         if options.until and date and date > options.until:
             continue
+        artifact_profile = obj.get("artifact_profile")
+        if artifact_profile not in {None, "tanner"}:
+            continue
         yield ItemMeta(
             locator=url,
             title=str(obj.get("title") or "").strip(),
             date=date,
             author=str(obj.get("author") or "").strip(),
+            artifact_profile=artifact_profile,
         )
 
 
@@ -172,7 +179,9 @@ def extract_one(
     data = fetcher.fetch_bytes(item.locator)
     if not data:
         return "", "", "", None
-    text = ac.pdf_text_from_bytes(data)
+    text = ac.pdf_text_from_bytes(
+        data, artifact_profile=item.artifact_profile,
+    )
     if not text or not text.strip():
         return "", "", "", None
     title = item.title or _title_from_url(item.locator)

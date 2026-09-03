@@ -1427,10 +1427,12 @@ other.
 ## Tanner Lectures source-list builder
 
 `acquisition_sources/build_tanner_source_list.py` crawls the official Tanner
-lecture sitemap and produces the sorted `url` / `title` / `author` / `date`
-JSONL consumed by `acquire_pdf_urls.py`. It fetches public metadata only: a
-discovered `Download Lecture Text` link is recorded but never downloaded or
-claimed reachable by this step.
+lecture sitemap and produces sorted `url` / `title` / `author` / `date` /
+`artifact_profile: "tanner"` JSONL consumed by `acquire_pdf_urls.py`. The
+profile explicitly opts only this feed into the Tanner-specific pypdf repairs;
+generic PDF feeds preserve identical slash sequences as literal URL/path text.
+The builder fetches public metadata only: a discovered `Download Lecture Text`
+link is recorded but never downloaded or claimed reachable by this step.
 
 The full crawl is intentionally slow. Tanner publishes a 10-second crawl delay,
 which is also the CLI's hard minimum. Every attempted lecture page is committed
@@ -1458,7 +1460,8 @@ publishes no reuse licence; this cohort is private, stats-only impostor material
 and must not be redistributed or admitted to `phil-register`. Use an `--until`
 cutoff on `acquire_pdf_urls.py` for the pre-2022 `pre_chatgpt` slice.
 
-The shared pypdf extraction seam also repairs the bounded Tanner artifacts
+The shared pypdf extraction seam, when explicitly passed the feed's
+`artifact_profile: "tanner"`, repairs the bounded Tanner artifacts
 `/uni00A0`, single-letter `.sc` glyphs, named oldstyle digits, and letter gaps
 only when the reconstructed word is independently attested elsewhere in the
 same PDF. Unknown slash-glyph tokens are preserved for `check_corpus` to expose.

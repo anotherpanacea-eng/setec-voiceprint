@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import http.server
 import importlib.util
 import json
 import math
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -103,8 +105,22 @@ def test_page_parser_maps_exact_feed_fields_and_resolves_relative_pdf():
         "title": "A Synthetic Lecture",
         "author": "Ada Example",
         "date": "1979-05-04",
+        "artifact_profile": "tanner",
     }]
-    assert set(rows[0]) == {"url", "title", "author", "date"}
+    assert set(rows[0]) == {
+        "url", "title", "author", "date", "artifact_profile",
+    }
+
+
+def test_void_element_cannot_extend_transcript_scope_to_unrelated_pdf():
+    source = """
+        <h1 class="page-title">A Synthetic Lecture</h1>
+        <div class="speaker-name">Ada Example</div>
+        <div class="lecture-date">January 1, 2000</div>
+        <div class="lecture-transcript"><br></div>
+        <div><a href="outside.pdf">Unrelated PDF</a></div>
+    """
+    assert tanner.parse_lecture_page(ALPHA, source) == []
 
 
 @pytest.mark.parametrize("bad_url", [
@@ -276,6 +292,133 @@ def test_rate_limit_floor_is_parser_enforced():
     for value in ("9.9", "nan", "inf", "-inf"):
         with pytest.raises(SystemExit):
             parser.parse_args(["--output", "x.jsonl", "--rate-limit", value])
+
+
+def test_timeout_is_finite_and_positive_at_parser_and_fetcher_boundaries():
+    parser = tanner.build_arg_parser()
+    for value in ("0", "-1", "nan", "inf", "-inf"):
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--output", "x.jsonl", "--timeout", value])
+    for value in (0.0, -1.0, math.nan, math.inf, -math.inf):
+        with pytest.raises(tanner.TannerListError, match="timeout"):
+            tanner.PoliteHttpFetcher(
+                rate_limit_seconds=10.0, user_agent="test", timeout=value,
+            )
+
+
+def test_fetcher_bounds_malformed_user_agent_and_url_transport_inputs():
+    with pytest.raises(tanner.TannerListError, match="user agent"):
+        tanner.PoliteHttpFetcher(
+            rate_limit_seconds=10.0, user_agent="bad\r\nheader", timeout=1.0,
+        )
+    fetcher = tanner.PoliteHttpFetcher(
+        rate_limit_seconds=10.0, user_agent="test", timeout=1.0,
+    )
+    assert fetcher._request("https://[/broken").status == 0
+
+
+@pytest.mark.parametrize("robots_status", [0, 500, 503])
+def test_robots_transport_or_server_failure_never_fetches_page(
+    monkeypatch, robots_status,
+):
+    monkeypatch.setattr(tanner.time, "sleep", lambda _seconds: None)
+    fetcher = tanner.PoliteHttpFetcher(
+        rate_limit_seconds=10.0, user_agent="test", timeout=1.0,
+    )
+    calls = []
+
+    def request(url):
+        calls.append(url)
+        if url.endswith("/robots.txt"):
+            return tanner.FetchResult(url, robots_status, "")
+        return tanner.FetchResult(url, 200, "lecture")
+
+    monkeypatch.setattr(fetcher, "_request", request)
+    result = fetcher.fetch("https://example.test/lectures/x/")
+    assert result.status == 0
+    assert calls == ["https://example.test/robots.txt"]
+
+
+def test_confirmed_absent_robots_file_explicitly_allows_page(monkeypatch):
+    monkeypatch.setattr(tanner.time, "sleep", lambda _seconds: None)
+    fetcher = tanner.PoliteHttpFetcher(
+        rate_limit_seconds=10.0, user_agent="test", timeout=1.0,
+    )
+    calls = []
+
+    def request(url):
+        calls.append(url)
+        if url.endswith("/robots.txt"):
+            return tanner.FetchResult(url, 404, "")
+        return tanner.FetchResult(url, 200, "lecture")
+
+    monkeypatch.setattr(fetcher, "_request", request)
+    result = fetcher.fetch("https://example.test/lectures/x/")
+    assert result.status == 200
+    assert calls == [
+        "https://example.test/robots.txt",
+        "https://example.test/lectures/x/",
+    ]
+
+
+@pytest.mark.parametrize("redirect_path", ["/robots.txt", "/lectures/x/"])
+def test_redirect_never_reaches_an_unvetted_destination_origin(
+    monkeypatch, redirect_path,
+):
+    monkeypatch.setattr(tanner.time, "sleep", lambda _seconds: None)
+    destination_hits = []
+
+    class Destination(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            destination_hits.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"destination must remain unreachable")
+
+        def log_message(self, _format, *_args):
+            pass
+
+    destination = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Destination)
+    destination_thread = threading.Thread(
+        target=destination.serve_forever, daemon=True,
+    )
+    destination_thread.start()
+    destination_url = (
+        f"http://127.0.0.1:{destination.server_port}/redirected"
+    )
+
+    class Origin(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path == redirect_path:
+                self.send_response(302)
+                self.send_header("Location", destination_url)
+            elif self.path == "/robots.txt":
+                self.send_response(404)
+            else:
+                self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, _format, *_args):
+            pass
+
+    origin = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Origin)
+    origin_thread = threading.Thread(target=origin.serve_forever, daemon=True)
+    origin_thread.start()
+    try:
+        fetcher = tanner.PoliteHttpFetcher(
+            rate_limit_seconds=10.0, user_agent="test", timeout=1.0,
+        )
+        page_url = f"http://127.0.0.1:{origin.server_port}/lectures/x/"
+        result = fetcher.fetch(page_url)
+        assert not result.ok
+        assert destination_hits == []
+    finally:
+        origin.shutdown()
+        origin.server_close()
+        origin_thread.join(timeout=2)
+        destination.shutdown()
+        destination.server_close()
+        destination_thread.join(timeout=2)
 
 
 def test_polite_fetcher_rejects_nonfinite_rate_limits():

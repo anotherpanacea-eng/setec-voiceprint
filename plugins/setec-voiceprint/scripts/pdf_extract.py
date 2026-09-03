@@ -145,14 +145,24 @@ def _segment_attested_fragments(
     return best[0]
 
 
-def normalize_pdf_text_artifacts(text: str) -> str:
+def normalize_pdf_text_artifacts(
+    text: str, *, artifact_profile: str | None = None,
+) -> str:
     """Repair bounded pypdf artifacts observed in Tanner lecture PDFs.
+
+    Repairs are opt-in because the slash-glyph spellings are also valid literal
+    URL/path text in arbitrary PDFs.  The Tanner source-list feed supplies the
+    explicit profile through ``acquire_pdf_urls``.
 
     Only three explicit slash-glyph families are interpreted.  Unknown glyph
     tokens are preserved.  Letter gaps are collapsed only when the resulting
     word is independently present elsewhere in the same extracted document;
     this avoids guessing at headings, initialisms, labels, or ordinary prose.
     """
+    if artifact_profile is None:
+        return text
+    if artifact_profile != "tanner":
+        raise ValueError(f"unknown PDF artifact profile: {artifact_profile}")
     text = _UNI00A0_RE.sub(" ", text).replace("\u00a0", " ")
     text = _SMALL_CAP_RE.sub(lambda match: match.group(1).upper(), text)
     text = _OLDSTYLE_RE.sub(
@@ -231,12 +241,15 @@ def _row_has_impostor_fields(row: dict[str, Any]) -> tuple[bool, list[str]]:
 # --------------- Text extraction --------------------------------
 
 
-def extract_text_layer(path: Path) -> str:
+def extract_text_layer(
+    path: Path, *, artifact_profile: str | None = None,
+) -> str:
     """Extract text from a PDF's text layer via pypdf, page-by-page.
 
     Pages are joined with double-newlines so paragraph structure
     survives the per-page extraction and downstream preprocessing
-    can collapse runs of whitespace cleanly.
+    can collapse runs of whitespace cleanly.  Artifact repair is disabled by
+    default and is enabled only by an explicit source profile.
     """
     try:
         from pypdf import PdfReader  # type: ignore
@@ -256,7 +269,9 @@ def extract_text_layer(path: Path) -> str:
             # inventory step already classified this PDF as
             # extractable, so a single bad page is recoverable.
             continue
-    return normalize_pdf_text_artifacts("\n\n".join(parts))
+    return normalize_pdf_text_artifacts(
+        "\n\n".join(parts), artifact_profile=artifact_profile,
+    )
 
 
 def _ocr_dependencies_available() -> tuple[bool, str]:

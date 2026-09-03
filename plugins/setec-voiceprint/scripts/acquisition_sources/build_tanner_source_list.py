@@ -53,6 +53,10 @@ TERMINAL_STATUSES = {
     "pdf_link_found", "no_pdf", "fetch_error", "parse_error",
 }
 RETRYABLE_STATUSES = {"fetch_error", "parse_error"}
+HTML_VOID_ELEMENTS = frozenset({
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+    "meta", "param", "source", "track", "wbr",
+})
 
 
 class TannerListError(RuntimeError):
@@ -75,6 +79,13 @@ class Fetcher(Protocol):
     def fetch(self, url: str) -> FetchResult: ...
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """Keep redirect destinations behind the same robots/cadence boundary."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
 class PoliteHttpFetcher:
     """Small stdlib fetcher with robots enforcement and a hard delay floor."""
 
@@ -88,16 +99,25 @@ class PoliteHttpFetcher:
             raise TannerListError(
                 f"rate limit must be at least {MIN_RATE_LIMIT_SECONDS:g} seconds"
             )
+        if not math.isfinite(timeout) or timeout <= 0:
+            raise TannerListError("timeout must be a finite positive number")
+        if not user_agent.strip() or any(
+            ord(char) < 32 or ord(char) == 127 for char in user_agent
+        ):
+            raise TannerListError("user agent must be nonempty and contain no controls")
         self.rate_limit_seconds = rate_limit_seconds
         self.user_agent = user_agent
         self.timeout = timeout
         self._last_fetch_per_host: dict[str, float] = {}
         self._robots: dict[str, urllib.robotparser.RobotFileParser | None] = {}
+        self._opener = urllib.request.build_opener(_RefuseRedirects())
 
     def _request(self, url: str) -> FetchResult:
-        req = urllib.request.Request(url, headers={"User-Agent": self.user_agent})
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            req = urllib.request.Request(
+                url, headers={"User-Agent": self.user_agent},
+            )
+            with self._opener.open(req, timeout=self.timeout) as response:
                 body = response.read()
                 charset = response.headers.get_content_charset() or "utf-8"
                 text = body.decode(charset, errors="replace")
@@ -106,7 +126,7 @@ class PoliteHttpFetcher:
                 )
         except urllib.error.HTTPError as exc:
             return FetchResult(url, int(exc.code), "", exc.geturl())
-        except (OSError, urllib.error.URLError):
+        except (OSError, ValueError, urllib.error.URLError):
             return FetchResult(url, 0, "", url)
 
     def _wait(self, url: str) -> None:
@@ -129,8 +149,12 @@ class PoliteHttpFetcher:
         self._wait(robots_url)
         result = self._request(robots_url)
         self._record(robots_url)
-        if not result.ok or not result.text:
+        if result.status in {404, 410}:
             return None
+        if not result.ok:
+            raise TannerListError(
+                f"robots policy fetch failed with status {result.status}"
+            )
         parser = urllib.robotparser.RobotFileParser()
         parser.set_url(robots_url)
         parser.parse(result.text.splitlines())
@@ -152,7 +176,11 @@ class PoliteHttpFetcher:
         return parser is None or parser.can_fetch(self.user_agent, url)
 
     def fetch(self, url: str) -> FetchResult:
-        if not self._allowed(url):
+        try:
+            allowed = self._allowed(url)
+        except TannerListError:
+            return FetchResult(url, 0, "", url)
+        if not allowed:
             return FetchResult(url, 403, "", url)
         self._wait(url)
         result = self._request(url)
@@ -182,6 +210,8 @@ class _LecturePageParser(HTMLParser):
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
+        if tag in HTML_VOID_ELEMENTS:
+            return
         self._stack.append(tag)
         depth = len(self._stack)
         classes = _class_tokens(attrs)
@@ -211,26 +241,30 @@ class _LecturePageParser(HTMLParser):
         self, tag: str, attrs: list[tuple[str, str | None]],
     ) -> None:
         self.handle_starttag(tag, attrs)
-        self.handle_endtag(tag)
+        if tag not in HTML_VOID_ELEMENTS:
+            self.handle_endtag(tag)
 
     def handle_data(self, data: str) -> None:
         for _field, (_depth, parts) in self._captures.items():
             parts.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        depth = len(self._stack)
+        try:
+            match_index = len(self._stack) - 1 - self._stack[::-1].index(tag)
+        except ValueError:
+            return
+        closing_depth = match_index + 1
         for field, (start_depth, parts) in list(self._captures.items()):
-            if depth == start_depth and self._stack and self._stack[-1] == tag:
+            if start_depth >= closing_depth:
                 value = " ".join("".join(parts).split())
                 self._captured[field].append(value)
                 del self._captures[field]
         if (
-            self._transcript_depth == depth
-            and self._stack and self._stack[-1] == tag
+            self._transcript_depth is not None
+            and self._transcript_depth >= closing_depth
         ):
             self._transcript_depth = None
-        if self._stack:
-            self._stack.pop()
+        del self._stack[match_index:]
 
 
 _DATE_RE = re.compile(
@@ -279,7 +313,13 @@ def parse_lecture_page(page_url: str, source: str) -> list[dict[str, str]]:
             "PDF-bearing lecture page missing metadata: " + ", ".join(missing)
         )
     return [
-        {"url": url, "title": title, "author": speaker, "date": date}
+        {
+            "url": url,
+            "title": title,
+            "author": speaker,
+            "date": date,
+            "artifact_profile": "tanner",
+        }
         for url in pdf_urls
     ]
 
@@ -380,7 +420,12 @@ def _render_output(state: dict[str, Any]) -> str:
         if result.get("status") != "pdf_link_found":
             continue
         for row in result.get("rows") or []:
-            exact = {key: row[key] for key in ("url", "title", "author", "date")}
+            exact = {
+                key: row[key]
+                for key in (
+                    "url", "title", "author", "date", "artifact_profile",
+                )
+            }
             previous = by_url.get(exact["url"])
             if previous is not None and previous != exact:
                 raise TannerListError(
@@ -431,12 +476,15 @@ def _load_state(path: Path) -> dict[str, Any]:
             except (TypeError, ValueError):
                 parsed_date = None
             if (
-                set(row) != {"url", "title", "author", "date"}
+                set(row) != {
+                    "url", "title", "author", "date", "artifact_profile",
+                }
                 or not all(
                     isinstance(item, str) and bool(item.strip())
                     for item in row.values()
                 )
                 or not _is_pdf_url(row.get("url", ""))
+                or row.get("artifact_profile") != "tanner"
                 or parsed_date is None
                 or parsed_date.isoformat() != row["date"]
             ):
@@ -560,6 +608,13 @@ def _rate_limit(value: str) -> float:
     return parsed
 
 
+def _timeout(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a finite positive number")
+    return parsed
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=TOOL_NAME,
@@ -575,7 +630,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--rate-limit", type=_rate_limit, default=MIN_RATE_LIMIT_SECONDS,
         help="Seconds between same-host requests; minimum/default 10.",
     )
-    parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--timeout", type=_timeout, default=30.0)
     parser.add_argument(
         "--user-agent", default=DEFAULT_USER_AGENT.format(version=SCRIPT_VERSION),
     )
