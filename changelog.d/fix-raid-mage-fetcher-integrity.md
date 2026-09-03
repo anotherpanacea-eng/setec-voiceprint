@@ -7,3 +7,5 @@ record the exact observed repository wrapper-license declaration and SETEC's
 local-only content posture. RAID now refuses `--no-adversarial` before download
 when the hosted monolithic CSV layout cannot honor file-level exclusion, and
 directs operators to `raid_to_manifest.py --no-adversarial` for row filtering.
+Both fetchers invalidate stale provenance before corpus mutation, and both
+converters now deny public-output overrides and emit private manifest entries.

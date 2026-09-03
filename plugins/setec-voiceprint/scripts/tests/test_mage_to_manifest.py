@@ -376,7 +376,7 @@ class TestConvertEndToEnd:
         assert statuses == ["ai_generated", "pre_ai_human"]
         for e in entries:
             assert e["source"] == "mage"
-            assert e["privacy"] == "shareable"
+            assert e["privacy"] == "private"
             assert e["language_status"] == "native"
             assert e["editing_status"] == "raw_draft"
             assert "register" not in e
@@ -502,6 +502,47 @@ class TestConvertEndToEnd:
         )
         rc = mt.convert(args)
         assert rc == 2
+
+    def test_allow_public_output_is_refused(self, tmp_path, capsys):
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_fake_parquet(source_dir, "train-x.parquet")
+        _install_mock_pyarrow({
+            "train-x.parquet": [
+                {"text": "x", "label": 0, "source": "s"},
+            ],
+        })
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        public_manifest = tmp_path / "PUBLIC" / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(public_manifest),
+            text_dir=str(tmp_path / "PUBLIC" / "text"),
+            limit=0, allow_public_output=True,
+        )
+
+        rc = mt.convert(args)
+
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert "disabled" in err
+        assert "local_only" in err
+        assert not public_manifest.exists()
+
+    def test_public_output_help_is_truthful(self, capsys):
+        mt = _import_mage_to_manifest()
+
+        with pytest.raises(SystemExit) as exc_info:
+            mt.main(["--help"])
+
+        assert exc_info.value.code == 0
+        help_text = capsys.readouterr().out
+        assert "Deprecated compatibility flag" in help_text
+        assert "Always refused" in help_text
+        assert "local_only" in help_text
 
 
 # ---------- v1.50.0+ (B.4): authorship-state refinements ----------

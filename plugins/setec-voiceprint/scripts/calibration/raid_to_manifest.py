@@ -59,8 +59,7 @@ Manifest mapping (aligned with
                       subset's Czech/German (MT outputs);
                       "unknown" for Code.
   - `use`             "validation" by default
-  - `privacy`         "shareable" (MIT — permissive with
-                      attribution; not public_domain)
+  - `privacy`         "private" (SETEC local-only corpus posture)
   - `source`          "raid"
   - `source_id`       the row's RAID `source_id`
   - `notes`           {model, decoding, repetition_penalty,
@@ -380,7 +379,9 @@ def convert(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest).expanduser().resolve()
     text_dir = Path(args.text_dir).expanduser().resolve()
 
-    # Refuse to write outside the private dir unless override.
+    # RAID rows are local-only in SETEC regardless of the repository wrapper
+    # license. Retain the historical flag for CLI compatibility, but fail
+    # closed rather than treating it as redistribution authorization.
     # PRIVATE_DIR is resolved so this check survives Windows
     # junctions / POSIX symlinks pointing the private dir at a
     # different physical location (e.g. an Obsidian-synced Cowork
@@ -390,20 +391,21 @@ def convert(args: argparse.Namespace) -> int:
     private_dir_check = (
         PRIVATE_DIR.resolve() if PRIVATE_DIR.exists() else PRIVATE_DIR
     )
-    if not args.allow_public_output:
-        for p in (manifest_path, text_dir):
-            try:
-                p.relative_to(private_dir_check)
-            except ValueError:
-                sys.stderr.write(
-                    f"Refusing to write {p} outside "
-                    f"{private_dir_check}. RAID is Apache-2.0 — "
-                    "pass --allow-public-output if you want "
-                    "to spill text files into a public "
-                    "directory (the manifest still carries "
-                    "Apache-2.0 attribution).\n"
-                )
-                return 2
+    if getattr(args, "allow_public_output", False):
+        sys.stderr.write(
+            "--allow-public-output is disabled for RAID: SETEC's corpus "
+            "posture is local_only and cannot be overridden.\n"
+        )
+        return 2
+    for p in (manifest_path, text_dir):
+        try:
+            p.relative_to(private_dir_check)
+        except ValueError:
+            sys.stderr.write(
+                f"Refusing to write {p} outside {private_dir_check}. "
+                "RAID corpus rows and converted manifests are local_only.\n"
+            )
+            return 2
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     text_dir.mkdir(parents=True, exist_ok=True)
@@ -542,12 +544,9 @@ def convert(args: argparse.Namespace) -> int:
                     "language_status": _language_status_for_row(row),
                     # ``use`` is list-typed per manifest spec.
                     "use": ["validation"],
-                    # RAID's HF card declares MIT (verified 2026-
-                    # 05-10) — permissive but attribution-required.
-                    # `shareable` is the right manifest tier;
-                    # `public_domain` would be wrong because MIT
-                    # is not public-domain (it retains copyright).
-                    "privacy": "shareable",
+                    # Repository wrapper metadata does not establish
+                    # redistribution rights for every underlying source row.
+                    "privacy": "private",
                     "source": "raid",
                     "source_id": row.get("source_id"),
                     "notes": {
@@ -656,11 +655,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-public-output", action="store_true",
         help=(
-            "Permit writing the manifest and text files "
-            "outside ai-prose-baselines-private/. RAID is "
-            "Apache-2.0; this is permitted but the framework's "
-            "default is to keep all corpus material under the "
-            "private dir."
+            "Deprecated compatibility flag. Always refused: RAID corpus "
+            "rows and converted manifests are local_only in SETEC."
         ),
     )
     parser.add_argument(

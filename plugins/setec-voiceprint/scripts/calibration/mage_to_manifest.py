@@ -46,8 +46,7 @@ Manifest mapping (aligned with
                       `notes.original_source` for slicing.
   - `language_status` "native" (MAGE is English-only)
   - `use`             "validation" by default
-  - `privacy`         "shareable" (MIT/Apache-2.0 permissive
-                      with attribution; not public_domain)
+  - `privacy`         "private" (SETEC local-only corpus posture)
   - `source`          "mage"
   - `source_id`       the row's `src` field (the original
                       generator / dataset name; the HF dataset
@@ -292,17 +291,24 @@ def convert(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest).expanduser().resolve()
     text_dir = Path(args.text_dir).expanduser().resolve()
 
-    if not args.allow_public_output:
-        for p in (manifest_path, text_dir):
-            try:
-                p.relative_to(PRIVATE_DIR)
-            except ValueError:
-                sys.stderr.write(
-                    f"Refusing to write {p} outside "
-                    f"{PRIVATE_DIR}. MAGE is MIT — pass "
-                    "--allow-public-output to override.\n"
-                )
-                return 2
+    private_dir_check = (
+        PRIVATE_DIR.resolve() if PRIVATE_DIR.exists() else PRIVATE_DIR
+    )
+    if getattr(args, "allow_public_output", False):
+        sys.stderr.write(
+            "--allow-public-output is disabled for MAGE: SETEC's corpus "
+            "posture is local_only and cannot be overridden.\n"
+        )
+        return 2
+    for p in (manifest_path, text_dir):
+        try:
+            p.relative_to(private_dir_check)
+        except ValueError:
+            sys.stderr.write(
+                f"Refusing to write {p} outside {private_dir_check}. "
+                "MAGE corpus rows and converted manifests are local_only.\n"
+            )
+            return 2
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     text_dir.mkdir(parents=True, exist_ok=True)
@@ -379,12 +385,9 @@ def convert(args: argparse.Namespace) -> int:
                     "language_status": "native",
                     # ``use`` is list-typed per manifest spec.
                     "use": ["validation"],
-                    # MAGE's HF card declares Apache-2.0
-                    # (verified 2026-05-10) — permissive but
-                    # attribution-required. `shareable` is the
-                    # right manifest tier; `public_domain` would
-                    # be wrong (MIT/Apache retain copyright).
-                    "privacy": "shareable",
+                    # Repository wrapper metadata does not establish
+                    # redistribution rights for every underlying source row.
+                    "privacy": "private",
                     "source": "mage",
                     "source_id": src_value,
                     "notes": {
@@ -460,9 +463,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-public-output", action="store_true",
         help=(
-            "Permit writing the manifest and text files "
-            "outside ai-prose-baselines-private/. MAGE is "
-            "MIT-licensed."
+            "Deprecated compatibility flag. Always refused: MAGE corpus "
+            "rows and converted manifests are local_only in SETEC."
         ),
     )
     # B.4 (v1.50.0+): per SPEC_authorship_states.md §7.2, certain

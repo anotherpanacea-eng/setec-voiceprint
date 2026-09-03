@@ -1,6 +1,6 @@
 # A4 — RAID/MAGE fetcher integrity repair
 
-**Status:** Implementation-ready draft; requires independent spec review before build
+**Status:** Implementation repair complete; pending independent implementation re-review
 **Date:** 2026-09-03
 **Repository:** `anotherpanacea-eng/setec-voiceprint`
 **Base:** `origin/main` at `d2a5bfc1fbf7ba92ccea7e24b0807dac18fdc081`
@@ -17,7 +17,10 @@ Repair the already-shipped RAID and MAGE calibration fetchers so that:
    license or is publicly redistributable;
 3. RAID's `--no-adversarial` option fails safely when the current monolithic
    CSV layout cannot honor file-level adversarial exclusion; and
-4. directly implicated roadmap, provenance, help, and changelog text agrees
+4. a failed partial refresh cannot retain provenance artifacts from an older
+   complete corpus state;
+5. RAID/MAGE conversion mechanically preserves the local-only posture; and
+6. directly implicated roadmap, provenance, help, and changelog text agrees
    with those behaviors.
 
 This is a repair of existing fetchers, not a new acquisition surface and not a
@@ -118,7 +121,13 @@ For each fetcher:
    `hf_hub_download(..., repo_type="dataset", revision=revision, ...)`.
 5. Pass `revision` explicitly through `_verify_license`, `_list_repo_files`, and
    `_download`; no helper may silently fall back to `main` after resolution.
-6. Write the receipt only after every selected download succeeds, as today.
+6. Before deleting, overwriting, or adding any selected corpus file, remove
+   both the old `.fetch_record.json` and `NOTICE.md`. Each removal must use an
+   atomic filesystem operation; any invalidation error aborts before corpus
+   mutation. A partial download failure therefore leaves neither stale
+   artifact in place.
+7. Write a replacement NOTICE and receipt only after every selected download
+   succeeds, as today.
 
 The implementation may keep the existing functions or combine initial
 revision resolution into a small dataset-snapshot helper. It must not introduce
@@ -151,6 +160,17 @@ For both scripts:
 Historical release entries in `CHANGELOG.md` are an audit trail and must not be
 rewritten. Add a current `changelog.d/fix-raid-mage-fetcher-integrity.md`
 fragment with a `### Fixed` heading.
+
+The two existing converters must enforce the same posture mechanically:
+
+- output manifests and spilled text remain beneath
+  `ai-prose-baselines-private/` and carry `privacy: "private"`;
+- the legacy `--allow-public-output` spelling remains parseable for CLI
+  compatibility but always returns `2` before creating output, with help and
+  error text stating that local-only posture cannot be overridden; and
+- ordinary private/local conversion remains unchanged. If an interrupted fetch
+  removed its receipt, the existing converter behavior may report
+  `hf_revision: "unknown"`; it must not recover or imply the stale revision.
 
 ### 4.3 RAID monolithic-CSV `--no-adversarial` contract
 
@@ -214,8 +234,9 @@ Rules:
   file-separated invocation writes `false`; a normal invocation writes `true`.
 - MAGE's existing receipt remains backward-compatible by addition only.
 
-No downstream converter or calibrator change is required: current consumers
-read `repo_id` and `revision` and ignore additional keys.
+Receipt parsing remains backward-compatible: current consumers read `repo_id`
+and `revision` and ignore additional keys. The converter changes authorized
+here are limited to output custody and the manifest privacy field.
 
 ### 4.5 Directly implicated documentation
 
@@ -243,9 +264,14 @@ The PR may change exactly these paths:
 - `plugins/setec-voiceprint/scripts/calibration/fetch_mage.py`
 - `plugins/setec-voiceprint/scripts/tests/test_fetch_raid.py`
 - `plugins/setec-voiceprint/scripts/tests/test_fetch_mage.py`
+- `plugins/setec-voiceprint/scripts/calibration/raid_to_manifest.py`
+- `plugins/setec-voiceprint/scripts/calibration/mage_to_manifest.py`
+- `plugins/setec-voiceprint/scripts/tests/test_raid_to_manifest.py`
+- `plugins/setec-voiceprint/scripts/tests/test_mage_to_manifest.py`
 - `plugins/setec-voiceprint/scripts/calibration/PROVENANCE.md`
 - `ROADMAP.md`
 - `changelog.d/fix-raid-mage-fetcher-integrity.md`
+- `specs/a4-raid-mage-fetcher-integrity.md`
 
 One additional small fixture beneath
 `plugins/setec-voiceprint/scripts/tests/fixtures/` is allowed only if both test
@@ -264,7 +290,10 @@ is authorized by this spec.
   download rather than silently transferring adversarial rows. This is a
   safety correction, not a compatibility-preserving success path.
 - Legacy/file-separated RAID layouts retain the prior successful behavior.
-- No converter CLI or manifest schema changes are allowed.
+- Converter CLI spelling remains compatible, but
+  `--allow-public-output` intentionally becomes a fail-closed request under
+  the already-declared local-only posture. Private/local conversion continues
+  to succeed and emitted entries use the existing `private` privacy value.
 
 ## 6. Exit behavior
 
@@ -278,13 +307,15 @@ The repaired scripts must preserve or explicitly use these codes:
 | `3` | Revision resolution, pinned metadata reload, or pinned file listing failed/incomplete |
 | `4` | No matching files, or RAID `--no-adversarial` cannot be satisfied by the monolithic source layout |
 
-Download/filesystem exceptions after selection are not redesigned in this PR;
-they continue to terminate non-zero and must not produce a new receipt.
+Download/filesystem exceptions after selection continue to terminate non-zero
+and must leave neither an old nor a new receipt/NOTICE. Converter custody
+refusals return `2` without creating public output.
 
 ## 7. Tests
 
-Update only `test_fetch_raid.py` and `test_fetch_mage.py` unless a tiny shared
-public-metadata fixture file is demonstrably clearer than inline constants.
+Update the two fetcher tests and the directly implicated RAID/MAGE converter
+tests only, unless a tiny shared public-metadata fixture file is demonstrably
+clearer than inline constants.
 
 ### 7.1 Required offline cases
 
@@ -305,20 +336,32 @@ Both fetchers:
    nor receipt.
 8. Revision/metadata/list failures preserve the exit table above and write no
    receipt.
+9. A synthetic two-file download that fails after the first file proves that
+   stale `.fetch_record.json` and `NOTICE.md` are absent and downstream receipt
+   loading clearly reports no revision provenance.
 
 RAID additionally:
 
-9. The public metadata fixture containing root `train.csv`, `test.csv`, and
+10. The public metadata fixture containing root `train.csv`, `test.csv`, and
    `extra.csv` makes `--no-adversarial` return `4`, perform zero downloads, and
    direct row filtering to `raid_to_manifest.py --no-adversarial`.
-10. The same assertion holds in dry-run mode.
-11. A synthetic file-separated listing still filters attack-token files,
+11. The same assertion holds in dry-run mode.
+12. A synthetic file-separated listing still filters attack-token files,
     succeeds, and records `include_adversarial: false`.
 
 MAGE additionally:
 
-12. The public filename fixture selects `valid.csv` for `validation` and all
+13. The public filename fixture selects `valid.csv` for `validation` and all
     five current CSV data files for `all`.
+
+Both converters:
+
+14. Ordinary output beneath the configured private directory succeeds and
+    emits `privacy: "private"`.
+15. Output outside that directory returns `2`; supplying the retained
+    `--allow-public-output` flag also returns `2` and creates no output.
+16. CLI help calls the flag deprecated/always refused and names the local-only
+    posture.
 
 ### 7.2 Public/no-download firewall
 
@@ -342,6 +385,8 @@ From repository root, without network access:
 env PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q \
   plugins/setec-voiceprint/scripts/tests/test_fetch_raid.py \
   plugins/setec-voiceprint/scripts/tests/test_fetch_mage.py \
+  plugins/setec-voiceprint/scripts/tests/test_raid_to_manifest.py \
+  plugins/setec-voiceprint/scripts/tests/test_mage_to_manifest.py \
   -p no:cacheprovider
 
 python3 tools/check_docs_freshness.py
@@ -358,6 +403,10 @@ The PR is acceptable only if:
   against the candidate;
 - a planted monolithic-CSV test fails against the pre-repair RAID code and
   passes against the candidate;
+- planted partial-download tests prove stale provenance is invalidated before
+  corpus mutation;
+- converter tests prove the legacy public-output authorization cannot bypass
+  local-only custody;
 - no automated test opens the network;
 - the diff is limited to the authorized path set in Section 4.6; and
 - independent implementation review finds no remaining path that records one
@@ -374,8 +423,9 @@ The PR is acceptable only if:
   progress redesign, or reopening issue #133 without a new scale trigger.
 - Streaming/filtering RAID rows before transfer, use of the Hugging Face data
   server, or a new dataset dependency.
-- Converter behavior, manifest schemas, calibration math, thresholds,
-  validation harnesses, or claim-license policy.
+- Converter parsing, calibration math, thresholds, validation harnesses, or
+  claim-license policy beyond the directly contradictory output-custody and
+  privacy fields named above.
 - Resolving upstream license ambiguity as a legal conclusion. This repair only
   reports exact observed repository metadata and enforces SETEC's conservative
   local-only posture.

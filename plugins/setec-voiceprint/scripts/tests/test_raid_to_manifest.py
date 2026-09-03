@@ -386,9 +386,7 @@ class TestManifestValidatorRoundTrip:
         )
         assert rt.convert(args) == 0
         # Now run the validator. It returns (errors, warnings)
-        # — we accept warnings (the impostor-track ratchets emit
-        # warnings on shareable-no-consent-status entries) but
-        # refuse any errors.
+        # — warnings remain non-fatal, but errors are not accepted.
         import manifest_validator as mv  # type: ignore
         result = mv.validate_manifest(str(manifest_path))
         errors = [
@@ -592,7 +590,7 @@ class TestConvertEndToEnd:
         assert ai_statuses == ["ai_generated", "pre_ai_human"]
         for e in entries:
             assert e["source"] == "raid"
-            assert e["privacy"] == "shareable"
+            assert e["privacy"] == "private"
             assert e["use"] == ["validation"]
             assert e["editing_status"] == "raw_draft"
             assert e["language_status"] == "native"
@@ -786,7 +784,7 @@ class TestConvertEndToEnd:
         rc = rt.convert(args)
         assert rc == 2
 
-    def test_allow_public_output_overrides_guard(self, tmp_path):
+    def test_allow_public_output_is_refused(self, tmp_path, capsys):
         private_dir = tmp_path / "private"
         source_dir = private_dir / "raid"
         source_dir.mkdir(parents=True)
@@ -809,8 +807,23 @@ class TestConvertEndToEnd:
             allow_public_output=True,
         )
         rc = rt.convert(args)
-        assert rc == 0
-        assert public_manifest.is_file()
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert "disabled" in err
+        assert "local_only" in err
+        assert not public_manifest.exists()
+
+    def test_public_output_help_is_truthful(self, capsys):
+        rt = _import_raid_to_manifest()
+
+        with pytest.raises(SystemExit) as exc_info:
+            rt.main(["--help"])
+
+        assert exc_info.value.code == 0
+        help_text = capsys.readouterr().out
+        assert "Deprecated compatibility flag" in help_text
+        assert "Always refused" in help_text
+        assert "local_only" in help_text
 
 
 class TestResumeSupport:

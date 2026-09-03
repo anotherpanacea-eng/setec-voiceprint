@@ -55,6 +55,7 @@ def _install_mock_huggingface_hub(
     revision: str = "deadbeef" * 5,
     repo_files: list[str] | None = None,
     download_writes: dict[str, bytes] | None = None,
+    download_fail_after: int | None = None,
     moving_main: bool = False,
 ) -> mock.MagicMock:
     """Inject a fake `huggingface_hub` module into sys.modules.
@@ -73,6 +74,7 @@ def _install_mock_huggingface_hub(
     fake_hub.calls = []
     resolved_revision = revision
     state = {"main_reads": 0}
+    state["successful_downloads"] = 0
 
     class _FakeCardData(dict):
         pass
@@ -114,6 +116,11 @@ def _install_mock_huggingface_hub(
         fake_hub.calls.append(
             ("hf_hub_download", repo_id, revision, filename)
         )
+        if (
+            download_fail_after is not None
+            and state["successful_downloads"] >= download_fail_after
+        ):
+            raise RuntimeError("injected download failure")
         out = Path(local_dir) / filename
         out.parent.mkdir(parents=True, exist_ok=True)
         content = (
@@ -121,6 +128,7 @@ def _install_mock_huggingface_hub(
             if download_writes else b"\x00FAKE PARQUET\x00"
         )
         out.write_bytes(content)
+        state["successful_downloads"] += 1
         return str(out)
 
     fake_hub.HfApi = _FakeApi
@@ -479,6 +487,34 @@ class TestCli:
         assert record_data["observed_wrapper_license"] == "apache-2.0"
         assert record_data["license_check"] == "verified"
         assert record_data["content_posture"] == "local_only"
+
+    def test_partial_download_invalidates_stale_provenance(
+        self, tmp_path, monkeypatch,
+    ):
+        _install_mock_huggingface_hub(
+            repo_files=[
+                "data/train-00000-of-00002.parquet",
+                "data/train-00001-of-00002.parquet",
+            ],
+            download_fail_after=1,
+        )
+        fr = _import_fetch_raid()
+        monkeypatch.setattr(fr, "TARGET_DIR", tmp_path)
+        (tmp_path / "NOTICE.md").write_text(
+            "stale notice\n", encoding="utf-8",
+        )
+        (tmp_path / ".fetch_record.json").write_text(
+            json.dumps({"revision": "stale"}), encoding="utf-8",
+        )
+
+        with pytest.raises(RuntimeError, match="injected download failure"):
+            fr.main(["--subset", "train"])
+
+        assert (tmp_path / "data/train-00000-of-00002.parquet").is_file()
+        assert not (tmp_path / "NOTICE.md").exists()
+        assert not (tmp_path / ".fetch_record.json").exists()
+        import raid_to_manifest as rt  # type: ignore
+        assert rt._load_revision_record(tmp_path) == {}
 
     def test_cli_skip_license_check_receipt_is_nonaffirmative(
         self, tmp_path, monkeypatch,

@@ -184,6 +184,20 @@ def _download(
     return fetched
 
 
+def _invalidate_provenance(target_dir: Path) -> None:
+    """Remove artifacts that describe the pre-download corpus state.
+
+    Each unlink is atomic. Any filesystem error aborts before a corpus file is
+    deleted, overwritten, or added, so a failed refresh cannot retain an old
+    receipt or notice for a partially updated corpus.
+    """
+    for name in (".fetch_record.json", "NOTICE.md"):
+        try:
+            (target_dir / name).unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _write_notice(
     target_dir: Path, revision: str, observed_license: str | None,
     license_check: str, fetched_files: list[Path],
@@ -362,6 +376,9 @@ def main(argv: list[str] | None = None) -> int:
         for f in files_to_download:
             sys.stdout.write(f"  {f}\n")
         return 0
+
+    # Replacement artifacts are written only after all downloads succeed.
+    _invalidate_provenance(TARGET_DIR)
 
     if args.refresh:
         for repo_path in files_to_download:
