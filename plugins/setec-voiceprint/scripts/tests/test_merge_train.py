@@ -144,6 +144,37 @@ def test_real_conflict_requires_explicit_resolution_mode(tmp_path: Path):
         verify_train(repo, inventory)
 
 
+def test_modify_delete_conflict_may_resolve_to_materialized_side(tmp_path: Path):
+    repo = tmp_path / "modify-delete"
+    repo.mkdir()
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.name", "Train Test")
+    _git(repo, "config", "user.email", "train@example.invalid")
+    base = _commit(repo, "shared.txt", "base\n")
+    _git(repo, "switch", "-c", "candidate")
+    candidate = _commit(repo, "shared.txt", "candidate version\n")
+    _git(repo, "switch", "main")
+    _git(repo, "rm", "shared.txt")
+    _git(repo, "commit", "-m", "train side deletes shared")
+    prior = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "merge", "--no-ff", "candidate", "--no-commit", check=False)
+    _git(repo, "add", "shared.txt")
+    _git(repo, "commit", "-m", "keep candidate version")
+    merge = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "update-ref", "refs/remotes/origin/main", base)
+    inventory = {
+        "schema": "setec-merge-train/1", "base": base,
+        "base_ref": "refs/remotes/origin/main", "head": merge,
+        "steps": [
+            {"kind": "train", "label": "prior integration", "commit": prior},
+            {"kind": "constituent", "pr": 8, "head": candidate, "merge": merge,
+             "tree_mode": "conflict-resolution",
+             "resolution": "kept the constituent version of shared.txt"},
+        ],
+    }
+    assert verify_train(repo, inventory)["conflict_resolution_count"] == 1
+
+
 def test_conflict_resolution_cannot_smuggle_an_unrelated_tree_edit(tmp_path: Path):
     repo = tmp_path / "conflict-smuggle"
     repo.mkdir()
@@ -174,7 +205,7 @@ def test_conflict_resolution_cannot_smuggle_an_unrelated_tree_edit(tmp_path: Pat
              "resolution": "resolved shared.txt using combined behavior"},
         ],
     }
-    with pytest.raises(TrainError, match="exactly the paths"):
+    with pytest.raises(TrainError, match="only paths"):
         verify_train(repo, inventory)
 
 

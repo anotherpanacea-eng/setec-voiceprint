@@ -307,10 +307,10 @@ def verify_train(repo: Path, inventory: dict[str, Any]) -> dict[str, Any]:
                 resolution_paths = _tree_diff_paths(
                     repo, automatic_tree, _tree(repo, current),
                 )
-                if resolution_paths != conflict_paths:
+                if not resolution_paths.issubset(conflict_paths):
                     raise TrainError(
-                        f"constituent step {index} resolution changes must be exactly "
-                        "the paths reported conflicting by git merge-tree"
+                        f"constituent step {index} resolution may change only paths "
+                        "reported conflicting by git merge-tree"
                     )
                 conflicts += 1
             current = parents[0]
