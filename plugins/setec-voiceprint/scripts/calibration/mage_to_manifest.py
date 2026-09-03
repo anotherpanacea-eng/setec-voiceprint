@@ -291,9 +291,6 @@ def convert(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest).expanduser().resolve()
     text_dir = Path(args.text_dir).expanduser().resolve()
 
-    private_dir_check = (
-        PRIVATE_DIR.resolve() if PRIVATE_DIR.exists() else PRIVATE_DIR
-    )
     if getattr(args, "allow_public_output", False):
         sys.stderr.write(
             "--allow-public-output is disabled for MAGE: SETEC's corpus "
@@ -302,10 +299,13 @@ def convert(args: argparse.Namespace) -> int:
         return 2
     for p in (manifest_path, text_dir):
         try:
-            p.relative_to(private_dir_check)
+            p.relative_to(
+                PRIVATE_DIR.resolve() if PRIVATE_DIR.exists() else PRIVATE_DIR
+            )
         except ValueError:
             sys.stderr.write(
-                f"Refusing to write {p} outside {private_dir_check}. "
+                f"Refusing to write {p} outside "
+                f"{PRIVATE_DIR.resolve() if PRIVATE_DIR.exists() else PRIVATE_DIR}. "
                 "MAGE corpus rows and converted manifests are local_only.\n"
             )
             return 2
