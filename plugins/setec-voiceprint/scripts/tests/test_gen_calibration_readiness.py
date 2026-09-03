@@ -96,6 +96,12 @@ def test_curated_acquisition_rows_show_real_source_and_locality():
     # The source list is local, but the actual PDFs are fetched over the network.
     assert gcr.derive(_entry("acquire_pdf_urls"))["hardware"] == "CPU + network"
 
+    # Stdlib urllib crawlers declare network locality in compute.cost_note.
+    assert (
+        gcr.derive(_entry("build_tanner_source_list"))["hardware"]
+        == "CPU + network"
+    )
+
     near_dup = gcr.derive(_entry("near_dup_dedup"))
     assert len(near_dup["supplies"]) == len(set(near_dup["supplies"]))
     assert any("acquisition manifest" in item for item in near_dup["supplies"])

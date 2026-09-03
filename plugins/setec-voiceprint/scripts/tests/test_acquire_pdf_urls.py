@@ -112,7 +112,7 @@ if pytest is not None:
         the wiring tests run without hand-crafted real PDFs."""
         monkeypatch.setattr(
             ac, "pdf_text_from_bytes",
-            lambda data: data.decode("utf-8", "replace"),
+            lambda data, *, artifact_profile=None: data.decode("utf-8", "replace"),
         )
 
 
@@ -167,6 +167,28 @@ def test_parse_line():
     # JSON without a url key, and malformed JSON, are skipped.
     assert pu._parse_line('{"title": "no url"}') is None
     assert pu._parse_line('{bad json') is None
+
+
+def test_tanner_artifact_profile_is_explicitly_routed_to_pdf_extraction(
+    monkeypatch,
+):
+    seen = []
+    monkeypatch.setattr(
+        ac,
+        "pdf_text_from_bytes",
+        lambda data, *, artifact_profile=None: (
+            seen.append(artifact_profile) or "enough extracted words " * 20
+        ),
+    )
+    item = pu.ItemMeta(
+        locator="https://tannerlectures.org/lecture.pdf",
+        artifact_profile="tanner",
+    )
+    text, _title, _author, _date = pu.extract_one(
+        item, pu.parse_options(make_args()), make_fetcher({item.locator: "grant1.pdf"}),
+    )
+    assert text
+    assert seen == ["tanner"]
 
 
 def test_title_from_url():

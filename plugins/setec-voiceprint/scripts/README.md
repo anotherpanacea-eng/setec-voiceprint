@@ -1424,6 +1424,50 @@ other.
 
 ---
 
+## Tanner Lectures source-list builder
+
+`acquisition_sources/build_tanner_source_list.py` crawls the official Tanner
+lecture sitemap and produces sorted `url` / `title` / `author` / `date` /
+`artifact_profile: "tanner"` JSONL consumed by `acquire_pdf_urls.py`. The
+profile explicitly opts only this feed into the Tanner-specific pypdf repairs;
+generic PDF feeds preserve identical slash sequences as literal URL/path text.
+The builder fetches public metadata only: a discovered `Download Lecture Text`
+link is recorded but never downloaded or claimed reachable by this step.
+
+The full crawl is intentionally slow. Tanner publishes a 10-second crawl delay,
+which is also the CLI's hard minimum. Every attempted lecture page is committed
+to a separate atomic state file, and the canonical feed is regenerated after
+each attempt. Ordinary `--resume` skips all four recorded outcomes, including
+errors; use `--retry-errors` to revisit only prior fetch/parse failures.
+
+```
+# Public-metadata smoke (at most five lecture pages).
+python3 acquisition_sources/build_tanner_source_list.py \
+    --output tanner-pdfs.jsonl --max-pages 5
+
+# Continue the same source-bound crawl; no completed page is refetched.
+python3 acquisition_sources/build_tanner_source_list.py \
+    --output tanner-pdfs.jsonl --resume
+
+# Retry only pages whose last recorded outcome was fetch_error/parse_error.
+python3 acquisition_sources/build_tanner_source_list.py \
+    --output tanner-pdfs.jsonl --resume --retry-errors
+```
+
+The later corpus run belongs under `ai-prose-baselines-private` and must use
+`--consent-status fair_use_research --register academic_philosophy`. Tanner
+publishes no reuse licence; this cohort is private, stats-only impostor material
+and must not be redistributed or admitted to `phil-register`. Use an `--until`
+cutoff on `acquire_pdf_urls.py` for the pre-2022 `pre_chatgpt` slice.
+
+The shared pypdf extraction seam, when explicitly passed the feed's
+`artifact_profile: "tanner"`, repairs the bounded Tanner artifacts
+`/uni00A0`, single-letter `.sc` glyphs, named oldstyle digits, and letter gaps
+only when the reconstructed word is independently attested elsewhere in the
+same PDF. Unknown slash-glyph tokens are preserved for `check_corpus` to expose.
+
+---
+
 ## pdf_inventory.py
 
 Inventories an existing PDF library so the user can review which files should
