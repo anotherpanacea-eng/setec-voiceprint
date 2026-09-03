@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://tannerlectures.org/lectures/zeta/</loc></url>
+  <url><loc>https://tannerlectures.org/lectures/alpha/</loc></url>
+  <url><loc>https://tannerlectures.org/lectures/no-pdf/</loc></url>
+  <url><loc>https://tannerlectures.org/lectures/broken/</loc></url>
+  <url><loc>https://tannerlectures.org/news/not-a-lecture/</loc></url>
+  <url><loc>https://example.test/lectures/wrong-host/</loc></url>
+  <url><loc>https://tannerlectures.org/lectures/alpha/</loc></url>
+</urlset>

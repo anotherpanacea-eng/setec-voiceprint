@@ -329,7 +329,7 @@ def test_identity_baseline_mode(tmp_path):
         str(src), output_dir=str(output_dir),
         emit_manifest=str(output_dir / "draft_manifest.jsonl"),
         corpus_role="identity_baseline", persona="my_pen_name",
-        ai_status="ai_assisted", impostor_for=[],
+        ai_status="ai_assisted", consent_status="author_consent", impostor_for=[],
     )
     assert ep.run(args) == 0
     entries = read_manifest(output_dir / "draft_manifest.jsonl")
@@ -339,7 +339,14 @@ def test_identity_baseline_mode(tmp_path):
         assert e["use"] == ["voice_profile"]
         assert e["persona"] == "my_pen_name"        # single persona, not per-book
         assert e["ai_status"] == "ai_assisted"
+        assert e["consent_status"] == "author_consent"
+        assert e["acquired_via"].startswith("acquire_epub_")
         assert "impostor_for" not in e               # impostor-only fields omitted
+        assert "register_match" not in e
+        assert "topic_match" not in e
+    assert {e["era"] for e in entries} == {
+        "pre_chatgpt", "post_ai_widespread",
+    }
 
 
 def test_identity_mode_requires_persona(tmp_path):

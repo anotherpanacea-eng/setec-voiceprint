@@ -64,6 +64,8 @@ from preprocessing import (
     available_rule_names,
     strip_non_prose,
 )
+from setec.core.textprims import FUNCTION_WORDS  # type: ignore
+from setec.core import dependency_primitives as _dependency_primitives
 
 # ---------- Optional dependencies ----------
 try:
@@ -85,17 +87,8 @@ try:
 except ImportError:
     HAS_NLTK = False
 
-try:
-    import spacy  # type: ignore
-    try:
-        _NLP = spacy.load("en_core_web_sm")
-        HAS_SPACY = True
-    except Exception:
-        HAS_SPACY = False
-        _NLP = None
-except ImportError:
-    HAS_SPACY = False
-    _NLP = None
+HAS_SPACY = _dependency_primitives.HAS_SPACY
+_NLP = _dependency_primitives._NLP
 
 try:
     from sentence_transformers import SentenceTransformer  # type: ignore
@@ -113,25 +106,6 @@ except ImportError:
 
 
 # ---------- Resource lists ----------
-
-# Top function words (Mosteller-Wallace + extensions).
-FUNCTION_WORDS = {
-    "a", "about", "above", "after", "again", "against", "all", "am", "an",
-    "and", "any", "are", "as", "at", "be", "because", "been", "before",
-    "being", "below", "between", "both", "but", "by", "could", "did", "do",
-    "does", "doing", "down", "during", "each", "few", "for", "from",
-    "further", "had", "has", "have", "having", "he", "her", "here", "hers",
-    "herself", "him", "himself", "his", "how", "i", "if", "in", "into", "is",
-    "it", "its", "itself", "just", "me", "might", "mine", "more", "most",
-    "must", "my", "myself", "no", "nor", "not", "now", "of", "off", "on",
-    "once", "one", "only", "or", "other", "ought", "our", "ours", "ourselves",
-    "out", "over", "own", "same", "shall", "she", "should", "so", "some",
-    "such", "than", "that", "the", "their", "theirs", "them", "themselves",
-    "then", "there", "these", "they", "this", "those", "through", "to", "too",
-    "under", "until", "up", "upon", "us", "very", "was", "we", "were", "what",
-    "when", "where", "which", "while", "who", "whom", "whose", "why", "will",
-    "with", "would", "yet", "you", "your", "yours", "yourself", "yourselves",
-}
 
 # Discourse markers / connectives flagged for over-density.
 CONNECTIVES = {
@@ -527,32 +501,10 @@ def pos_bigram_kl_contributions(
 
 
 def mdd_stats(text: str) -> dict[str, Any] | None:
+    """Compatibility wrapper over the parser-only L1 primitive."""
     if not HAS_SPACY or _NLP is None:
         return None
-    doc = _NLP(text)
-    per_sentence = []
-    for sent in doc.sents:
-        toks = [t for t in sent if not t.is_space]
-        if len(toks) < 2:
-            continue
-        distances = []
-        for t in toks:
-            if t.dep_ == "ROOT" or t.head is t:
-                continue
-            distances.append(abs(t.i - t.head.i))
-        if distances:
-            per_sentence.append(sum(distances) / len(distances))
-    if len(per_sentence) < 2:
-        return {
-            "n_sentences": len(per_sentence),
-            "mean": per_sentence[0] if per_sentence else 0.0,
-            "sd": 0.0,
-        }
-    return {
-        "n_sentences": len(per_sentence),
-        "mean": statistics.mean(per_sentence),
-        "sd": statistics.stdev(per_sentence),
-    }
+    return _dependency_primitives.mdd_stats(text, nlp=_NLP)
 
 
 # ---------- Tier 3 metrics (embeddings) ----------

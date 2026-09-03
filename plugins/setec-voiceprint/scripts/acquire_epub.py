@@ -494,6 +494,12 @@ def emit_piece(
         manifest_relative_to=options.manifest_path.parent,
         corpus_role=options.corpus_role, use=options.use, ai_status=options.ai_status,
     )
+    if options.corpus_role == "identity_baseline":
+        # Keep the shared unroled-validation shape unchanged while retaining
+        # provenance that this identity acquisition already knows.
+        entry["consent_status"] = piece.consent_status
+        entry["era"] = piece.era
+        entry["acquired_via"] = piece.acquired_via
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
     sys.stderr.write(f"  acquired {text_path.name} ({piece.word_count} words)\n")

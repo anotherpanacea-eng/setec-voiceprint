@@ -3,7 +3,8 @@
 
 A descriptive **syntactic-shape** profile: the linear span of each syntactic link,
 `d = |token.i - token.head.i|`. The *scalar* MDD (per-sentence mean + SD) already ships as
-`variance_audit.mdd_stats` (the `mdd_sd` signal) and is **reused** here, never re-implemented. The
+the shared parser-only `setec.core.dependency_primitives.mdd_stats` primitive (also exposed by
+`variance_audit` as its `mdd_sd` signal) and is **reused** here, never re-implemented. The
 new, additive contribution is the **distribution** (the subject of arXiv:2211.14620): the
 dependency-distance histogram, the adjacent-link share (d=1), the long-range tail (d>=K), and the
 **shape** descriptors of the pooled per-link distribution (`results["shape"]`): population
@@ -11,7 +12,8 @@ variance/sd, Fisher-Pearson skewness (g1) and excess kurtosis (g2), and tail qua
 (p50/p90/p99/max). The shape `sd` is the within-POOL per-link SD — a DIFFERENT quantity from the
 reused `mdd_sd` (the across-SENTENCE SD of per-sentence means). All stdlib, no new model dependency.
 
-Parser-tier: reuses the shared spaCy pipeline (`variance_audit._NLP` / `HAS_SPACY` / `en_core_web_sm`).
+Parser-tier: reuses the parser-only spaCy seam (`setec.core.dependency_primitives` /
+`en_core_web_sm`).
 There is no faithful parse-free dependency distance, so without the parser the surface ABSTAINS
 (`available:false` / `missing_dependency`) — the general_imposters whole-surface pattern. Posture
 (no verdict): not authorship/AI, not a quality/readability score, and NOT length-controlled — MDD and
@@ -36,7 +38,11 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
-from variance_audit import HAS_SPACY, _NLP, mdd_stats  # noqa: E402
+from setec.core import dependency_primitives as _dependency_primitives  # noqa: E402
+
+HAS_SPACY = _dependency_primitives.HAS_SPACY
+_NLP = _dependency_primitives._NLP
+mdd_stats = _dependency_primitives.mdd_stats
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "dependency_distance_audit"
@@ -123,7 +129,7 @@ def _distance_shape(distances: list[int]) -> dict[str, Any]:
 def audit_dependency_distance(text: str, *, long_threshold: int = DEFAULT_LONG_THRESHOLD,
                               max_bucket: int = DEFAULT_MAX_BUCKET) -> dict[str, Any]:
     """The dependency-distance distribution of `text`. Link set is pinned to match
-    `variance_audit.mdd_stats` (punctuation kept; ROOT/self-links excluded), so the new histogram is
+    the shared `mdd_stats` primitive (punctuation kept; ROOT/self-links excluded), so the new histogram is
     consistent with the reused scalar MDD. Raises ValueError if no dependency links are found (the
     caller maps that to bad_input). Assumes the parser is available (the caller guards HAS_SPACY)."""
     doc = _NLP(text)
@@ -146,7 +152,7 @@ def audit_dependency_distance(text: str, *, long_threshold: int = DEFAULT_LONG_T
     n_links = len(distances)
 
     # Scalars: REUSED from mdd_stats (per-sentence MDD mean/SD) — not re-derived.
-    stats = mdd_stats(text) or {}
+    stats = mdd_stats(text, nlp=_NLP) or {}
 
     return {
         "distance_histogram": histogram,
@@ -166,11 +172,11 @@ def audit_dependency_distance(text: str, *, long_threshold: int = DEFAULT_LONG_T
         "assumptions": {
             "method": "dependency-distance distribution (arXiv:2211.14620); d = |i - head.i|",
             "link_set": "punctuation kept (non-space); ROOT/self-links excluded — matches "
-                        "variance_audit.mdd_stats",
-            "scalars": "mdd_mean / mdd_sd reused verbatim from variance_audit.mdd_stats",
+                        "setec.core.dependency_primitives.mdd_stats",
+            "scalars": "mdd_mean / mdd_sd reused verbatim from the shared parser-only mdd_stats primitive",
             "length_confound": "MDD and long_range_share covary with sentence length / genre; "
                                "mean_sentence_length co-reported, not length-controlled",
-            "parser": "spaCy en_core_web_sm (shared variance_audit._NLP)",
+            "parser": "spaCy en_core_web_sm (shared setec.core dependency parser seam)",
         },
     }
 

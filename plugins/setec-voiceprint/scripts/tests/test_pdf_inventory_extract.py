@@ -329,6 +329,41 @@ def test_inventory_handles_empty_root(tmp_path):
 # ------------------- pdf_extract end-to-end ----------------------
 
 
+def test_tanner_glyph_name_normalization_is_bounded():
+    raw = (
+        "V alues guide us. Values endure.\n"
+        "ISA BEL ALLE NDE spoke. Isabel Allende answered.\n"
+        "/e.sc/c.sc /two.oldstyle /uni00A0 /mystery.alt"
+    )
+    normalized = pe.normalize_pdf_text_artifacts(raw, artifact_profile="tanner")
+    assert "Values guide us" in normalized
+    assert "ISABEL ALLENDE spoke" in normalized
+    assert "EC 2   /mystery.alt" in normalized
+
+
+def test_tanner_letter_gap_normalization_preserves_unattested_prose():
+    raw = "A B labels. AI ML systems. THE END. V aliens arrived."
+    assert pe.normalize_pdf_text_artifacts(raw, artifact_profile="tanner") == raw
+
+
+def test_tanner_glyph_normalization_preserves_suffix_decoys():
+    raw = (
+        "/e.sc.alt /one.oldstyle.alt /uni00A0.alt /mystery.alt "
+        "/e.sc+alt /one.oldstyle@alt /uni00A0:alt /e.sc,c"
+    )
+    assert pe.normalize_pdf_text_artifacts(raw, artifact_profile="tanner") == raw
+
+
+def test_tanner_artifact_repairs_are_opt_in_for_literal_urls_and_paths():
+    raw = (
+        "See https://example.test/font/one.oldstyle%20guide "
+        "and /e.sc/c.sc paths."
+    )
+    assert pe.normalize_pdf_text_artifacts(raw) == raw
+    with pytest.raises(ValueError, match="unknown PDF artifact profile"):
+        pe.normalize_pdf_text_artifacts(raw, artifact_profile="other")
+
+
 def _augment_inventory_for_extract(
     rows: list[dict], persona: str = "synthetic_author_personal",
 ) -> list[dict]:

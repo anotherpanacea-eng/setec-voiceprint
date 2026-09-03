@@ -2,6 +2,16 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-09-03)
+
+- **Tanner academic-philosophy acquisition lane built.** A nested, checkpointed
+  public-metadata list builder now feeds `acquire_pdf_urls` from Tanner's official
+  lecture sitemap at the site's 10-second crawl floor. The shared PDF extractor
+  repairs bounded custom-glyph and independently-attested letter-spacing artifacts.
+  This is corpus tooling only: no corpus was pulled, no threshold or evaluative
+  claim was added, and Tanner remains confined to the private
+  `fair_use_research` impostor pool (never `phil-register`).
+
 ## Status reconciliation (2026-08-24)
 
 - **Official Stack Exchange dump acquisition added.** The offline

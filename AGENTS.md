@@ -21,21 +21,27 @@ consumers catch drift on their next weekly pull.
 
 **Shared workflow:** spec → review → build → review → merge. **Both reviews (spec
 and build) are subagent passes — iterate until everything is fixed.** Then the fork:
-**a docs-only change lands as a direct merge commit; anything more goes up as a PR
-for Codex 5.5 review** (don't merge out from under it) — iterate with Codex until
-clean + green, then merge. Merge commits, never squash; version + changelog are cut
-at release (a PR ships a `changelog.d/` fragment), tagged from `main`. (Full detail
-in §The flow below.)
+**every change becomes a draft constituent PR** (don't merge out from under its
+review), then independently cleared exact heads are assembled into one fresh
+integration train. Only the frozen train becomes ready and runs hosted CI. Merge
+commits, never squash; version + changelog are cut at release (a PR ships a
+`changelog.d/` fragment), tagged from `main`. (Full detail in §The flow below.)
 
-**Actions conservation windows:** draft PRs may be opened and synchronized without
-running hosted test jobs; every job refuses draft PRs, and `ready_for_review`
-starts the full suite on that exact head. Keep candidates draft after local tests
-and exact-head review. Near the end of the window, rebuild one integration train
-from fresh `origin/main`, include only independently cleared commits, run the local
-gates again, then mark that single PR ready once and merge it with a merge commit
-only after its exact head is green. Urgent security fixes may bypass the cadence
-with explicit authorization, but not the normal review, data-boundary, or
-hosted-CI requirements.
+**Draft-first integration trains (Spec 81):** draft constituent PRs may be opened
+and synchronized without running hosted jobs. Keep them draft after local tests
+and exact-head review. Near the end of the window, build a new disposable
+`train/<date>[-<slug>]` branch from exact fresh `origin/main`; merge only
+independently cleared remote heads with `--no-ff`, preserve their ancestry, run
+the closed-topology/local gates, and mark only that frozen same-repository train
+ready. All seven hosted jobs then validate the same synthetic merge exactly once.
+Do not reuse a permanent staging branch, merge constituents separately, or use
+ordinary direct pushes to `main`. A separately authorized urgent standalone may
+be armed with the exact `ci-ready` label, but it receives the same freeze,
+complete hosted clearance, merge-binding receipts, and exact-base landing checks.
+Unrelated label edits never arm or cancel a train. The policy is operational and
+does not depend on a paid ruleset; without a strict current-base merge interlock,
+land the tested two-parent tree with the exact-base `--force-with-lease` protocol
+in Spec 81.
 
 **Cloud-reachable coordination hub** (added 2026-07-19):
 [`anotherpanacea-eng/fleet-coordination`](https://github.com/anotherpanacea-eng/fleet-coordination)
@@ -334,11 +340,19 @@ spec→review→write→review→fix structure durable on GitHub and gives
 
 ### Merge mechanics
 
-- **Use `gh pr merge <N> --merge`** (merge commit, not squash). This
-  preserves both the original work commits and the review-fix commits
-  as distinct nodes on `main`. Squash collapses the spec-review-fix
-  structure, which is the most useful audit trail this repo has.
-- **Delete the branch on merge** (`--delete-branch`).
+- **Merge the cleared train, not its constituents.** Immediately before
+  promotion and landing, re-read the exact base, train head, every constituent
+  PR head, current arming state, and review threads. Require one newest complete
+  seven-job run/attempt and seven agreeing `setec-pr-merge-binding/1` receipts.
+- **Use a merge commit, never squash/rebase.** With a reliable strict-current-base
+  interlock, the GitHub Create-a-merge-commit path may be used with an expected
+  head. Otherwise fetch the tested synthetic merge, require exact base/head
+  parents, construct the tree-identical two-parent merge locally, and update
+  `main` only with `--force-with-lease=refs/heads/main:<tested-base>`. A rejected
+  lease means rebuild and retest; never retry against the moved base.
+- **Delete the train branch after landing.** Confirm `main` contains the exact
+  train and constituent heads first. Close only unchanged constituent UI
+  stragglers with the train link; a moved head remains open as new work.
 - **Tag from `main`** after the merge commit lands, not from the
   branch. Tag names follow the `v1.MAJOR.MINOR` convention enforced
   by `CHANGELOG.md`'s versioning preamble.
@@ -351,32 +365,26 @@ spec→review→write→review→fix structure durable on GitHub and gives
   the accumulated fragments into a `## [X.Y.Z]` section, set `plugin.json`, then
   tag from `main`. This is the existing accumulate-then-cut "consolidated
   release" practice (see `## [1.111.0]`), now scripted and conflict-free.
-- **Auto-merge on dual agreement.** When both reviewing agents (Claude
-  and Codex) agree a PR is ready — CI green and review threads resolved —
-  merge it (merge commit) without waiting for a further human prompt. The
-  maintainer gave standing approval for this case (2026-06-06). If only one
-  agent has reviewed, or a review comment is unresolved, hold for the
-  second opinion rather than self-merging.
+- **Auto-merge only the frozen train or explicitly authorized standalone on
+  dual agreement.** When both reviewing agents agree the exact candidate is
+  ready, its required combined CI/receipts are green, the live base/head and
+  inventory are unchanged, and review threads are resolved, land it without a
+  further prompt. Dual agreement on a constituent admits it to a train; it does
+  not authorize merging that constituent separately.
 - **`gh` OAuth workflow-scope merge block (public repo).** A PR that touches
   `.github/workflows/` can't be merged with the `gh` OAuth token (403 "refusing to
   allow an OAuth App to create or update workflow"). The *git* credential keeps the
-  scope (it pushed the branch fine), so the fallback is a local
-  `git merge --no-ff origin/<branch>` into a `main` worktree →
-  `git push origin HEAD:main` (needs explicit OK for the direct-to-main push), or
-  merge via the GitHub web UI. PRs that don't touch workflows merge via `gh` fine.
+  scope (it pushed the branch fine), so the fallback is to
+  use Spec 81's local tree-identical two-parent merge and exact-base leased push,
+  or merge via the GitHub web UI when its strict-current-base guard is reliable.
 
-### When to skip the PR
+### No direct-to-main exception
 
-Direct push to `main` is fine for:
-
-- Typo fixes in docs or CHANGELOG entries.
-- Regenerating test fixtures whose content is deterministic and
-  reproducible.
-- Single-line corrections that don't change behavior.
-
-Anything that changes behavior, adds a script, modifies a script's
-public CLI, or moves a CHANGELOG-meriting amount of work should land
-via PR.
+Typos, deterministic fixture regeneration, docs-only work, and single-line
+corrections still become draft constituents. They are cheap while unarmed and
+can ride the next train. An urgent exception requires explicit owner
+authorization and uses the `ci-ready` standalone path; it is not an ordinary
+direct push.
 
 ## PR template
 
@@ -396,7 +404,7 @@ count (`N tests pass + 1 skipped`).
 
 Bodies should name what changed and (briefly) why. Reviewer-P2 fix
 commits should name the reviewer's reproduction in one or two lines
-per issue so the audit trail survives the squash.
+per issue so the audit trail survives the integration-train merge.
 
 ## Co-authorship
 

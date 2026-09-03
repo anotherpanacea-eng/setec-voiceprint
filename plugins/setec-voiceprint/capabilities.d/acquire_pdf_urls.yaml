@@ -7,13 +7,17 @@ entries:
   consumers: []
   family: acquisition
   purpose: acquire prose from a curated list of remote PDF URLs into the impostor
-    pool (the grant_proposal / expert_affidavit population baselines); the generic
-    PDF acquirer that per-source URL-list builders feed.
+    pool (including grant_proposal, expert_affidavit, and academic_philosophy
+    population baselines); the generic PDF acquirer that per-source URL-list
+    builders feed.
   use_when:
   - building the grant_proposal or expert_affidavit population baseline from a
     curated list of direct PDF URLs
+  - building the private academic_philosophy impostor pool from a Tanner URL feed
   do_not_use_when:
   - the URLs are Zenodo/Figshare record pages rather than direct PDF links
+  - the intended destination is phil-register; Tanner's fair-use-only rights basis
+    is confined to the private impostor pool
   inputs:
     target: a local URL-list file (JSONL objects with a url key, or bare PDF URLs)
   outputs:
@@ -28,6 +32,7 @@ entries:
   registers:
   - grant_proposal
   - expert_affidavit
+  - academic_philosophy
   dependencies:
     python:
     - pypdf

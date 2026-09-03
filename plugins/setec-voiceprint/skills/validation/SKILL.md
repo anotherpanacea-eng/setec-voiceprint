@@ -11,14 +11,15 @@ description: >
   variance audit's ROC curve look like on this corpus," or any request
   to evaluate SETEC's empirical performance. Also triggers on
   "manifest validator," "check_corpus," "validation_harness," "ROC AUC,"
-  "FPR/TPR/FNR," "BCa interval," "Wilson CI," or
-  "labeled validation corpus."
-version: 1.0.0
+  "FPR/TPR/FNR," "BCa interval," "Wilson CI," "conformal,"
+  "prediction set," "abstention," "exchangeability," "FPR-bound
+  threshold," or "labeled validation corpus."
+version: 1.0.1
 ---
 
 # Empirical Validation (SETEC Surface 3)
 
-This skill checks the integrity and content hygiene of a SETEC corpus, then reports how SETEC's smoothing-diagnosis signals performed on the manifest's labeled validation entries. It is the empirical-calibration surface: claims here are about how the framework behaved on a specific corpus, not about how it will behave on unseen corpora.
+This skill checks the integrity and content hygiene of a SETEC corpus, then reports how SETEC's smoothing-diagnosis signals performed on the manifest's labeled validation entries. It also routes operator-precomputed nonconformity scores to the `conformal_gate` abstention layer. It is the empirical-calibration surface: claims here are about behavior on a specific corpus or exchangeable calibration set, not about unseen corpora in general.
 
 ## What this surface licenses, and what it does not
 
@@ -33,6 +34,7 @@ This skill checks the integrity and content hygiene of a SETEC corpus, then repo
 | `check_corpus.py` | Files, directories, or manifest slice ≤ ~1M files | Refusing HTML/CSS/code/table contamination before KL-sensitive or validation runs |
 | `shard_runner.py --task corpus_hygiene` | Manifest > ~1M files | Same contamination check, sharded with workers + state.json checkpointing for corpora at RAID scale |
 | `validation_harness.py` | Labeled validation entries in a manifest | Measuring empirical performance by register, length, AI status, and language status |
+| `conformal_gate.py` | Operator-precomputed nonconformity scores; no prose or manifest input | Producing one- or two-class prediction sets, or a one-tailed reference-class FPR-bound threshold |
 
 ### Picking between `check_corpus.py` and the sharded path
 
@@ -78,7 +80,30 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validation_harness.py" path/to/corpus_man
 
 # Refuse to run on a manifest with warnings (not just errors)
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validation_harness.py" path/to/corpus_manifest.jsonl --strict-manifest
+
+# One-class prediction set at the default alpha (0.1)
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/conformal_gate.py" \
+    --calibration path/to/reference_scores.txt --score 4.2
+
+# Two-class prediction set from JSON-list or newline-delimited score files
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/conformal_gate.py" \
+    --calibration path/to/reference_scores.json \
+    --calibration-positive path/to/positive_scores.json \
+    --score 4.2 --direction two_sided --json
+
+# Threshold-only reference-class FPR ceiling (one-tailed directions only)
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/conformal_gate.py" \
+    --calibration path/to/reference_scores.txt --fpr-bound 0.05 \
+    --direction higher_is_nonconforming --json
 ```
+
+## Conformal abstention follow-up
+
+`conformal_gate.py` is a stdlib methodology wrapper over scores produced elsewhere, not a detector or a prose scorer. `--calibration` accepts a JSON list or newline-delimited floats. `--score` is required for the one- and two-class gates, but optional with `--fpr-bound`, which can emit a threshold without evaluating a target. Default output is Markdown; add `--json` for the normalized envelope or `--out PATH` to write either format.
+
+The one-class result tests out-of-distribution membership against the supplied reference, not authorship. In two-class mode, both an empty prediction set and a set containing both labels are licensed abstentions. A conformal p-value is not a probability that text is AI. Coverage and FPR claims are marginal: in one-class and FPR-bound modes, the reference calibration scores must represent the reference class and be exchangeable with reference targets; in two-class mode, each class's supplied calibration scores must be representative and exchangeable with targets from that class.
+
+`--fpr-bound` accepts only `higher_is_nonconforming` or `lower_is_nonconforming`; `two_sided` has no single tail for this ceiling. The legacy `threshold` field remains the nonconformity-space cutoff. For operator use, apply the separate raw-domain pair `raw_score_threshold` and `raw_score_comparator` (`>=` for higher, `<=` for lower). An empty primary calibration file in any mode, an empty positive calibration file in two-class mode, or an FPR-bound calibration set that is too small or too tied produces an `available: false` report with a warning (exit 0) rather than an unsafe result. The command returns evidence for an operator to interpret: it does not wire itself into the validation harness, apply a detector verdict, or complete the roadmap's larger C2/bakeoff integration.
 
 ## The 0.01% FPR framing
 

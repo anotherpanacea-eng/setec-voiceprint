@@ -1383,7 +1383,9 @@ def html_text_is_clean(text: str) -> bool:
 # --------------- PDF extraction -----------------------------------
 
 
-def pdf_text_from_bytes(data: bytes) -> str:
+def pdf_text_from_bytes(
+    data: bytes, *, artifact_profile: str | None = None,
+) -> str:
     """Extract text from PDF bytes via the existing ``pdf_extract`` text-layer
     extractor (pypdf).
 
@@ -1392,6 +1394,10 @@ def pdf_text_from_bytes(data: bytes) -> str:
     / unparseable input (the caller treats ``""`` as a skip). OCR is out of
     scope here — image-only PDFs return ``""``; the operator runs the dedicated
     ``pdf_extract.py`` OCR pass for those.
+
+    ``artifact_profile`` is an explicit source contract.  The default leaves
+    extracted text untouched; callers may opt into a named, source-bounded
+    repair profile such as ``"tanner"``.
 
     The PDF acquisition path (``acquire_pdf_urls.py``) calls this on bytes
     fetched via ``Fetcher.fetch_bytes``.
@@ -1410,7 +1416,9 @@ def pdf_text_from_bytes(data: bytes) -> str:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
             tf.write(data)
             tmp_path = tf.name
-        return pdf_extract.extract_text_layer(Path(tmp_path)) or ""
+        return pdf_extract.extract_text_layer(
+            Path(tmp_path), artifact_profile=artifact_profile,
+        ) or ""
     except Exception:
         return ""
     finally:

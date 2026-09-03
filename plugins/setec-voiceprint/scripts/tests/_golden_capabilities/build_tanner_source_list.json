@@ -1,0 +1,50 @@
+{
+  "_seeded_at": "2026-09-03",
+  "compute": {
+    "cost_note": "network-bound public-metadata crawl; enforces at least 10 seconds between same-host requests and checkpoints each attempted lecture page",
+    "length_floor_words": null,
+    "tier": "acquisition"
+  },
+  "consumers": [
+    "acquire_pdf_urls"
+  ],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "harvesting lecture prose directly or treating a discovered link as proof that the PDF is reachable",
+    "building phil-register, which does not admit Tanner's fair-use-only rights basis"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/acquisition_sources/build_tanner_source_list.py --output tanner-pdfs.jsonl",
+      "description": "Build the public Tanner metadata feed with a resumable checkpoint."
+    }
+  ],
+  "family": "acquisition",
+  "handoff": "none",
+  "id": "build_tanner_source_list",
+  "inputs": {
+    "target": "the official Tanner lecture sitemap and its public lecture pages"
+  },
+  "outputs": {
+    "artifacts": [
+      "sorted acquire_pdf_urls-compatible JSONL with url, title, author, and date",
+      "source-bound atomic page-attempt checkpoint JSON"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "build a deterministic, checkpointed public-metadata URL feed from the Tanner Lectures archive for the academic_philosophy impostor pool, without downloading lecture PDFs.",
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+  ],
+  "registers": [
+    "academic_philosophy"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/acquisition_sources/build_tanner_source_list.py",
+  "status": "structural_only",
+  "surface": "voice_coherence_acquisition",
+  "use_when": [
+    "preparing a Tanner Lectures URL list for a later private acquire_pdf_urls run"
+  ]
+}

@@ -1,7 +1,14 @@
 name: tests
 
+run-name: >-
+  setec-tests pr=${{ github.event.pull_request.number }}
+  action=${{ github.event.action }}
+  train=${{ github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/') }}
+  ci-ready-event=${{ github.event.label.name == 'ci-ready' }}
+
 # Core-tier CI: runs the stdlib + spaCy + scikit-learn/statsmodels test
-# suite on every PR and push to main. The Tier-4 surprisal / embedding
+# suite once on an admitted integration train (or authorized standalone).
+# The Tier-4 surprisal / embedding
 # tiers need torch (GPU wheels unavailable on GitHub-hosted runners), so
 # those tests skip here (skipif on missing torch) and run on the local
 # GPU host instead. See plugins/setec-voiceprint/scripts/calibration/
@@ -9,20 +16,23 @@ name: tests
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft, labeled, unlabeled]
 
 permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: >-
+    tests-${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ (contains(fromJSON('["labeled","unlabeled"]'), github.event.action) && ((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) || github.event.label.name != 'ci-ready') && github.run_id) || 'clearance' }}
   cancel-in-progress: true
 
 jobs:
   pytest:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -31,6 +41,20 @@ jobs:
           # Full history: the diff-scoped spec-anchor lint below needs a merge
           # base against the PR base ref, and a shallow clone has none.
           fetch-depth: 0
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python3 tools/check_pr_merge_binding.py
+          --base "$BASE_SHA" --head "$HEAD_SHA" --github-sha "$MERGE_SHA"
+          --job "$JOB_NAME" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -66,7 +90,7 @@ jobs:
       # drift can't land unblocked. `if: always()` so they report even when the
       # test step above failed — the two signals are independent.
       - name: Consistency gates
-        if: always()
+        if: always() && steps.merge_binding.outcome == 'success'
         run: |
           python3 tools/check_capabilities_drift.py
           python3 tools/check_docs_freshness.py
@@ -83,7 +107,7 @@ jobs:
       # tools, not a cryptography suite. See specs/svp-packaging-conversion.md
       # §3's amendment note.
       - name: Packaging P1 gates (migration checker, zero-install)
-        if: always()
+        if: always() && steps.merge_binding.outcome == 'success'
         run: |
           python3 tools/check_packaging_migration.py --strict
           python3 tools/check_zero_install.py
@@ -111,7 +135,7 @@ jobs:
       #     introduced_sha/removal_phase. --strict also rejects a
       #     hand-mutated baseline and a ghost exemption row.
       - name: Packaging P5 gates (layering, sys.path ratchet, flat-module freeze)
-        if: always()
+        if: always() && steps.merge_binding.outcome == 'success'
         run: |
           python3 tools/check_layering.py --strict
           python3 tools/check_syspath_ratchet.py --strict
@@ -132,18 +156,36 @@ jobs:
       # must be clean, historical shorthand is left alone until someone touches
       # that spec. MEDIUM-confidence hits stay advisory (no --strict).
       - name: Spec anchor lint (changed specs)
-        if: always() && github.event_name == 'pull_request'
+        if: always() && steps.merge_binding.outcome == 'success'
         run: |
           set -euo pipefail
           base="origin/${{ github.base_ref }}"
           python3 tools/check_changed_spec_anchors.py --repo . --base "$base"
 
   macos-descriptor-confinement:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python3 tools/check_pr_merge_binding.py
+          --base "$BASE_SHA" --head "$HEAD_SHA" --github-sha "$MERGE_SHA"
+          --job "$JOB_NAME" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -162,11 +204,29 @@ jobs:
             -q -rs
 
   windows-descriptor-backend:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/check_pr_merge_binding.py
+          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
+          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -197,11 +257,29 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-descriptor"
 
   windows-owner-corrections:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/check_pr_merge_binding.py
+          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
+          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -219,11 +297,29 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-owner-corrections"
 
   windows-shingle-dedup:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/check_pr_merge_binding.py
+          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
+          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -245,11 +341,29 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-shingle-dedup"
 
   windows-nonprose-sweep:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/check_pr_merge_binding.py
+          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
+          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -268,7 +382,11 @@ jobs:
             --basetemp "${{ runner.temp }}\\setec-win-nonprose"
 
   windows-private-writer-guards:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      github.event.pull_request.draft == false &&
+      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
+      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
+      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
     # The private-corpus writers harden file modes with POSIX-only os.fchmod,
     # which does not exist on native Windows, so an unguarded call raises
     # AttributeError. The Linux/macOS lanes never see it and the other focused
@@ -296,6 +414,20 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Bind billed job to the exact pull-request merge
+        id: merge_binding
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
+          JOB_NAME: ${{ github.job }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: >-
+          python tools/check_pr_merge_binding.py
+          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
+          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:

@@ -66,12 +66,20 @@ def load_scores(path: Path) -> list[float]:
     except json.JSONDecodeError:
         data = None
     if isinstance(data, list):
-        try:
-            return [float(x) for x in data]
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{path}: calibration is a JSON list with a non-numeric entry"
-            ) from exc
+        parsed: list[float] = []
+        for index, value in enumerate(data):
+            try:
+                score = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{path}: calibration JSON entry {index} is not numeric"
+                ) from exc
+            if not math.isfinite(score):
+                raise ValueError(
+                    f"{path}: calibration JSON entry {index} must be finite"
+                )
+            parsed.append(score)
+        return parsed
     # Newline-delimited (or a single scalar) fallback.
     out: list[float] = []
     for lineno, line in enumerate(raw.splitlines(), 1):
@@ -80,12 +88,36 @@ def load_scores(path: Path) -> list[float]:
             continue
         token = line.split(",")[0]
         try:
-            out.append(float(token))
+            score = float(token)
         except ValueError as exc:
             raise ValueError(
                 f"{path}:{lineno}: cannot parse calibration score {token!r}"
             ) from exc
+        if not math.isfinite(score):
+            raise ValueError(
+                f"{path}:{lineno}: calibration score must be finite; got {token!r}"
+            )
+        out.append(score)
     return out
+
+
+def _require_finite_scores(values: list[float], *, name: str) -> None:
+    for index, value in enumerate(values):
+        try:
+            finite = math.isfinite(value)
+        except TypeError as exc:
+            raise ValueError(f"{name}[{index}] must be a finite number") from exc
+        if not finite:
+            raise ValueError(f"{name}[{index}] must be finite")
+
+
+def _require_finite_score(value: float, *, name: str) -> None:
+    try:
+        finite = math.isfinite(value)
+    except TypeError as exc:
+        raise ValueError(f"{name} must be a finite number") from exc
+    if not finite:
+        raise ValueError(f"{name} must be finite")
 
 
 def _nonconformity(values: list[float], direction: str,
@@ -104,6 +136,8 @@ def conformal_p(calibration: list[float], score: float, *,
     Super-uniform under exchangeability: P(p <= alpha) <= alpha for any
     underlying distribution. Higher nonconformity => smaller p.
     """
+    _require_finite_scores(calibration, name="calibration")
+    _require_finite_score(score, name="score")
     n = len(calibration)
     if n == 0:
         return 1.0
@@ -131,17 +165,21 @@ def threshold_at_fpr_bound(
     distribution-free framing as ``conformal_p`` (Multiscaled Conformal
     Prediction, arXiv:2505.05084; v1 ships the single-scale ceiling).
 
-    Concretely: a target is flagged 'out-of-reference' when its
-    nonconformity score is >= ``t``. The fraction of calibration
-    (reference) scores at or above ``t`` is the empirical reference-class
-    false-positive rate. We pick ``t`` as the conformal quantile of the
-    calibration nonconformity scores at level ``q`` with the standard +1
-    finite-sample correction, so the guaranteed reference-class FPR is
-    <= ``q``.
+    Internally, ``t_nc`` is the conformal quantile of the calibration
+    nonconformity scores at level ``q`` with the standard +1 finite-sample
+    correction. The fraction of calibration nonconformity scores at or above
+    ``t_nc`` is the empirical reference-class false-positive rate. The legacy
+    ``threshold`` result retains that nonconformity-space cutoff. For safe
+    operator application, the result also emits ``raw_score_threshold`` and a
+    direction-specific ``raw_score_comparator``; a target is flagged
+    out-of-reference when its raw score satisfies that pair. This keeps the
+    guaranteed reference-class FPR <= ``q`` without changing the existing
+    threshold field's coordinate space.
 
     Pinned to the two ONE-TAILED directions; ``two_sided`` has no single
     tail and is rejected. Pure stdlib; no model. Returns a dict; an empty
     calibration set yields ``available=False``."""
+    _require_finite_scores(calibration, name="calibration")
     if direction not in FPR_BOUND_DIRECTIONS:
         return {
             "available": False,
@@ -173,7 +211,7 @@ def threshold_at_fpr_bound(
     # flagged. Clamp the rank into [1, n].
     rank = math.ceil((n + 1) * (1.0 - fpr_bound))
     rank = max(1, min(n, rank))
-    threshold = cal_nc[rank - 1]
+    nonconformity_threshold = cal_nc[rank - 1]
     # TIE-SAFETY (Codex P1): the flag rule is `score >= threshold`, so ANY calibration scores TIED at
     # the threshold are all flagged. When the tail is tied (e.g. ten identical scores, q=0.1) the
     # order-statistic threshold flags the whole block -> empirical reference FPR 1.0, violating the
@@ -184,10 +222,12 @@ def threshold_at_fpr_bound(
     max_flagged = math.floor(fpr_bound * n + 1e-9)   # FPR <= q  =>  flagged <= floor(q*n)
     def _flagged_at(t: float) -> int:
         return sum(1 for c in cal_nc if c >= t)
-    if _flagged_at(threshold) > max_flagged:
-        higher = sorted({c for c in cal_nc if c > threshold})
-        threshold = next((h for h in higher if _flagged_at(h) <= max_flagged), None)
-    if threshold is None:
+    if _flagged_at(nonconformity_threshold) > max_flagged:
+        higher = sorted({c for c in cal_nc if c > nonconformity_threshold})
+        nonconformity_threshold = next(
+            (h for h in higher if _flagged_at(h) <= max_flagged), None
+        )
+    if nonconformity_threshold is None:
         # No FINITE threshold keeps the empirical FPR <= q without flagging the whole reference set.
         # TWO distinct causes land here, and the reason must not conflate them (Codex #28 P3):
         #   (a) max_flagged == 0 — floor(q*n)==0, so n is simply too small for this q: NO non-empty
@@ -215,19 +255,29 @@ def threshold_at_fpr_bound(
             "direction": direction,
             "n_calibration": n,
         }
-    n_flagged = _flagged_at(threshold)
+    n_flagged = _flagged_at(nonconformity_threshold)
     empirical_fpr = n_flagged / n
+    if direction == "lower_is_nonconforming":
+        raw_score_threshold = -nonconformity_threshold
+        raw_score_comparator = "<="
+    else:
+        raw_score_threshold = nonconformity_threshold
+        raw_score_comparator = ">="
     return {
         "available": True,
         "mode": "fpr_bound",
         "fpr_bound": fpr_bound,
         "direction": direction,
-        "threshold": threshold,
+        "threshold": nonconformity_threshold,
+        "threshold_space": "nonconformity",
+        "raw_score_threshold": raw_score_threshold,
+        "raw_score_comparator": raw_score_comparator,
         "n_calibration": n,
         "order_statistic_rank": rank,
         "empirical_reference_fpr_at_threshold": empirical_fpr,
         "threshold_rule": (
-            "a target nonconformity score >= `threshold` is flagged "
+            f"a target raw score {raw_score_comparator} "
+            "`raw_score_threshold` is flagged "
             "out-of-reference; the reference-class false-positive rate is "
             "bounded by `fpr_bound` under exchangeability. This is a "
             "reference-class FPR ceiling, NOT P(AI) and NOT a guarantee on "
@@ -247,6 +297,8 @@ def gate_fpr_bound(
     """FPR-bound result. ``score`` is optional: with no target the mode
     returns just the bounded threshold; with a target it also reports
     whether the target is inside/outside the bounded reference set."""
+    if score is not None:
+        _require_finite_score(score, name="score")
     result = threshold_at_fpr_bound(
         calibration, fpr_bound=fpr_bound, direction=direction,
     )
@@ -254,10 +306,10 @@ def gate_fpr_bound(
         return result
     result["target_score"] = score
     if score is not None:
-        median = statistics.median(calibration)
-        score_nc = _nonconformity([score], direction, median)[0]
-        # Flagged out-of-reference when its nonconformity is >= threshold.
-        out_of_reference = score_nc >= result["threshold"]
+        if result["raw_score_comparator"] == "<=":
+            out_of_reference = score <= result["raw_score_threshold"]
+        else:
+            out_of_reference = score >= result["raw_score_threshold"]
         result["in_reference_set"] = not out_of_reference
         result["prediction_set"] = [] if out_of_reference else [reference_label]
     return result
@@ -380,7 +432,8 @@ def render_report(payload: dict[str, Any]) -> str:
             "",
             "## Conformal FPR-bound threshold",
             "",
-            f"- **Threshold:** {r['threshold']}",
+            f"- **Raw-score threshold:** {r['raw_score_comparator']} "
+            f"{r['raw_score_threshold']}",
             f"- **Empirical reference-class FPR at threshold:** "
             f"{r['empirical_reference_fpr_at_threshold']}",
             f"- **Calibration n:** {r['n_calibration']} "

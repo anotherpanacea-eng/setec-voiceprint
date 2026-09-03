@@ -12,13 +12,15 @@ description: >
   request involving craft-level diagnosis of AI patterns and revision
   guidance. Also triggers on "AIC flags," "AIC-1 through AIC-7,"
   "Layer B," "Layer C," "voice slip vs. lost callback," or "genre
-  tolerance."
-version: 1.0.0
+  tolerance." Also use for descriptive craft follow-ups asking about
+  "sound texture," "sonic texture," "alliteration," "assonance," or
+  "consonance."
+version: 1.0.1
 ---
 
 # Craft Restoration (SETEC Surface 4)
 
-This skill is a craft-pattern diagnostic and revision adviser. It identifies the seven AIC (AI craft) flag families that survive across model generations because they are structural rather than lexical, decides whether each instance is earned in context, and recommends specific revision moves. The surface is primarily reference markdown — the named-pattern taxonomy, source-triage methodology, and rhetorical countermoves all live in prose because the earned/unearned verdict is irreducibly a writer's call per instance. One quantitative pre-pass script (`aic_pattern_audit.py`) counts named-pattern density and surfaces candidate instances for that adjudication; everything else on this surface stays in the reference docs.
+This skill is primarily a craft-pattern diagnostic and revision adviser. It identifies the seven AIC (AI craft) flag families that survive across model generations because they are structural rather than lexical, decides whether each instance is earned in context, and recommends specific revision moves. The named-pattern taxonomy, source-triage methodology, and rhetorical countermoves live in reference prose because the earned/unearned verdict is irreducibly a writer's call per instance. `aic_pattern_audit.py` supplies the quantitative AIC pre-pass. For literary-fiction or blog-essay work where sound itself is the question, this skill also routes to the separate, descriptive `sound_texture` surface; that follow-up measures an orthographic proxy and does not make the AIC triage or revision decision.
 
 ## What this surface licenses, and what it does not
 
@@ -61,6 +63,28 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/aic_pattern_audit.py" path/to/draft.md \
 ```
 
 The audit strips markdown blockquote lines (`>`) by default so quoted passages from other writers do not inflate the writer's pattern density. Pass `--keep-quotes` to disable. Known v1 limitation: the disguised-correctio detector matches only the explicit "not X, but Y" inline form and the "It is not X. It is Y" frame; subtler multi-sentence correctios are not yet captured. v2 will add a sentence-pair detector.
+
+## Sound-texture follow-up
+
+Use `sound_texture_audit.py` when the craft question is specifically about sonic texture in `literary_fiction` or `blog_essay`. Its task surface remains `sound_texture`, not `craft_restoration`.
+
+```bash
+# Standalone descriptive profile (Markdown to stdout)
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sound_texture_audit.py" path/to/draft.md
+
+# Compare with the writer's own optional baseline
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sound_texture_audit.py" path/to/draft.md \
+    --baseline-dir path/to/writer-baseline/
+
+# Normalized JSON envelope or a Markdown report file
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sound_texture_audit.py" path/to/draft.md --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/sound_texture_audit.py" path/to/draft.md \
+    --out path/to/ai-prose-baselines-private/sound_texture.md
+```
+
+The audit reports adjacent-pair alliteration, assonance, and consonance densities; consonant-class fractions; sibilant ratio; and vowel/consonant ratio. These are English-orthography proxies, not phonetic transcription, meter, or scansion. They license no AI/provenance, voice-identity, quality, band, threshold, verdict, earned/unearned triage, or revision prescription.
+
+Targets below 300 words produce `available: false` with a warning and exit 0. `--baseline-dir` is optional; files below the same floor are skipped, and if none qualify the command returns the standalone metrics with a warning. With one qualifying baseline file, or whenever a feature has zero variance across the baseline, the current output uses `z: 0` as a sentinel; it does not mean the draft matches, so compare `draft` with `baseline_mean` directly. Keep personal baseline material and reports private by operator practice; this script does not enforce a private output path. The route is informational only and does not wire sound metrics into AIC triage, restoration packets, the Craft Atlas, or any private corpus workflow.
 
 ## The deepest principle
 
