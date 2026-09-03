@@ -13,7 +13,8 @@
     ]
   },
   "do_not_use_when": [
-    "the URLs are Zenodo/Figshare record pages rather than direct PDF links"
+    "the URLs are Zenodo/Figshare record pages rather than direct PDF links",
+    "the intended destination is phil-register; Tanner's fair-use-only rights basis is confined to the private impostor pool"
   ],
   "examples": [],
   "family": "acquisition",
@@ -29,18 +30,20 @@
     ],
     "schema_version": "1.0"
   },
-  "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (the grant_proposal / expert_affidavit population baselines); the generic PDF acquirer that per-source URL-list builders feed.",
+  "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (including grant_proposal, expert_affidavit, and academic_philosophy population baselines); the generic PDF acquirer that per-source URL-list builders feed.",
   "references": [
     "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
   ],
   "registers": [
     "grant_proposal",
-    "expert_affidavit"
+    "expert_affidavit",
+    "academic_philosophy"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_pdf_urls.py",
   "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
-    "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs"
+    "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs",
+    "building the private academic_philosophy impostor pool from a Tanner URL feed"
   ]
 }

@@ -353,13 +353,17 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
     readiness_label = STATUS_READINESS.get(status, (status or "—", ""))[0]
     hardware = TIER_HARDWARE.get(tier, tier)
     if tier == "acquisition":
-        # Network acquisition is declared structurally by its required client
-        # dependency. Acquisition-tier tools without one operate on local
-        # files/manifests even when they dispatch expensive local work.
+        # Network acquisition may use a third-party client or the stdlib. Honor
+        # the capability's explicit cost declaration so urllib-only leaves do
+        # not get mislabeled as local-I/O tools.
         network_clients = {"requests", "boto3"}
+        cost_note = str(compute.get("cost_note", "")).casefold()
         hardware = (
             "CPU + network"
-            if network_clients.intersection(req_pkgs)
+            if (
+                network_clients.intersection(req_pkgs)
+                or "network-bound" in cost_note
+            )
             else "CPU + local I/O"
         )
     if (

@@ -58,6 +58,7 @@ See ``internal/2026-05-08-impostor-corpus-spec.md`` for context.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import datetime as _dt
 import json
 import re
@@ -87,6 +88,94 @@ REQUIRED_IMPOSTOR_FIELDS = (
     "persona", "register", "register_match", "topic_match",
     "consent_status", "era", "impostor_for",
 )
+
+
+_OLDSTYLE_DIGITS = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+}
+_POSTSCRIPT_TOKEN_END = r"(?=$|[\s()\[\]{}<>/%])"
+_OLDSTYLE_RE = re.compile(
+    r"/(zero|one|two|three|four|five|six|seven|eight|nine)\.oldstyle"
+    + _POSTSCRIPT_TOKEN_END,
+    re.IGNORECASE,
+)
+_SMALL_CAP_RE = re.compile(r"/([A-Za-z])\.sc" + _POSTSCRIPT_TOKEN_END)
+_UNI00A0_RE = re.compile(r"/uni00A0" + _POSTSCRIPT_TOKEN_END)
+_INITIAL_GAP_RE = re.compile(r"(?<![A-Za-z])([B-HJ-Z]) ([a-z]{2,})(?![A-Za-z])")
+_CAP_FRAGMENT_RUN_RE = re.compile(
+    r"(?<![A-Za-z])(?:[A-Z]{2,4})(?: [A-Z]{2,4})+(?![A-Za-z])"
+)
+_WORD_RE = re.compile(r"(?<![A-Za-z])[A-Za-z]{3,}(?![A-Za-z])")
+
+
+def _segment_attested_fragments(
+    fragments: list[str], vocabulary: Counter[str],
+) -> list[str] | None:
+    """Find the least-invasive segmentation supported elsewhere in the PDF.
+
+    A group may stay unjoined only when that exact token is independently
+    attested; a joined group may be emitted only when the joined word is
+    attested.  Dynamic programming maximizes output groups, so an ordinary
+    ``NEW YORK CITY`` line stays untouched when those words occur elsewhere.
+    """
+    n = len(fragments)
+    best: list[list[str] | None] = [None] * (n + 1)
+    best[n] = []
+    for start in range(n - 1, -1, -1):
+        candidates: list[list[str]] = []
+        joined = ""
+        for end in range(start + 1, n + 1):
+            joined += fragments[end - 1]
+            key = joined.casefold()
+            if end == start + 1:
+                occurrences_in_run = sum(
+                    1 for fragment in fragments if fragment.casefold() == key
+                )
+                attested = vocabulary[key] > occurrences_in_run
+            else:
+                attested = vocabulary[key] > 0
+            if not attested or best[end] is None:
+                continue
+            candidates.append([joined, *best[end]])
+        if candidates:
+            best[start] = max(candidates, key=lambda parts: len(parts))
+    if best[0] is None or len(best[0]) == n:
+        return None
+    return best[0]
+
+
+def normalize_pdf_text_artifacts(text: str) -> str:
+    """Repair bounded pypdf artifacts observed in Tanner lecture PDFs.
+
+    Only three explicit slash-glyph families are interpreted.  Unknown glyph
+    tokens are preserved.  Letter gaps are collapsed only when the resulting
+    word is independently present elsewhere in the same extracted document;
+    this avoids guessing at headings, initialisms, labels, or ordinary prose.
+    """
+    text = _UNI00A0_RE.sub(" ", text).replace("\u00a0", " ")
+    text = _SMALL_CAP_RE.sub(lambda match: match.group(1).upper(), text)
+    text = _OLDSTYLE_RE.sub(
+        lambda match: _OLDSTYLE_DIGITS[match.group(1).casefold()], text,
+    )
+    vocabulary = Counter(
+        match.group(0).casefold() for match in _WORD_RE.finditer(text)
+    )
+    text = _INITIAL_GAP_RE.sub(
+        lambda match: (
+            match.group(1) + match.group(2)
+            if (match.group(1) + match.group(2)).casefold() in vocabulary
+            else match.group(0)
+        ),
+        text,
+    )
+
+    def collapse_caps(match: re.Match[str]) -> str:
+        fragments = match.group(0).split()
+        segmented = _segment_attested_fragments(fragments, vocabulary)
+        return " ".join(segmented) if segmented else match.group(0)
+
+    return _CAP_FRAGMENT_RUN_RE.sub(collapse_caps, text)
 
 
 # --------------- Inventory loading ------------------------------
@@ -167,7 +256,7 @@ def extract_text_layer(path: Path) -> str:
             # inventory step already classified this PDF as
             # extractable, so a single bad page is recoverable.
             continue
-    return "\n\n".join(parts)
+    return normalize_pdf_text_artifacts("\n\n".join(parts))
 
 
 def _ocr_dependencies_available() -> tuple[bool, str]:
