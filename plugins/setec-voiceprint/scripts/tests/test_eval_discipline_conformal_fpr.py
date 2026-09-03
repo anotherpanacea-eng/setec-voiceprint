@@ -95,6 +95,46 @@ def test_lower_direction_supported():
     assert r["empirical_reference_fpr_at_threshold"] <= 0.1 + 1e-12
 
 
+def test_published_raw_threshold_rule_matches_classification_both_directions():
+    for direction, comparator in (
+        ("higher_is_nonconforming", ">="),
+        ("lower_is_nonconforming", "<="),
+    ):
+        threshold_only = cg.gate_fpr_bound(
+            CAL, None, fpr_bound=0.1, direction=direction,
+            reference_label="reference")
+        threshold = threshold_only["raw_score_threshold"]
+        assert threshold_only["threshold_space"] == "nonconformity"
+        assert threshold_only["raw_score_comparator"] == comparator
+        assert (
+            f"raw score {comparator} `raw_score_threshold`"
+            in threshold_only["threshold_rule"]
+        )
+        expected_raw = (
+            -threshold_only["threshold"]
+            if comparator == "<=" else threshold_only["threshold"]
+        )
+        assert threshold == expected_raw
+
+        outside_score = threshold
+        inside_score = threshold - 1.0 if comparator == ">=" else threshold + 1.0
+        for score, expected_outside in (
+            (outside_score, True),
+            (inside_score, False),
+        ):
+            result = cg.gate_fpr_bound(
+                CAL, score, fpr_bound=0.1, direction=direction,
+                reference_label="reference")
+            published_rule_flags = (
+                score >= threshold if comparator == ">=" else score <= threshold
+            )
+            assert published_rule_flags is expected_outside
+            assert result["in_reference_set"] is (not expected_outside)
+            assert result["prediction_set"] == (
+                [] if expected_outside else ["reference"]
+            )
+
+
 def test_two_sided_rejected():
     r = cg.threshold_at_fpr_bound(CAL, fpr_bound=0.1, direction="two_sided")
     assert r["available"] is False
@@ -106,6 +146,8 @@ def test_no_score_returns_threshold_only():
         CAL, None, fpr_bound=0.1, direction="higher_is_nonconforming",
         reference_label="reference")
     assert "threshold" in r
+    assert "raw_score_threshold" in r
+    assert "raw_score_comparator" in r
     assert "in_reference_set" not in r
 
 

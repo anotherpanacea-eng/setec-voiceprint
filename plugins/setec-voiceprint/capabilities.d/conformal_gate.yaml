@@ -4,6 +4,7 @@ entries:
   surface: validation
   status: heuristic
   handoff: experimental
+  # consumers: no code importer; surfaced by skill: validation.
   consumers: []
   family: validation
   purpose: 'A split-conformal abstention layer over any signal: given operator-supplied
