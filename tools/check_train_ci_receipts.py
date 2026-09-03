@@ -94,8 +94,8 @@ def _parse_job_receipt(log: object) -> dict[str, Any]:
 
 
 def _validate_noise_jobs(run: dict[str, Any]) -> None:
-    if run["status"] != "completed" or run["conclusion"] != "success":
-        raise ReceiptError("ignored label run is not a completed all-skipped success")
+    if run["status"] != "completed" or run["conclusion"] != "skipped":
+        raise ReceiptError("ignored label run is not a completed all-skipped run")
     jobs = run["jobs"]
     if not isinstance(jobs, list):
         raise ReceiptError("ignored label run has no job metadata")

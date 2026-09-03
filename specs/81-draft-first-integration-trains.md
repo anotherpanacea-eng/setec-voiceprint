@@ -287,8 +287,8 @@ be the newest **clearance** run for that head (a run with any expected job not
 skipped), its attempt must be the latest attempt for that run, and there may be
 no later failed, cancelled, or pending clearance occurrence of an expected job
 on the head. An all-skipped train-label or unrelated-standalone-label event is
-not a clearance run and does not invalidate one only when its API state is a
-completed success and all exact seven job records are completed/skipped. Missing
+not a clearance run and does not invalidate one only when its API state is
+completed/skipped and all exact seven job records are completed/skipped. Missing
 job metadata, pending/cancelled/failed state, or any non-skipped work fails
 closed. Current live base SHA/base ref/draft/head-repository/branch/label arming
 state is separately mandatory, so converting to draft or removing `ci-ready`

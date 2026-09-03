@@ -91,7 +91,7 @@ def test_complete_newest_run_emits_aggregate_receipt():
 def test_train_label_noise_is_ignored_without_replacing_clearance():
     evidence = _evidence()
     noise = _run(201, action="labeled", train=True, ci_ready_event=True)
-    noise["conclusion"] = "success"
+    noise["conclusion"] = "skipped"
     for job in noise["jobs"]:
         job["conclusion"] = "skipped"
         job["log"] = ""
@@ -105,7 +105,7 @@ def test_failed_or_unproven_label_run_is_not_ignorable_noise():
     noise["conclusion"] = "failure"
     noise["jobs"] = []
     evidence["runs"].append(noise)
-    with pytest.raises(ReceiptError, match="all-skipped success"):
+    with pytest.raises(ReceiptError, match="all-skipped run"):
         validate_evidence(evidence)
 
 
@@ -116,6 +116,7 @@ def test_unrelated_standalone_label_noise_is_ignored():
     })
     evidence["runs"] = [_run(train=False)]
     noise = _run(201, action="unlabeled", train=False, ci_ready_event=False)
+    noise["conclusion"] = "skipped"
     for job in noise["jobs"]:
         job["conclusion"] = "skipped"
         job["log"] = ""
