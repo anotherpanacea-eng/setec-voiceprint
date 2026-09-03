@@ -9,14 +9,15 @@ description: >
   AI patches in this chapter," or any request to measure whether a
   text has been smoothed into a narrower-than-typical region of
   stylometric space. Also triggers on "burstiness," "MATTR," "MTLD,"
-  "Yule's K," "FKGL std," "MDD variance," "adjacent-sentence cosine
-  cohesion," or "sliding-window scan."
-version: 1.0.0
+  "Yule's K," "FKGL std," "MDD variance," "dependency-distance
+  distribution," "long-range dependency tail," "adjacent-sentence
+  cosine cohesion," or "sliding-window scan."
+version: 1.0.1
 ---
 
 # Smoothing Diagnosis (SETEC Surface 1)
 
-This skill measures whether a target document occupies a narrower-than-typical region of human stylometric space. It does **not** answer who wrote the document or whether the compression is the writer's natural register; it answers *only* whether the surface has been smoothed.
+This skill primarily measures whether a target document occupies a narrower-than-typical region of human stylometric space. It also routes to a cross-surface dependency-distance follow-up when the operator needs the full syntactic-link distribution behind the variance audit's MDD summary. It does **not** answer who wrote the document or whether the compression is the writer's natural register.
 
 ## What this surface licenses, and what it does not
 
@@ -28,6 +29,7 @@ This skill measures whether a target document occupies a narrower-than-typical r
 | Script | Scope | Use when |
 |---|---|---|
 | `variance_audit.py` | Single document | Diagnostic on one chapter, scene, or essay |
+| `dependency_distance_audit.py` | Single document; cross-surface `voice_coherence` follow-up | Tier-2 MDD needs its dependency-distance histogram, adjacent/long-range shares, or pooled-distribution shape inspected |
 | `manuscript_audit.py` | Multi-chapter manuscript | Surfacing manuscript-wide compression patterns and outlier chapters |
 | `repetition_audit.py` | Single document, vocabulary level | Layer A flagged lexical compression and you want specific habit-vocabulary candidates |
 | `manuscript_repetition_audit.py` | Manuscript, vocabulary level | Surfacing dispersed habit-vocabulary that recurs across chapters at moderate frequency |
@@ -45,6 +47,13 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt
 
 # JSON output for downstream piping
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --json
+
+# Cross-surface follow-up: full dependency-distance distribution and shape
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dependency_distance_audit.py" path/to/draft.txt --json
+
+# Optional operator-chosen boundary for the reported long-range share
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dependency_distance_audit.py" path/to/draft.txt \
+    --long-threshold 5 --json
 
 # Cross-surface read as the follow-up to a single variance audit: the
 # full_picture run-set collects variance + paragraph + AIC + discourse +
@@ -92,11 +101,13 @@ pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 python -m spacy download en_core_web_sm
 ```
 
-The scripts degrade gracefully when Tier 2 (spaCy) or Tier 3 (sentence-transformers / scikit-learn) are missing, but the recommended install gives the full diagnostic.
+The smoothing scripts degrade gracefully when optional Tier 2 (spaCy) or Tier 3 (sentence-transformers / scikit-learn) components are missing. The dependency-distance follow-up has no faithful parse-free mode: without spaCy plus `en_core_web_sm`, it returns `available: false` with `reason_category: missing_dependency` and exits 3.
 
 ## Interpreting the output
 
-Every script's JSON output and markdown header carry `task_surface: smoothing_diagnosis` so downstream consumers route correctly. The variance audit reports an aggregate band classification plus the eleven per-signal evidence items. Reference math lives at `${CLAUDE_PLUGIN_ROOT}/references/distributional-diagnostics.md`. Length floors, calibration warnings, and the writer-specific calibration note are documented there.
+The smoothing scripts' JSON output and markdown headers carry `task_surface: smoothing_diagnosis`. The cross-surface `dependency_distance_audit.py` follow-up instead carries `task_surface: voice_coherence`; it is a descriptive distribution/shape read with no verdict, band, baseline, authorship/AI inference, writing-quality/readability judgment, or "complexity score." It is English- and length-sensitive; treat results below roughly 150 parsed tokens as unstable.
+
+The variance audit's `mdd_sd` is the across-sentence standard deviation of sentence-level mean dependency distance. The dependency follow-up's `results.shape.sd` is different: it is the standard deviation within the pooled distribution of individual dependency-link distances. Reference math for the smoothing surface lives at `${CLAUDE_PLUGIN_ROOT}/references/distributional-diagnostics.md`; its length floors, calibration warnings, and writer-specific calibration note remain authoritative for smoothing-band interpretation.
 
 A `setec_run_set.py` run additionally emits the surface-disagreement report: the per-surface readings table plus every disagreement pattern compatible with them. Multiple matches are expected; the framework refuses to rank them — read the matched interpretations as a differential, and use the mechanical `next_action` block for the exact follow-up commands.
 

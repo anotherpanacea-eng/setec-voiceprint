@@ -4,6 +4,7 @@ entries:
   surface: voice_coherence
   status: heuristic
   handoff: none
+  # consumers: no code importer; surfaced by skill: smoothing-diagnosis.
   consumers: []
   family: syntactic-shape
   purpose: 'Descriptive syntactic-SHAPE profile: the DISTRIBUTION of dependency distances
