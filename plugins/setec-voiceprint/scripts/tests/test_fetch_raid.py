@@ -19,6 +19,11 @@ CALIB_DIR = ROOT / "calibration"
 if str(CALIB_DIR) not in sys.path:
     sys.path.insert(0, str(CALIB_DIR))
 
+RAID_PUBLIC_REVISION = "865cac74188466cb0c3b7574a10204007b57a459"
+RAID_PUBLIC_FILES = [
+    "train.csv", "test.csv", "extra.csv", "README.md",
+]
+
 try:
     import pytest  # type: ignore
 except ImportError:  # pragma: no cover
@@ -50,6 +55,7 @@ def _install_mock_huggingface_hub(
     revision: str = "deadbeef" * 5,
     repo_files: list[str] | None = None,
     download_writes: dict[str, bytes] | None = None,
+    moving_main: bool = False,
 ) -> mock.MagicMock:
     """Inject a fake `huggingface_hub` module into sys.modules.
     Returns the mock for assertions."""
@@ -64,29 +70,50 @@ def _install_mock_huggingface_hub(
         ]
 
     fake_hub = types.ModuleType("huggingface_hub")
+    fake_hub.calls = []
+    resolved_revision = revision
+    state = {"main_reads": 0}
 
     class _FakeCardData(dict):
         pass
 
     class _FakeDatasetInfo:
-        def __init__(self) -> None:
-            self.card_data = _FakeCardData(license=license_str)
-            self.tags = [f"license:{license_str}"]
-            self.sha = revision
+        def __init__(self, current_license, current_revision) -> None:
+            self.card_data = _FakeCardData(license=current_license)
+            self.tags = [f"license:{current_license}"]
+            self.sha = current_revision
 
     class _FakeApi:
         def __init__(self, token=None):
             self.token = token
 
-        def dataset_info(self, repo_id):
-            return _FakeDatasetInfo()
+        def dataset_info(self, repo_id, revision=None):
+            fake_hub.calls.append(("dataset_info", repo_id, revision))
+            if revision is not None:
+                return _FakeDatasetInfo(license_str, revision)
+            state["main_reads"] += 1
+            current_revision = (
+                "moved-main" if moving_main and state["main_reads"] > 1
+                else resolved_revision
+            )
+            return _FakeDatasetInfo(license_str, current_revision)
 
-        def list_repo_files(self, repo_id, repo_type="dataset"):
+        def list_repo_files(
+            self, repo_id, repo_type="dataset", revision=None,
+        ):
+            fake_hub.calls.append(
+                ("list_repo_files", repo_id, revision)
+            )
+            if moving_main and revision is None:
+                return ["data/moved-main.csv"]
             return list(repo_files)
 
     def _fake_hf_hub_download(
-        *, repo_id, filename, repo_type, local_dir, token,
+        *, repo_id, filename, repo_type, revision, local_dir, token,
     ):
+        fake_hub.calls.append(
+            ("hf_hub_download", repo_id, revision, filename)
+        )
         out = Path(local_dir) / filename
         out.parent.mkdir(parents=True, exist_ok=True)
         content = (
@@ -251,7 +278,7 @@ class TestVerifyLicense:
     def test_apache_license_accepted(self):
         _install_mock_huggingface_hub(license_str="apache-2.0")
         fr = _import_fetch_raid()
-        ok, observed = fr._verify_license(token=None)
+        ok, observed = fr._verify_license(token=None, revision="pinned")
         assert ok is True
         assert "apache" in observed
 
@@ -262,23 +289,51 @@ class TestVerifyLicense:
         # either.
         _install_mock_huggingface_hub(license_str="mit")
         fr = _import_fetch_raid()
-        ok, observed = fr._verify_license(token=None)
+        ok, observed = fr._verify_license(token=None, revision="pinned")
         assert ok is True
         assert "mit" in observed
 
     def test_wrong_license_rejected(self):
         _install_mock_huggingface_hub(license_str="cc-by-nc-sa-4.0")
         fr = _import_fetch_raid()
-        ok, observed = fr._verify_license(token=None)
+        ok, observed = fr._verify_license(token=None, revision="pinned")
         assert ok is False
+
+    def test_license_substring_lookalike_rejected(self):
+        _install_mock_huggingface_hub(license_str="not-mit")
+        fr = _import_fetch_raid()
+        ok, observed = fr._verify_license(
+            token=None, revision="pinned",
+        )
+        assert ok is False
+        assert observed == "not-mit"
 
 
 # ---------- CLI ----------
 
 
 class TestCli:
+    def test_cli_pins_metadata_listing_and_download(
+        self, tmp_path, monkeypatch,
+    ):
+        hub = _install_mock_huggingface_hub(moving_main=True)
+        fr = _import_fetch_raid()
+        monkeypatch.setattr(fr, "TARGET_DIR", tmp_path)
+        monkeypatch.setattr(fr, "REPO_ROOT", tmp_path.parent)
+
+        rc = fr.main(["--subset", "train"])
+
+        assert rc == 0
+        revision = "deadbeef" * 5
+        assert hub.calls[0] == ("dataset_info", "liamdugan/raid", None)
+        assert ("dataset_info", "liamdugan/raid", revision) in hub.calls
+        assert ("list_repo_files", "liamdugan/raid", revision) in hub.calls
+        downloads = [call for call in hub.calls if call[0] == "hf_hub_download"]
+        assert downloads
+        assert all(call[2] == revision for call in downloads)
+
     def test_cli_dry_run(self, tmp_path, monkeypatch, capsys):
-        _install_mock_huggingface_hub()
+        hub = _install_mock_huggingface_hub()
         fr = _import_fetch_raid()
         # Redirect TARGET_DIR to tmp so we don't touch the real
         # private dir.
@@ -289,6 +344,9 @@ class TestCli:
         assert rc == 0
         captured = capsys.readouterr()
         assert "DRY-RUN" in captured.out
+        assert not any(call[0] == "hf_hub_download" for call in hub.calls)
+        assert not (tmp_path / "NOTICE.md").exists()
+        assert not (tmp_path / ".fetch_record.json").exists()
 
     def test_cli_dry_run_no_adversarial_filters(
         self, tmp_path, monkeypatch, capsys,
@@ -309,6 +367,31 @@ class TestCli:
         assert "train-00000-of-00010.parquet" in out
         assert "train_paraphrase" not in out
 
+    @pytest.mark.parametrize("dry_run", [False, True])
+    def test_cli_no_adversarial_rejects_monolithic_public_csv(
+        self, tmp_path, monkeypatch, capsys, dry_run,
+    ):
+        hub = _install_mock_huggingface_hub(
+            repo_files=RAID_PUBLIC_FILES,
+            revision=RAID_PUBLIC_REVISION,
+            license_str="mit",
+        )
+        fr = _import_fetch_raid()
+        monkeypatch.setattr(fr, "TARGET_DIR", tmp_path)
+        argv = ["--subset", "train", "--no-adversarial"]
+        if dry_run:
+            argv.append("--dry-run")
+
+        rc = fr.main(argv)
+
+        assert rc == 4
+        err = capsys.readouterr().err
+        assert "co-locate attack and non-attack rows" in err
+        assert "raid_to_manifest.py --no-adversarial" in err
+        assert not any(call[0] == "hf_hub_download" for call in hub.calls)
+        assert not (tmp_path / "NOTICE.md").exists()
+        assert not (tmp_path / ".fetch_record.json").exists()
+
     def test_cli_license_mismatch_returns_2(
         self, tmp_path, monkeypatch,
     ):
@@ -317,6 +400,40 @@ class TestCli:
         monkeypatch.setattr(fr, "TARGET_DIR", tmp_path)
         rc = fr.main(["--subset", "train", "--dry-run"])
         assert rc == 2
+
+    @pytest.mark.parametrize(
+        ("target", "replacement", "expected"),
+        [
+            ("_resolve_revision", lambda token: "", 3),
+            (
+                "_verify_license",
+                lambda token, revision: (_ for _ in ()).throw(
+                    RuntimeError("metadata unavailable")
+                ),
+                2,
+            ),
+            (
+                "_list_repo_files",
+                lambda token, revision: (_ for _ in ()).throw(
+                    RuntimeError("listing unavailable")
+                ),
+                3,
+            ),
+        ],
+    )
+    def test_cli_metadata_failures_write_no_receipt(
+        self, tmp_path, monkeypatch, target, replacement, expected,
+    ):
+        _install_mock_huggingface_hub()
+        fr = _import_fetch_raid()
+        monkeypatch.setattr(fr, "TARGET_DIR", tmp_path)
+        monkeypatch.setattr(fr, target, replacement)
+
+        rc = fr.main(["--subset", "train"])
+
+        assert rc == expected
+        assert not (tmp_path / "NOTICE.md").exists()
+        assert not (tmp_path / ".fetch_record.json").exists()
 
     def test_cli_skip_license_check_proceeds(
         self, tmp_path, monkeypatch,
@@ -348,14 +465,41 @@ class TestCli:
         notice_text = notice.read_text(encoding="utf-8")
         assert "RAID" in notice_text
         # NOTICE now records the observed license string from
-        # the HF card rather than asserting Apache-2.0 outright,
-        # since RAID's HF card actually declares MIT.
-        assert "License:** Permissive" in notice_text
+        # the pinned HF wrapper metadata and keeps content local-only.
+        assert "Repository wrapper-license metadata" in notice_text
+        assert "SETEC content posture:** local-only" in notice_text
+        assert "public redistribution" not in notice_text
+        assert "inherit the" not in notice_text
         # Record carries revision SHA + subset + adversarial flag.
         record_data = json.loads(record.read_text(encoding="utf-8"))
         assert record_data["repo_id"] == "liamdugan/raid"
         assert record_data["subset"] == "train"
         assert record_data["include_adversarial"] is True
+        assert record_data["record_schema_version"] == 2
+        assert record_data["observed_wrapper_license"] == "apache-2.0"
+        assert record_data["license_check"] == "verified"
+        assert record_data["content_posture"] == "local_only"
+
+    def test_cli_skip_license_check_receipt_is_nonaffirmative(
+        self, tmp_path, monkeypatch,
+    ):
+        _install_mock_huggingface_hub(license_str="some-other")
+        fr = _import_fetch_raid()
+        monkeypatch.setattr(fr, "TARGET_DIR", tmp_path)
+        monkeypatch.setattr(fr, "REPO_ROOT", tmp_path.parent)
+
+        rc = fr.main([
+            "--subset", "train", "--skip-license-check",
+        ])
+
+        assert rc == 0
+        record_data = json.loads(
+            (tmp_path / ".fetch_record.json").read_text(encoding="utf-8")
+        )
+        assert record_data["observed_wrapper_license"] is None
+        assert record_data["license_check"] == "skipped"
+        notice = (tmp_path / "NOTICE.md").read_text(encoding="utf-8")
+        assert "check skipped; no license conclusion" in notice
 
     def test_cli_huggingface_hub_missing(self, monkeypatch, capsys):
         # Force the import-check branch.

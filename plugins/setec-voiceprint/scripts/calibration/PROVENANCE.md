@@ -150,17 +150,16 @@ shape match the calibration run you want to commit.
 | Corpus | License | Rows | Size | Fetcher | Manifest converter |
 |---|---|---|---|---|---|
 | **EditLens** (Pangram) | CC BY-NC-SA 4.0 | ~14 K | ~62 MB | `fetch_pangram_editlens.py` / `fetch_pangram_editlens_github.py` | `editlens_to_manifest.py` |
-| **RAID** (Dugan et al., NAACL 2024) | Apache-2.0 | ~8 M | ~16.7 GB | `fetch_raid.py` | `raid_to_manifest.py` |
-| **MAGE** (Li et al., ACL 2024) | MIT | ~437 K | ~554 MB | `fetch_mage.py` | `mage_to_manifest.py` |
+| **RAID** (Dugan et al., NAACL 2024) | MIT repository wrapper metadata; content local-only | ~8 M | ~16.7 GB | `fetch_raid.py` | `raid_to_manifest.py` |
+| **MAGE** (Li et al., ACL 2024) | Apache-2.0 repository wrapper metadata; content local-only | ~437 K | ~554 MB | `fetch_mage.py` | `mage_to_manifest.py` |
 
-**License posture matters for the ledger.** EditLens-derived
-thresholds carry the CC-NC awkwardness — the calibration
-toolchain treats EditLens as local-only; derived single-float
-thresholds ship under SETEC's GPL-3 as aggregate measurements
-of pipeline behavior, not adaptations of corpus content. RAID
-and MAGE are permissively licensed; derived thresholds carry an
-attribution trailer in NOTICE but no redistribution constraint
-on the corpora themselves.
+**License posture matters for the ledger.** The calibration
+toolchain treats all three corpora and converted per-row text as
+local-only. Each fetcher records the exact repository wrapper-license
+metadata observed at its pinned revision. That wrapper declaration
+does not establish that every underlying source row has identical
+redistribution terms. Aggregate calibration results remain subject to
+the framework's existing provenance and policy gates.
 
 **Coverage tradeoffs.** EditLens is small but ships with
 reference-detector scores (Fast-DetectGPT, Binoculars,
@@ -175,8 +174,8 @@ overfit to RAID's generation distribution.
 
 **Recommended sequence for the first cross-corpus calibration:**
 
-1. `python3 scripts/calibration/fetch_raid.py --subset train --no-adversarial` — pulls labeled English without adversarial (~802 MB; everything you need for first-pass calibration of the 11 `COMPRESSION_HEURISTICS` thresholds).
-2. `python3 scripts/calibration/raid_to_manifest.py --no-adversarial --no-nonprose` — converts to manifest.
+1. `python3 scripts/calibration/fetch_raid.py --subset train` — pulls the hosted monolithic train CSV (~11.8 GB), which co-locates attack and non-attack rows.
+2. `python3 scripts/calibration/raid_to_manifest.py --no-adversarial --no-nonprose` — applies row-level adversarial/non-prose exclusion while converting to a manifest.
 3. Run `calibration_survey.py` against the RAID manifest; commit any signals whose RAID-derived threshold passes the five selection-criteria gates.
 4. `python3 scripts/calibration/fetch_mage.py` — pulls all of MAGE (~554 MB).
 5. `python3 scripts/calibration/mage_to_manifest.py` — converts MAGE.

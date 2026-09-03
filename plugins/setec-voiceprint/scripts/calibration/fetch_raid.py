@@ -7,37 +7,38 @@ Step 2 of the calibration toolchain (sibling to
 NOTICE.md with attribution + license declaration + redistribution
 posture.
 
-RAID is **Apache-2.0** — unlike EditLens, RAID is freely
-redistributable. The calibration thresholds SETEC ships under
-GPL-3 can cite RAID directly without the CC-NC awkwardness that
-governs the EditLens pipeline. The fetcher's legal posture is
-therefore simpler: download, attribute, run. No
-"DO NOT REDISTRIBUTE" guard on derived measurements.
+RAID's current HuggingFace repository wrapper declares MIT. SETEC
+treats corpus content and converted per-row text as local-only: a
+repository-level license declaration does not establish that every
+source row has identical redistribution terms.
 
 The full RAID corpus is ~16.7 GB across three subsets:
 
-  - **RAID-train** (~802 MB without adversarial, ~11.8 GB with):
+  - **RAID-train** (`train.csv`, ~11.8 GB including attack rows):
     labels, 8 English domains (News, Books, Abstracts, Reviews,
     Reddit, Recipes, Wikipedia, Poetry).
-  - **RAID-test** (~81 MB without, ~1.22 GB with): no labels,
+  - **RAID-test** (`test.csv`, ~1.22 GB including attack rows): no labels,
     same 8 domains.
-  - **RAID-extra** (~275 MB without, ~3.71 GB with): labels,
+  - **RAID-extra** (`extra.csv`, ~3.71 GB including attack rows): labels,
     Code / Czech / German.
 
-This script downloads ALL parquet files for ALL subsets by
+This script downloads all hosted CSV/parquet files for all subsets by
 default, including adversarial transforms, because the user
 greenlit full coverage. Pass `--subset train|test|extra` to
-restrict; pass `--no-adversarial` to skip the 11 adversarial-
-transform variants.
+restrict. The current hosted CSVs co-locate adversarial and base
+rows, so `--no-adversarial` fails before download and directs the
+operator to the converter's row-level filter.
 
 Usage:
 
     # Full default fetch (~17 GB total, all subsets + adversarial):
     python3 scripts/calibration/fetch_raid.py
 
-    # Labeled English train only, no adversarial (~802 MB):
-    python3 scripts/calibration/fetch_raid.py \\
-        --subset train --no-adversarial
+    # Labeled English train (hosted as one monolithic CSV):
+    python3 scripts/calibration/fetch_raid.py --subset train
+
+    # Then omit adversarial rows during conversion:
+    python3 scripts/calibration/raid_to_manifest.py --no-adversarial
 
     # Re-download even if files exist locally:
     python3 scripts/calibration/fetch_raid.py --refresh
@@ -50,10 +51,9 @@ Prerequisites:
      --token anyway for users behind authenticated proxies.
 
 If huggingface_hub isn't installed, this script prints the
-install command and exits cleanly. If the HF dataset's declared
-license differs from Apache-2.0 at fetch time, this script
-refuses to proceed (the corpus may have been re-licensed; the
-legal posture needs review).
+install command and exits cleanly. If the pinned HF repository
+wrapper-license declaration is not one of the explicitly accepted
+values, this script refuses to proceed.
 """
 
 from __future__ import annotations
@@ -77,16 +77,12 @@ PRIVATE_DIR = REPO_ROOT / "ai-prose-baselines-private"
 TARGET_DIR = PRIVATE_DIR / "raid"
 
 HF_REPO_ID = "liamdugan/raid"
-# RAID's accompanying paper / GitHub README cite Apache-2.0, but
-# the HuggingFace dataset card declares MIT (verified 2026-05-10
-# against revision 865cac7...). Both are permissive and
-# functionally equivalent for the framework's GPL-3-with-
-# attribution posture, so accept either. The NOTICE.md records
-# the OBSERVED license string from the HF card so consumers can
-# audit what the framework actually saw at fetch time.
-EXPECTED_LICENSE_PATTERNS = (
+# Historical upstream declarations have disagreed. Accept the two known
+# wrapper-license families exactly, but record what the pinned HuggingFace
+# revision actually declares and keep corpus content local-only.
+ACCEPTED_WRAPPER_LICENSES = {
     "apache-2.0", "apache 2.0", "apache2.0", "mit",
-)
+}
 
 # Known RAID subsets. Each maps to a substring or list of
 # substrings the script will match against filenames in the HF
@@ -119,6 +115,8 @@ ADVERSARIAL_TOKENS = (
     "zero_width_space",
 )
 
+MONOLITHIC_RAID_CSVS = {"train.csv", "test.csv", "extra.csv"}
+
 
 def _load_token(args: argparse.Namespace) -> str | None:
     """Return HF token from --token (file path or env-var name)
@@ -149,22 +147,27 @@ def _check_huggingface_hub() -> bool:
         return False
 
 
-def _verify_license(token: str | None) -> tuple[bool, str]:
-    """Read the HF dataset card and verify the license string
-    matches Apache-2.0. Returns (ok, observed_license)."""
+def _verify_license(
+    token: str | None, revision: str,
+) -> tuple[bool, str]:
+    """Verify the wrapper license declared by the pinned dataset card."""
     from huggingface_hub import HfApi  # type: ignore
 
     api = HfApi(token=token)
-    info = api.dataset_info(HF_REPO_ID)
+    info = api.dataset_info(HF_REPO_ID, revision=revision)
     license_str = ""
     if info.card_data:
-        license_str = (info.card_data.get("license") or "").strip().lower()
+        raw_license = info.card_data.get("license") or ""
+        if isinstance(raw_license, str):
+            license_str = " ".join(raw_license.strip().lower().split())
     if not license_str and getattr(info, "tags", None):
         for tag in info.tags:
             if tag.startswith("license:"):
-                license_str = tag.split(":", 1)[1].strip().lower()
+                license_str = " ".join(
+                    tag.split(":", 1)[1].strip().lower().split()
+                )
                 break
-    if any(p in license_str for p in EXPECTED_LICENSE_PATTERNS):
+    if license_str in ACCEPTED_WRAPPER_LICENSES:
         return True, license_str
     return False, license_str
 
@@ -179,11 +182,13 @@ def _resolve_revision(token: str | None) -> str:
     return getattr(info, "sha", "") or ""
 
 
-def _list_repo_files(token: str | None) -> list[str]:
+def _list_repo_files(token: str | None, revision: str) -> list[str]:
     from huggingface_hub import HfApi  # type: ignore
 
     api = HfApi(token=token)
-    return list(api.list_repo_files(HF_REPO_ID, repo_type="dataset"))
+    return list(api.list_repo_files(
+        HF_REPO_ID, repo_type="dataset", revision=revision,
+    ))
 
 
 def _is_adversarial_file(repo_path: str) -> bool:
@@ -227,8 +232,14 @@ def _select_files(
     return sorted(candidates)
 
 
+def _contains_monolithic_raid_csv(repo_files: list[str]) -> bool:
+    """Return whether selection contains a known root CSV with mixed attacks."""
+    return any(path in MONOLITHIC_RAID_CSVS for path in repo_files)
+
+
 def _download(
     repo_files: list[str], target_dir: Path, token: str | None,
+    revision: str,
 ) -> list[Path]:
     """Download specified files from the HF repo into
     target_dir, preserving the in-repo path structure."""
@@ -241,6 +252,7 @@ def _download(
             repo_id=HF_REPO_ID,
             filename=repo_path,
             repo_type="dataset",
+            revision=revision,
             local_dir=str(target_dir),
             token=token,
         )
@@ -249,8 +261,8 @@ def _download(
 
 
 def _write_notice(
-    target_dir: Path, revision: str, observed_license: str,
-    fetched_files: list[Path],
+    target_dir: Path, revision: str, observed_license: str | None,
+    license_check: str, fetched_files: list[Path],
 ) -> Path:
     notice_path = target_dir / "NOTICE.md"
     iso_date = _dt.date.today().isoformat()
@@ -261,27 +273,26 @@ def _write_notice(
 
 **Source:** https://huggingface.co/datasets/{HF_REPO_ID} (revision `{revision}`)
 **Paper:** Dugan, Hwang, Trhlík, et al., "RAID: A Shared Benchmark for Robust Evaluation of Machine-Generated Text Detectors," NAACL 2024. arXiv:2405.07940.
-**License:** Permissive (paper cites Apache-2.0; HF dataset card observed at fetch time: `{observed_license or "unknown"}`)
-  https://www.apache.org/licenses/LICENSE-2.0  ·  https://opensource.org/licenses/MIT
+**Repository wrapper-license metadata:** {f"`{observed_license}` at the pinned revision" if observed_license else "check skipped; no license conclusion recorded"}
+**License check:** `{license_check}`
+**SETEC content posture:** local-only
 
 This directory contains a local copy fetched on {iso_date} by
 `scripts/calibration/fetch_raid.py` for the purpose of locally
 calibrating SETEC's empirical per-signal thresholds and
 populating the validation harness's adversarial-class slices.
 
-## Redistribution posture
+## Content posture
 
-Apache-2.0 is permissive. Calibration thresholds derived from
-RAID can be encoded into SETEC's GPL-3 codebase and shipped as
-public defaults; SETEC's NOTICE retains the RAID attribution
-trailer when those thresholds land. This is the simpler legal
-posture than EditLens, which is CC BY-NC-SA 4.0 and stays
-local-only.
+The repository-level wrapper declaration does not establish that every
+underlying source row has identical redistribution terms. SETEC keeps the
+downloaded corpus, converted rows, and manifests local-only. Aggregate
+calibration results remain subject to the framework's existing provenance and
+policy gates; this notice does not authorize redistribution or promotion.
 
 Per-row text files generated by
 `scripts/calibration/raid_to_manifest.py` also live in this
-directory. They inherit the Apache-2.0 license; the script's
-output manifest carries `privacy: public` and `source: raid`.
+directory under the same local-only posture.
 
 ## Files fetched
 
@@ -294,17 +305,22 @@ output manifest carries `privacy: public` and `source: raid`.
 
 def _write_revision_record(
     target_dir: Path, revision: str, args: argparse.Namespace,
+    observed_license: str | None, license_check: str,
 ) -> Path:
     """Record the HF revision SHA + fetch params in a stable
     JSON file so calibrate_thresholds.py can read it for
     provenance."""
     record_path = target_dir / ".fetch_record.json"
     record = {
+        "record_schema_version": 2,
         "repo_id": HF_REPO_ID,
         "revision": revision,
         "fetch_date": _dt.date.today().isoformat(),
         "subset": args.subset,
         "include_adversarial": not args.no_adversarial,
+        "observed_wrapper_license": observed_license,
+        "license_check": license_check,
+        "content_posture": "local_only",
     }
     record_path.write_text(
         json.dumps(record, indent=2) + "\n", encoding="utf-8",
@@ -317,10 +333,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Download the RAID benchmark from HuggingFace into "
             "ai-prose-baselines-private/raid/. "
-            "RAID is Apache-2.0; public redistribution is "
-            "permitted; calibration thresholds derived from "
-            "RAID can ship in GPL-3 SETEC defaults with "
-            "attribution."
+            "SETEC records the pinned repository wrapper-license "
+            "declaration and keeps corpus content local-only."
         )
     )
     parser.add_argument(
@@ -334,12 +348,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-adversarial", action="store_true",
         help=(
-            "Skip the 11 adversarial-transform variants "
-            "(homoglyph, paraphrase, etc.). Cuts the fetch "
-            "from ~17 GB to ~1.4 GB on the full subset. "
-            "Adversarial files are required for R7's "
-            "robustness-card evaluation but not for baseline "
-            "threshold calibration."
+            "Omit independently named adversarial files when the hosted "
+            "layout permits file-level filtering. The current monolithic "
+            "RAID CSVs co-locate attack rows, so this request fails before "
+            "download; filter rows with raid_to_manifest.py instead."
         ),
     )
     parser.add_argument(
@@ -358,9 +370,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--skip-license-check", action="store_true",
         help=(
-            "Bypass the Apache-2.0 verification. Use only if "
-            "you have verified the license through another "
-            "channel."
+            "Bypass wrapper-license verification. The receipt records the "
+            "check as skipped and makes no license conclusion."
         ),
     )
     parser.add_argument(
@@ -380,28 +391,6 @@ def main(argv: list[str] | None = None) -> int:
     # RAID is public; missing token is fine. Don't error like
     # the EditLens fetcher does.
 
-    if not args.skip_license_check:
-        try:
-            ok, observed = _verify_license(token)
-        except Exception as exc:
-            sys.stderr.write(
-                f"Failed to verify license via HF API: {exc}\n"
-                "Pass --skip-license-check to bypass.\n"
-            )
-            return 2
-        if not ok:
-            sys.stderr.write(
-                f"License mismatch. Expected Apache-2.0; "
-                f"observed {observed!r} on the HF dataset card. "
-                f"Refusing to proceed; the calibration "
-                f"toolchain's legal posture depends on the "
-                f"license. Re-run with --skip-license-check "
-                f"only after manual verification.\n"
-            )
-            return 2
-    else:
-        observed = "skipped"
-
     try:
         revision = _resolve_revision(token)
     except Exception as exc:
@@ -417,8 +406,34 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
+    if not args.skip_license_check:
+        try:
+            ok, observed = _verify_license(token, revision)
+        except Exception as exc:
+            sys.stderr.write(
+                f"Failed to verify wrapper license at pinned revision: "
+                f"{exc}\n"
+                "Pass --skip-license-check to bypass.\n"
+            )
+            return 2
+        if not ok:
+            sys.stderr.write(
+                "Wrapper-license mismatch. Expected exactly MIT or "
+                f"Apache-2.0; observed {observed!r} on the pinned HF "
+                "dataset card. "
+                f"Refusing to proceed; the calibration "
+                f"toolchain's legal posture depends on the "
+                f"license. Re-run with --skip-license-check "
+                f"only after manual verification.\n"
+            )
+            return 2
+        license_check = "verified"
+    else:
+        observed = None
+        license_check = "skipped"
+
     try:
-        repo_files = _list_repo_files(token)
+        repo_files = _list_repo_files(token, revision)
     except Exception as exc:
         sys.stderr.write(
             f"Failed to list repo files via HF API: {exc}\n"
@@ -440,6 +455,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 4
 
+    if (
+        args.no_adversarial
+        and _contains_monolithic_raid_csv(files_to_download)
+    ):
+        sys.stderr.write(
+            "Cannot satisfy --no-adversarial: RAID's hosted train.csv, "
+            "test.csv, and extra.csv co-locate attack and non-attack rows. "
+            "No files were downloaded. Fetch the desired subset without "
+            "--no-adversarial, then run raid_to_manifest.py "
+            "--no-adversarial for row-level filtering.\n"
+        )
+        return 4
+
     if args.dry_run:
         sys.stdout.write(
             f"DRY-RUN: would fetch {len(files_to_download)} "
@@ -458,19 +486,23 @@ def main(argv: list[str] | None = None) -> int:
             if local.exists():
                 local.unlink()
 
-    fetched = _download(files_to_download, TARGET_DIR, token)
+    fetched = _download(
+        files_to_download, TARGET_DIR, token, revision,
+    )
 
     notice_path = _write_notice(
-        TARGET_DIR, revision, observed, fetched,
+        TARGET_DIR, revision, observed, license_check, fetched,
     )
     record_path = _write_revision_record(
-        TARGET_DIR, revision, args,
+        TARGET_DIR, revision, args, observed, license_check,
     )
 
     sys.stdout.write(
         f"Fetched {len(fetched)} file(s) into {TARGET_DIR}\n"
         f"  HF revision: {revision}\n"
-        f"  License (observed): {observed or 'unknown'}\n"
+        f"  Wrapper license (observed): "
+        f"{observed if observed is not None else 'check skipped'}\n"
+        f"  Content posture: local_only\n"
         f"  Subset: {args.subset}\n"
         f"  Adversarial: "
         f"{'included' if not args.no_adversarial else 'skipped'}\n"
