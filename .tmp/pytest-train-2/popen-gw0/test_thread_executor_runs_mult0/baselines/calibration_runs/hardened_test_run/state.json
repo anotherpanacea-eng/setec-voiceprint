@@ -9,11 +9,15 @@
   "shard_size_target": 20,
   "shards": {
     "000": {
+      "cache_path": "calibration_runs\\hardened_test_run\\shards\\000\\cache.json",
+      "cache_sha256": "efc2f187b34099dfb797ebaada33f44a9d386853467321794f8585320982b9a6",
       "claimed_at": "2026-09-04T20:11:10+00:00",
       "claimed_by_host": "JOSH-OFFICE-DESKTOP",
       "claimed_by_pid": 35544,
+      "completed_at": "2026-09-04T20:11:11+00:00",
+      "n_entries": 20,
       "n_entries_planned": 20,
-      "state": "claimed",
+      "state": "done",
       "stratum_counts": {
         "blog_essay|pre_ai_human": 10,
         "literary_fiction|ai_generated": 10
