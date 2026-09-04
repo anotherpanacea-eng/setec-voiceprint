@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-09-04T20:10:38+00:00",
+  "created_at": "2026-09-04T20:10:41+00:00",
   "embedding_model": null,
   "embedding_revision": null,
   "fpr_target": 0.01,
@@ -9,30 +9,19 @@
   "shard_size_target": 20,
   "shards": {
     "000": {
-      "cache_path": "calibration_runs\\hardened_test_run\\shards\\000\\cache.json",
-      "cache_sha256": "efc2f187b34099dfb797ebaada33f44a9d386853467321794f8585320982b9a6",
-      "claimed_at": "2026-09-04T20:10:39+00:00",
+      "claimed_at": "2026-09-04T20:10:43+00:00",
       "claimed_by_host": "JOSH-OFFICE-DESKTOP",
-      "claimed_by_pid": 35544,
-      "completed_at": "2026-09-04T20:10:40+00:00",
-      "n_entries": 20,
+      "claimed_by_pid": 12672,
       "n_entries_planned": 20,
-      "state": "done",
+      "state": "claimed",
       "stratum_counts": {
         "blog_essay|pre_ai_human": 10,
         "literary_fiction|ai_generated": 10
       }
     },
     "001": {
-      "cache_path": "calibration_runs\\hardened_test_run\\shards\\001\\cache.json",
-      "cache_sha256": "90613ae15489cef32bdb406db9f2d86fa9d8145e8b45febab48969d940d383de",
-      "claimed_at": "2026-09-04T20:10:40+00:00",
-      "claimed_by_host": "JOSH-OFFICE-DESKTOP",
-      "claimed_by_pid": 35544,
-      "completed_at": "2026-09-04T20:10:43+00:00",
-      "n_entries": 20,
       "n_entries_planned": 20,
-      "state": "done",
+      "state": "pending",
       "stratum_counts": {
         "blog_essay|pre_ai_human": 10,
         "literary_fiction|ai_generated": 10
@@ -56,7 +45,7 @@
     }
   },
   "shuffle_seed": 42,
-  "source_manifest_path": "D:\\Code-PC\\_wt_vp_train_2026_09_04_b2\\.tmp\\pytest-train-2\\popen-gw0\\test_pair_extraction_fast_path0\\baselines\\synth\\manifest.jsonl",
+  "source_manifest_path": "D:\\Code-PC\\_wt_vp_train_2026_09_04_b2\\.tmp\\pytest-train-2\\popen-gw2\\test_partial_json_saved_after_0\\baselines\\synth\\manifest.jsonl",
   "source_manifest_sha256": "dc5bcf35928b12327a28f174a0f2df056118280aa2ddb40f90b62c31c581a7c1",
   "stratify_by": [
     "register",
