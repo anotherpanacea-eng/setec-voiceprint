@@ -17,6 +17,7 @@ file pins the gate's classification logic directly:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,25 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 import check_zero_install as zi  # type: ignore  # noqa: E402
+
+
+def test_paraphrase_ladder_help_is_cp1252_safe():
+    script = (
+        REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+        / "calibration" / "paraphrase_ladder.py"
+    )
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp1252"
+    completed = subprocess.run(
+        [sys.executable, str(script), "--help"],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("cp1252", errors="replace")
+    assert b"--stability-threshold" in completed.stdout
+    assert b"--fragile-threshold" in completed.stdout
 
 
 def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):

@@ -646,12 +646,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--stability-threshold", type=float, default=0.10,
-        help="Relative-change |Δ| below which a rung is `stable` "
+        help="Relative-change |delta| below which a rung is `stable` "
              "(default 10%%).",
     )
     p.add_argument(
         "--fragile-threshold", type=float, default=0.30,
-        help="Relative-change |Δ| above which a rung is `fragile` "
+        help="Relative-change |delta| above which a rung is `fragile` "
              "(default 30%%).",
     )
     p.add_argument(
