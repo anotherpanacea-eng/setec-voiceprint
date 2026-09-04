@@ -54,11 +54,15 @@
       }
     },
     "003": {
+      "cache_path": "calibration_runs\\hardened_test_run\\shards\\003\\cache.json",
+      "cache_sha256": "28b3294e4e2d0e02c3fc7287a5907122ec97d0a4258eaf6d0e38d5e555f973c7",
       "claimed_at": "2026-09-04T20:11:21+00:00",
       "claimed_by_host": "JOSH-OFFICE-DESKTOP",
       "claimed_by_pid": 12672,
+      "completed_at": "2026-09-04T20:11:22+00:00",
+      "n_entries": 20,
       "n_entries_planned": 20,
-      "state": "claimed",
+      "state": "done",
       "stratum_counts": {
         "blog_essay|pre_ai_human": 10,
         "literary_fiction|ai_generated": 10
