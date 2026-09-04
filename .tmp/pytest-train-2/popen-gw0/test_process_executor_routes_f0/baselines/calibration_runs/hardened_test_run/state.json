@@ -1,0 +1,69 @@
+{
+  "created_at": "2026-09-04T20:11:12+00:00",
+  "embedding_model": null,
+  "embedding_revision": null,
+  "fpr_target": 0.01,
+  "run_id": "hardened_test_run",
+  "schema_version": "1.0",
+  "shard_count": 4,
+  "shard_size_target": 20,
+  "shards": {
+    "000": {
+      "claimed_at": "2026-09-04T20:11:12+00:00",
+      "claimed_by_host": "JOSH-OFFICE-DESKTOP",
+      "claimed_by_pid": 35544,
+      "n_entries_planned": 20,
+      "state": "claimed",
+      "stratum_counts": {
+        "blog_essay|pre_ai_human": 10,
+        "literary_fiction|ai_generated": 10
+      }
+    },
+    "001": {
+      "n_entries_planned": 20,
+      "state": "pending",
+      "stratum_counts": {
+        "blog_essay|pre_ai_human": 10,
+        "literary_fiction|ai_generated": 10
+      }
+    },
+    "002": {
+      "n_entries_planned": 20,
+      "state": "pending",
+      "stratum_counts": {
+        "blog_essay|pre_ai_human": 10,
+        "literary_fiction|ai_generated": 10
+      }
+    },
+    "003": {
+      "n_entries_planned": 20,
+      "state": "pending",
+      "stratum_counts": {
+        "blog_essay|pre_ai_human": 10,
+        "literary_fiction|ai_generated": 10
+      }
+    }
+  },
+  "shuffle_seed": 42,
+  "source_manifest_path": "D:\\Code-PC\\_wt_vp_train_2026_09_04_b2\\.tmp\\pytest-train-2\\popen-gw0\\test_process_executor_routes_f0\\baselines\\synth\\manifest.jsonl",
+  "source_manifest_sha256": "dc5bcf35928b12327a28f174a0f2df056118280aa2ddb40f90b62c31c581a7c1",
+  "stratify_by": [
+    "register",
+    "ai_status"
+  ],
+  "task": "calibration_survey",
+  "task_params": {
+    "embedding_model": null,
+    "embedding_revision": null,
+    "fpr_target": 0.01,
+    "surprisal_model": null,
+    "surprisal_revision": null,
+    "tier1": true,
+    "tier2": false,
+    "tier3": false,
+    "tier4": false
+  },
+  "tier1": true,
+  "tier2": false,
+  "tier3": false
+}
