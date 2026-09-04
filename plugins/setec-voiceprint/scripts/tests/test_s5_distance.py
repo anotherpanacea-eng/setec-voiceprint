@@ -61,6 +61,25 @@ def test_envelope_echoes_all_binding_hashes():
     assert results["implementation_sha256"].startswith("sha256:")
 
 
+def test_implementation_sha256_is_stable_across_lf_and_crlf(tmp_path, monkeypatch):
+    lf_root = tmp_path / "lf"
+    crlf_root = tmp_path / "crlf"
+    lf_root.mkdir()
+    crlf_root.mkdir()
+    for source in (Path(s5.__file__), s5.SCRIPT_DIR / "stylometry_distance.py"):
+        lf_bytes = source.read_bytes().replace(b"\r\n", b"\n")
+        (lf_root / source.name).write_bytes(lf_bytes)
+        (crlf_root / source.name).write_bytes(lf_bytes.replace(b"\n", b"\r\n"))
+
+    monkeypatch.setattr(s5, "__file__", lf_root / "s5_distance.py")
+    monkeypatch.setattr(s5, "SCRIPT_DIR", lf_root)
+    lf_hash = s5._implementation_sha256()
+    monkeypatch.setattr(s5, "__file__", crlf_root / "s5_distance.py")
+    monkeypatch.setattr(s5, "SCRIPT_DIR", crlf_root)
+
+    assert s5._implementation_sha256() == lf_hash
+
+
 def test_feature_inventory_digest_binds_the_values_that_determine_s5():
     request = _request()
     original = s5.compute_s5(request)
