@@ -360,8 +360,8 @@ def test_permission_error_from_the_open_is_unreadable(tmp_path: Path, monkeypatc
 
 
 @pytest.mark.skipif(
-    os.geteuid() == 0,
-    reason="root bypasses mode bits; the monkeypatched probes cover the branch",
+    os.name != "posix" or os.geteuid() == 0,
+    reason="requires POSIX mode bits and a non-root user",
 )
 def test_mode_000_file_is_unreadable_not_malformed(tmp_path: Path):
     path = tmp_path / "brysbaert_concreteness.csv"
