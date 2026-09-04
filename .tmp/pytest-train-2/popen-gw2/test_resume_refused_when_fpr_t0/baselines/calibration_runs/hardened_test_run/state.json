@@ -54,8 +54,11 @@
       }
     },
     "003": {
+      "claimed_at": "2026-09-04T20:11:23+00:00",
+      "claimed_by_host": "JOSH-OFFICE-DESKTOP",
+      "claimed_by_pid": 12672,
       "n_entries_planned": 20,
-      "state": "pending",
+      "state": "claimed",
       "stratum_counts": {
         "blog_essay|pre_ai_human": 10,
         "literary_fiction|ai_generated": 10
