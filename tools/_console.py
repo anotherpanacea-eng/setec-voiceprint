@@ -14,17 +14,20 @@ import sys
 
 
 def enable_utf8_stdio() -> None:
-    """Force stdout/stderr to UTF-8 so Unicode glyphs are safe on any console.
+    """Best-effort UTF-8 stdout/stderr for console-safe status glyphs.
 
     Call once at the top of a tool's ``main()`` (before any output, incl. argparse
-    ``--help``). No-op where the streams are already UTF-8 (e.g. Linux/CI). Guarded
-    so it can never itself raise: a plain ``io.StringIO`` test harness lacks
-    ``reconfigure`` (``AttributeError``); a detached/closed stream raises
-    ``ValueError``. No ``errors=`` — every glyph in use encodes losslessly in UTF-8,
-    and a fallback would only mask a genuinely-unencodable future glyph.
+    ``--help``). Preserve each stream's existing error policy — especially
+    stderr's normal ``backslashreplace`` safety net — while changing only the
+    encoding. Unsupported capture streams and detached/closed stdio are left
+    unchanged.
     """
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-        except (AttributeError, ValueError):
+            errors = stream.errors  # type: ignore[union-attr]
+            stream.reconfigure(  # type: ignore[union-attr]
+                encoding="utf-8",
+                errors=errors,
+            )
+        except (AttributeError, OSError, TypeError, ValueError):
             pass
