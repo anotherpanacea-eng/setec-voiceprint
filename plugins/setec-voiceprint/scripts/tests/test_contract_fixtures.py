@@ -357,14 +357,19 @@ def test_regeneration_is_byte_stable(surface):
 # remaining instances.
 
 
-def _cp1252_stream():
+def _cp1252_stream(*, errors="strict"):
     raw = io.BytesIO()
-    return raw, io.TextIOWrapper(raw, encoding="cp1252", newline="")
+    return raw, io.TextIOWrapper(
+        raw,
+        encoding="cp1252",
+        errors=errors,
+        newline="",
+    )
 
 
 def test_check_success_line_survives_a_cp1252_console(monkeypatch):
-    raw_out, tw_out = _cp1252_stream()
-    _, tw_err = _cp1252_stream()
+    raw_out, tw_out = _cp1252_stream(errors="surrogateescape")
+    raw_err, tw_err = _cp1252_stream(errors="backslashreplace")
     monkeypatch.setattr(gen, "check_all", lambda: [])
     monkeypatch.setattr(sys, "stdout", tw_out)
     monkeypatch.setattr(sys, "stderr", tw_err)
@@ -376,6 +381,11 @@ def test_check_success_line_survives_a_cp1252_console(monkeypatch):
     written = raw_out.getvalue()
     assert "✔".encode("utf-8") in written
     assert b"surface(s) checked" in written
+    assert tw_out.errors == "surrogateescape"
+    assert tw_err.errors == "backslashreplace"
+    tw_err.write("\udcff")
+    tw_err.flush()
+    assert b"\\udcff" in raw_err.getvalue()
 
 
 # The glyph here is injected by the stub, not observed in a committed drift
@@ -397,9 +407,26 @@ def test_check_drift_line_survives_a_cp1252_console(monkeypatch):
     assert b"Contract-fixture drift (1)" in raw_out.getvalue()
 
 
-def test_enable_utf8_stdio_is_safe_without_reconfigure(monkeypatch):
+def test_check_success_is_safe_with_stringio_capture(monkeypatch):
     # A plain StringIO has no .reconfigure (pytest's own capture can substitute
-    # such a stream). The guard must swallow that, never raise.
-    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    # such a stream). Exercise the public CLI path so the console helper remains
+    # freely movable or replaceable.
+    captured = io.StringIO()
+    monkeypatch.setattr(gen, "check_all", lambda: [])
+    monkeypatch.setattr(sys, "stdout", captured)
     monkeypatch.setattr(sys, "stderr", io.StringIO())
-    gen._enable_utf8_stdio()
+    assert gen.main(["--check"]) == 0
+    assert "surface(s) checked" in captured.getvalue()
+
+
+def test_check_success_is_safe_when_reconfigure_is_unsupported(monkeypatch):
+    class UnsupportedReconfigureStream(io.StringIO):
+        def reconfigure(self, **_kwargs):
+            raise OSError("synthetic unsupported reconfigure")
+
+    captured = UnsupportedReconfigureStream()
+    monkeypatch.setattr(gen, "check_all", lambda: [])
+    monkeypatch.setattr(sys, "stdout", captured)
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+    assert gen.main(["--check"]) == 0
+    assert "surface(s) checked" in captured.getvalue()

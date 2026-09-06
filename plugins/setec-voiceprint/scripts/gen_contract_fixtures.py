@@ -1192,7 +1192,7 @@ def check_all() -> list[str]:
 
 
 def _enable_utf8_stdio() -> None:
-    """Force stdout/stderr to UTF-8 so status glyphs are safe on any console.
+    """Best-effort UTF-8 stdout/stderr for console-safe status glyphs.
 
     ``--check``'s success line carries ``✔``. Under a non-UTF-8 default
     console — Windows ``cp1252`` with ``PYTHONUTF8`` unset — ``print()`` raised
@@ -1201,19 +1201,22 @@ def _enable_utf8_stdio() -> None:
     indistinguishable from a genuinely drifted tree. CI is Linux/UTF-8, so this
     only ever bit a maintainer running the gate locally on Windows.
 
-    ``tools/_console.enable_utf8_stdio()`` is the identical remedy for the
+    ``tools/_console.enable_utf8_stdio()`` uses the same approach for the
     ``tools/`` CLIs, but plugin-runtime modules cannot import it: ``tools/`` is
     absent from the zero-install bare copy and reaching it would add a
-    ``sys.path`` entry the ratchet pins. Hence the inline duplicate. Guarded so
-    it can never itself raise — an ``io.StringIO`` test harness lacks
-    ``reconfigure`` (``AttributeError``), a detached stream raises
-    ``ValueError``. No ``errors=``: every glyph in use encodes losslessly in
-    UTF-8, and a fallback would mask a genuinely unencodable future glyph.
+    ``sys.path`` entry the ratchet pins. Hence the inline duplicate. Preserve
+    each stream's existing error policy — especially stderr's normal
+    ``backslashreplace`` safety net — while changing only the encoding.
+    Unsupported capture streams and detached/closed stdio are left unchanged.
     """
     for stream in (sys.stdout, sys.stderr):
         try:
-            stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
-        except (AttributeError, ValueError):
+            errors = stream.errors  # type: ignore[union-attr]
+            stream.reconfigure(  # type: ignore[union-attr]
+                encoding="utf-8",
+                errors=errors,
+            )
+        except (AttributeError, OSError, TypeError, ValueError):
             pass
 
 
