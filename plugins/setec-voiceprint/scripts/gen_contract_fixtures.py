@@ -1191,7 +1191,34 @@ def check_all() -> list[str]:
 # --------------------------------------------------------------------------
 
 
+def _enable_utf8_stdio() -> None:
+    """Force stdout/stderr to UTF-8 so status glyphs are safe on any console.
+
+    ``--check``'s success line carries ``✔``. Under a non-UTF-8 default
+    console — Windows ``cp1252`` with ``PYTHONUTF8`` unset — ``print()`` raised
+    ``UnicodeEncodeError`` *after* ``check_all()`` had already passed, so
+    ``sys.exit(main())`` returned 1: a passing gate reporting as a failure,
+    indistinguishable from a genuinely drifted tree. CI is Linux/UTF-8, so this
+    only ever bit a maintainer running the gate locally on Windows.
+
+    ``tools/_console.enable_utf8_stdio()`` is the identical remedy for the
+    ``tools/`` CLIs, but plugin-runtime modules cannot import it: ``tools/`` is
+    absent from the zero-install bare copy and reaching it would add a
+    ``sys.path`` entry the ratchet pins. Hence the inline duplicate. Guarded so
+    it can never itself raise — an ``io.StringIO`` test harness lacks
+    ``reconfigure`` (``AttributeError``), a detached stream raises
+    ``ValueError``. No ``errors=``: every glyph in use encodes losslessly in
+    UTF-8, and a fallback would mask a genuinely unencodable future glyph.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description=(
             "Generate / verify the R5 golden contract-envelope fixtures."

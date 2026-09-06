@@ -16,6 +16,7 @@ Pins (spec §6):
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import subprocess
@@ -336,3 +337,69 @@ def test_regeneration_is_byte_stable(surface):
     assert a == b
     # And identical to the committed golden.
     assert a == (FIXTURES_DIR / f"{surface}.json").read_text(encoding="utf-8")
+
+
+# ---- (f) console safety on a non-UTF-8 default console ------------------
+#
+# `main(["--check"])`'s SUCCESS branch is the only one carrying a non-ASCII
+# glyph (`✔`); the drift branch below it is pure ASCII. On a cp1252 console
+# (Windows with PYTHONUTF8 unset) that `print()` raised UnicodeEncodeError
+# *after* check_all() had already passed, so `sys.exit(main())` returned 1 —
+# a passing gate reporting as a failure, while a genuinely drifted tree also
+# returned 1. The two outcomes were indistinguishable on Windows.
+#
+# check_all() is stubbed rather than trusted, so these pin the console
+# behaviour of each branch independently of whether the committed tree
+# happens to be consistent on the machine running the suite.
+# tools/_console.enable_utf8_stdio() is the tools/-layer remedy for the same
+# class; plugin-runtime modules cannot import it (it would not survive the
+# zero-install bare copy), so the guard is inlined. See issue #428 for the
+# remaining instances.
+
+
+def _cp1252_stream():
+    raw = io.BytesIO()
+    return raw, io.TextIOWrapper(raw, encoding="cp1252", newline="")
+
+
+def test_check_success_line_survives_a_cp1252_console(monkeypatch):
+    raw_out, tw_out = _cp1252_stream()
+    _, tw_err = _cp1252_stream()
+    monkeypatch.setattr(gen, "check_all", lambda: [])
+    monkeypatch.setattr(sys, "stdout", tw_out)
+    monkeypatch.setattr(sys, "stderr", tw_err)
+
+    # Pre-fix this raised UnicodeEncodeError instead of returning 0.
+    assert gen.main(["--check"]) == 0
+
+    tw_out.flush()
+    written = raw_out.getvalue()
+    assert "✔".encode("utf-8") in written
+    assert b"surface(s) checked" in written
+
+
+# The glyph here is injected by the stub, not observed in a committed drift
+# message (those are ASCII today). It pins the DATA-borne case — a problem
+# string built from surface-supplied text — which no source-literal audit of
+# this module could catch, mirroring the assemble_changelog case in
+# test_tools_console_utf8.py.
+def test_check_drift_line_survives_a_cp1252_console(monkeypatch):
+    raw_out, tw_out = _cp1252_stream()
+    _, tw_err = _cp1252_stream()
+    monkeypatch.setattr(gen, "check_all", lambda: ["some_surface: drifted → regenerate"])
+    monkeypatch.setattr(sys, "stdout", tw_out)
+    monkeypatch.setattr(sys, "stderr", tw_err)
+
+    # A drifted tree must still report drift, not die encoding its own message.
+    assert gen.main(["--check"]) == 1
+
+    tw_out.flush()
+    assert b"Contract-fixture drift (1)" in raw_out.getvalue()
+
+
+def test_enable_utf8_stdio_is_safe_without_reconfigure(monkeypatch):
+    # A plain StringIO has no .reconfigure (pytest's own capture can substitute
+    # such a stream). The guard must swallow that, never raise.
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+    gen._enable_utf8_stdio()
