@@ -132,7 +132,7 @@ def _implementation_sha256() -> str:
     for path in (Path(__file__), SCRIPT_DIR / "stylometry_distance.py"):
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         digest.update(b"\0")
     return f"sha256:{digest.hexdigest()}"
 
