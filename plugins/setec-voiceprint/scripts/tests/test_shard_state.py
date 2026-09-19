@@ -561,6 +561,56 @@ def test_write_state_does_not_corrupt_existing_on_partial_failure(
 # --------------- pid_alive (v1.44.1.B) --------------------------
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows signal-zero regression")
+def test_pid_alive_preserves_responsive_child(tmp_path: Path):
+    """Use a private hidden console so a regression cannot signal pytest."""
+    import subprocess
+
+    probe_code = r'''
+import json, os, subprocess, sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import shard_state as ss
+ready = Path(sys.argv[2])
+child_code = "import sys; from pathlib import Path; Path(sys.argv[1]).write_text('READY'); line=sys.stdin.readline(); print('PONG' if line == 'PING\\n' else 'BAD', flush=True)"
+with subprocess.Popen([sys.executable, '-u', '-c', child_code, str(ready)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True) as child:
+    try:
+        deadline = time.monotonic() + 5
+        while not ready.exists() and child.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert ready.exists(), 'child never ready'
+        assert child.poll() is None
+        values = [ss.pid_alive(child.pid) for _ in range(20)]
+        out, err = child.communicate('PING\n', timeout=5)
+        assert out.splitlines() == ['PONG'], (child.returncode, out, err)
+        assert all(values) and child.returncode == 0
+        assert ss.pid_alive(child.pid) is False, 'exited child with held handle'
+        assert ss.pid_alive(os.getpid()) is True
+        print(json.dumps({'reply': 'PONG', 'probes': len(values), 'self': 'survived'}))
+    finally:
+        if child.poll() is None:
+            child.kill()
+        child.communicate(timeout=3)
+'''
+    startup = subprocess.STARTUPINFO()
+    startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup.wShowWindow = subprocess.SW_HIDE
+    result = subprocess.run(
+        [sys.executable, "-u", "-c", probe_code, str(ROOT / "calibration"),
+         str(tmp_path / "ready")],
+        capture_output=True, text=True, timeout=20,
+        creationflags=subprocess.CREATE_NEW_CONSOLE, startupinfo=startup,
+    )
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+    assert result.stdout.strip(), "probe exited before PONG/survival receipt"
+    assert json.loads(result.stdout) == {
+        "reply": "PONG", "probes": 20, "self": "survived",
+    }
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows self PID covered in isolated console")
 def test_pid_alive_recognizes_running_process():
     """The test runner's own pid must register as alive."""
     assert ss.pid_alive(os.getpid()) is True
@@ -587,7 +637,8 @@ def test_pid_alive_handles_permission_error_conservatively(
     def _raise_permission(pid, sig):
         raise PermissionError("simulated")
 
-    monkeypatch.setattr(ss.os, "kill", _raise_permission)
+    from types import SimpleNamespace
+    monkeypatch.setattr(ss, "os", SimpleNamespace(name="posix", kill=_raise_permission))
     assert ss.pid_alive(1) is True
 
 
@@ -602,8 +653,110 @@ def test_pid_alive_treats_unknown_oserror_conservatively(
     def _raise_oserror(pid, sig):
         raise OSError("simulated unexpected error")
 
-    monkeypatch.setattr(ss.os, "kill", _raise_oserror)
+    from types import SimpleNamespace
+    monkeypatch.setattr(ss, "os", SimpleNamespace(name="posix", kill=_raise_oserror))
     assert ss.pid_alive(1) is True
+
+
+@pytest.mark.parametrize("handle,error,wait,closed,expected", [
+    (123, 0, 258, True, True),   # running
+    (123, 0, 0, True, False),    # exited but handle still valid
+    (None, 87, 0, True, False),  # absent positive PID
+    (None, 5, 0, True, True),    # inaccessible
+    (None, 0, 0, True, True),    # unknown open failure
+    (None, 6, 0, True, True),
+    (123, 0, 0xFFFFFFFF, True, True),  # WAIT_FAILED
+    (123, 0, 42, True, True),    # unexpected wait result
+    (123, 0, 0, False, True),    # cleanup failure overrides dead
+])
+def test_windows_pid_query_mapping_and_handle_custody(
+    monkeypatch, handle, error, wait, closed, expected,
+):
+    import ctypes
+    from types import SimpleNamespace
+
+    kernel = SimpleNamespace(
+        OpenProcess=mock.Mock(return_value=handle),
+        WaitForSingleObject=mock.Mock(return_value=wait),
+        CloseHandle=mock.Mock(return_value=closed),
+    )
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    monkeypatch.setattr(ctypes, "get_last_error", lambda: error, raising=False)
+    signal = mock.Mock(side_effect=AssertionError("Windows liveness must not signal"))
+    monkeypatch.setattr(ss, "os", SimpleNamespace(name="nt", kill=signal))
+    assert ss.pid_alive("12345") is expected
+    kernel.OpenProcess.assert_called_once_with(0x00100000, False, 12345)
+    signal.assert_not_called()
+    if handle:
+        kernel.WaitForSingleObject.assert_called_once_with(handle, 0)
+        kernel.CloseHandle.assert_called_once_with(handle)
+    else:
+        kernel.WaitForSingleObject.assert_not_called()
+        kernel.CloseHandle.assert_not_called()
+
+
+@pytest.mark.parametrize("failing_api", ["OpenProcess", "WaitForSingleObject", "CloseHandle"])
+@pytest.mark.parametrize("argument_error", [False, True])
+def test_windows_pid_query_errors_keep_claim_live(monkeypatch, failing_api, argument_error):
+    import ctypes
+    from types import SimpleNamespace
+
+    kernel = SimpleNamespace(
+        OpenProcess=mock.Mock(return_value=123),
+        WaitForSingleObject=mock.Mock(return_value=0),
+        CloseHandle=mock.Mock(return_value=True),
+    )
+    error_type = ctypes.ArgumentError if argument_error else OSError
+    getattr(kernel, failing_api).side_effect = error_type("synthetic API failure")
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    assert ss._windows_pid_alive(12345) is True
+    assert kernel.CloseHandle.call_count == (0 if failing_api == "OpenProcess" else 1)
+
+
+@pytest.mark.parametrize("error", [OSError("unavailable"), AttributeError("missing API")])
+def test_windows_pid_api_unavailable_never_falls_back_to_signal(monkeypatch, error):
+    import ctypes
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(side_effect=error), raising=False)
+    signal = mock.Mock(side_effect=AssertionError("unsafe fallback"))
+    monkeypatch.setattr(ss, "os", SimpleNamespace(name="nt", kill=signal))
+    assert ss.pid_alive(12345) is True
+    signal.assert_not_called()
+
+
+@pytest.mark.parametrize("pid", [0, -1, 2**32, 2**32 + 12345])
+def test_windows_pid_out_of_range_never_reaches_kernel(monkeypatch, pid):
+    import ctypes
+    from types import SimpleNamespace
+
+    loader = mock.Mock(side_effect=AssertionError("out-of-range PID reached kernel"))
+    monkeypatch.setattr(ctypes, "WinDLL", loader, raising=False)
+    monkeypatch.setattr(ss, "os", SimpleNamespace(name="nt"))
+    assert ss.pid_alive(pid) is False
+    loader.assert_not_called()
+
+
+@pytest.mark.parametrize("pid,error_type", [(None, TypeError), ("not-a-pid", ValueError)])
+def test_windows_pid_preserves_invalid_input_coercion(monkeypatch, pid, error_type):
+    from types import SimpleNamespace
+    monkeypatch.setattr(ss, "os", SimpleNamespace(name="nt"))
+    with pytest.raises(error_type):
+        ss.pid_alive(pid)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX import contract")
+def test_posix_pid_import_does_not_load_windows_api():
+    import subprocess
+    code = (
+        "import ctypes, os, sys; "
+        "ctypes.WinDLL = lambda *a, **k: (_ for _ in ()).throw(AssertionError('WinDLL')); "
+        "sys.path.insert(0, sys.argv[1]); import shard_state; "
+        "assert shard_state.pid_alive(os.getpid())"
+    )
+    result = subprocess.run([sys.executable, "-c", code, str(ROOT / "calibration")],
+                            capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
 
 
 # --------------- find_git_repo / is_git_synced (v1.44.2) -------
