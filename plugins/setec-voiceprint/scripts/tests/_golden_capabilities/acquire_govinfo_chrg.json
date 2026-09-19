@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-06-11",
   "compute": {
-    "cost_note": "network-bound; published + granules pagination plus one HTM fetch per prepared statement",
+    "cost_note": "network-bound; published + granules pagination plus one HTM fetch per hearing granule",
     "length_floor_words": 1500,
     "tier": "acquisition"
   },
@@ -13,7 +13,8 @@
     ]
   },
   "do_not_use_when": [
-    "the source is not the GovInfo CHRG collection"
+    "the source is not the GovInfo CHRG collection",
+    "a detected text boundary would be mistaken for complete-work or rights certification"
   ],
   "examples": [],
   "family": "acquisition",
@@ -24,14 +25,15 @@
   },
   "outputs": {
     "artifacts": [
-      "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
-      "draft_manifest.jsonl (corpus_role impostor)"
+      "candidate impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+      "draft reference-pool manifest JSONL (corpus_role impostor; language_status unknown)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "pull prepared written congressional testimony from GovInfo CHRG into the testimony_policy impostor pool (the population baseline argmove_profile profiles).",
+  "purpose": "stage candidate prepared witness blocks from GovInfo CHRG with detected boundary evidence and pending source review.",
   "references": [
-    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/references/acquire-govinfo-chrg-boundaries.md"
   ],
   "registers": [
     "testimony_policy"
@@ -40,6 +42,6 @@
   "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
-    "building the testimony_policy population baseline from public-domain CHRG prepared statements"
+    "staging a private CHRG witness-statement inventory for document-level completeness, official-duty role, and third-party rights review"
   ]
 }
