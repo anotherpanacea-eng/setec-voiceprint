@@ -20,6 +20,7 @@
   "handoff": "none",
   "id": "acquire_everycrsreport",
   "inputs": {
+    "language_status": "unknown by default; native, non_native_advanced, non_native_intermediate, or learner requires evidence for every author in the acquisition batch (ordinary manifest output)",
     "target": "EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv)"
   },
   "outputs": {
@@ -33,6 +34,7 @@
   "purpose": "pull Congressional Research Service reports from EveryCRSReport.com into the policy_brief impostor pool (the population baseline argmove_profile profiles).",
   "references": [
     "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/references/acquisition-author-language-status.md",
     "plugins/setec-voiceprint/references/acquire-everycrsreport-historical-versions.md"
   ],
   "registers": [
