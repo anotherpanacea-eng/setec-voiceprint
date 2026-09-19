@@ -119,6 +119,7 @@ class MetadataReceipt:
     raw_text_sha256: str
     raw_text_bytes: int
     source_metadata: dict[str, Any]
+    source_metadata_sha256: str = ""
     piece_source_url: str | None = None
     piece_content_hash: str | None = None
 
@@ -321,7 +322,8 @@ _TEXT_NAME_RE = re.compile(
 )
 _TIMESTAMP_RE = re.compile(
     r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}"
-    r"(?::[0-9]{2}(?:\.[0-9]+)?)?(?:Z|[+-][0-9]{2}:[0-9]{2})"
+    r"(?::[0-9]{2}(?:\.[0-9]+)?)?"
+    r"(?:Z|[+-][0-9]{2}(?::?[0-9]{2}(?::?[0-9]{2}(?:\.[0-9]+)?)?)?)"
 )
 
 
@@ -547,11 +549,19 @@ def extract_one(
             raw_text_sha256=hashlib.sha256(data).hexdigest(),
             raw_text_bytes=len(data),
             source_metadata=evidence,
+            source_metadata_sha256=_source_metadata_digest(evidence),
         )
     return text, item.title or "untitled", options.author or DEFAULT_AUTHOR, None
 
 
 # ---- Per-comment processing ---------------------------------------
+
+
+def _source_metadata_digest(source_metadata: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        source_metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
 def _require_receipt(
@@ -563,10 +573,33 @@ def _require_receipt(
         or receipt.locator != item.locator
         or receipt.bucket != options.bucket
         or receipt.mode != options.metadata_mode
-        or receipt.raw_text_sha256
-        != receipt.source_metadata.get("text_object_sha256")
-        or receipt.raw_text_bytes
-        != receipt.source_metadata.get("text_object_bytes")
+        or not isinstance(receipt.source_metadata, dict)
+    ):
+        raise MetadataSkip("metadata-custody-mismatch")
+    try:
+        metadata_key, docket, comment, number, expected_url = (
+            _standard_metadata_key(item.locator)
+        )
+        metadata_digest = _source_metadata_digest(receipt.source_metadata)
+    except (MetadataSkip, TypeError, ValueError, OverflowError, RecursionError):
+        raise MetadataSkip("metadata-custody-mismatch") from None
+    expected = {
+        "schema": "setec.mirrulations_source_metadata.v1",
+        "status": "binding_verified",
+        "bucket": options.bucket,
+        "text_object_key": item.locator,
+        "text_object_sha256": receipt.raw_text_sha256,
+        "text_object_bytes": receipt.raw_text_bytes,
+        "metadata_object_key": metadata_key,
+        "docket_id": docket,
+        "comment_id": comment,
+        "attachment_number": number,
+        "attachment_pdf_file_url": expected_url,
+    }
+    if (
+        receipt.source_metadata_sha256 != metadata_digest
+        or any(receipt.source_metadata.get(key) != value
+               for key, value in expected.items())
     ):
         raise MetadataSkip("metadata-custody-mismatch")
     return receipt

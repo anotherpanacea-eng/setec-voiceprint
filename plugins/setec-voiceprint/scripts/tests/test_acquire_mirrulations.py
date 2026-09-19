@@ -549,6 +549,10 @@ def test_standard_custom_bucket_and_invalid_mode_reject_before_fetch(tmp_path):
         ("receiveDate", 20140602, "invalid"),
         ("receiveDate", "2014-02-30T12:30:00Z", "invalid"),
         ("receiveDate", None, "missing"),
+        ("receiveDate", "2014-06-02T12:30:00+0000", "valid"),
+        ("receiveDate", "2014-06-02T12:30:00+00", "valid"),
+        ("receiveDate", "2014-06-02T12:30:00+00:00:00", "valid"),
+        ("receiveDate", "2014-06-02T12:30:00Z arbitrary prose", "invalid"),
         ("postedDate", "2014-06-20T09:00:00+02:00", "valid"),
     ],
 )
@@ -842,6 +846,67 @@ def test_processed_receipt_rejects_tampered_piece_before_write(
         mr.emit_piece(piece, item=item, options=options, summary=summary)
     assert exc.value.reason == "metadata-custody-mismatch"
     assert item.metadata_receipt is None
+    assert not list(options.output_dir.glob("*.txt"))
+    assert not list(options.output_dir.glob("*.meta.json"))
+
+
+@pytest.mark.parametrize("stage", ["process", "emit"])
+@pytest.mark.parametrize(
+    "tamper",
+    ["swapped_inner", "nested_date", "rehashed_identity"],
+)
+def test_source_metadata_receipt_binds_whole_projection_and_item_identity(
+    tmp_path, stage, tamper,
+):
+    options, item, summary, store, body, title, author, date = (
+        _prepared_standard_item(tmp_path)
+    )
+    other_comment = STANDARD_DOCKET + "-0008"
+    other_text_key = STANDARD_TEXT_KEY.replace(STANDARD_COMMENT, other_comment)
+    other_metadata_key = STANDARD_METADATA_KEY.replace(
+        STANDARD_COMMENT, other_comment,
+    )
+    other_url = STANDARD_URL.replace(STANDARD_COMMENT, other_comment)
+    store.objects[other_text_key] = store.objects[STANDARD_TEXT_KEY]
+    store.objects[other_metadata_key] = json.dumps(
+        metadata_payload(comment=other_comment, url=other_url),
+        sort_keys=True,
+    ).encode("utf-8")
+    other_item = mr.ItemMeta(locator=other_text_key)
+    mr.extract_one(other_item, options, store)
+    assert item.metadata_receipt is not None
+    assert other_item.metadata_receipt is not None
+    piece = None
+    if stage == "emit":
+        piece = mr.process_one_item(
+            item, body, title, author, date,
+            options=options, summary=summary,
+        )
+        assert piece is not None
+    if tamper == "swapped_inner":
+        item.metadata_receipt.source_metadata = (
+            other_item.metadata_receipt.source_metadata
+        )
+    elif tamper == "nested_date":
+        item.metadata_receipt.source_metadata["reported_dates"]["received"][
+            "value"
+        ] = "2014-06-03T12:30:00Z"
+    else:
+        item.metadata_receipt.source_metadata["text_object_key"] = other_text_key
+        item.metadata_receipt.source_metadata_sha256 = (
+            mr._source_metadata_digest(item.metadata_receipt.source_metadata)
+        )
+    with pytest.raises(mr.MetadataSkip) as exc:
+        if stage == "process":
+            mr.process_one_item(
+                item, body, title, author, date,
+                options=options, summary=summary,
+            )
+        else:
+            mr.emit_piece(piece, item=item, options=options, summary=summary)
+    assert exc.value.reason == "metadata-custody-mismatch"
+    assert item.metadata_receipt is None
+    assert summary.acquired == 0
     assert not list(options.output_dir.glob("*.txt"))
     assert not list(options.output_dir.glob("*.meta.json"))
 
