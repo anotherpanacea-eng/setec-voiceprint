@@ -200,7 +200,7 @@ three places, in order of formality:
    criteria are what the *second* reviewer checks the diff against, so
    write them concretely. The PR closes the Issue (`Closes #N`).
 3. **A chat brief**, for trivial changes (typo, one-line fix, fixture
-   regen) that also qualify for the direct-push path below.
+   regen). These changes still follow draft constituent and train delivery.
 
 Roadmap and Issues do different jobs and should not duplicate each
 other: the roadmap is strategic and narrative ("where is this going,
