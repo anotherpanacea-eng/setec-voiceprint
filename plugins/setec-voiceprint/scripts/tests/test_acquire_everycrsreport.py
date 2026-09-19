@@ -282,6 +282,7 @@ def test_end_to_end(tmp_path):
         meta = json.loads(meta_file.read_text(encoding="utf-8"))
         assert "preprocessing" in meta
         assert meta["scraper"].startswith("acquire_everycrsreport_")
+        assert meta["scraper_version"] == "1.1"
 
 
 def test_min_words_gate_drops_everything_when_high(tmp_path):
@@ -422,6 +423,7 @@ def test_cli_help_lists_flags():
         "--era", "--since", "--until", "--max-items", "--min-words",
         "--dry-run", "--emit-manifest", "--out", "--allow-public-output",
         "--allow-non-prose", "--strip-rules", "--strip-aggressive",
+        "--language-status",
     ):
         assert flag in help_text, f"--help missing {flag}"
 
@@ -484,7 +486,8 @@ def test_historical_selects_old_version_from_updated_index(tmp_path):
     args = parser.parse_args([
         CSV_URL, "--impostor-for", "synthetic_target",
         "--register", "policy_brief", "--consent-status", "public_record",
-        "--historical-versions", "--until", "2021-12-31",
+        "--historical-versions", "--language-status", "native",
+        "--until", "2021-12-31",
         "--metadata-limit", "1", "--min-words", "20",
         "--output-dir", str(private / "candidates"),
         "--out", str(private / "receipt.json"),
@@ -512,6 +515,11 @@ def test_historical_selects_old_version_from_updated_index(tmp_path):
     assert receipt["kind"] == "bounded_batch"
     assert receipt["batch_attempted"] == 1
     assert receipt["summary"]["draft_manifest_path"] is None
+    assert "language_status" not in receipt
+    assert not list(private.rglob("*.jsonl"))
+    sidecar_path = next((private / "candidates").glob("*.meta.json"))
+    sidecar = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    assert "language_status" not in sidecar
     texts = list((private / "candidates").glob("*.txt"))
     assert len(texts) == 1
     assert "Summary retained." in texts[0].read_text(encoding="utf-8")
@@ -944,6 +952,65 @@ def test_review_regression_empty_index_frame_has_no_invalid_batch(tmp_path):
     assert receipt["batch_attempted"] == 0
     assert receipt["failure_reason"] == "empty-report-frame"
     assert fetcher.fetched_urls == [CSV_URL]
+
+@pytest.mark.parametrize(
+    "status",
+    ["unknown", "native", "non_native_advanced",
+     "non_native_intermediate", "learner"],
+)
+def test_language_status_manifest_and_text_conservation(tmp_path, status):
+    def acquire(name, requested):
+        output_dir = tmp_path / "ai-prose-baselines-private" / name
+        args = make_args(
+            output_dir=str(output_dir),
+            emit_manifest=str(output_dir / "draft.jsonl"),
+            **({"language_status": requested} if requested is not None else {}),
+        )
+        assert ev.run(args, fetcher=make_fetcher()) == 0
+        entries = sorted(read_manifest(output_dir / "draft.jsonl"), key=lambda e: e["id"])
+        texts = {p.name: p.read_bytes() for p in output_dir.glob("*.txt")}
+        return entries, texts
+
+    baseline_entries, baseline_texts = acquire("baseline", None)
+    selected_entries, selected_texts = acquire("selected", status)
+    assert len(baseline_entries) == len(selected_entries) == 2
+    assert baseline_texts == selected_texts
+    assert all(e["language_status"] == "unknown" for e in baseline_entries)
+    assert all(e["language_status"] == status for e in selected_entries)
+    for baseline, selected in zip(baseline_entries, selected_entries):
+        assert {k: v for k, v in baseline.items() if k != "language_status"} == {
+            k: v for k, v in selected.items() if k != "language_status"
+        }
+
+
+def test_language_status_omitted_namespace_and_options_default():
+    parsed = ev.parse_options(make_args())
+    assert parsed.language_status == "unknown"
+    assert ev.ProcessOptions(**{
+        key: value for key, value in vars(parsed).items()
+        if key != "language_status"
+    }).language_status == "unknown"
+    assert ev.parse_options(make_args(language_status="learner")).language_status == "learner"
+    assert ev.build_arg_parser().parse_args([
+        "--impostor-for", "x", "--register", "policy_brief",
+        "--consent-status", "public_record",
+    ]).language_status == "unknown"
+
+
+def test_invalid_language_status_cli_rejects_before_run(tmp_path, monkeypatch):
+    output_dir = tmp_path / "ai-prose-baselines-private" / "invalid"
+    def unexpected_run(*_args, **_kwargs):
+        pytest.fail("invalid CLI value must be rejected before acquisition")
+    monkeypatch.setattr(ev, "run", unexpected_run)
+    with pytest.raises(SystemExit) as exc:
+        ev.main([
+            "--impostor-for", "x", "--register", "policy_brief",
+            "--consent-status", "public_record", "--output-dir", str(output_dir),
+            "--language-status", "unsupported",
+        ])
+    assert exc.value.code == 2
+    assert not output_dir.exists()
+
 
 if __name__ == "__main__":
     if pytest is None:

@@ -19,6 +19,7 @@
   "handoff": "none",
   "id": "acquire_mirrulations",
   "inputs": {
+    "language_status": "unknown by default; native, non_native_advanced, non_native_intermediate, or learner requires evidence for every author in the acquisition batch (ordinary manifest output)",
     "metadata_mode": "off by default; standard verifies supported comment JSON and related attachment in the default bucket",
     "target": "the public Mirrulations AWS Open Data S3 bucket (anonymous access)"
   },
@@ -33,6 +34,7 @@
   "purpose": "acquire substantive regulatory comments from the Mirrulations S3 mirror into the regulatory_comment impostor pool (the population baseline argmove_profile profiles).",
   "references": [
     "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/references/acquisition-author-language-status.md",
     "plugins/setec-voiceprint/references/mirrulations-metadata-provenance.md"
   ],
   "registers": [
