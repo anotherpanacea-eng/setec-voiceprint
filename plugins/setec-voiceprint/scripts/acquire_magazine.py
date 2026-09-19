@@ -191,13 +191,6 @@ class StoryMetadata:
 # ---- HTML extraction helpers ------------------------------------
 
 
-SHARED_STRIP_SELECTORS = (
-    ".sharedaddy", ".jp-relatedposts", ".author-bio",
-    ".comments-area", ".comment-list", ".comment-respond",
-    ".post-meta-share", ".issue-nav",
-)
-
-
 def _select_text(soup: Any, selector: str) -> str:
     """Return the text content of the first selector match, or ``""``.
 
@@ -408,19 +401,20 @@ def parse_story_page(
     # Tables can carry story prose that trafilatura intentionally omits.
     # Keep the legacy path for those pages, and when the configured
     # container is absent so unknown layouts retain their prior behavior.
-    has_table = container is not None and container.find("table") is not None
-    if container is not None and not has_table:
-        body_text, html_title = ac.extract_main_content(
-            body_html,
-            content_selector=config.story_content_selector,
-            strip_selectors=SHARED_STRIP_SELECTORS,
-        )
-    else:
-        body_text, html_title = ac.html_to_text(
-            body_html,
-            content_selector=config.story_content_selector,
-            strip_selectors=SHARED_STRIP_SELECTORS,
-        )
+    extractor = (
+        ac.extract_main_content
+        if container is not None and container.find("table") is None
+        else ac.html_to_text
+    )
+    body_text, html_title = extractor(
+        body_html,
+        content_selector=config.story_content_selector,
+        strip_selectors=(
+            ".sharedaddy", ".jp-relatedposts", ".author-bio",
+            ".comments-area", ".comment-list", ".comment-respond",
+            ".post-meta-share", ".issue-nav",
+        ),
+    )
     if not title and html_title:
         title = html_title
     return body_text, title or "", author or "", date

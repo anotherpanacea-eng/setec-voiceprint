@@ -1,3 +1,3 @@
 ### Changed
 
-Updated cquire_magazine (cquire_magazine) to use the optional main-content extractor after configured cleaning when a story container has no table, while preserving legacy extraction for table-bearing and missing-container layouts.
+Updated `acquire_magazine` to use optional main-content extraction after configured cleaning when a story container has no table. Table-bearing stories and missing-container layouts retain legacy extraction.

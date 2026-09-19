@@ -240,6 +240,17 @@ def test_parse_story_page_extracts_date():
     _, _, _, date = am.parse_story_page(html, config=config)
     assert date == dt.date(2019, 3, 15)
 
+
+def assert_complete_fixture_story(html: str, body: str) -> None:
+    """Every direct story paragraph must survive; nested widgets are separate."""
+    from bs4 import BeautifulSoup
+    paragraphs = BeautifulSoup(html, "html.parser").select(".entry-content > p")
+    assert paragraphs, "The synthetic fixture must contain story paragraphs"
+    normalized_body = " ".join(body.split())
+    for paragraph in paragraphs:
+        assert " ".join(paragraph.get_text().split()) in normalized_body
+
+
 def test_parse_story_page_primary_removes_nested_widget():
     """Real trafilatura removes nested newsletter/link chrome while
     retaining every story paragraph and parsed metadata."""
@@ -252,15 +263,12 @@ def test_parse_story_page_primary_removes_nested_widget():
     assert title == "Primary Fixture Story"
     assert author == "Primary Fixture Author"
     assert str(date) == "2022-04-05"
-    for marker in (
-        "Primary fixture paragraph one",
-        "Primary fixture paragraph two",
-        "Primary fixture paragraph three",
-    ):
-        assert marker in body
+    assert_complete_fixture_story(html, body)
     assert "Newsletter invitation boilerplate" not in body
     assert "Related link boilerplate" not in body
     assert "Another related link" not in body
+
+
 def test_parse_story_page_optional_extractor_absence_keeps_body(monkeypatch):
     html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
         encoding="utf-8",
@@ -269,16 +277,13 @@ def test_parse_story_page_optional_extractor_absence_keeps_body(monkeypatch):
     body, title, author, date = am.parse_story_page(
         html, config=am.MAGAZINE_MODULES["nightmare"],
     )
-    for marker in (
-        "Primary fixture paragraph one",
-        "Primary fixture paragraph two",
-        "Primary fixture paragraph three",
-        "Newsletter invitation boilerplate",
-    ):
-        assert marker in body
+    assert_complete_fixture_story(html, body)
+    assert "Newsletter invitation boilerplate" in body
     assert title == "Primary Fixture Story"
     assert author == "Primary Fixture Author"
     assert str(date) == "2022-04-05"
+
+
 def test_parse_story_page_optional_extractor_miss_keeps_cleaned_body(monkeypatch):
     html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
         encoding="utf-8",
@@ -293,16 +298,13 @@ def test_parse_story_page_optional_extractor_miss_keeps_cleaned_body(monkeypatch
     body, title, author, date = am.parse_story_page(
         html, config=am.MAGAZINE_MODULES["nightmare"],
     )
-    for marker in (
-        "Primary fixture paragraph one",
-        "Primary fixture paragraph two",
-        "Primary fixture paragraph three",
-        "Newsletter invitation boilerplate",
-    ):
-        assert marker in body
+    assert_complete_fixture_story(html, body)
+    assert "Newsletter invitation boilerplate" in body
     assert title == "Primary Fixture Story"
     assert author == "Primary Fixture Author"
     assert str(date) == "2022-04-05"
+
+
 def test_parse_story_page_optional_extractor_exception_keeps_body(monkeypatch):
     html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
         encoding="utf-8",
@@ -319,16 +321,13 @@ def test_parse_story_page_optional_extractor_exception_keeps_body(monkeypatch):
     body, title, author, date = am.parse_story_page(
         html, config=am.MAGAZINE_MODULES["nightmare"],
     )
-    for marker in (
-        "Primary fixture paragraph one",
-        "Primary fixture paragraph two",
-        "Primary fixture paragraph three",
-        "Newsletter invitation boilerplate",
-    ):
-        assert marker in body
+    assert_complete_fixture_story(html, body)
+    assert "Newsletter invitation boilerplate" in body
     assert title == "Primary Fixture Story"
     assert author == "Primary Fixture Author"
     assert str(date) == "2022-04-05"
+
+
 def test_parse_story_page_table_preserves_table_and_surrounding_prose():
     before = "Before the table, the story remains in ordinary prose. " * 12
     after = "After the table, the story continues in ordinary prose. " * 12
@@ -344,12 +343,14 @@ def test_parse_story_page_table_preserves_table_and_surrounding_prose():
     body, title, author, date = am.parse_story_page(
         html, config=am.MAGAZINE_MODULES["nightmare"],
     )
-    assert "Before the table" in body
+    assert before.strip() in body
     assert "Substantive story text in a table cell" in body
-    assert "After the table" in body
+    assert after.strip() in body
     assert title == "Table Story"
     assert author == "Table Author"
     assert str(date) == "2020-01-02"
+
+
 def test_parse_story_page_missing_container_preserves_legacy_body():
     html = """<html><head><title>Fallback Story</title></head><body>
     <h1 class="entry-title">Fallback Story</h1>
