@@ -16,14 +16,16 @@ entries:
   - near-duplicate campaign text must be removed (v1 does exact-hash dedup only)
   inputs:
     target: the public Mirrulations AWS Open Data S3 bucket (anonymous access)
+    metadata_mode: off by default; standard verifies supported comment JSON and related attachment in the default bucket
   outputs:
     schema_version: '1.0'
     artifacts:
     - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
     - draft_manifest.jsonl (corpus_role impostor)
+    - optional private sidecar source_metadata receipt with separate source-reported dates and fetched object hashes
   compute:
     tier: acquisition
-    cost_note: network-bound; S3 list_objects_v2 pagination plus one get per extracted-text key
+    cost_note: network-bound; S3 list_objects_v2 pagination and one text get per key; standard metadata mode adds one bounded comment-JSON get per supported key
     length_floor_words: 1000
   registers:
   - regulatory_comment
@@ -33,4 +35,5 @@ entries:
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  - plugins/setec-voiceprint/references/mirrulations-metadata-provenance.md
   _seeded_at: '2026-06-11'

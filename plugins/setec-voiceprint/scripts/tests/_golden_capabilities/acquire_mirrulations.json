@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-06-11",
   "compute": {
-    "cost_note": "network-bound; S3 list_objects_v2 pagination plus one get per extracted-text key",
+    "cost_note": "network-bound; S3 list_objects_v2 pagination and one text get per key; standard metadata mode adds one bounded comment-JSON get per supported key",
     "length_floor_words": 1000,
     "tier": "acquisition"
   },
@@ -19,18 +19,21 @@
   "handoff": "none",
   "id": "acquire_mirrulations",
   "inputs": {
+    "metadata_mode": "off by default; standard verifies supported comment JSON and related attachment in the default bucket",
     "target": "the public Mirrulations AWS Open Data S3 bucket (anonymous access)"
   },
   "outputs": {
     "artifacts": [
       "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
-      "draft_manifest.jsonl (corpus_role impostor)"
+      "draft_manifest.jsonl (corpus_role impostor)",
+      "optional private sidecar source_metadata receipt with separate source-reported dates and fetched object hashes"
     ],
     "schema_version": "1.0"
   },
   "purpose": "acquire substantive regulatory comments from the Mirrulations S3 mirror into the regulatory_comment impostor pool (the population baseline argmove_profile profiles).",
   "references": [
-    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/references/mirrulations-metadata-provenance.md"
   ],
   "registers": [
     "regulatory_comment"
