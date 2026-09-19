@@ -10,7 +10,8 @@ entries:
     into the policy_brief impostor pool (the population baseline argmove_profile
     profiles).
   use_when:
-  - building the policy_brief population baseline from public-domain CRS reports
+  - building the legacy policy_brief population baseline from CRS reports
+  - reviewing candidate-only historical CRS versions in bounded metadata batches
   do_not_use_when:
   - the source is not the EveryCRSReport reports.csv index
   inputs:
@@ -19,10 +20,11 @@ entries:
     schema_version: '1.0'
     artifacts:
     - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
-    - draft_manifest.jsonl (corpus_role impostor)
+    - draft_manifest.jsonl (legacy mode only; corpus_role impostor)
+    - private historical candidate receipt (historical mode only; no manifest)
   compute:
     tier: acquisition
-    cost_note: network-bound; one CSV fetch plus one HTML fetch per admitted report
+    cost_note: legacy mode fetches one CSV plus HTML; historical mode fetches one CSV and at most --metadata-limit per-report JSON records plus selected HTML
     length_floor_words: 1500
   registers:
   - policy_brief
@@ -33,4 +35,5 @@ entries:
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  - plugins/setec-voiceprint/references/acquire-everycrsreport-historical-versions.md
   _seeded_at: '2026-06-11'
