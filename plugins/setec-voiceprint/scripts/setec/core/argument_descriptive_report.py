@@ -14,7 +14,7 @@ import math
 import statistics
 from typing import Any, Mapping
 
-from argument_annotation_contract import ValidationError, validate_candidate_bundle
+from setec.core.argument_annotation_contract import ValidationError, validate_candidate_bundle
 from argument_feature_schema import MODE_OPTIONS, ROLE_OPTIONS
 
 
@@ -145,9 +145,15 @@ class _Artifacts:
     def __init__(self, artifacts: Mapping[str, bytes]):
         if not isinstance(artifacts, Mapping):
             _fail("invalid_artifacts")
-        self.items = artifacts
+        # Read each supplied value once. A caller-owned Mapping may mutate or
+        # compute different bytes on later reads; all validation and resolution
+        # must use the same byte snapshot.
+        try:
+            self.items = dict(artifacts.items())
+        except Exception:
+            raise ReportValidationError("invalid_artifacts") from None
         self.used: set[str] = set()
-        for key, value in artifacts.items():
+        for key, value in self.items.items():
             _hash_field(key)
             if type(value) is not bytes:
                 _fail("invalid_bytes")

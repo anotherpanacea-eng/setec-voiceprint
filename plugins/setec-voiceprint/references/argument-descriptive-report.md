@@ -1,13 +1,13 @@
 # Argument descriptive report builder
 
-`argument_descriptive_report.build_descriptive_report(manifest_bytes, artifacts)` is an
+`setec.core.argument_descriptive_report.build_descriptive_report(manifest_bytes, artifacts)` is an
 importable, standard-library-only calculator. `manifest_bytes` is an exact UTF-8 JSON
 report manifest. `artifacts` is a mapping from lowercase SHA256 hex to the exact
 bytes of every artifact in that manifest's declared graph. The manifest is separate
 from the map and its digest is computed by the builder.
 
 ```python
-from argument_descriptive_report import build_descriptive_report, ReportValidationError
+from setec.core.argument_descriptive_report import build_descriptive_report, ReportValidationError
 
 try:
     result = build_descriptive_report(manifest_bytes, artifact_bytes_by_sha256)

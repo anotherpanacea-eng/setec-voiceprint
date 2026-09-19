@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import copy
 import hashlib
 import json
@@ -9,7 +10,7 @@ import math
 
 import pytest
 
-from argument_descriptive_report import ReportValidationError, build_descriptive_report
+from setec.core.argument_descriptive_report import ReportValidationError, build_descriptive_report
 
 
 def encoded(value):
@@ -502,3 +503,64 @@ def test_three_work_group_counts_use_whole_work_grain():
                                    "unknown_work_n": 0, "not_applicable_work_n": 1}
     assert summary["agency"] == {"distinct_known_id_n": 2, "known_work_n": 1,
                                   "unknown_work_n": 2, "not_applicable_work_n": 0}
+
+
+
+
+def test_changing_mapping_cannot_substitute_bytes_after_hash_validation():
+    manifest, artifacts = bundle(units=[[('support', 'argumentation')]])
+    protocol_hash = json.loads(manifest)["protocol_sha256"]
+    original_note = "Declared repeatability, no validity inference"
+    forged = artifacts[protocol_hash].replace(original_note.encode(), b"FORGED AFTER HASH CHECK")
+    assert digest(forged) != protocol_hash
+
+    class ChangingMapping(Mapping):
+        def __init__(self, values):
+            self.values = values
+            self.protocol_reads = 0
+
+        def __iter__(self):
+            return iter(self.values)
+
+        def __len__(self):
+            return len(self.values)
+
+        def __getitem__(self, key):
+            if key == protocol_hash:
+                self.protocol_reads += 1
+                return artifacts[key] if self.protocol_reads == 1 else forged
+            return artifacts[key]
+
+    changing = ChangingMapping(artifacts)
+    result = build_descriptive_report(manifest, changing)
+    assert result.private_report["independence"]["note"] == original_note
+    assert result.receipt["protocol_sha256"] == protocol_hash
+    assert changing.protocol_reads == 1
+
+    class ChangingDict(dict):
+        def __getitem__(self, key):
+            return forged if key == protocol_hash else super().__getitem__(key)
+
+    result = build_descriptive_report(manifest, ChangingDict(artifacts))
+    assert result.private_report["independence"]["note"] == original_note
+
+
+def test_mapping_exception_has_content_free_error():
+    manifest, artifacts = bundle(units=[[('support', 'argumentation')]])
+    secret = "private-source-marker-XYZ"
+
+    class ExplodingMapping(Mapping):
+        def __iter__(self):
+            return iter(artifacts)
+
+        def __len__(self):
+            return len(artifacts)
+
+        def __getitem__(self, key):
+            raise RuntimeError(secret)
+
+    with pytest.raises(ReportValidationError) as exc:
+        build_descriptive_report(manifest, ExplodingMapping())
+    assert exc.value.reason == "invalid_artifacts"
+    assert secret not in str(exc.value)
+    assert exc.value.__suppress_context__
