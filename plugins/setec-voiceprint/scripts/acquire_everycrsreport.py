@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
 """acquire_everycrsreport.py — pull Congressional Research Service reports.
 
-Reads EveryCRSReport.com's bulk index (``reports.csv``) and writes one
+The legacy route reads EveryCRSReport.com's bulk index (``reports.csv``) and writes one
 ``.txt`` + ``.meta.json`` per admitted report into a private impostor
 pool, plus a draft manifest with ``corpus_role: impostor`` entries.
 
-CRS reports are neutral, rigorously structured federal policy analysis
-(problem -> analysis -> options/implications). They are **public domain**
-(US-government work) with a deep pre-2022 archive, and EveryCRSReport
-exposes them as a scripted bulk index + per-report HTML — so acquisition
-is all text/HTML (no PDF/OCR, no API key). This makes CRS the cleanest
-first distant-genre acquirer; it builds the ``policy_brief`` population
+CRS reports are structured federal policy analysis. Federal-government text
+is generally public domain in the US, but embedded third-party matter
+requires document-level review. EveryCRSReport exposes a deep pre-2022
+archive through a scripted bulk index and per-report HTML (no API key).
+The legacy path builds the ``policy_brief`` population
 baseline that ``argmove_profile.py`` later profiles.
 
 Source shape (https://www.everycrsreport.com/download.html):
@@ -20,17 +19,23 @@ Source shape (https://www.everycrsreport.com/download.html):
                   title, latest PDF filename, latest HTML filename.
   per-report HTML at https://www.everycrsreport.com/<latestHTML>.
 
-This script fetches the latest HTML per report (preferred over PDF —
+By default this script fetches the latest HTML per report (preferred over PDF —
 clean text, no OCR), extracts the body, drops the CRS masthead / cover
 metadata / "Author Information" / "Contacts" trailer, and admits reports
 at or above ``--min-words`` (default 1500; CRS "In Focus" two-pagers fall
 below and are dropped as snapshots rather than briefs).
 
-Privacy: acquired text is corpus-baseline input. By default, output goes
+Historical mode selects exact dated versions from per-report metadata in
+finite batches. It emits candidate text, a source sidecar, and a private
+receipt without a draft manifest. It retains recoverable visible text,
+including summaries and author blocks, subject to nontext limitations.
+
+Privacy: legacy text is corpus-baseline input; historical text is private
+candidate material. By default, output goes
 under ``ai-prose-baselines-private/impostors/<register>/<persona>/`` and
 the privacy guard refuses paths outside any directory named
 ``ai-prose-baselines-private``. Pass ``--allow-public-output`` only for
-non-personal corpora.
+non-personal corpora in legacy mode; historical mode rejects the override.
 
 Robots: honors robots.txt by default (the shared ``Fetcher``); ships no
 override flag, matching ``acquire_blog.py``.
@@ -60,6 +65,9 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as _dt
+import hashlib
+import os
+import tempfile
 import io
 import json
 import re
@@ -83,7 +91,7 @@ SCRAPER_VERSION = "1.0"
 # The public bulk index. Positional ``reports_csv_url`` defaults to this.
 DEFAULT_REPORTS_CSV_URL = "https://www.everycrsreport.com/reports.csv"
 
-# CRS institutional author (reports are corporate-authored, not by-line).
+# Legacy institutional display label; historical actual bylines need source review.
 CRS_AUTHOR = "Congressional Research Service"
 
 # Column-name candidates in reports.csv, matched case-insensitively
@@ -415,6 +423,622 @@ def emit_piece(
     )
 
 
+
+# ---- Opt-in historical candidate discovery -----------------------
+
+HISTORICAL_RECEIPT_SCHEMA = "everycrsreport-historical-receipt/v1"
+HISTORICAL_ORDER = "normalized-report-id-lexical/v1"
+_HISTORICAL_STATUS_CATEGORY = {
+    "written": "acquired",
+    "would_write": "acquired",
+    "duplicate-hash": "skipped_duplicate",
+    "metadata-redirected": "skipped_network_error",
+    "metadata-fetch-failed": "skipped_network_error",
+    "html-redirected": "skipped_network_error",
+    "html-fetch-failed": "skipped_network_error",
+    "malformed-metadata-json": "skipped_parse_error",
+    "nonobject-metadata-root": "skipped_parse_error",
+    "mismatched-report-id": "skipped_parse_error",
+    "missing-versions": "skipped_parse_error",
+    "no-dated-versions": "skipped_parse_error",
+    "malformed-version": "skipped_parse_error",
+    "ambiguous-version-date": "skipped_parse_error",
+    "invalid-selected-version-id": "skipped_parse_error",
+    "ambiguous-version-identity": "skipped_parse_error",
+    "ambiguous-same-date-versions": "skipped_parse_error",
+    "invalid-selected-formats": "skipped_parse_error",
+    "invalid-html-locator": "skipped_parse_error",
+    "empty-body": "skipped_parse_error",
+    "empty-after-preprocess": "skipped_parse_error",
+    "extract-error": "skipped_parse_error",
+    "write-error": "skipped_parse_error",
+    "report-processing-error": "skipped_parse_error",
+    "absent-from-index": "skipped_filtered",
+    "ambiguous-index-locator": "skipped_filtered",
+    "invalid-metadata-locator": "skipped_filtered",
+    "future-only": "skipped_filtered",
+    "before-since": "skipped_filtered",
+    "missing-version-title": "skipped_filtered",
+    "no-html": "skipped_filtered",
+    "ambiguous-html": "skipped_filtered",
+    "below-min-words": "skipped_filtered",
+}
+
+
+def _record_historical_terminal(summary: ac.RunSummary, number: str, status: str) -> None:
+    """Count and log a single report disposition exactly once."""
+    category = _HISTORICAL_STATUS_CATEGORY[status]
+    if category != "acquired":
+        setattr(summary, category, getattr(summary, category) + 1)
+        summary.log_skip(reason=status, url=number)
+
+
+_REPORT_ID_RE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)*$")
+_DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_VERSION_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2})?$")
+_HISTORICAL_STRIP_SELECTORS = (
+    "nav", ".site-header", ".site-footer", ".breadcrumb",
+)
+
+
+def _historical_invalid(reason: str) -> None:
+    sys.stderr.write(f"historical CRS: {reason}\n")
+    raise SystemExit(2)
+
+
+def _strict_day(value: str | None) -> _dt.date | None:
+    if not isinstance(value, str) or not _DAY_RE.fullmatch(value):
+        return None
+    try:
+        return _dt.date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _version_day(value: Any) -> _dt.date | None:
+    if not isinstance(value, str) or not _VERSION_DATE_RE.fullmatch(value):
+        return None
+    try:
+        if len(value) == 10:
+            return _dt.date.fromisoformat(value)
+        return _dt.datetime.fromisoformat(value).date()
+    except ValueError:
+        return None
+
+
+def _report_id(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().upper()
+    return normalized if len(normalized) <= 64 and _REPORT_ID_RE.fullmatch(normalized) else None
+
+
+def _decoded_sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _safe_provider_url(base: str, locator: Any, prefix: str, suffix: str) -> str | None:
+    if not isinstance(locator, str) or not locator.strip():
+        return None
+    raw = locator.strip()
+    if "\\" in raw or any(ord(c) < 32 for c in raw):
+        return None
+    try:
+        parsed_raw = urllib.parse.urlsplit(raw)
+        if parsed_raw.query or parsed_raw.fragment:
+            return None
+        decoded = urllib.parse.unquote(raw)
+        if "%" in decoded or "\\" in decoded:
+            return None
+        url = urllib.parse.urljoin(base, raw)
+        base_parts = urllib.parse.urlsplit(base)
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme not in ("http", "https") or (
+        parts.scheme, parts.netloc.lower()
+    ) != (base_parts.scheme, base_parts.netloc.lower()):
+        return None
+    path = urllib.parse.unquote(parts.path)
+    if not path.startswith("/" + prefix + "/") or not path.endswith(suffix):
+        return None
+    if any(part in ("", ".", "..") for part in path.split("/")[2:]):
+        return None
+    return url
+
+
+def _write_new_receipt(path: Path, receipt: dict[str, Any]) -> None:
+    """Publish a complete private receipt without overwriting an old one."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = (json.dumps(receipt, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    fd, temp_name = tempfile.mkstemp(prefix=".crs-receipt-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Hard-link creation fails if path already exists and publishes
+        # the fully-written bytes in one filesystem operation.
+        os.link(temp_name, path)
+    finally:
+        Path(temp_name).unlink(missing_ok=True)
+
+
+def _historical_params(args: argparse.Namespace, index_sha: str, targets: list[str] | None) -> dict[str, Any]:
+    return {
+        "index_url": args.reports_csv_url,
+        "index_sha256_decoded_text": index_sha,
+        "target_ids": targets,
+        "since": args.since,
+        "until": args.until,
+        "ordering": HISTORICAL_ORDER,
+    }
+
+
+def _historical_failure(
+    out: Path, summary: ac.RunSummary, *,
+    stage: str, reason: str, index_sha: str | None = None,
+) -> int:
+    receipt = {
+        "schema": HISTORICAL_RECEIPT_SCHEMA,
+        "kind": "failure",
+        "failure_stage": stage,
+        "failure_reason": reason,
+        "index_sha256_decoded_text": index_sha,
+        "selection": None,
+        "selection_fingerprint": None,
+        "total_in_scope": None,
+        "batch_start_ordinal": None,
+        "batch_end_ordinal": None,
+        "batch_attempted": 0,
+        "status_rows": [],
+        "remaining_after_batch": None,
+        "last_attempted_id": None,
+        "next_cursor": None,
+        "batch_complete": False,
+        "scope_exhausted": False,
+        "files_written": 0,
+        "summary": summary.to_dict(),
+    }
+    _write_new_receipt(out, receipt)
+    sys.stderr.write(f"historical CRS {stage}: {reason}\n")
+    return 1
+
+
+def _validated_prior(
+    prior: dict[str, Any], worklist: list[str], selection: dict[str, Any],
+    fingerprint: str, after: str,
+) -> int:
+    """Return next ordinal only for a typed, contiguous previous batch."""
+    if type(prior) is not dict or prior.get("schema") != HISTORICAL_RECEIPT_SCHEMA or prior.get("kind") != "bounded_batch":
+        raise ValueError("invalid-resume-receipt-kind")
+    if prior.get("selection") != selection or prior.get("selection_fingerprint") != fingerprint:
+        raise ValueError("changed-resume-selection")
+    total = len(worklist)
+    start, end, count = (prior.get(k) for k in (
+        "batch_start_ordinal", "batch_end_ordinal", "batch_attempted",
+    ))
+    if any(type(x) is not int for x in (start, end, count)):
+        raise ValueError("invalid-resume-count-types")
+    rows = prior.get("status_rows")
+    if type(rows) is not list or count != len(rows) or count < 1:
+        raise ValueError("invalid-resume-status-count")
+    if not 0 <= start <= end < total or count != end - start + 1:
+        raise ValueError("invalid-resume-range")
+    if type(prior.get("total_in_scope")) is not int or prior["total_in_scope"] != total:
+        raise ValueError("invalid-resume-total")
+    if type(prior.get("remaining_after_batch")) is not int or prior["remaining_after_batch"] != total - end - 1:
+        raise ValueError("invalid-resume-remaining")
+    if type(prior.get("batch_complete")) is not bool or prior["batch_complete"] is not True:
+        raise ValueError("invalid-resume-batch-complete")
+    if type(prior.get("scope_exhausted")) is not bool or prior["scope_exhausted"] != (end == total - 1):
+        raise ValueError("invalid-resume-scope")
+    if prior.get("last_attempted_id") != worklist[end] or prior.get("next_cursor") != worklist[end] or after != worklist[end]:
+        raise ValueError("invalid-resume-cursor")
+    if any(type(row) is not dict or type(row.get("id")) is not str or
+           type(row.get("status")) is not str or not row["status"]
+           for row in rows):
+        raise ValueError("invalid-resume-status-row")
+    if [row["id"] for row in rows] != worklist[start:end + 1]:
+        raise ValueError("noncontiguous-resume-statuses")
+    statuses = [row["status"] for row in rows]
+    if any(status not in _HISTORICAL_STATUS_CATEGORY for status in statuses):
+        raise ValueError("invalid-resume-terminal-status")
+    predecessor = prior.get("predecessor_receipt_sha256")
+    if start == 0:
+        if predecessor is not None:
+            raise ValueError("invalid-initial-predecessor")
+    elif type(predecessor) is not str or not re.fullmatch(r"[0-9a-fA-F]{64}", predecessor):
+        raise ValueError("invalid-resume-predecessor-hash")
+    written = statuses.count("written")
+    if type(prior.get("files_written")) is not int or prior["files_written"] != written:
+        raise ValueError("invalid-resume-files-written")
+    summary = prior.get("summary")
+    if type(summary) is not dict or summary.get("draft_manifest_path", object()) is not None:
+        raise ValueError("invalid-resume-summary")
+    expected_counts = {
+        "acquired": sum(_HISTORICAL_STATUS_CATEGORY[x] == "acquired" for x in statuses),
+        "skipped_duplicate": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_duplicate" for x in statuses),
+        "skipped_network_error": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_network_error" for x in statuses),
+        "skipped_parse_error": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_parse_error" for x in statuses),
+        "skipped_filtered": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_filtered" for x in statuses),
+        "skipped_paid": 0,
+        "skipped_robots": 0,
+    }
+    if any(type(summary.get(key)) is not int or summary[key] != value
+           for key, value in expected_counts.items()):
+        raise ValueError("invalid-resume-summary-counts")
+    expected_skips = [
+        (row["id"], row["status"]) for row in rows
+        if _HISTORICAL_STATUS_CATEGORY[row["status"]] != "acquired"
+    ]
+    skip_log = summary.get("skip_log")
+    if type(skip_log) is not list or len(skip_log) != len(expected_skips):
+        raise ValueError("invalid-resume-skip-log")
+    if any(type(log) is not dict or type(log.get("reason")) is not str or
+           type(log.get("url")) is not str or
+           (log["url"], log["reason"]) != expected
+           for log, expected in zip(skip_log, expected_skips)):
+        raise ValueError("invalid-resume-skip-log")
+    if type(prior.get("index_sha256_decoded_text")) is not str or prior["index_sha256_decoded_text"] != selection["index_sha256_decoded_text"]:
+        raise ValueError("invalid-resume-index")
+    return end + 1
+
+
+def _historical_index(csv_url: str, text: str) -> dict[str, str | None]:
+    reader = csv.DictReader(io.StringIO(text))
+    fields = list(reader.fieldnames or [])
+    number_col = _resolve_column(fields, CSV_NUMBER_COLS)
+    url_col = _resolve_column(fields, ("url", "metadataurl", "metadata_url"))
+    if not number_col or not url_col:
+        raise ValueError("missing-number-or-metadata-url-column")
+    found: dict[str, str | None] = {}
+    for row in reader:
+        if not isinstance(row, dict):
+            raise ValueError("malformed-index-row")
+        number = _report_id(row.get(number_col))
+        if number is None:
+            raise ValueError("invalid-index-report-number")
+        locator = row.get(url_col)
+        if not isinstance(locator, str):
+            locator = None
+        if number in found and found[number] != locator:
+            found[number] = None
+        elif number not in found:
+            found[number] = locator
+    return found
+
+
+def _historical_select(
+    csv_url: str, number: str, locator: Any, until: _dt.date,
+    since: _dt.date | None, fetcher: ac.Fetcher,
+) -> tuple[dict[str, Any] | None, str]:
+    metadata_url = _safe_provider_url(csv_url, locator, "reports", ".json")
+    if not metadata_url:
+        return None, "invalid-metadata-locator"
+    fetched = fetcher.fetch(metadata_url)
+    if fetched.final_url and fetched.final_url != metadata_url:
+        return None, "metadata-redirected"
+    if not fetched.ok or not fetched.text:
+        return None, "metadata-fetch-failed"
+    try:
+        data = json.loads(fetched.text)
+    except ValueError:
+        return None, "malformed-metadata-json"
+    if type(data) is not dict:
+        return None, "nonobject-metadata-root"
+    if _report_id(data.get("id")) != number:
+        return None, "mismatched-report-id"
+    versions = data.get("versions")
+    if type(versions) is not list:
+        return None, "missing-versions"
+    if not versions:
+        return None, "no-dated-versions"
+    dated: list[tuple[_dt.date, dict[str, Any]]] = []
+    for version in versions:
+        if type(version) is not dict:
+            return None, "malformed-version"
+        day = _version_day(version.get("date"))
+        if day is None:
+            return None, "ambiguous-version-date"
+        dated.append((day, version))
+    eligible = [(day, version) for day, version in dated if day <= until]
+    if not eligible:
+        return None, "future-only"
+    selected_day = max(day for day, _ in eligible)
+    if since and selected_day < since:
+        return None, "before-since"
+    selected_versions = [v for day, v in eligible if day == selected_day]
+    identities: dict[tuple[str, str], str] = {}
+    for version in selected_versions:
+        vid = version.get("id")
+        if type(vid) is int:
+            key = ("int", str(vid))
+        elif type(vid) is str and vid.strip():
+            key = ("str", vid.strip())
+        else:
+            return None, "invalid-selected-version-id"
+        encoded = json.dumps(version, sort_keys=True)
+        if key in identities and identities[key] != encoded:
+            return None, "ambiguous-version-identity"
+        identities[key] = encoded
+    if len(identities) != 1:
+        return None, "ambiguous-same-date-versions"
+    version = selected_versions[0]
+    vid = version["id"]
+    title = version.get("title")
+    if not isinstance(title, str) or not title.strip():
+        return None, "missing-version-title"
+    formats = version.get("formats")
+    if type(formats) is not list:
+        return None, "invalid-selected-formats"
+    html_urls: dict[str, str] = {}
+    for fmt in formats:
+        if type(fmt) is not dict or type(fmt.get("format")) is not str:
+            return None, "invalid-selected-formats"
+        if fmt["format"].upper() != "HTML":
+            continue
+        filename = fmt.get("filename")
+        url = _safe_provider_url(csv_url, filename, "files", ".html")
+        if url is None:
+            return None, "invalid-html-locator"
+        html_urls[url] = filename
+    if not html_urls:
+        return None, "no-html"
+    if len(html_urls) != 1:
+        return None, "ambiguous-html"
+    html_url, filename = next(iter(html_urls.items()))
+    return {
+        "report_number": number,
+        "provider_version_id": vid,
+        "provider_version_id_type": type(vid).__name__,
+        "provider_version_date": version["date"],
+        "date": selected_day,
+        "title": title.strip(),
+        "provider_metadata_url": metadata_url,
+        "provider_html_filename": filename,
+        "html_url": html_url,
+        "metadata_decoded_text_sha256": _decoded_sha(fetched.text),
+    }, "selected"
+
+
+def _historical_extract(html: str) -> tuple[str, bool, str]:
+    from bs4 import BeautifulSoup  # type: ignore
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    for tag in soup.select("script, style, noscript, form, iframe"):
+        tag.decompose()
+    for sel in _HISTORICAL_STRIP_SELECTORS:
+        for tag in soup.select(sel):
+            tag.decompose()
+    # Report appendices and footnotes may be siblings of article/main.
+    # Historical mode retains the visible body after confirmed site chrome.
+    container = soup.body or soup
+    nontext = bool(container.select("img, svg, canvas, figure"))
+    body = container.get_text("\n")
+    body = re.sub(r"[ \t]+", " ", body)
+    body = re.sub(r"\n[ \t]+", "\n", body)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    return body, nontext, title
+
+
+def _historical_process(
+    descriptor: dict[str, Any], args: argparse.Namespace,
+    options: ProcessOptions, summary: ac.RunSummary, fetcher: ac.Fetcher,
+) -> str:
+    url = descriptor["html_url"]
+    fetched = fetcher.fetch(url)
+    if fetched.final_url and fetched.final_url != url:
+        return "html-redirected"
+    if not fetched.ok or not fetched.text:
+        return "html-fetch-failed"
+    try:
+        body, nontext, _html_title = _historical_extract(fetched.text)
+        if len(body) < 200:
+            raise ValueError("empty-body")
+        cleaned, prep_meta = ac.preprocess_text(
+            body, rules="", allow_non_prose=options.allow_non_prose,
+            strip_aggressive=False,
+        )
+        if len(cleaned) < 200:
+            raise ValueError("empty-after-preprocess")
+    except Exception as exc:
+        return str(exc) if isinstance(exc, ValueError) and str(exc) in (
+            "empty-body", "empty-after-preprocess",
+        ) else "extract-error"
+    word_count = len(re.findall(r"\S+", cleaned))
+    if word_count < options.min_words:
+        return "below-min-words"
+    piece = ac.AcquiredPiece(
+        title=descriptor["title"], author=options.author or CRS_AUTHOR,
+        persona=options.persona, register=options.register,
+        date_written=descriptor["date"], source_url=url,
+        cleaned_text=cleaned, raw_byte_length=len(body.encode("utf-8")),
+        preprocessing_meta=prep_meta, acquired_via=options.acquired_via,
+        consent_status=options.consent_status, era=options.era,
+        register_match=options.register_match, topic_match=options.topic_match,
+        impostor_for=list(options.impostor_for),
+    )
+    if ac.content_hash_already_present(piece.content_hash, options.output_dir):
+        return "duplicate-hash"
+    if options.dry_run:
+        summary.acquired += 1
+        return "would_write"
+    author_match = re.search(
+        r"(?im)^\s*(?:Author Information|Author Contact Information|Contacts?)\s*$",
+        body,
+    )
+    author_block = body[author_match.start():author_match.start() + 1200] if author_match else ""
+    if re.search(r"\b(?:author|analyst)\s+redacted\b", author_block or body, re.I):
+        byline_status = "provider_redacted"
+    elif author_match:
+        byline_status = "source_block_unreviewed"
+    else:
+        byline_status = "unresolved"
+    extra = {
+        "author_block_body_char_offset": author_match.start() if author_match else None,
+        "author_block_visible_text_sha256": _decoded_sha(author_block) if author_block else None,
+        "author_block_hash_semantics": "up to 1200 characters from extracted visible body",
+        "report_number": descriptor["report_number"],
+        "provider_version_id": descriptor["provider_version_id"],
+        "provider_version_id_type": descriptor["provider_version_id_type"],
+        "provider_version_date": descriptor["provider_version_date"],
+        "provider_metadata_url": descriptor["provider_metadata_url"],
+        "provider_html_filename": descriptor["provider_html_filename"],
+        "selection_mode": "latest_eligible_historical_version",
+        "byline_status": byline_status,
+        "extraction_completeness_status": (
+            "visible_text_with_nontext_uncertainty" if nontext
+            else "recoverable_visible_text_unreviewed"
+        ),
+        "rights_review_status": "pending_document_level_third_party_review",
+        "paragraph_segmentation_status": "unreviewed",
+        "metadata_decoded_text_sha256": descriptor["metadata_decoded_text_sha256"],
+        "html_decoded_text_sha256": _decoded_sha(fetched.text),
+        "source_snapshots_retained": False,
+        "source_hash_semantics": "decoded FetchResult.text encoded as UTF-8; operator receipt only",
+    }
+    try:
+        ac.write_piece(piece, output_dir=options.output_dir,
+                       scraper_version=SCRAPER_VERSION, extra_meta=extra)
+    except OSError:
+        return "write-error"
+    summary.acquired += 1
+    summary.total_cleaned_words += piece.word_count
+    summary.record_strip_meta(prep_meta)
+    return "written"
+
+
+def run_historical(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
+    """Candidate-only finite historical-version batch; legacy run is separate."""
+    until = _strict_day(getattr(args, "until", None))
+    since = _strict_day(args.since) if args.since else None
+    limit = getattr(args, "metadata_limit", None)
+    out_value = getattr(args, "out", None)
+    if until is None or (args.since and since is None) or (since and since > until):
+        _historical_invalid("invalid-date-window")
+    if type(limit) is not int or limit <= 0:
+        _historical_invalid("invalid-metadata-limit")
+    if type(args.max_items) is not int or args.max_items < limit:
+        _historical_invalid("max-items-below-metadata-limit")
+    if not out_value or args.emit_manifest or args.allow_public_output or args.strip_aggressive or args.strip_rules or args.content_selector:
+        _historical_invalid("invalid-historical-output-or-stripping")
+    target_input = getattr(args, "report_number", None) or []
+    targets: list[str] = []
+    for raw in target_input:
+        number = _report_id(raw)
+        if number is None or number in targets:
+            _historical_invalid("invalid-or-duplicate-report-number")
+        targets.append(number)
+    targets = sorted(targets)
+    out = Path(out_value).expanduser().resolve()
+    resume_value = getattr(args, "resume_receipt", None)
+    after_raw = getattr(args, "after_report_number", None)
+    expected_sha = getattr(args, "expected_index_sha256", None)
+    if (after_raw is None) != (resume_value is None) or (after_raw is None) != (expected_sha is None):
+        _historical_invalid("incomplete-resume-options")
+    after = _report_id(after_raw) if after_raw is not None else None
+    if after_raw is not None and (after is None or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha or "")):
+        _historical_invalid("invalid-resume-cursor-or-hash")
+    if out.exists():
+        _historical_invalid("receipt-output-already-exists")
+    prior_path = Path(resume_value).expanduser().resolve() if resume_value else None
+    if prior_path == out:
+        _historical_invalid("resume-receipt-output-equality")
+    options = parse_options(args)
+    private_paths = [out, options.output_dir]
+    if prior_path:
+        private_paths.append(prior_path)
+    ac.check_output_privacy(private_paths, allow_public=False, tool=TOOL_NAME)
+    prior = None
+    prior_bytes = None
+    if prior_path:
+        try:
+            prior_bytes = prior_path.read_bytes()
+            prior = json.loads(prior_bytes)
+        except (OSError, ValueError) as exc:
+            _historical_invalid(f"unreadable-resume-receipt:{type(exc).__name__}")
+        if type(prior) is not dict or prior.get("schema") != HISTORICAL_RECEIPT_SCHEMA or prior.get("kind") != "bounded_batch":
+            _historical_invalid("invalid-resume-receipt-kind")
+    if fetcher is None:
+        fetcher = ac.make_requests_fetcher(
+            version=SCRAPER_VERSION, rate_limit_seconds=args.rate_limit,
+            user_agent=getattr(args, "user_agent", None) or None,
+        )
+    summary = ac.RunSummary(draft_manifest_path=None, output_dir=str(options.output_dir))
+    index_result = fetcher.fetch(args.reports_csv_url)
+    if index_result.final_url and index_result.final_url != args.reports_csv_url:
+        return _historical_failure(out, summary, stage="index-fetch", reason="index-redirected")
+    if not index_result.ok or not index_result.text:
+        return _historical_failure(out, summary, stage="index-fetch", reason="index-fetch-failed")
+    index_sha = _decoded_sha(index_result.text)
+    try:
+        index = _historical_index(args.reports_csv_url, index_result.text)
+    except (ValueError, csv.Error) as exc:
+        return _historical_failure(out, summary, stage="index-parse", reason=str(exc), index_sha=index_sha)
+    worklist = targets if targets else sorted(index)
+    if not worklist:
+        return _historical_failure(out, summary, stage="index-parse", reason="empty-report-frame", index_sha=index_sha)
+    selection = _historical_params(args, index_sha, targets or None)
+    fingerprint = _decoded_sha(json.dumps(selection, sort_keys=True, separators=(",", ":")))
+    start = 0
+    if prior is not None:
+        if expected_sha.lower() != index_sha:
+            return _historical_failure(out, summary, stage="resume", reason="changed-index", index_sha=index_sha)
+        try:
+            start = _validated_prior(prior, worklist, selection, fingerprint, after)
+        except ValueError as exc:
+            return _historical_failure(out, summary, stage="resume", reason=str(exc), index_sha=index_sha)
+        if start >= len(worklist):
+            return _historical_failure(out, summary, stage="resume", reason="scope-exhausted", index_sha=index_sha)
+    batch = worklist[start:start + limit]
+    rows: list[dict[str, str]] = []
+    for number in batch:
+        if number not in index:
+            status = "absent-from-index"
+        elif index[number] is None:
+            status = "ambiguous-index-locator"
+        else:
+            try:
+                descriptor, status = _historical_select(
+                    args.reports_csv_url, number, index[number], until, since, fetcher,
+                )
+                if descriptor is not None:
+                    status = _historical_process(descriptor, args, options, summary, fetcher)
+            except Exception:
+                status = "report-processing-error"
+        _record_historical_terminal(summary, number, status)
+        rows.append({"id": number, "status": status})
+    end = start + len(batch) - 1
+    remaining = len(worklist) - start - len(batch)
+    receipt = {
+        "schema": HISTORICAL_RECEIPT_SCHEMA,
+        "kind": "bounded_batch",
+        "index_sha256_decoded_text": index_sha,
+        "selection": selection,
+        "selection_fingerprint": fingerprint,
+        "predecessor_receipt_sha256": hashlib.sha256(prior_bytes).hexdigest() if prior_bytes else None,
+        "total_in_scope": len(worklist),
+        "batch_start_ordinal": start,
+        "batch_end_ordinal": end,
+        "batch_attempted": len(batch),
+        "status_rows": rows,
+        "remaining_after_batch": remaining,
+        "last_attempted_id": batch[-1] if batch else None,
+        "next_cursor": batch[-1] if batch else None,
+        "batch_complete": True,
+        "scope_exhausted": remaining == 0,
+        "files_written": sum(row["status"] == "written" for row in rows),
+        "summary": summary.to_dict(),
+    }
+    _write_new_receipt(out, receipt)
+    sys.stderr.write(summary.render_stderr())
+    if summary.acquired == 0 and not args.allow_empty and not any(
+        row["status"] == "duplicate-hash" for row in rows
+    ):
+        return 1
+    return 0
+
 # ---- CLI ----------------------------------------------------------
 
 
@@ -470,6 +1094,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # Date window + caps.
     p.add_argument("--since", help="Inclusive lower-bound date (YYYY-MM-DD).")
     p.add_argument("--until", help="Inclusive upper-bound date (YYYY-MM-DD).")
+    p.add_argument("--historical-versions", action="store_true",
+                   help="Select dated per-report versions in finite candidate-only batches.")
+    p.add_argument("--report-number", action="append",
+                   help="Optional report number filter in historical mode (repeatable).")
+    p.add_argument("--metadata-limit", type=int,
+                   help="Required positive metadata-decision cap for historical mode.")
+    p.add_argument("--after-report-number",
+                   help="Exclusive cursor from a prior historical receipt.")
+    p.add_argument("--expected-index-sha256",
+                   help="Expected decoded CSV text SHA-256 on resume.")
+    p.add_argument("--resume-receipt",
+                   help="Prior private bounded-batch receipt on resume.")
     p.add_argument("--max-items", type=int, default=400,
                    help="Maximum number of reports to acquire (default: 400).")
     p.add_argument("--min-words", type=int, default=1500,
@@ -487,7 +1123,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     # Behavior.
     p.add_argument("--content-selector",
-                   help="CSS selector for the report body (rare override).")
+                   help="Legacy body override; historical mode rejects narrowing selectors.")
     p.add_argument("--rate-limit", type=float, default=2.0,
                    help="Seconds between same-host requests (default: 2.0).")
     ac.add_user_agent_arg(p)
@@ -551,6 +1187,8 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
 
 def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
     """Top-level acquisition driver. Returns the shell exit code."""
+    if getattr(args, "historical_versions", False):
+        return run_historical(args, fetcher)
     if args.since and not ac.parse_iso_date(args.since):
         sys.stderr.write(f"  warning: could not parse --since={args.since}\n")
     if args.until and not ac.parse_iso_date(args.until):

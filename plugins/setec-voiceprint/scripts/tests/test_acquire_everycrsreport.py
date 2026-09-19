@@ -476,6 +476,475 @@ def test_emitted_manifest_validates_with_policy_brief_register(tmp_path):
         f"policy_brief should be a known register: {unknown_register}"
 
 
+
+def test_historical_selects_old_version_from_updated_index(tmp_path):
+    """Historical discovery uses per-report versions even when CSV latest is new."""
+    private = tmp_path / "ai-prose-baselines-private"
+    parser = ev.build_arg_parser()
+    args = parser.parse_args([
+        CSV_URL, "--impostor-for", "synthetic_target",
+        "--register", "policy_brief", "--consent-status", "public_record",
+        "--historical-versions", "--until", "2021-12-31",
+        "--metadata-limit", "1", "--min-words", "20",
+        "--output-dir", str(private / "candidates"),
+        "--out", str(private / "receipt.json"),
+    ])
+    html = "<html><body><article><div class='summary-box'>Summary retained.</div>" + (
+        "<p>Substantive synthetic policy analysis and citation.</p>" * 20
+    ) + "<h2>Author Information</h2><p>Analyst Example</p></article></body></html>"
+    fixtures = {
+        CSV_URL: ac.FetchResult(CSV_URL, 200,
+            "number,url,latestPubDate,title,latestHTML\n"
+            "RTEST,reports/RTEST.json,2025-01-01,New title,files/new.html\n"),
+        f"{BASE}/reports/RTEST.json": ac.FetchResult(
+            f"{BASE}/reports/RTEST.json", 200,
+            json.dumps({"id": "RTEST", "versions": [
+                {"id": 11, "date": "2025-01-01T00:00:00",
+                 "title": "New title", "formats": [{"format": "HTML", "filename": "files/new.html"}]},
+                {"id": 7, "date": "2020-06-01T00:00:00",
+                 "title": "Old title", "formats": [{"format": "HTML", "filename": "files/old.html"}]},
+            ]})),
+        f"{BASE}/files/old.html": ac.FetchResult(f"{BASE}/files/old.html", 200, html),
+    }
+    fetcher = ac.FixtureFetcher(fixtures, rate_limit_seconds=0, respect_robots=False)
+    assert ev.run(args, fetcher=fetcher) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["kind"] == "bounded_batch"
+    assert receipt["batch_attempted"] == 1
+    assert receipt["summary"]["draft_manifest_path"] is None
+    texts = list((private / "candidates").glob("*.txt"))
+    assert len(texts) == 1
+    assert "Summary retained." in texts[0].read_text(encoding="utf-8")
+
+
+def _historical_args(private, **overrides):
+    base = dict(
+        historical_versions=True, metadata_limit=1, report_number=None,
+        after_report_number=None, expected_index_sha256=None,
+        resume_receipt=None, until="2021-12-31", since=None,
+        max_items=400, min_words=20, allow_public_output=False,
+        emit_manifest=None, output_dir=str(private / "candidates"),
+        out=str(private / "receipt.json"),
+    )
+    base.update(overrides)
+    return make_args(**base)
+
+
+def _inline_fetcher(index_text, metadata=None, html=None):
+    urls = {CSV_URL: ac.FetchResult(CSV_URL, 200, index_text)}
+    for number, document in (metadata or {}).items():
+        url = f"{BASE}/reports/{number}.json"
+        urls[url] = ac.FetchResult(url, 200, json.dumps(document))
+    for filename, body in (html or {}).items():
+        url = f"{BASE}/files/{filename}"
+        urls[url] = ac.FetchResult(url, 200, body)
+    return ac.FixtureFetcher(urls, rate_limit_seconds=0, respect_robots=False)
+
+
+def _index(*numbers):
+    return "number,url,latestPubDate,title,latestHTML\n" + "".join(
+        f"{n},reports/{n}.json,2025-01-01,Current,files/current.html\n"
+        for n in numbers
+    )
+
+
+def _version(day="2020-01-01T00:00:00", version_id=1, filename="old.html"):
+    return {"id": version_id, "date": day, "title": "Historical synthetic report",
+            "formats": [{"format": "HTML", "filename": f"files/{filename}"}]}
+
+
+def _long_html():
+    return ("<html><body><article><div class='summary-box'>Summary retained.</div>"
+            "<table><tr><td>Table source note retained.</td></tr></table>"
+            + "<p>Substantive synthetic policy analysis and citation.</p>" * 20
+            + "<h2>Appendix</h2><p>Appendix retained.</p>"
+            + "<h2>Author Information</h2><p>Analyst Example</p>"
+            + "</article></body></html>")
+
+
+def test_historical_resume_counts_missing_target_in_second_batch(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RC")
+    targets = ["RA", "RB", "RC"]
+    fetcher = _inline_fetcher(index, {
+        "RA": {"id": "RA", "versions": [_version(filename="a.html")]},
+        "RC": {"id": "RC", "versions": [_version(filename="c.html")]},
+    }, {"a.html": _long_html(), "c.html": _long_html().replace("citation", "footnote")})
+    first = private / "first.json"
+    second = private / "second.json"
+    third = private / "third.json"
+    args1 = _historical_args(private, report_number=targets, out=str(first))
+    assert ev.run(args1, fetcher=fetcher) == 0
+    r1 = json.loads(first.read_text(encoding="utf-8"))
+    assert r1["status_rows"] == [{"id": "RA", "status": "written"}]
+    assert (r1["batch_start_ordinal"], r1["remaining_after_batch"], r1["next_cursor"]) == (0, 2, "RA")
+    digest = hashlib.sha256(index.encode("utf-8")).hexdigest()
+    args2 = _historical_args(private, report_number=targets, out=str(second),
+                             after_report_number="RA", expected_index_sha256=digest,
+                             resume_receipt=str(first), allow_empty=True)
+    assert ev.run(args2, fetcher=fetcher) == 0
+    r2 = json.loads(second.read_text(encoding="utf-8"))
+    assert r2["status_rows"] == [{"id": "RB", "status": "absent-from-index"}]
+    assert (r2["batch_start_ordinal"], r2["remaining_after_batch"], r2["next_cursor"]) == (1, 1, "RB")
+    args3 = _historical_args(private, report_number=targets, out=str(third),
+                             after_report_number="RB", expected_index_sha256=digest,
+                             resume_receipt=str(second))
+    assert ev.run(args3, fetcher=fetcher) == 0
+    r3 = json.loads(third.read_text(encoding="utf-8"))
+    assert r3["status_rows"] == [{"id": "RC", "status": "written"}]
+    assert r3["scope_exhausted"] is True
+    assert r3["predecessor_receipt_sha256"] == hashlib.sha256(second.read_bytes()).hexdigest()
+
+
+def test_historical_index_failure_receipts_cannot_resume(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    for name, fetcher in (
+        ("fetch", _inline_fetcher("")),
+        ("schema", _inline_fetcher("foo,bar\n1,2\n")),
+    ):
+        out = private / f"{name}.json"
+        args = _historical_args(private, out=str(out))
+        assert ev.run(args, fetcher=fetcher) == 1
+        receipt = json.loads(out.read_text(encoding="utf-8"))
+        assert receipt["kind"] == "failure"
+        assert receipt["batch_attempted"] == 0
+        assert receipt["status_rows"] == []
+        assert receipt["total_in_scope"] is None
+        assert receipt["summary"]["draft_manifest_path"] is None
+        # A failure envelope is never a continuation authority.
+        import hashlib
+        index = _index("RA")
+        resume = _historical_args(
+            private, out=str(private / f"{name}-resume.json"),
+            after_report_number="RA", expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+            resume_receipt=str(out),
+        )
+        with pytest.raises(SystemExit):
+            ev.run(resume, fetcher=_inline_fetcher(index))
+
+
+def test_historical_same_date_and_pdf_only_are_dispositions(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB")
+    documents = {
+        "RA": {"id": "RA", "versions": [_version(version_id=1), _version(version_id=2)]},
+        "RB": {"id": "RB", "versions": [
+            _version(day="2020-01-01", filename="older.html"),
+            {"id": 9, "date": "2021-01-01T00:00:00", "title": "PDF only",
+             "formats": [{"format": "PDF", "filename": "files/newer.pdf"}]},
+        ]},
+    }
+    args = _historical_args(private, metadata_limit=2, allow_empty=True)
+    assert ev.run(args, fetcher=_inline_fetcher(index, documents)) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [
+        {"id": "RA", "status": "ambiguous-same-date-versions"},
+        {"id": "RB", "status": "no-html"},
+    ]
+    assert receipt["files_written"] == 0
+    assert not list((private / "candidates").glob("*.txt"))
+
+
+def test_historical_zero_output_and_dry_run_receipts(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA")
+    metadata = {"RA": {"id": "RA", "versions": [_version()]}}
+    no_html = _historical_args(private)
+    assert ev.run(no_html, fetcher=_inline_fetcher(index, metadata)) == 1
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["batch_complete"] is True
+    assert receipt["status_rows"][0]["status"] == "html-fetch-failed"
+    dry = _historical_args(private, dry_run=True, out=str(private / "dry.json"))
+    assert ev.run(dry, fetcher=_inline_fetcher(index, metadata, {"old.html": _long_html()})) == 0
+    dry_receipt = json.loads((private / "dry.json").read_text(encoding="utf-8"))
+    assert dry_receipt["status_rows"][0]["status"] == "would_write"
+    assert dry_receipt["files_written"] == 0
+    assert not list((private / "candidates").glob("*.txt"))
+
+
+def test_historical_preflight_refuses_manifest_and_overwrite(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    out = private / "receipt.json"
+    out.parent.mkdir(parents=True)
+    out.write_text("sentinel", encoding="utf-8")
+    for overrides in (
+        {"out": str(out)},
+        {"out": str(private / "other.json"), "emit_manifest": str(private / "draft.jsonl")},
+        {"out": str(private / "other.json"), "max_items": 0},
+    ):
+        with pytest.raises(SystemExit):
+            ev.run(_historical_args(private, **overrides),
+                   fetcher=_inline_fetcher(_index("RA")))
+    assert out.read_text(encoding="utf-8") == "sentinel"
+    assert not (private / "other.json").exists()
+
+
+def test_historical_sidecar_binds_decoded_sources_and_retains_author(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA")
+    metadata = {"id": "RA", "versions": [_version(version_id=23)]}
+    html = _long_html()
+    assert ev.run(_historical_args(private), fetcher=_inline_fetcher(
+        index, {"RA": metadata}, {"old.html": html},
+    )) == 0
+    sidecars = list((private / "candidates").glob("*.meta.json"))
+    assert len(sidecars) == 1
+    meta = json.loads(sidecars[0].read_text(encoding="utf-8"))
+    assert meta["provider_version_id"] == 23
+    assert meta["provider_version_id_type"] == "int"
+    assert meta["provider_version_date"] == "2020-01-01T00:00:00"
+    assert meta["source_url"] == f"{BASE}/files/old.html"
+    assert meta["byline_status"] == "source_block_unreviewed"
+    assert type(meta["author_block_body_char_offset"]) is int
+    assert len(meta["author_block_visible_text_sha256"]) == 64
+    assert meta["rights_review_status"] == "pending_document_level_third_party_review"
+    assert meta["source_snapshots_retained"] is False
+    assert meta["html_decoded_text_sha256"] == hashlib.sha256(html.encode()).hexdigest()
+    assert meta["metadata_decoded_text_sha256"] == hashlib.sha256(json.dumps(metadata).encode()).hexdigest()
+    body = next((private / "candidates").glob("*.txt")).read_text(encoding="utf-8")
+    assert "Summary retained." in body
+    assert "Table source note retained." in body
+    assert "Appendix retained." in body
+    assert "Analyst Example" in body
+    assert not list(private.rglob("draft_manifest.jsonl"))
+
+
+@pytest.mark.parametrize("versions,expected", [
+    ([_version(day="2020-13-01")], "ambiguous-version-date"),
+    ([_version(day="2020-01-01T00:00:00Z")], "ambiguous-version-date"),
+    ([_version(day="2020-01-01", version_id=True)], "invalid-selected-version-id"),
+    ([{"id": 1, "date": "2020-01-01", "title": "PDF only",
+       "formats": [{"format": "PDF", "filename": "files/a.pdf"}]}], "no-html"),
+    ([_version(filename="../escape.html")], "invalid-html-locator"),
+    ([_version(), {"id": 2, "date": "2025-01-01", "title": "Future", "formats": {"bad": True}}], "html-fetch-failed"),
+])
+def test_historical_malformed_and_selected_format_rules(tmp_path, versions, expected):
+    private = tmp_path / "ai-prose-baselines-private"
+    fetcher = _inline_fetcher(_index("RA"), {"RA": {"id": "RA", "versions": versions}})
+    assert ev.run(_historical_args(private, allow_empty=True), fetcher=fetcher) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [{"id": "RA", "status": expected}]
+
+
+def test_historical_resume_refuses_forged_prior_without_metadata_fetch(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB")
+    first = private / "first.json"
+    args1 = _historical_args(private, out=str(first), allow_empty=True)
+    assert ev.run(args1, fetcher=_inline_fetcher(index)) == 0
+    forged = json.loads(first.read_text(encoding="utf-8"))
+    forged["batch_attempted"] = 2
+    first.write_text(json.dumps(forged), encoding="utf-8")
+    second = private / "second.json"
+    fetcher = _inline_fetcher(index)
+    args2 = _historical_args(
+        private, out=str(second), after_report_number="RA",
+        expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+        resume_receipt=str(first), allow_empty=True,
+    )
+    assert ev.run(args2, fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    failure = json.loads(second.read_text(encoding="utf-8"))
+    assert failure["kind"] == "failure"
+    assert failure["batch_attempted"] == 0
+    assert failure["total_in_scope"] is None
+    assert first.read_text(encoding="utf-8") == json.dumps(forged)
+
+
+def test_historical_changed_index_refuses_resume(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB")
+    first = private / "first.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    modified = _index("RA", "RB", "RC")
+    fetcher = _inline_fetcher(modified)
+    second = private / "second.json"
+    args = _historical_args(
+        private, out=str(second), after_report_number="RA",
+        expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+        resume_receipt=str(first), allow_empty=True,
+    )
+    assert ev.run(args, fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    assert json.loads(second.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+@pytest.mark.parametrize("number", ["00-000", "00-000X"])
+def test_historical_legacy_digit_leading_id_index_and_metadata(tmp_path, number):
+    """Synthetic legacy ID forms must survive both index and metadata lookup."""
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index(number)
+    fetcher = _inline_fetcher(
+        index,
+        {number: {"id": number, "versions": [_version()]}},
+        {"old.html": _long_html()},
+    )
+    assert ev.run(_historical_args(private), fetcher=fetcher) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [{"id": number, "status": "written"}]
+    assert f"{BASE}/reports/{number}.json" in fetcher.fetched_urls
+
+
+def test_historical_refuses_redirected_index_source(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    redirected = ac.FetchResult(
+        CSV_URL, 200, _index("RA"), final_url="https://other.example/reports.csv",
+    )
+    fetcher = ac.FixtureFetcher(
+        {CSV_URL: redirected}, rate_limit_seconds=0, respect_robots=False,
+    )
+    assert ev.run(_historical_args(private), fetcher=fetcher) == 1
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["kind"] == "failure"
+    assert receipt["failure_reason"] == "index-redirected"
+    assert receipt["total_in_scope"] is None
+    assert fetcher.fetched_urls == [CSV_URL]
+
+
+def test_review_regression_historical_preserves_sibling_report_sections(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    html = ("<html><body><article>" + "<p>Substantive synthetic analysis.</p>" * 20
+            + "</article><section class='footnotes'>Footnote citation retained.</section>"
+            + "<section class='appendix'>Appendix data retained.</section></body></html>")
+    assert ev.run(_historical_args(private), fetcher=_inline_fetcher(
+        _index("RA"), {"RA": {"id": "RA", "versions": [_version()]}},
+        {"old.html": html},
+    )) == 0
+    text = next((private / "candidates").glob("*.txt")).read_text(encoding="utf-8")
+    assert "Footnote citation retained." in text
+    assert "Appendix data retained." in text
+
+
+def test_review_regression_historical_refuses_content_selector_before_fetch(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    fetcher = _inline_fetcher(_index("RA"))
+    with pytest.raises(SystemExit):
+        ev.run(_historical_args(private, content_selector="article"), fetcher=fetcher)
+    assert fetcher.fetched_urls == []
+
+
+@pytest.mark.parametrize("tamper", ["status", "files", "acquired"])
+def test_review_regression_resume_rejects_impossible_receipt(tmp_path, tamper):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB")
+    first = private / "first.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    receipt = json.loads(first.read_text(encoding="utf-8"))
+    if tamper == "status":
+        receipt["status_rows"][0]["status"] = "made-up-terminal"
+    elif tamper == "files":
+        receipt["files_written"] = 999
+    else:
+        receipt["summary"]["acquired"] = 999
+    first.write_text(json.dumps(receipt), encoding="utf-8")
+    fetcher = _inline_fetcher(index)
+    second = private / "second.json"
+    args = _historical_args(
+        private, out=str(second), after_report_number="RA",
+        expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+        resume_receipt=str(first), allow_empty=True,
+    )
+    assert ev.run(args, fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    assert json.loads(second.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+def test_review_regression_resume_requires_noninitial_predecessor_hash(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB", "RC")
+    first = private / "first.json"
+    second = private / "second.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    digest = hashlib.sha256(index.encode()).hexdigest()
+    assert ev.run(_historical_args(private, out=str(second), allow_empty=True,
+                  after_report_number="RA", expected_index_sha256=digest,
+                  resume_receipt=str(first)), fetcher=_inline_fetcher(index)) == 0
+    forged = json.loads(second.read_text(encoding="utf-8"))
+    forged["predecessor_receipt_sha256"] = None
+    second.write_text(json.dumps(forged), encoding="utf-8")
+    third = private / "third.json"
+    fetcher = _inline_fetcher(index)
+    args = _historical_args(private, out=str(third), allow_empty=True,
+                            after_report_number="RB", expected_index_sha256=digest,
+                            resume_receipt=str(second))
+    assert ev.run(args, fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    assert json.loads(third.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+def test_review_regression_malformed_csv_writes_failure_receipt(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    malformed = "number,url\nRA," + "x" * 132000 + "\n"
+    fetcher = _inline_fetcher(malformed)
+    assert ev.run(_historical_args(private), fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["kind"] == "failure"
+    assert receipt["batch_attempted"] == 0
+
+
+def test_review_regression_exhausted_resume_refuses_new_batch(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA")
+    first = private / "first.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    second = private / "second.json"
+    args = _historical_args(
+        private, out=str(second), allow_empty=True,
+        after_report_number="RA",
+        expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+        resume_receipt=str(first),
+    )
+    assert ev.run(args, fetcher=_inline_fetcher(index)) == 1
+    assert json.loads(second.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+def test_review_regression_malformed_authority_gets_locator_status(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    malformed = ("number,url,latestPubDate,title,latestHTML\n"
+                 "RA,https://[bad/reports/RA.json,2025-01-01,Current,files/x.html\n")
+    assert ev.run(_historical_args(private, allow_empty=True),
+                  fetcher=_inline_fetcher(malformed)) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [{"id": "RA", "status": "invalid-metadata-locator"}]
+
+
+def test_review_regression_one_status_one_summary_skip(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    assert ev.run(_historical_args(private, allow_empty=True),
+                  fetcher=_inline_fetcher(
+                      _index("RA"), {"RA": {"id": "RA", "versions": [_version()]}},
+                  )) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [{"id": "RA", "status": "html-fetch-failed"}]
+    summary = receipt["summary"]
+    assert summary["skipped_network_error"] == 1
+    assert summary["skipped_filtered"] == 0
+    assert len(summary["skip_log"]) == 1
+
+
+def test_review_regression_empty_index_frame_has_no_invalid_batch(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    index = "number,url,latestPubDate,title,latestHTML\n"
+    fetcher = _inline_fetcher(index)
+    assert ev.run(_historical_args(private, allow_empty=True), fetcher=fetcher) == 1
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["kind"] == "failure"
+    assert receipt["batch_attempted"] == 0
+    assert receipt["failure_reason"] == "empty-report-frame"
+    assert fetcher.fetched_urls == [CSV_URL]
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
