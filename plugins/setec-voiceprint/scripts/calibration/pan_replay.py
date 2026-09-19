@@ -84,6 +84,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
+from setec.core.script_console import enable_utf8_stdio
 from output_schema import build_output  # type: ignore
 from claim_license import ClaimLicense, with_state_caveats  # type: ignore
 from adversarial_robustness_card import (  # type: ignore
@@ -612,6 +613,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     args = build_arg_parser().parse_args(argv)
 
     try:

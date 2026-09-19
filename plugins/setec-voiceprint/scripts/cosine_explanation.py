@@ -48,6 +48,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from setec.core.script_console import enable_utf8_stdio
 from output_schema import build_error_output, build_output  # type: ignore
 
 TASK_SURFACE = "embedding_explanation"
@@ -451,6 +452,7 @@ def _error_envelope(reason: str, category: str, target: Path | None) -> dict[str
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     parser = build_arg_parser()
     args = parser.parse_args(argv)
     target_path: Path = args.target

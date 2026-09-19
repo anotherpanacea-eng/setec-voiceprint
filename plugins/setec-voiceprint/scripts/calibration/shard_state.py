@@ -671,29 +671,52 @@ def claim_file_status(claim_path: Path) -> str:
     return CLAIM_STATUS_VALID
 
 
+def _windows_pid_alive(pid: int) -> bool:
+    """Query a process without signaling it; uncertainty keeps its claim live."""
+    if not 0 < pid <= 0xFFFFFFFF:
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+    except ImportError:
+        return True
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+        kernel.WaitForSingleObject.restype = wintypes.DWORD
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.CloseHandle.restype = wintypes.BOOL
+        # SYNCHRONIZE only: neither terminate nor query-information access.
+        handle = kernel.OpenProcess(0x00100000, False, pid)
+        if not handle:
+            # For a validated positive DWORD PID, error 87 means no process.
+            return ctypes.get_last_error() != 87
+        alive = True
+        try:
+            # A signaled process has exited. Timeout and unknown waits are live.
+            alive = kernel.WaitForSingleObject(handle, 0) != 0
+        finally:
+            if not kernel.CloseHandle(handle):
+                alive = True
+        return alive
+    except (OSError, AttributeError, ctypes.ArgumentError):
+        # Never fall back to os.kill(pid, 0): on Windows it is not a no-op.
+        return True
+
+
 def pid_alive(pid: int) -> bool:
-    """Best-effort check whether a process is alive on the local
-    host.
+    """Best-effort local liveness; unknown or inaccessible means alive.
 
-    Uses ``os.kill(pid, 0)`` which sends signal 0 — a no-op signal
-    used precisely for liveness checks. Returns ``True`` if the
-    process exists, ``False`` if it doesn't (``ProcessLookupError``)
-    or if we lack permission to signal it (``PermissionError`` —
-    treated as alive because we can't conclusively say it's gone).
-
-    Important caveats:
-
-      * Only meaningful for processes on this host. Cross-host
-        liveness requires a different signal (heartbeat file, etc.)
-        and is not in scope for v1.44.1. ``sweep-stale`` callers
-        compare the claim file's recorded host against the local
-        host and only attempt liveness checks for local-host pids.
-      * PID reuse: a long-stale claim file could record a pid that
-        the OS has since recycled into an unrelated process. This is
-        why ``sweep-stale`` requires both a dead pid AND a claim
-        age beyond the configured threshold before releasing — the
-        age gate guards against the rare same-pid race.
+    Windows uses a read-only process handle and a zero-timeout wait. POSIX
+    uses signal zero. Only confirmed absence/exit returns False, allowing
+    sweep-stale to release an old local claim. This is not process identity:
+    PID reuse is still checked by the caller's start-time guard before any
+    intentional worker signal. Cross-host liveness is outside this helper.
     """
+    if os.name == "nt":
+        return _windows_pid_alive(int(pid))
     try:
         os.kill(int(pid), 0)
     except ProcessLookupError:

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -165,15 +166,311 @@ def test_split_prepared_statements():
         "The second witness's written statement body.\n"
         "    [Whereupon the hearing was adjourned.]\n"
     )
-    stmts = gi._split_prepared_statements(text)
-    assert [name for name, _ in stmts] == ["Jane Doe", "John Roe"]
-    doe_body = stmts[0][1]
+    stmts = gi._split_prepared_statements(text).statements
+    assert [block.witness for block in stmts] == ["Jane Doe", "John Roe"]
+    doe_body = stmts[0].body
     assert "written statement" in doe_body
     # Bounded at the bracket marker; oral header not captured.
     assert "Questions and answers" not in doe_body
     assert "STATEMENT OF JANE DOE" not in doe_body
     # No prepared-statement headings → no statements.
-    assert gi._split_prepared_statements("Markup of H.R. 1. The CHAIRMAN. ...") == []
+    assert gi._split_prepared_statements("Markup of H.R. 1. The CHAIRMAN. ...").statements == []
+
+
+def test_oral_turn_closes_written_candidate_before_later_marker():
+    """An ordinary speaker turn must not enter an earlier written block."""
+    written = "The written analysis explains the synthetic widget program. " * 8
+    hearing = (
+        "<html><body><pre>Prepared Statement of Ada One\n"
+        + written + "\nSenator Vale. Spoken questions begin here.\n"
+        + "[The statement follows:]\n"
+        + "Prepared Statement of Bea Two\n"
+        + written + "\n[Questions and answers follow.]</pre></body></html>"
+    )
+    url = gi._add_query(gi._granule_content_url(PKG1, PKG1), api_key=KEY)
+    mapping = fixture_url_map()
+    mapping[url] = ac.FetchResult(url=url, status=200, text=hearing)
+    items = list(gi.discover_items(gi.parse_options(make_args()), make_fetcher(mapping)))
+    ada = next(item for item in items if item.author == "Ada One")
+    assert "Spoken questions" not in ada.body_text
+    assert any(item.author == "Bea Two" for item in items)
+
+
+def test_known_written_brackets_and_separator_keep_exact_offsets():
+    text = "\n".join([
+        "Prepared Statement of Ada One",
+        "The record includes an inline [citation] and a written note.",
+        "[1]",
+        "[Exhibit A]",
+        "[Table 2]",
+        "[42 U.S.C. 123]",
+        "____",
+        "The internal separator above is part of this exhibit.",
+        "____",
+        "Prepared Statement of Bea Two",
+        "Bea's separate written body.",
+        "[Questions and answers follow.]",
+    ])
+    result = gi._split_prepared_statements(text)
+    assert result.issues == []
+    assert len(result.statements) == 2
+    ada = result.statements[0]
+    assert ada.boundary_kind == "next-prepared-heading"
+    assert text[ada.body_start:ada.body_end] == ada.body
+    for marker in ("[citation]", "[1]", "[Exhibit A]", "[Table 2]",
+                   "[42 U.S.C. 123]", "____\nThe internal separator"):
+        assert marker in ada.body
+    assert not ada.body.endswith("____")
+    assert "Bea's" not in ada.body
+
+
+def test_unknown_transition_and_structural_label_refuse_prior():
+    written = "This is an otherwise plausible synthetic written paragraph."
+    for transition, expected_reason in (
+        ("[Proceedings resumed.]", "ambiguous-bracket-transition"),
+        ("The STAFF DIRECTOR. Spoken remarks.", "ambiguous-speaker-turn"),
+    ):
+        text = "\n".join([
+            "Prepared Statement of Ada One", written, transition,
+            "Prepared Statement of Bea Two", written,
+            "[Questions and answers follow.]",
+        ])
+        result = gi._split_prepared_statements(text)
+        assert [(i.heading_ordinal, i.reason) for i in result.issues] == [
+            (1, expected_reason)
+        ]
+        assert [block.witness for block in result.statements] == ["Bea Two"]
+
+
+def test_structural_turns_quote_cue_oral_heading_and_unbounded_refusals():
+    written = "This is a synthetic written paragraph about a widget rule."
+    for label in ("The WITNESS.", "The COUNSEL."):
+        text = "\n".join([
+            "Prepared Statement of Ada One", written,
+            label + " Oral answer.", "Prepared Statement of Bea Two",
+            written, "[Questions and answers follow.]",
+        ])
+        result = gi._split_prepared_statements(text)
+        assert result.issues == []
+        assert result.statements[0].body == written
+        assert result.statements[0].boundary_kind == "oral-speaker-turn"
+        assert len(result.statements) == 2
+
+    quoted = "\n".join([
+        "Prepared Statement of Ada One", written,
+        '"Senator Vale. This is quoted in the written text."',
+        "[Questions and answers follow.]",
+    ])
+    result = gi._split_prepared_statements(quoted)
+    assert len(result.statements) == 1
+    assert '"Senator Vale.' in result.statements[0].body
+
+    paired = "\n".join([
+        "Prepared Statement of Ada One", written,
+        "STATEMENT OF BEA TWO", "Ms. TWO. Oral remarks.",
+    ])
+    assert gi._split_prepared_statements(paired).statements[0].body == written
+    unpaired = "\n".join([
+        "Prepared Statement of Ada One", written, "STATEMENT OF BEA TWO",
+    ])
+    assert gi._split_prepared_statements(unpaired).issues[0].reason == (
+        "unpaired-oral-heading"
+    )
+    intervening = "\n".join([
+        "Prepared Statement of Ada One", written, "STATEMENT OF BEA TWO",
+        "[Proceedings resumed.]", "Ms. TWO. Oral remarks.",
+    ])
+    assert gi._split_prepared_statements(intervening).issues[0].reason == (
+        "unpaired-oral-heading"
+    )
+    assert gi._split_prepared_statements(
+        "Prepared Statement of Ada One\n" + written
+    ).issues[0].reason == "unbounded-eof"
+
+
+def _split_synthetic_html(lines):
+    """Exercise the same HTML decoding seam used by CHRG discovery."""
+    html = "<html><body><pre>" + "\n".join(lines) + "</pre></body></html>"
+    decoded, _ = ac.html_to_text(
+        html, strip_selectors=gi.DEFAULT_STRIP_SELECTORS,
+    )
+    return gi._split_prepared_statements(decoded)
+
+
+@pytest.mark.parametrize("label", (
+    "Senator Van Hollen.",
+    "Representative De La Cruz.",
+    "Director Van Hollen.",
+    "Mr. Van Hollen.",
+    "Dr. De La Cruz.",
+    "Rear Admiral Vale.",
+    "Rear Admiral Van Hollen.",
+    "Lieutenant Colonel Vale.",
+    "Ms. De La Cruz.",
+))
+def test_compound_speaker_name_closes_before_later_heading(label):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        label + " Oral turn here.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert [(block.witness, block.body, block.boundary_kind)
+            for block in result.statements] == [
+        ("Ada One", "Written block.", "oral-speaker-turn"),
+        ("Bea Two", "Independent body.", "procedural-bracket"),
+    ]
+
+
+@pytest.mark.parametrize("heading", (
+    "Director of Operations.",
+    "Secretary of State.",
+    "Director for Widget Programs.",
+))
+def test_office_title_heading_refuses_instead_of_clean_oral_close(heading):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written opening.",
+        heading, "Written analysis continues.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-role-heading")
+    ]
+    assert [(block.witness, block.body) for block in result.statements] == [
+        ("Bea Two", "Independent body.")
+    ]
+
+def test_inline_office_title_remains_written_prose():
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One",
+        "The report mentions the Director of Operations in its analysis.",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert len(result.statements) == 1
+    assert "Director of Operations" in result.statements[0].body
+    assert result.statements[0].boundary_kind == "procedural-bracket"
+
+def test_standalone_curly_quote_cue_refuses_ambiguous_speaker():
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Analysis starts.",
+        "“", "Senator Vale. Quoted source exchange.", "”",
+        "Analysis resumes.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-quoted-boundary")
+    ]
+    assert [(block.witness, block.body) for block in result.statements] == [
+        ("Bea Two", "Independent body.")
+    ]
+
+
+@pytest.mark.parametrize("bracket", (
+    "[Exhibit A admitted.]", "[Table 2 admitted.]",
+    "[42 U.S.C. 123 admitted.]",
+))
+def test_procedural_text_in_content_bracket_refuses_prior(bracket):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        bracket, "Oral transcript resumes.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-bracket-transition")
+    ]
+    assert [(block.witness, block.body) for block in result.statements] == [
+        ("Bea Two", "Independent body.")
+    ]
+
+@pytest.mark.parametrize("label", (
+    "THE STAFF DIRECTOR.", "The Staff Director.",
+    "The FIELD OFFICER.",
+))
+def test_unsupported_structural_label_case_refuses_prior(label):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        label + " Oral question.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-speaker-turn")
+    ]
+    assert [block.witness for block in result.statements] == ["Bea Two"]
+
+@pytest.mark.parametrize("continuation", (
+    "the Widget Committee. The synthetic plan continues.",
+    "the XYZ. The synthetic acronym remains in the argument.",
+    "The Widget Committee. A hard-wrapped name continues.",
+))
+def test_hard_wrapped_prose_is_not_structural_speaker(continuation):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One",
+        "The written synthetic paragraph refers to",
+        continuation,
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert len(result.statements) == 2
+    assert continuation in result.statements[0].body
+    assert result.statements[0].boundary_kind == "next-prepared-heading"
+    assert result.statements[1].witness == "Bea Two"
+
+
+def test_standalone_quote_cue_closes_and_unclosed_cue_refuses():
+    closed = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        "“", "An ordinary quoted sentence.", "”",
+        "Senator Vale. Oral turn after the quotation.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert closed.issues == []
+    assert closed.statements[0].boundary_kind == "oral-speaker-turn"
+    assert "An ordinary quoted sentence." in closed.statements[0].body
+    assert "Oral turn after" not in closed.statements[0].body
+    assert closed.statements[1].witness == "Bea Two"
+
+    unclosed = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.", "“",
+        "A quotation without a visible close.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in unclosed.issues] == [
+        (1, "ambiguous-open-quotation")
+    ]
+    assert [block.witness for block in unclosed.statements] == ["Bea Two"]
+
+def test_compact_content_labels_and_inline_salutation_remain_written():
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One",
+        "Mr. Chairman, I cite Senator Van Hollen. in this same line.",
+        "[Exhibit A-1]", "[Table 2-A]", "[42 U.S.C. § 123(a)]",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert len(result.statements) == 1
+    body = result.statements[0].body
+    for retained in ("Mr. Chairman,", "Senator Van Hollen.", "[Exhibit A-1]",
+                     "[Table 2-A]", "[42 U.S.C. § 123(a)]"):
+        assert retained in body
+    assert result.statements[0].boundary_kind == "procedural-bracket"
+
+def test_overlong_candidate_refused_with_and_without_close():
+    oversized = "X" * (gi.MAX_STATEMENT_CHARS + 1)
+    for suffix in ("", "\n[Questions and answers follow.]"):
+        result = gi._split_prepared_statements(
+            "Prepared Statement of Ada One\n" + oversized + suffix
+        )
+        assert not result.statements
+        assert result.issues[0].reason == "overlong-statement"
 
 
 def test_iter_pages_follows_nextpage():
@@ -273,7 +570,84 @@ def test_end_to_end(tmp_path):
         assert e["acquired_via"].startswith("acquire_govinfo_chrg_")
         assert e["content_hash"].startswith("sha256:")
         assert e["persona"] == "chrg"
+        assert e["language_status"] == "unknown"
     assert len({e["content_hash"] for e in entries}) == 2
+    for meta_file in output_dir.glob("*.meta.json"):
+        meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        assert len(meta["source_text_sha256"]) == 64
+        assert meta["boundary_kind"] == "procedural-bracket"
+        assert meta["heading_start"] < meta["heading_end"] < meta["body_start"] < meta["body_end"]
+        assert meta["role_review_status"] == "pending"
+        assert meta["rights_review_status"] == "pending"
+        assert meta["extraction_completeness_status"] == "pending_source_review"
+        fixture = "hearing_pkg1.htm" if PKG1 in meta["source_url"] else "hearing_pkg2.htm"
+        decoded, _ = ac.html_to_text(
+            (FIXTURE_DIR / fixture).read_text(encoding="utf-8"),
+            strip_selectors=gi.DEFAULT_STRIP_SELECTORS,
+        )
+        assert meta["source_text_sha256"] == hashlib.sha256(
+            decoded.encode("utf-8")
+        ).hexdigest()
+        assert decoded[meta["body_start"]:meta["body_end"]].strip()
+
+
+def test_run_logs_boundary_refusal_and_keeps_later_heading(tmp_path):
+    written = "The written synthetic widget analysis has a concrete conclusion. " * 8
+    hearing = "\n".join([
+        "<html><body><pre>Prepared Statement of Ada One",
+        written,
+        "The STAFF DIRECTOR. Spoken remarks begin.",
+        "Prepared Statement of Bea Two",
+        written,
+        "[Questions and answers follow.]</pre></body></html>",
+    ])
+    url = gi._add_query(gi._granule_content_url(PKG1, PKG1), api_key=KEY)
+    mapping = fixture_url_map()
+    mapping[url] = ac.FetchResult(url=url, status=200, text=hearing)
+    output_dir = tmp_path / "ai-prose-baselines-private" / "ambiguous"
+    manifest = output_dir / "draft.jsonl"
+    report_path = output_dir / "summary.json"
+    args = make_args(
+        output_dir=str(output_dir), emit_manifest=str(manifest),
+        out=str(report_path), min_words=1,
+    )
+    assert gi.run(args, fetcher=make_fetcher(mapping)) == 0
+    entries = read_manifest(manifest)
+    assert "Ada One" not in {entry["author"] for entry in entries}
+    assert "Bea Two" in {entry["author"] for entry in entries}
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    skips = [s for s in report["skip_log"]
+             if s["reason"] == "ambiguous-speaker-turn"]
+    assert len(skips) == 1
+    assert skips[0]["url"] == gi._granule_content_url(PKG1, PKG1)
+    assert "api_key" not in skips[0]["url"]
+    assert report["skipped_parse_error"] >= 1
+
+
+def test_all_unbounded_candidates_fail_zero_output_with_skip_log(tmp_path):
+    hearing = (
+        "<html><body><pre>Prepared Statement of Ada One\n"
+        "A synthetic written argument that has no verified ending.\n"
+        "</pre></body></html>"
+    )
+    mapping = fixture_url_map()
+    for package in (PKG1, PKG2):
+        url = gi._add_query(
+            gi._granule_content_url(package, package), api_key=KEY
+        )
+        mapping[url] = ac.FetchResult(url=url, status=200, text=hearing)
+    output_dir = tmp_path / "ai-prose-baselines-private" / "unbounded"
+    report_path = output_dir / "summary.json"
+    args = make_args(output_dir=str(output_dir), out=str(report_path),
+                     min_words=1)
+    assert gi.run(args, fetcher=make_fetcher(mapping)) == 1
+    assert not list(output_dir.glob("*.txt"))
+    assert not list(output_dir.glob("*.meta.json"))
+    assert not (output_dir / "draft_manifest.jsonl").exists()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert [item["reason"] for item in report["skip_log"]] == [
+        "unbounded-eof", "unbounded-eof"
+    ]
 
 
 def test_min_words_gate_high_drops_all(tmp_path):

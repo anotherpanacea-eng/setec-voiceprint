@@ -1197,6 +1197,7 @@ def test_refresh_claim_file_makes_resumed_worker_signalable(
     def _fake_kill(pid, sig):
         kill_calls.append((pid, sig))
         if sig == 0:
+            assert os.name != "nt", "Windows liveness must not signal"
             return real_kill(pid, sig)
 
     monkeypatch.setattr(sr.os, "kill", _fake_kill)
@@ -1264,7 +1265,7 @@ def test_sweep_stale_releases_dead_claim_past_threshold(sharded_run):
     assert "claimed_by_pid" not in state["shards"]["001"]
 
 
-def test_sweep_stale_skips_live_pid(sharded_run):
+def test_sweep_stale_skips_live_pid(sharded_run, monkeypatch):
     """Even with a very-old claim, sweep-stale must NOT release a
     claim whose pid is still alive — that's a long-running shard,
     not a stale one."""
@@ -1274,6 +1275,10 @@ def test_sweep_stale_skips_live_pid(sharded_run):
     claim_path = sr.shard_claim_path(base, run_id, "001")
     claim_path.parent.mkdir(parents=True, exist_ok=True)
     live_pid = os.getpid()  # this test process is by definition alive
+    if os.name == "nt":
+        def refuse_signal(pid, sig):
+            raise AssertionError("Windows liveness must not signal")
+        monkeypatch.setattr(ss.os, "kill", refuse_signal)
     old_ts = (
         dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
     ).isoformat(timespec="seconds")
@@ -1289,6 +1294,29 @@ def test_sweep_stale_skips_live_pid(sharded_run):
     assert rc == 0
     # Live pid → claim survives even with a 24-hour-old timestamp.
     assert claim_path.exists()
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), OSError("unknown")])
+def test_sweep_stale_keeps_claim_when_liveness_is_unknown(sharded_run, monkeypatch, error):
+    """Failed process access must not free a live worker's old claim."""
+    from unittest import mock
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    claim = {"host": ss._host(), "pid": os.getpid(),
+             "claimed_at": "2020-01-01T00:00:00+00:00"}
+    claim_path.write_text(json.dumps(claim))
+    state_path = sr.state_path(base, run_id)
+    before = state_path.read_bytes()
+    if os.name == "nt":
+        import ctypes
+        monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(side_effect=error))
+    else:
+        monkeypatch.setattr(ss.os, "kill", mock.Mock(side_effect=error))
+    assert sr.main(["--base-dir", str(base), "sweep-stale", "--run-id", run_id]) == 0
+    assert json.loads(claim_path.read_text()) == claim
+    assert state_path.read_bytes() == before
 
 
 def test_sweep_stale_skips_young_dead_claim(sharded_run):
@@ -1583,6 +1611,7 @@ def test_terminate_all_signals_active_pid(
     def _fake_kill(pid, sig):
         kill_calls.append((pid, sig))
         if sig == 0:
+            assert os.name != "nt", "Windows liveness must not signal"
             return real_kill(pid, sig)  # liveness check
         # SIGTERM / SIGKILL: do nothing.
 
@@ -1626,6 +1655,7 @@ def test_kill_all_uses_sigkill(
     def _fake_kill(pid, sig):
         kill_calls.append((pid, sig))
         if sig == 0:
+            assert os.name != "nt", "Windows liveness must not signal"
             return real_kill(pid, sig)
 
     monkeypatch.setattr(sr.os, "kill", _fake_kill)
@@ -1851,6 +1881,7 @@ class TestPidReuseIdentityCheck:
         def _fake_kill(pid, sig):
             kill_calls.append((pid, sig))
             if sig == 0:
+                assert os.name != "nt", "Windows liveness must not signal"
                 return real_kill(pid, sig)
 
         monkeypatch.setattr(sr.os, "kill", _fake_kill)
@@ -1896,6 +1927,7 @@ class TestPidReuseIdentityCheck:
         def _fake_kill(pid, sig):
             kill_calls.append((pid, sig))
             if sig == 0:
+                assert os.name != "nt", "Windows liveness must not signal"
                 return real_kill(pid, sig)
 
         monkeypatch.setattr(sr.os, "kill", _fake_kill)

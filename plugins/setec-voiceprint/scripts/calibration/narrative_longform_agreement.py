@@ -300,6 +300,7 @@ PARENT_DIR = SCRIPT_DIR.parent
 if str(PARENT_DIR) not in sys.path:
     sys.path.insert(0, str(PARENT_DIR))
 
+from setec.core.script_console import enable_utf8_stdio  # noqa: E402
 import narrative_longform_segment as nls  # type: ignore  # noqa: E402
 from narrative_feature_schema import (  # type: ignore  # noqa: E402
     CORE_FEATURES,
@@ -1798,6 +1799,7 @@ def _refuse_output_alias(
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description=(
             "Whole-vs-segmented agreement study for the narrative "
