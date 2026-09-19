@@ -202,6 +202,7 @@ def test_candidate_extra_key_and_wrong_input_type_refuse():
 
 def test_deep_json_refuses_through_both_public_artifact_paths():
     source, block_map, candidate = _bundle()
+    # The parser recursion ceiling is runtime-dependent, so either safe refusal is valid.
     nested = b"[" * 2000 + b"0" + b"]" * 2000
     for map_bytes, candidate_bytes in (
         (nested, _bytes(candidate)),
@@ -209,8 +210,10 @@ def test_deep_json_refuses_through_both_public_artifact_paths():
     ):
         with pytest.raises(ValidationError) as exc:
             validate_candidate_bundle(source, map_bytes, candidate_bytes)
-        assert exc.value.reason == "invalid_json_depth"
-        assert str(exc.value) == "invalid_json_depth"
+        reason = exc.value.reason
+        assert reason in {"invalid_json_depth", "invalid_root"}
+        assert exc.value.ordinal is None
+        assert str(exc.value) == reason
 
 
 def test_source_span_and_binding_refusals():
