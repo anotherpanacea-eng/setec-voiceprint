@@ -740,7 +740,7 @@ def emit_piece(
         ac.append_manifest_entry(options.manifest_path, entry)
         summary.acquired += 1
         sys.stderr.write(
-            f"  acquired {text_path.name} ({piece.word_count} words)\\n"
+            f"  acquired {text_path.name} ({piece.word_count} words)\n"
         )
     finally:
         if item is not None:
