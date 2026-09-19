@@ -2,20 +2,22 @@
 """acquire_govinfo_chrg.py — pull prepared written congressional testimony.
 
 Reads GovInfo's CHRG (congressional hearings) collection via the GovInfo
-API and writes one ``.txt`` + ``.meta.json`` per admitted **prepared
-written witness statement** into a private impostor pool, plus a draft
-manifest with ``corpus_role: impostor`` entries.
+API and writes one ``.txt`` + ``.meta.json`` per candidate **prepared
+written witness block** into a private impostor pool, plus a draft
+reference-pool manifest with ``corpus_role: impostor`` entries.
 
 The argument-dense material in a hearing is the prepared written witness
 statement — not the oral Q&A colloquy, members' opening statements, or
 procedural inserts. CHRG packages are a SINGLE whole-hearing granule (no
 per-witness granules — verified against the live API), so the prepared
-statements are split out of the hearing transcript itself: each is anchored
-on a ``Prepared Statement of <Name>`` heading (see
-``_split_prepared_statements``). Statements at or above ``--min-words``
-(default 1500) are admitted. CHRG is public domain (US-government work); the
-output builds the ``testimony_policy`` population baseline that
-``argmove_profile.py`` profiles.
+candidate blocks are split out of the hearing transcript itself: each is
+anchored on a ``Prepared Statement of <Name>`` heading and must have a
+detected closing boundary (see ``_split_prepared_statements``). Unbounded,
+ambiguous, and overlong blocks are refused visibly. The word floor filters
+short candidates; extraction alone does not establish a complete statement,
+official-duty authorship, or rights. GovInfo publications may contain third-
+party material. Draft manifest entries express reference-pool intent, not
+production registration or corpus admission.
 
 Source shape (verified 2026-06-11 against the live API):
 
@@ -28,9 +30,9 @@ Source shape (verified 2026-06-11 against the live API):
              -> the whole-hearing HTML, split into per-witness statements
 
 An api.data.gov key is required: --api-key, else $GOVINFO_API_KEY, else the
-rate-limited public DEMO_KEY. The in-document heading format is a few-shot
-prior and MUST be spot-checked with --dry-run before a bulk pull (see
-references/acquire-corpus-pattern.md).
+rate-limited public DEMO_KEY. The in-document boundary forms are
+source-dependent and MUST be checked against the source before use. See
+references/acquire-govinfo-chrg-boundaries.md.
 
 Privacy: output goes under ``ai-prose-baselines-private/impostors/
 <register>/<persona>/`` and the privacy guard refuses paths outside any
@@ -57,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import os
 import re
@@ -64,7 +67,7 @@ import sys
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
 # Resolve repo-relative imports the same way the other scripts do.
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -75,7 +78,7 @@ import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_govinfo_chrg"
-SCRAPER_VERSION = "1.0"
+SCRAPER_VERSION = "1.1"
 
 GOVINFO_API_BASE = "https://api.govinfo.gov"
 DEFAULT_COLLECTION = "CHRG"
@@ -86,18 +89,37 @@ PAGE_SIZE = 100
 MAX_PAGES = 10000      # safety bound on pagination loops
 WITNESS_FALLBACK = "Congressional Witness"
 
-# CHRG packages are single whole-hearing granules; the per-witness prepared
-# WRITTEN statements live INSIDE the hearing text, each introduced by a heading
-# line "Prepared Statement of <Name>, <title>". House and Senate hearings both
-# use this heading; the bracketed "[The prepared statement of X follows:]"
-# insertion marker varies between chambers, so the heading is the stable anchor.
-# Verified against live CHRG HTM 2026-06-11. Fragile by nature — spot-check with
-# --dry-run.
-PREPARED_HEADING_RE = re.compile(r"(?im)^[ \t]*Prepared Statement of\s+(.+?)\s*$")
-# An inserted statement block is closed by a bracketed transcript-resume marker
-# at line start; bound the body there when present.
-_RESUME_BRACKET_RE = re.compile(r"\n[ \t]*\[")
-# Safety cap so a missing boundary can't swallow the rest of the hearing.
+# CHRG hearing HTML is decoded to plain text before boundary scanning.
+# These recognizers deliberately cover only evidenced transcript structures.
+PREPARED_HEADING_RE = re.compile(
+    r"(?im)^[ \t]*Prepared Statement of[ \t]+([^\r\n]+?)[ \t]*$"
+)
+_ORAL_HEADING_RE = re.compile(r"(?i)^STATEMENT OF[ \t]+\S")
+_PROCEDURAL_END_RE = re.compile(
+    r"(?i)^\[(?:Questions and answers follow\.|Whereupon\b[^\]]*\badjourned\.)\]$"
+)
+_CONTENT_BRACKET_RE = re.compile(
+    r"(?i)^\[(?:\d+|Exhibit[ \t]+[A-Z0-9][A-Z0-9 ._-]*|"
+    r"Table[ \t]+[A-Z0-9][A-Z0-9 ._-]*|"
+    r"\d+[ \t]+U\.S\.C\.[ \t]+[\w(). -]+)\]$"
+)
+_NAMED_SPEAKER_RE = re.compile(
+    r"(?i)^(?:Senator|Representative|General|Admiral|Colonel|Captain|"
+    r"Secretary|Director)[ \t]+[A-Za-z][A-Za-z'’.-]*\.(?:[ \t]+|$)"
+)
+_HONORIFIC_SPEAKER_RE = re.compile(
+    r"(?i)^(?:Mr|Ms|Mrs|Dr)\.[ \t]+[A-Za-z][A-Za-z'’.-]*\.(?:[ \t]+|$)"
+)
+_STRUCTURAL_SPEAKER_RE = re.compile(
+    r"(?i)^The[ \t]+(?:CHAIRMAN|CHAIRWOMAN|CHAIR|WITNESS|COUNSEL)\."
+    r"(?:[ \t]+|$)"
+)
+_UNKNOWN_STRUCTURAL_RE = re.compile(
+    r"^The[ \t]+[A-Z][A-Z \t-]*\.(?:[ \t]+|$)"
+)
+_GPO_TERMINAL_SEPARATOR_RE = re.compile(
+    r"(?m)^[ \t]*_{3,}[ \t]*(?:\r?\n[ \t]*)*\Z"
+)
 MAX_STATEMENT_CHARS = 120_000
 
 # Strip GPO page chrome on the granule HTML; html_to_text already drops
@@ -107,16 +129,48 @@ DEFAULT_STRIP_SELECTORS = (
 )
 
 
+@dataclass(frozen=True)
+class StatementBlock:
+    witness: str
+    body: str
+    heading_ordinal: int
+    heading_start: int
+    heading_end: int
+    body_start: int
+    body_end: int
+    boundary_kind: str
+
+
+@dataclass(frozen=True)
+class BoundaryIssue:
+    heading_ordinal: int
+    heading_start: int
+    reason: str
+
+
+@dataclass
+class SplitResult:
+    statements: list[StatementBlock] = field(default_factory=list)
+    issues: list[BoundaryIssue] = field(default_factory=list)
+
+
 @dataclass
 class ItemMeta:
-    """One prepared written statement parsed from a hearing transcript."""
+    """One candidate written block parsed from a hearing transcript."""
     locator: str          # hearing granule HTM URL (key-free; key added at fetch)
     title: str = ""
     date: _dt.date | None = None
     package_id: str = ""
     granule_id: str = ""
     author: str = ""      # witness name parsed from the statement heading
-    body_text: str = ""   # the statement body, extracted in discovery
+    body_text: str = ""
+    source_text_sha256: str = ""
+    heading_ordinal: int = 0
+    heading_start: int = 0
+    heading_end: int = 0
+    body_start: int = 0
+    body_end: int = 0
+    boundary_kind: str = ""
 
 
 @dataclass
@@ -244,40 +298,134 @@ def _witness_name(heading_tail: str) -> str:
     return name or WITNESS_FALLBACK
 
 
-def _split_prepared_statements(text: str) -> list[tuple[str, str]]:
-    """Split a whole-hearing transcript into per-witness prepared statements.
+def _speaker_kind(line: str) -> str | None:
+    """Classify supported and visibly transcript-shaped physical lines."""
+    if (
+        _STRUCTURAL_SPEAKER_RE.match(line)
+        or _NAMED_SPEAKER_RE.match(line)
+        or _HONORIFIC_SPEAKER_RE.match(line)
+    ):
+        return "oral-speaker-turn"
+    if _UNKNOWN_STRUCTURAL_RE.match(line):
+        return "unsupported-speaker-turn"
+    return None
 
-    Each statement is anchored on a ``Prepared Statement of <Name>`` heading
-    line; the body runs to the next such heading, the next bracketed
-    transcript-resume marker, or a safety cap — whichever comes first.
-    Returns ``[(witness, body), …]``, possibly empty (markups and short
-    hearings carry no prepared statements). The min-words gate downstream
-    drops fragments.
+
+def _split_prepared_statements(text: str) -> SplitResult:
+    """Find candidate written blocks with a detected end or a named refusal.
+
+    The source is decoded hearing text. Offsets refer to that exact string, and
+    accepted body offsets exclude a terminal separator and surrounding space.
+    A detected boundary is not a complete-work or authorship certification.
     """
     heads = list(PREPARED_HEADING_RE.finditer(text))
-    out: list[tuple[str, str]] = []
-    for i, m in enumerate(heads):
-        witness = _witness_name(m.group(1))
-        start = m.end()
-        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
-        body = text[start:end]
-        resume = _RESUME_BRACKET_RE.search(body)
-        if resume:
-            body = body[: resume.start()]
-        body = body[:MAX_STATEMENT_CHARS].strip()
-        if body:
-            out.append((witness, body))
-    return out
+    result = SplitResult()
+    for ordinal, head in enumerate(heads, start=1):
+        witness = _witness_name(head.group(1))
+        start = head.end()
+        limit = heads[ordinal].start() if ordinal < len(heads) else len(text)
+        boundary_end: int | None = None
+        boundary_kind = ""
+        refusal = ""
+        offset = start
+
+        for raw_line in text[start:limit].splitlines(keepends=True):
+            line = raw_line.strip()
+            line_start = offset
+            offset += len(raw_line)
+            if not line:
+                continue
+            if _PROCEDURAL_END_RE.fullmatch(line):
+                boundary_end = line_start
+                boundary_kind = "procedural-bracket"
+                break
+            if line.startswith("[") and line.endswith("]"):
+                if _CONTENT_BRACKET_RE.fullmatch(line):
+                    continue
+                refusal = (
+                    "ambiguous-statement-transition"
+                    if re.match(r"(?i)^\[The (?:prepared )?statement .*follows:\]$", line)
+                    else "ambiguous-bracket-transition"
+                )
+                break
+            if _ORAL_HEADING_RE.match(line):
+                following = next(
+                    (next_line.strip() for next_line in
+                     text[offset:limit].splitlines() if next_line.strip()),
+                    "",
+                )
+                paired = _speaker_kind(following) == "oral-speaker-turn"
+                if paired:
+                    boundary_end = line_start
+                    boundary_kind = "oral-statement-heading"
+                else:
+                    refusal = "unpaired-oral-heading"
+                break
+            speaker_kind = _speaker_kind(line)
+            if speaker_kind == "oral-speaker-turn":
+                boundary_end = line_start
+                boundary_kind = speaker_kind
+                break
+            if speaker_kind == "unsupported-speaker-turn":
+                refusal = "ambiguous-speaker-turn"
+                break
+
+        if refusal:
+            result.issues.append(BoundaryIssue(ordinal, head.start(), refusal))
+            continue
+        if boundary_end is None:
+            if ordinal < len(heads):
+                boundary_end = limit
+                boundary_kind = "next-prepared-heading"
+            else:
+                reason = (
+                    "overlong-statement" if limit - start > MAX_STATEMENT_CHARS
+                    else "unbounded-eof"
+                )
+                result.issues.append(BoundaryIssue(ordinal, head.start(), reason))
+                continue
+        if boundary_end - start > MAX_STATEMENT_CHARS:
+            result.issues.append(
+                BoundaryIssue(ordinal, head.start(), "overlong-statement")
+            )
+            continue
+        if boundary_kind == "next-prepared-heading":
+            separator = _GPO_TERMINAL_SEPARATOR_RE.search(text[start:boundary_end])
+            if separator:
+                boundary_end = start + separator.start()
+
+        raw_body = text[start:boundary_end]
+        body_start = start + len(raw_body) - len(raw_body.lstrip())
+        body_end = boundary_end - (len(raw_body) - len(raw_body.rstrip()))
+        body = text[body_start:body_end]
+        if not body:
+            result.issues.append(
+                BoundaryIssue(ordinal, head.start(), "empty-written-block")
+            )
+            continue
+        result.statements.append(
+            StatementBlock(
+                witness=witness,
+                body=body,
+                heading_ordinal=ordinal,
+                heading_start=head.start(),
+                heading_end=head.end(),
+                body_start=body_start,
+                body_end=body_end,
+                boundary_kind=boundary_kind,
+            )
+        )
+    return result
 
 
 # ---- Discovery ----------------------------------------------------
 
 
 def discover_items(
-    options: ProcessOptions, fetcher: ac.Fetcher,
+    options: ProcessOptions, fetcher: ac.Fetcher, *,
+    on_boundary_issue: Callable[[BoundaryIssue, str], None] | None = None,
 ) -> Iterable[ItemMeta]:
-    """Page published -> packages -> the hearing HTM; yield one item per
-    prepared written statement parsed out of each hearing.
+    """Page published -> packages -> hearing HTM; yield bounded candidates.
 
     CHRG packages are single whole-hearing granules, so per-witness statements
     are split out of the hearing text (``_split_prepared_statements``), not
@@ -317,15 +465,27 @@ def discover_items(
         body_text, _title = ac.html_to_text(
             result.text, strip_selectors=DEFAULT_STRIP_SELECTORS,
         )
-        for witness, statement in _split_prepared_statements(body_text):
+        split = _split_prepared_statements(body_text)
+        for issue in split.issues:
+            if on_boundary_issue is not None:
+                on_boundary_issue(issue, locator)
+        source_hash = hashlib.sha256(body_text.encode("utf-8")).hexdigest()
+        for block in split.statements:
             yield ItemMeta(
                 locator=locator,
-                title=f"Prepared statement of {witness}",
+                title=f"Prepared statement of {block.witness}",
                 date=date,
                 package_id=package_id,
                 granule_id=granule_id,
-                author=witness,
-                body_text=statement,
+                author=block.witness,
+                body_text=block.body,
+                source_text_sha256=source_hash,
+                heading_ordinal=block.heading_ordinal,
+                heading_start=block.heading_start,
+                heading_end=block.heading_end,
+                body_start=block.body_start,
+                body_end=block.body_end,
+                boundary_kind=block.boundary_kind,
             )
 
 
@@ -430,7 +590,8 @@ def process_one_item(
 
 
 def emit_piece(
-    piece: ac.AcquiredPiece, *, options: ProcessOptions, summary: ac.RunSummary,
+    piece: ac.AcquiredPiece, *, item: ItemMeta,
+    options: ProcessOptions, summary: ac.RunSummary,
 ) -> None:
     """Write piece + sidecar + manifest entry. No-op for dry-run."""
     if options.dry_run:
@@ -442,10 +603,23 @@ def emit_piece(
         return
     text_path, _meta_path = ac.write_piece(
         piece, output_dir=options.output_dir, scraper_version=SCRAPER_VERSION,
+        extra_meta={
+            "source_text_sha256": item.source_text_sha256,
+            "heading_ordinal": item.heading_ordinal,
+            "heading_start": item.heading_start,
+            "heading_end": item.heading_end,
+            "body_start": item.body_start,
+            "body_end": item.body_end,
+            "boundary_kind": item.boundary_kind,
+            "role_review_status": "pending",
+            "rights_review_status": "pending",
+            "extraction_completeness_status": "pending_source_review",
+        },
     )
     entry = ac.compose_manifest_entry(
         piece, text_path=text_path,
         manifest_relative_to=options.manifest_path.parent,
+        language_status="unknown",
     )
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
@@ -461,9 +635,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog=TOOL_NAME,
         description=(
-            "Acquire prepared written congressional testimony from GovInfo "
-            "CHRG into the impostor pool (the testimony_policy population "
-            "baseline). See internal/SPEC_acquire_govinfo_chrg.md."
+            "Stage bounded candidate prepared witness blocks from GovInfo CHRG "
+            "with boundary evidence and pending source review. See "
+            "references/acquire-govinfo-chrg-boundaries.md."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -493,7 +667,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "public_record", "cc_licensed", "fair_use_research",
                        "author_consent", "undocumented",
                    ],
-                   help="Consent / legal posture (use public_record for CHRG).")
+                   help="Source posture; public_record does not clear "
+                        "third-party rights in a CHRG publication.")
     p.add_argument("--era",
                    choices=[
                        "pre_chatgpt", "pre_ai_widespread",
@@ -530,8 +705,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ac.add_allow_empty_arg(p)
     p.add_argument("--allow-public-output", action="store_true",
                    help=("Allow writing outside ai-prose-baselines-private/. "
-                         "Acquired prose is corpus-baseline input; only use "
-                         "for non-personal corpora."))
+                         "Candidate source prose requires local review."))
 
     # Preprocessing pass-throughs.
     p.add_argument("--allow-non-prose", action="store_true",
@@ -622,7 +796,21 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
         f"Persona: {options.persona} (impostor_for: {options.impostor_for})\n"
     )
 
-    for item in discover_items(options, fetcher):
+    def record_boundary_issue(issue: BoundaryIssue, locator: str) -> None:
+        summary.skipped_parse_error += 1
+        summary.log_skip(
+            reason=issue.reason, url=locator,
+            detail=(f"heading_ordinal={issue.heading_ordinal} "
+                    f"heading_start={issue.heading_start}"),
+        )
+        sys.stderr.write(
+            f"  skipped candidate {issue.heading_ordinal} at "
+            f"{locator}: {issue.reason}\n"
+        )
+
+    for item in discover_items(
+        options, fetcher, on_boundary_issue=record_boundary_issue,
+    ):
         if summary.acquired >= options.max_items:
             break
         try:
@@ -639,7 +827,7 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
             options=options, summary=summary,
         )
         if piece is not None:
-            emit_piece(piece, options=options, summary=summary)
+            emit_piece(piece, item=item, options=options, summary=summary)
 
     sys.stderr.write("\n" + summary.render_stderr())
     if args.out:
