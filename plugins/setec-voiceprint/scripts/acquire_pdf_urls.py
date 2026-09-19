@@ -38,13 +38,16 @@ Usage:
         --era pre_chatgpt \\
         --min-words 1500 --max-items 300
 
-See ``internal/SPEC_acquire_pdf_urls.md`` for design context.
+See ``internal/SPEC_acquire_pdf_urls.md`` for design context and
+references/tanner-glyph-provenance.md for the source-bound glyph policy,
+fetched-PDF custody, and author-language evidence requirements.
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import re
 import sys
@@ -61,7 +64,7 @@ import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_pdf_urls"
-SCRAPER_VERSION = "1.0"
+SCRAPER_VERSION = "1.1"
 DEFAULT_AUTHOR = "Unknown"
 
 
@@ -73,6 +76,12 @@ class ItemMeta:
     date: _dt.date | None = None
     author: str = ""
     artifact_profile: str | None = None
+    # Populated only by this acquirer's successful extract_one call. The text
+    # digest binds the fetched-byte hash to that call's returned text.
+    fetched_pdf_sha256: str | None = field(default=None, repr=False, compare=False)
+    extracted_text_sha256: str | None = field(default=None, repr=False, compare=False)
+    fetched_artifact_profile: str | None = field(default=None, repr=False, compare=False)
+    fetched_locator: str | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -85,6 +94,7 @@ class ProcessOptions:
     topic_match: str
     consent_status: str
     era: str
+    language_status: str
     since: _dt.date | None
     until: _dt.date | None
     output_dir: Path
@@ -176,6 +186,11 @@ def extract_one(
 ) -> tuple[str, str, str, _dt.date | None]:
     """Download the PDF and extract its text. ``("", …)`` skips on a failed
     download / image-only / non-PDF."""
+    # Reused ItemMeta objects cannot carry custody from an earlier fetch.
+    item.fetched_pdf_sha256 = None
+    item.extracted_text_sha256 = None
+    item.fetched_artifact_profile = None
+    item.fetched_locator = None
     data = fetcher.fetch_bytes(item.locator)
     if not data:
         return "", "", "", None
@@ -184,6 +199,10 @@ def extract_one(
     )
     if not text or not text.strip():
         return "", "", "", None
+    item.fetched_pdf_sha256 = hashlib.sha256(data).hexdigest()
+    item.extracted_text_sha256 = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    item.fetched_artifact_profile = item.artifact_profile
+    item.fetched_locator = item.locator
     title = item.title or _title_from_url(item.locator)
     author = options.author or item.author or DEFAULT_AUTHOR
     return text, title, author, item.date
@@ -206,6 +225,16 @@ def process_one_item(
 
     An empty body means the download failed or the PDF had no extractable
     text (image-only) — recorded as ``no-pdf-text``."""
+    # Consume custody even on an early no-text return or a manual call.
+    fetched_pdf_sha256 = item.fetched_pdf_sha256
+    extracted_text_sha256 = item.extracted_text_sha256
+    fetched_artifact_profile = item.fetched_artifact_profile
+    fetched_locator = item.fetched_locator
+    item.fetched_pdf_sha256 = None
+    item.extracted_text_sha256 = None
+    item.fetched_artifact_profile = None
+    item.fetched_locator = None
+
     if not body_text or len(body_text.strip()) < 200:
         summary.skipped_filtered += 1
         summary.log_skip(
@@ -227,6 +256,15 @@ def process_one_item(
             detail=f"raw={len(body_text)} clean={len(cleaned)}",
         )
         return None
+
+    if (
+        fetched_pdf_sha256 is not None
+        and fetched_artifact_profile == item.artifact_profile
+        and fetched_locator == item.locator
+        and extracted_text_sha256 == hashlib.sha256(body_text.encode("utf-8")).hexdigest()
+    ):
+        prep_meta["source_pdf_sha256"] = fetched_pdf_sha256
+        prep_meta["artifact_profile"] = item.artifact_profile
 
     word_count = len(re.findall(r"\S+", cleaned))
     if word_count < options.min_words:
@@ -291,6 +329,7 @@ def emit_piece(
     entry = ac.compose_manifest_entry(
         piece, text_path=text_path,
         manifest_relative_to=options.manifest_path.parent,
+        language_status=options.language_status,
     )
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
@@ -345,6 +384,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "post_ai_widespread", "undated",
                    ],
                    default="pre_chatgpt")
+    p.add_argument(
+        "--language-status",
+        choices=[
+            "native", "non_native_advanced", "non_native_intermediate",
+            "learner", "unknown",
+        ],
+        default="unknown",
+        help=("Author language status (default: unknown). Use native only "
+              "with affirmative author-language evidence."),
+    )
 
     # Date window + caps.
     p.add_argument("--since", help="Inclusive lower-bound date (YYYY-MM-DD).")
@@ -411,6 +460,7 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         topic_match=args.topic_match,
         consent_status=args.consent_status,
         era=args.era,
+        language_status=args.language_status,
         since=ac.parse_iso_date(args.since) if args.since else None,
         until=ac.parse_iso_date(args.until) if args.until else None,
         output_dir=output_dir,
@@ -451,6 +501,7 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
     sys.stderr.write(
         f"Acquiring PDFs from {args.urls_file} into {options.output_dir}\n"
         f"Persona: {options.persona} (impostor_for: {options.impostor_for})\n"
+        f"Language status: {options.language_status}\n"
     )
 
     for item in discover_items(args.urls_file, options):

@@ -60,6 +60,8 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 import datetime as _dt
+import hashlib
+import io
 import json
 import re
 import shutil
@@ -107,6 +109,77 @@ _CAP_FRAGMENT_RUN_RE = re.compile(
     r"(?<![A-Za-z])(?:[A-Z]{2,4})(?: [A-Z]{2,4})+(?![A-Za-z])"
 )
 _WORD_RE = re.compile(r"(?<![A-Za-z])[A-Za-z]{3,}(?![A-Za-z])")
+
+
+# This reviewed source has two embedded fonts whose byte 0x97 is mapped to
+# U+0160 despite the glyph outlines rendering "fi". The source hash also
+# binds the PDF's /Encoding; font and CMap hashes alone do not.
+_TANNER_GLYPH_POLICY = {
+    "147658aa934fa5f04d6ad78d3cd87c54e417c55594caaf9bd5431fb65ecd7494": frozenset({
+        (
+            "b66aa246c5aed81d8165cb8e15d5b0470fcf0123b009a20aa2af0e8f855f5f6b",
+            "a173dfd7ac8800ea1c127bec6842104f6cb1a88c49555b54f05aa72bb35a9b57",
+        ),
+        (
+            "ca79bc9b55d66be89e15abe956c8383b943a5879e857f7c05fc2a65afe5868b5",
+            "fe7305975f32364e46f640f4132a09a63ddf0f57c20228238354f13cbadcbec5",
+        ),
+    }),
+}
+
+
+def _tanner_font_matches(font: Any, allowed_pairs: frozenset[tuple[str, str]]) -> bool:
+    """Inspect only the two stream signatures needed by the reviewed policy."""
+    if font is None:
+        return False
+    descriptor = font.get("/FontDescriptor")
+    cmap = font.get("/ToUnicode")
+    if not descriptor or not cmap:
+        return False
+    program = descriptor.get_object().get("/FontFile3")
+    if not program:
+        return False
+    digest_pair = (
+        hashlib.sha256(program.get_object().get_data()).hexdigest(),
+        hashlib.sha256(cmap.get_object().get_data()).hexdigest(),
+    )
+    return digest_pair in allowed_pairs
+
+
+def _extract_tanner_page(
+    page: Any, allowed_pairs: frozenset[tuple[str, str]],
+    font_cache: dict[int, tuple[Any, bool]],
+) -> str:
+    """Keep ordinary page text unless the visitor reconstructs it exactly."""
+    original_fragments: list[str] = []
+    corrected_fragments: list[str] = []
+    inspection_failed = False
+    changed = False
+
+    def visitor(text: str, _cm: Any, _tm: Any, font: Any, _size: Any) -> None:
+        nonlocal inspection_failed, changed
+        original_fragments.append(text)
+        corrected = text
+        if "\u0160" in text and not inspection_failed:
+            try:
+                if font is not None:
+                    key = id(font)
+                    cached = font_cache.get(key)
+                    if cached is None or cached[0] is not font:
+                        cached = (font, _tanner_font_matches(font, allowed_pairs))
+                        font_cache[key] = cached
+                    if cached[1]:
+                        corrected = text.replace("\u0160", "fi")
+                        changed = True
+            except Exception:
+                # An uncertain signature invalidates every edit on this page.
+                inspection_failed = True
+        corrected_fragments.append(corrected)
+
+    ordinary = page.extract_text(visitor_text=visitor) or ""
+    if inspection_failed or not changed or "".join(original_fragments) != ordinary:
+        return ordinary
+    return "".join(corrected_fragments)
 
 
 def _segment_attested_fragments(
@@ -259,11 +332,25 @@ def extract_text_layer(
             "pip install -r requirements-acquisition.txt"
         ) from e
 
-    reader = PdfReader(str(path), strict=False)
+    # Hash the same immutable bytes that PdfReader parses. The exact source
+    # signature also binds /Encoding, which the font and CMap streams do not.
+    if artifact_profile == "tanner":
+        source_bytes = path.read_bytes()
+        allowed_pairs = _TANNER_GLYPH_POLICY.get(
+            hashlib.sha256(source_bytes).hexdigest(),
+        )
+        reader = PdfReader(io.BytesIO(source_bytes), strict=False)
+    else:
+        allowed_pairs = None
+        reader = PdfReader(str(path), strict=False)
     parts: list[str] = []
+    font_cache: dict[int, tuple[Any, bool]] = {}
     for page in reader.pages:
         try:
-            parts.append(page.extract_text() or "")
+            if allowed_pairs:
+                parts.append(_extract_tanner_page(page, allowed_pairs, font_cache))
+            else:
+                parts.append(page.extract_text() or "")
         except Exception:
             # Per-page failures shouldn't abort the whole file; the
             # inventory step already classified this PDF as

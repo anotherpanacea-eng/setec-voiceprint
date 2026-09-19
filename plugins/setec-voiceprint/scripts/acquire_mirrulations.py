@@ -21,14 +21,18 @@ comments are the highest AI-contamination genre post-2022, so pick pre-2020
 dockets (the temporal cut rides on docket selection + ``--era``).
 
 Bucket layout (verified 2026-06-11 against the live bucket): the top level is
-``raw-data/`` and ``derived-data/``. ``raw-data/`` holds only the binary
-attachments; the pre-extracted text lives under ``derived-data/`` at
+``raw-data/`` and ``derived-data/``. ``raw-data/`` holds per-comment JSON
+metadata and binary attachments; the pre-extracted text lives under ``derived-data/`` at
 ``derived-data/<AGENCY>/<DOCKET>/mirrulations/extracted_txt/
 comments_extracted_text/<engine>/<comment>_extracted.txt``. So ``--prefix``
 must be rooted at ``derived-data/`` -- a bare-agency or ``raw-data/`` prefix
 lists no extracted text and acquires nothing. The default
 ``--text-key-pattern`` matches these keys; still verify hit counts with
 ``--dry-run`` before a bulk pull (see references/acquire-corpus-pattern.md).
+The opt-in --metadata-mode standard verifies the comment JSON/attachment
+join and records source dates in the private sidecar; off is the default.
+Neither mode infers an authored date. See
+references/mirrulations-metadata-provenance.md.
 
 Privacy: output goes under ``ai-prose-baselines-private/impostors/<register>/
 <persona>/`` and the privacy guard refuses paths outside any directory named
@@ -52,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import re
 import sys
@@ -67,7 +72,15 @@ import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_mirrulations"
-SCRAPER_VERSION = "1.0"
+SCRAPER_VERSION = "1.1"
+
+METADATA_MAX_BYTES = 2 * 1024 * 1024
+_METADATA_REASONS = frozenset({
+    "metadata-unsupported-key", "metadata-missing", "metadata-transport",
+    "metadata-too-large", "metadata-invalid-json", "metadata-invalid-schema",
+    "metadata-identity-mismatch", "metadata-attachment-mismatch",
+    "metadata-attachment-ambiguous", "metadata-custody-mismatch",
+})
 
 DEFAULT_BUCKET = "mirrulations"
 DEFAULT_REGION = "us-east-1"
@@ -80,6 +93,62 @@ DEFAULT_AUTHOR = "Regulatory Commenter"
 # ---- Object store (the S3 analogue of Fetcher/FixtureFetcher) -----
 
 
+class MetadataSkip(Exception):
+    """A fixed, prose-free reason to skip one standard-mode item."""
+
+    def __init__(self, reason: str) -> None:
+        if reason not in _METADATA_REASONS:
+            raise ValueError("invalid metadata skip reason")
+        self.reason = reason
+        super().__init__(reason)
+
+
+@dataclass(frozen=True)
+class MetadataRead:
+    status: str  # ok, missing, transport, too_large
+    data: bytes | None = None
+
+
+@dataclass
+class MetadataReceipt:
+    stage: str  # fetched, processed
+    locator: str
+    bucket: str
+    mode: str
+    decoded_body_sha256: str
+    raw_text_sha256: str
+    raw_text_bytes: int
+    source_metadata: dict[str, Any]
+    source_metadata_sha256: str = ""
+    piece_source_url: str | None = None
+    piece_content_hash: str | None = None
+
+
+def _read_metadata_body(body: Any) -> MetadataRead:
+    """Read through short chunks and detect one byte beyond the 2 MiB limit."""
+    chunks: list[bytes] = []
+    total = 0
+    try:
+        while total <= METADATA_MAX_BYTES:
+            chunk = body.read(METADATA_MAX_BYTES + 1 - total)
+            if not isinstance(chunk, bytes):
+                return MetadataRead("transport")
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > METADATA_MAX_BYTES:
+                return MetadataRead("too_large")
+            chunks.append(chunk)
+        return MetadataRead("ok", b"".join(chunks))
+    except Exception:
+        return MetadataRead("transport")
+    finally:
+        try:
+            body.close()
+        except Exception:
+            pass
+
+
 class ObjectStore:
     """Abstract key/value object store. Tests use ``FixtureObjectStore``;
     production uses the boto3-backed store from ``make_s3_store``."""
@@ -90,14 +159,22 @@ class ObjectStore:
     def get_bytes(self, key: str) -> bytes | None:  # pragma: no cover
         raise NotImplementedError
 
+    def get_metadata(self, key: str) -> MetadataRead:  # pragma: no cover
+        raise NotImplementedError
+
 
 class FixtureObjectStore(ObjectStore):
     """In-memory store backed by a ``{key: bytes}`` dict (no network)."""
 
-    def __init__(self, objects: dict[str, bytes]) -> None:
+    def __init__(
+        self, objects: dict[str, bytes],
+        metadata_outcomes: dict[str, MetadataRead] | None = None,
+    ) -> None:
         self.objects = dict(objects)
+        self.metadata_outcomes = dict(metadata_outcomes or {})
         self.listed_prefixes: list[str] = []
         self.got_keys: list[str] = []
+        self.metadata_got_keys: list[str] = []
 
     def list_keys(self, prefix: str) -> Iterator[str]:
         self.listed_prefixes.append(prefix)
@@ -108,6 +185,17 @@ class FixtureObjectStore(ObjectStore):
     def get_bytes(self, key: str) -> bytes | None:
         self.got_keys.append(key)
         return self.objects.get(key)
+
+    def get_metadata(self, key: str) -> MetadataRead:
+        self.metadata_got_keys.append(key)
+        if key in self.metadata_outcomes:
+            return self.metadata_outcomes[key]
+        data = self.objects.get(key)
+        if data is None:
+            return MetadataRead("missing")
+        if len(data) > METADATA_MAX_BYTES:
+            return MetadataRead("too_large")
+        return MetadataRead("ok", data)
 
 
 def make_s3_store(
@@ -131,6 +219,7 @@ def make_s3_store(
     client = boto3.client(
         "s3", region_name=region, config=Config(signature_version=UNSIGNED),
     )
+    metadata_client = None
 
     class S3ObjectStore(ObjectStore):
         def list_keys(self, prefix: str) -> Iterator[str]:
@@ -147,6 +236,44 @@ def make_s3_store(
                 sys.stderr.write(f"  s3 get error {key}: {exc}\n")
                 return None
 
+        def get_metadata(self, key: str) -> MetadataRead:
+            nonlocal metadata_client
+            try:
+                if metadata_client is None:
+                    metadata_client = boto3.client(
+                        "s3", region_name=region,
+                        config=Config(
+                            signature_version=UNSIGNED,
+                            connect_timeout=10,
+                            read_timeout=25,
+                            retries={"total_max_attempts": 2},
+                        ),
+                    )
+                resp = metadata_client.get_object(Bucket=bucket, Key=key)
+            except Exception as exc:
+                response = getattr(exc, "response", None)
+                error = response.get("Error") if isinstance(response, dict) else None
+                if isinstance(error, dict) and error.get("Code") in {
+                    "NoSuchKey", "404",
+                }:
+                    return MetadataRead("missing")
+                return MetadataRead("transport")
+            if not isinstance(resp, dict):
+                return MetadataRead("transport")
+            body = resp.get("Body")
+            if body is None:
+                return MetadataRead("transport")
+            content_length = resp.get("ContentLength")
+            if isinstance(content_length, int) and content_length > METADATA_MAX_BYTES:
+                try:
+                    return MetadataRead("too_large")
+                finally:
+                    try:
+                        body.close()
+                    except Exception:
+                        pass
+            return _read_metadata_body(body)
+
     return S3ObjectStore()
 
 
@@ -155,6 +282,9 @@ class ItemMeta:
     """One extracted-comment-text object discovered in the bucket."""
     locator: str          # S3 key
     title: str = ""
+    metadata_receipt: MetadataReceipt | None = field(
+        default=None, repr=False, compare=False,
+    )
 
 
 @dataclass
@@ -167,6 +297,8 @@ class ProcessOptions:
     topic_match: str
     consent_status: str
     era: str
+    bucket: str
+    metadata_mode: str
     prefixes: list[str]
     text_key_re: re.Pattern[str]
     output_dir: Path
@@ -178,6 +310,198 @@ class ProcessOptions:
     strip_rules: str | None
     strip_aggressive: bool
     acquired_via: str
+
+
+# ---- Bounded metadata join ----------------------------------------
+
+_AGENCY_RE = re.compile(r"[A-Z][A-Z0-9]*")
+_DOCKET_TAIL_RE = re.compile(r"[A-Z0-9]+(?:-[A-Z0-9]+)*")
+_ENGINE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+_TEXT_NAME_RE = re.compile(
+    r"(?P<comment>[^/]+)_attachment_(?P<number>[1-9][0-9]*)_extracted\.txt"
+)
+_TIMESTAMP_RE = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}"
+    r"(?::[0-9]{2}(?:\.[0-9]+)?)?"
+    r"(?:Z|[+-][0-9]{2}(?::?[0-9]{2}(?::?[0-9]{2}(?:\.[0-9]+)?)?)?)"
+)
+
+
+def _standard_metadata_key(text_key: str) -> tuple[str, str, str, int, str]:
+    if not isinstance(text_key, str):
+        raise MetadataSkip("metadata-unsupported-key")
+    parts = text_key.split("/")
+    if len(parts) != 8 or parts[:1] != ["derived-data"] or parts[3:6] != [
+        "mirrulations", "extracted_txt", "comments_extracted_text",
+    ]:
+        raise MetadataSkip("metadata-unsupported-key")
+    agency, docket, engine, name = parts[1], parts[2], parts[6], parts[7]
+    if not (
+        _AGENCY_RE.fullmatch(agency)
+        and docket.startswith(agency + "-")
+        and _DOCKET_TAIL_RE.fullmatch(docket[len(agency) + 1:])
+        and _ENGINE_RE.fullmatch(engine)
+    ):
+        raise MetadataSkip("metadata-unsupported-key")
+    match = _TEXT_NAME_RE.fullmatch(name)
+    if match is None:
+        raise MetadataSkip("metadata-unsupported-key")
+    comment = match.group("comment")
+    suffix = comment[len(docket) + 1:] if comment.startswith(docket + "-") else ""
+    if not re.fullmatch(r"[0-9]+", suffix):
+        raise MetadataSkip("metadata-unsupported-key")
+    if len(match.group("number")) > 18:
+        raise MetadataSkip("metadata-unsupported-key")
+    number = int(match.group("number"))
+    metadata_key = (
+        f"raw-data/{agency}/{docket}/text-{docket}/comments/{comment}.json"
+    )
+    return metadata_key, docket, comment, number, (
+        f"https://downloads.regulations.gov/{comment}/attachment_{number}.pdf"
+    )
+
+
+def _reported_timestamp(value: Any) -> dict[str, str | None]:
+    if value is None:
+        return {"status": "missing", "value": None}
+    if not isinstance(value, str) or _TIMESTAMP_RE.fullmatch(value) is None:
+        return {"status": "invalid", "value": None}
+    try:
+        parsed = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return {"status": "invalid", "value": None}
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        return {"status": "invalid", "value": None}
+    return {"status": "valid", "value": value}
+
+
+def _source_metadata(
+    text_key: str, text_bytes: bytes, options: ProcessOptions,
+    store: ObjectStore,
+) -> dict[str, Any]:
+    metadata_key, docket, comment, number, expected_url = (
+        _standard_metadata_key(text_key)
+    )
+    try:
+        result = store.get_metadata(metadata_key)
+    except Exception:
+        raise MetadataSkip("metadata-transport") from None
+    if not isinstance(result, MetadataRead):
+        raise MetadataSkip("metadata-transport")
+    if result.status != "ok":
+        reason = {
+            "missing": "metadata-missing",
+            "too_large": "metadata-too-large",
+            "transport": "metadata-transport",
+        }.get(result.status, "metadata-transport")
+        raise MetadataSkip(reason)
+    data = result.data
+    if not isinstance(data, bytes):
+        raise MetadataSkip("metadata-transport")
+    if len(data) > METADATA_MAX_BYTES:
+        raise MetadataSkip("metadata-too-large")
+    try:
+        payload = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        raise MetadataSkip("metadata-invalid-json") from None
+    if not isinstance(payload, dict) or not isinstance(payload.get("data"), dict):
+        raise MetadataSkip("metadata-invalid-schema")
+    obj = payload["data"]
+    attrs = obj.get("attributes")
+    if not isinstance(attrs, dict) or not all(
+        isinstance(obj.get(field), str) for field in ("id", "type")
+    ):
+        raise MetadataSkip("metadata-invalid-schema")
+    if (
+        obj["id"] != comment or obj["type"] != "comments"
+        or attrs.get("docketId") != docket
+    ):
+        raise MetadataSkip("metadata-identity-mismatch")
+
+    relationships = obj.get("relationships", {})
+    if not isinstance(relationships, dict):
+        raise MetadataSkip("metadata-invalid-schema")
+    attachment_rel = relationships.get("attachments", {})
+    if not isinstance(attachment_rel, dict):
+        raise MetadataSkip("metadata-invalid-schema")
+    related = attachment_rel.get("data", [])
+    included = payload.get("included", [])
+    if not isinstance(related, list) or not isinstance(included, list):
+        raise MetadataSkip("metadata-invalid-schema")
+    related_ids: set[str] = set()
+    for relation in related:
+        if not isinstance(relation, dict):
+            raise MetadataSkip("metadata-invalid-schema")
+        if relation.get("type") != "attachments":
+            continue
+        ident = relation.get("id")
+        if not isinstance(ident, str) or not ident:
+            raise MetadataSkip("metadata-invalid-schema")
+        if ident in related_ids:
+            raise MetadataSkip("metadata-attachment-ambiguous")
+        related_ids.add(ident)
+    seen_included: set[str] = set()
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for attachment in included:
+        if not isinstance(attachment, dict):
+            raise MetadataSkip("metadata-invalid-schema")
+        if attachment.get("type") != "attachments":
+            continue
+        ident = attachment.get("id")
+        if not isinstance(ident, str):
+            raise MetadataSkip("metadata-invalid-schema")
+        if ident not in related_ids:
+            continue
+        if ident in seen_included:
+            raise MetadataSkip("metadata-attachment-ambiguous")
+        seen_included.add(ident)
+        attachment_attrs = attachment.get("attributes")
+        if not isinstance(attachment_attrs, dict):
+            raise MetadataSkip("metadata-invalid-schema")
+        formats = attachment_attrs.get("fileFormats", [])
+        if not isinstance(formats, list):
+            raise MetadataSkip("metadata-invalid-schema")
+        for entry in formats:
+            if not isinstance(entry, dict):
+                raise MetadataSkip("metadata-invalid-schema")
+            if entry.get("format") == "pdf" and entry.get("fileUrl") == expected_url:
+                matches.append((ident, attachment_attrs))
+    if not matches:
+        raise MetadataSkip("metadata-attachment-mismatch")
+    if len(matches) != 1:
+        raise MetadataSkip("metadata-attachment-ambiguous")
+    attachment_id, attachment_attrs = matches[0]
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", attachment_id) is None:
+        raise MetadataSkip("metadata-invalid-schema")
+    dates = {
+        "received": _reported_timestamp(attrs.get("receiveDate")),
+        "posted": _reported_timestamp(attrs.get("postedDate")),
+        "postmark": _reported_timestamp(attrs.get("postmarkDate")),
+        "comment_modified": _reported_timestamp(attrs.get("modifyDate")),
+        "attachment_modified": _reported_timestamp(
+            attachment_attrs.get("modifyDate")
+        ),
+    }
+    return {
+        "schema": "setec.mirrulations_source_metadata.v1",
+        "status": "binding_verified",
+        "bucket": options.bucket,
+        "text_object_key": text_key,
+        "text_object_sha256": hashlib.sha256(text_bytes).hexdigest(),
+        "text_object_bytes": len(text_bytes),
+        "metadata_object_key": metadata_key,
+        "metadata_object_sha256": hashlib.sha256(data).hexdigest(),
+        "metadata_object_bytes": len(data),
+        "comment_id": comment,
+        "docket_id": docket,
+        "attachment_number": number,
+        "attachment_relationship_id": attachment_id,
+        "attachment_pdf_file_url": expected_url,
+        "retrieved_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "reported_dates": dates,
+        "authored_date_proven": False,
+        "historical_text_bytes_proven": False,
+    }
 
 
 # ---- Discovery + extraction ---------------------------------------
@@ -207,16 +531,78 @@ def extract_one(
     item: ItemMeta, options: ProcessOptions, store: ObjectStore,
 ) -> tuple[str, str, str, _dt.date | None]:
     """Read the object and decode its text. ``("", …)`` skips on missing/empty."""
+    item.metadata_receipt = None
     data = store.get_bytes(item.locator)
     if not data:
         return "", "", "", None
     text = data.decode("utf-8", "replace")
     if not text.strip():
         return "", "", "", None
+    if options.metadata_mode == "standard":
+        evidence = _source_metadata(item.locator, data, options, store)
+        item.metadata_receipt = MetadataReceipt(
+            stage="fetched",
+            locator=item.locator,
+            bucket=options.bucket,
+            mode=options.metadata_mode,
+            decoded_body_sha256=hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            raw_text_sha256=hashlib.sha256(data).hexdigest(),
+            raw_text_bytes=len(data),
+            source_metadata=evidence,
+            source_metadata_sha256=_source_metadata_digest(evidence),
+        )
     return text, item.title or "untitled", options.author or DEFAULT_AUTHOR, None
 
 
 # ---- Per-comment processing ---------------------------------------
+
+
+def _source_metadata_digest(source_metadata: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        source_metadata, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _require_receipt(
+    item: ItemMeta, options: ProcessOptions, *, stage: str,
+) -> MetadataReceipt:
+    receipt = item.metadata_receipt
+    if (
+        receipt is None or receipt.stage != stage
+        or receipt.locator != item.locator
+        or receipt.bucket != options.bucket
+        or receipt.mode != options.metadata_mode
+        or not isinstance(receipt.source_metadata, dict)
+    ):
+        raise MetadataSkip("metadata-custody-mismatch")
+    try:
+        metadata_key, docket, comment, number, expected_url = (
+            _standard_metadata_key(item.locator)
+        )
+        metadata_digest = _source_metadata_digest(receipt.source_metadata)
+    except (MetadataSkip, TypeError, ValueError, OverflowError, RecursionError):
+        raise MetadataSkip("metadata-custody-mismatch") from None
+    expected = {
+        "schema": "setec.mirrulations_source_metadata.v1",
+        "status": "binding_verified",
+        "bucket": options.bucket,
+        "text_object_key": item.locator,
+        "text_object_sha256": receipt.raw_text_sha256,
+        "text_object_bytes": receipt.raw_text_bytes,
+        "metadata_object_key": metadata_key,
+        "docket_id": docket,
+        "comment_id": comment,
+        "attachment_number": number,
+        "attachment_pdf_file_url": expected_url,
+    }
+    if (
+        receipt.source_metadata_sha256 != metadata_digest
+        or any(receipt.source_metadata.get(key) != value
+               for key, value in expected.items())
+    ):
+        raise MetadataSkip("metadata-custody-mismatch")
+    return receipt
 
 
 def process_one_item(
@@ -230,96 +616,135 @@ def process_one_item(
     summary: ac.RunSummary,
 ) -> Optional[ac.AcquiredPiece]:
     """Preprocess -> length-gate -> hash -> dedupe -> piece. Mutates summary."""
-    if not body_text or len(body_text.strip()) < 200:
-        summary.skipped_filtered += 1
-        summary.log_skip(
-            reason="no-text", url=item.locator, detail=f"len={len(body_text)}",
-        )
-        return None
+    completed = False
+    try:
+        if options.metadata_mode == "standard":
+            receipt = _require_receipt(item, options, stage="fetched")
+            if (
+                date is not None
+                or receipt.decoded_body_sha256
+                != hashlib.sha256(body_text.encode("utf-8")).hexdigest()
+            ):
+                raise MetadataSkip("metadata-custody-mismatch")
+        else:
+            item.metadata_receipt = None
 
-    cleaned, prep_meta = ac.preprocess_text(
-        body_text,
-        rules=options.strip_rules,
-        allow_non_prose=options.allow_non_prose,
-        strip_aggressive=options.strip_aggressive,
-    )
-    if not cleaned or len(cleaned.strip()) < 200:
-        summary.skipped_parse_error += 1
-        summary.log_skip(
-            reason="empty-after-preprocess", url=item.locator,
-            detail=f"raw={len(body_text)} clean={len(cleaned)}",
-        )
-        return None
+        if not body_text or len(body_text.strip()) < 200:
+            summary.skipped_filtered += 1
+            summary.log_skip(
+                reason="no-text", url=item.locator, detail=f"len={len(body_text)}",
+            )
+            return None
 
-    word_count = len(re.findall(r"\S+", cleaned))
-    if word_count < options.min_words:
-        summary.skipped_filtered += 1
-        summary.log_skip(
-            reason="below-min-words", url=item.locator,
-            detail=f"words={word_count} < {options.min_words}",
+        cleaned, prep_meta = ac.preprocess_text(
+            body_text,
+            rules=options.strip_rules,
+            allow_non_prose=options.allow_non_prose,
+            strip_aggressive=options.strip_aggressive,
         )
-        return None
+        if not cleaned or len(cleaned.strip()) < 200:
+            summary.skipped_parse_error += 1
+            summary.log_skip(
+                reason="empty-after-preprocess", url=item.locator,
+                detail=f"raw={len(body_text)} clean={len(cleaned)}",
+            )
+            return None
 
-    piece = ac.AcquiredPiece(
-        title=title or "untitled",
-        author=author or DEFAULT_AUTHOR,
-        persona=options.persona,
-        register=options.register,
-        date_written=date,
-        source_url=item.locator,
-        cleaned_text=cleaned,
-        raw_byte_length=len(body_text.encode("utf-8")),
-        preprocessing_meta=prep_meta,
-        acquired_via=options.acquired_via,
-        consent_status=options.consent_status,
-        era=options.era,
-        register_match=options.register_match,
-        topic_match=options.topic_match,
-        impostor_for=list(options.impostor_for),
-    )
+        word_count = len(re.findall(r"\S+", cleaned))
+        if word_count < options.min_words:
+            summary.skipped_filtered += 1
+            summary.log_skip(
+                reason="below-min-words", url=item.locator,
+                detail=f"words={word_count} < {options.min_words}",
+            )
+            return None
 
-    existing = ac.content_hash_already_present(
-        piece.content_hash, options.output_dir,
-    )
-    if existing is not None:
-        summary.skipped_duplicate += 1
-        summary.log_skip(
-            reason="duplicate-hash", url=item.locator, detail=str(existing),
+        piece = ac.AcquiredPiece(
+            title=title or "untitled",
+            author=author or DEFAULT_AUTHOR,
+            persona=options.persona,
+            register=options.register,
+            date_written=date,
+            source_url=item.locator,
+            cleaned_text=cleaned,
+            raw_byte_length=len(body_text.encode("utf-8")),
+            preprocessing_meta=prep_meta,
+            acquired_via=options.acquired_via,
+            consent_status=options.consent_status,
+            era=options.era,
+            register_match=options.register_match,
+            topic_match=options.topic_match,
+            impostor_for=list(options.impostor_for),
         )
-        sys.stderr.write(
-            f"  duplicate hash; skipping {item.locator} "
-            f"(matches {existing.name})\n"
-        )
-        return None
 
-    summary.record_strip_meta(prep_meta)
-    summary.total_cleaned_words += piece.word_count
-    return piece
+        existing = ac.content_hash_already_present(
+            piece.content_hash, options.output_dir,
+        )
+        if existing is not None:
+            summary.skipped_duplicate += 1
+            summary.log_skip(
+                reason="duplicate-hash", url=item.locator, detail=str(existing),
+            )
+            sys.stderr.write(
+                f"  duplicate hash; skipping {item.locator} "
+                f"(matches {existing.name})\n"
+            )
+            return None
+
+        summary.record_strip_meta(prep_meta)
+        summary.total_cleaned_words += piece.word_count
+        if options.metadata_mode == "standard":
+            receipt.stage = "processed"
+            receipt.piece_source_url = piece.source_url
+            receipt.piece_content_hash = piece.content_hash
+        completed = True
+        return piece
+    finally:
+        if not completed:
+            item.metadata_receipt = None
 
 
 def emit_piece(
     piece: ac.AcquiredPiece, *, options: ProcessOptions, summary: ac.RunSummary,
+    item: ItemMeta | None = None,
 ) -> None:
     """Write piece + sidecar + manifest entry. No-op for dry-run."""
-    if options.dry_run:
-        sys.stderr.write(
-            f"  [dry-run] would write {piece.filename_stem()} "
-            f"({piece.word_count} words)\n"
+    try:
+        extra_meta = None
+        if options.metadata_mode == "standard":
+            if item is None:
+                raise MetadataSkip("metadata-custody-mismatch")
+            receipt = _require_receipt(item, options, stage="processed")
+            if (
+                receipt.piece_source_url != piece.source_url
+                or receipt.piece_content_hash != piece.content_hash
+                or piece.date_written is not None
+            ):
+                raise MetadataSkip("metadata-custody-mismatch")
+            extra_meta = {"source_metadata": receipt.source_metadata}
+        if options.dry_run:
+            sys.stderr.write(
+                f"  [dry-run] would write {piece.filename_stem()} "
+                f"({piece.word_count} words)\n"
+            )
+            summary.acquired += 1
+            return
+        text_path, _meta_path = ac.write_piece(
+            piece, output_dir=options.output_dir, scraper_version=SCRAPER_VERSION,
+            extra_meta=extra_meta,
         )
+        entry = ac.compose_manifest_entry(
+            piece, text_path=text_path,
+            manifest_relative_to=options.manifest_path.parent,
+        )
+        ac.append_manifest_entry(options.manifest_path, entry)
         summary.acquired += 1
-        return
-    text_path, _meta_path = ac.write_piece(
-        piece, output_dir=options.output_dir, scraper_version=SCRAPER_VERSION,
-    )
-    entry = ac.compose_manifest_entry(
-        piece, text_path=text_path,
-        manifest_relative_to=options.manifest_path.parent,
-    )
-    ac.append_manifest_entry(options.manifest_path, entry)
-    summary.acquired += 1
-    sys.stderr.write(
-        f"  acquired {text_path.name} ({piece.word_count} words)\n"
-    )
+        sys.stderr.write(
+            f"  acquired {text_path.name} ({piece.word_count} words)\n"
+        )
+    finally:
+        if item is not None:
+            item.metadata_receipt = None
 
 
 # ---- CLI ----------------------------------------------------------
@@ -338,7 +763,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--prefix", action="append", required=True, dest="prefixes",
                    help="S3 key prefix to list, rooted at derived-data/, e.g. "
                         "derived-data/EPA/EPA-HQ-OAR-2013-0602 (repeatable; "
-                        "required). raw-data/ holds only binaries; the "
+                        "required). raw-data/ also holds comment JSON; "
                         "extracted text is under derived-data/. Pick "
                         "substantive, pre-2020 dockets.")
     p.add_argument("--bucket", default=DEFAULT_BUCKET,
@@ -348,6 +773,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--text-key-pattern", default=DEFAULT_TEXT_KEY_PATTERN,
                    help="Regex selecting extracted-text keys "
                         f"(default: {DEFAULT_TEXT_KEY_PATTERN!r}).")
+    p.add_argument(
+        "--metadata-mode", choices=["off", "standard"], default="off",
+        help=("off (default): current text-only route; standard: verify the "
+              "Mirrulations comment JSON/attachment join and write a "
+              "source-metadata receipt to the private sidecar."),
+    )
 
     # Persona / impostor metadata.
     p.add_argument("--persona", default="mirrulations",
@@ -439,6 +870,8 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         topic_match=args.topic_match,
         consent_status=args.consent_status,
         era=args.era,
+        bucket=args.bucket,
+        metadata_mode=args.metadata_mode,
         prefixes=list(args.prefixes or []),
         text_key_re=re.compile(args.text_key_pattern),
         output_dir=output_dir,
@@ -453,9 +886,25 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
     )
 
 
+def _record_metadata_skip(
+    summary: ac.RunSummary, item: ItemMeta, skip: MetadataSkip,
+) -> None:
+    if skip.reason in {"metadata-missing", "metadata-transport"}:
+        summary.skipped_network_error += 1
+    elif skip.reason == "metadata-unsupported-key":
+        summary.skipped_filtered += 1
+    else:
+        summary.skipped_parse_error += 1
+    summary.log_skip(reason=skip.reason, url=item.locator)
+
+
 def run(args: argparse.Namespace, store: ObjectStore | None = None) -> int:
     """Top-level acquisition driver. Returns the shell exit code."""
     options = parse_options(args)
+    if options.metadata_mode not in {"off", "standard"}:
+        raise ValueError("unknown metadata mode")
+    if options.metadata_mode == "standard" and options.bucket != DEFAULT_BUCKET:
+        raise ValueError("standard metadata mode requires the mirrulations bucket")
 
     paths_to_check = [options.output_dir, options.manifest_path]
     if args.out:
@@ -476,6 +925,7 @@ def run(args: argparse.Namespace, store: ObjectStore | None = None) -> int:
         f"Acquiring Mirrulations comments from {len(options.prefixes)} "
         f"prefix(es) into {options.output_dir}\n"
         f"Persona: {options.persona} (impostor_for: {options.impostor_for})\n"
+        f"Metadata mode: {options.metadata_mode}\n"
         "  note: exact-hash dedup only; near-duplicate campaign text is not "
         "removed (LSH follow-up).\n"
     )
@@ -484,20 +934,27 @@ def run(args: argparse.Namespace, store: ObjectStore | None = None) -> int:
         if summary.acquired >= options.max_items:
             break
         try:
-            body_text, title, author, date = extract_one(item, options, store)
-        except Exception as exc:
-            summary.skipped_parse_error += 1
-            summary.log_skip(
-                reason="extract-error", url=item.locator,
-                detail=f"{type(exc).__name__}: {exc}",
+            try:
+                body_text, title, author, date = extract_one(item, options, store)
+            except MetadataSkip:
+                raise
+            except Exception as exc:
+                summary.skipped_parse_error += 1
+                summary.log_skip(
+                    reason="extract-error", url=item.locator,
+                    detail=f"{type(exc).__name__}: {exc}",
+                )
+                continue
+            piece = process_one_item(
+                item, body_text, title, author, date,
+                options=options, summary=summary,
             )
-            continue
-        piece = process_one_item(
-            item, body_text, title, author, date,
-            options=options, summary=summary,
-        )
-        if piece is not None:
-            emit_piece(piece, options=options, summary=summary)
+            if piece is not None:
+                emit_piece(piece, options=options, summary=summary, item=item)
+        except MetadataSkip as skip:
+            _record_metadata_skip(summary, item, skip)
+        finally:
+            item.metadata_receipt = None
 
     sys.stderr.write("\n" + summary.render_stderr())
     if args.out:
@@ -515,7 +972,7 @@ def run(args: argparse.Namespace, store: ObjectStore | None = None) -> int:
         # source/filters (a likely misconfiguration), not a dedupe-only rerun.
         sys.stderr.write(
             "No comments acquired. Verify the --prefix is rooted at "
-            "derived-data/ (raw-data/ holds only binaries), the "
+            "derived-data/ (raw-data/ also holds comment JSON), the "
             "--text-key-pattern (with --dry-run), and S3 connectivity; pass "
             "--allow-empty to allow an empty run.\n"
         )
@@ -526,6 +983,8 @@ def run(args: argparse.Namespace, store: ObjectStore | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
+    if args.metadata_mode == "standard" and args.bucket != DEFAULT_BUCKET:
+        parser.error("standard metadata mode requires the mirrulations bucket")
     return run(args)
 
 
