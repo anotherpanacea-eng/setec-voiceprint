@@ -34,6 +34,8 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
+from setec.core.script_console import enable_utf8_stdio  # noqa: E402
+
 SCRIPT_VERSION = "0.2.0"
 
 # v2 metric names. ``sbert`` is the v1 default; the others were
@@ -580,6 +582,7 @@ def _summarize(
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Phase B step 2: compute pairwise cosine distances."
     )
