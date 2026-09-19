@@ -323,6 +323,36 @@ def test_compound_speaker_name_closes_before_later_heading(label):
     ]
 
 
+@pytest.mark.parametrize("heading", (
+    "Director of Operations.",
+    "Secretary of State.",
+    "Director for Widget Programs.",
+))
+def test_office_title_heading_refuses_instead_of_clean_oral_close(heading):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written opening.",
+        heading, "Written analysis continues.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-role-heading")
+    ]
+    assert [(block.witness, block.body) for block in result.statements] == [
+        ("Bea Two", "Independent body.")
+    ]
+
+def test_inline_office_title_remains_written_prose():
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One",
+        "The report mentions the Director of Operations in its analysis.",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert len(result.statements) == 1
+    assert "Director of Operations" in result.statements[0].body
+    assert result.statements[0].boundary_kind == "procedural-bracket"
+
 def test_standalone_curly_quote_cue_refuses_ambiguous_speaker():
     result = _split_synthetic_html([
         "Prepared Statement of Ada One", "Analysis starts.",

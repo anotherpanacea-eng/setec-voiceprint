@@ -20,6 +20,9 @@ Supported physical-line speaker labels include Senator, Representative,
 General, Admiral, Colonel, Captain, Secretary, Director, several two-word
 military ranks, and Mr./Ms./Mrs./Dr., followed by one to four name words and
 a period. The CHAIRMAN, The WITNESS, and The COUNSEL are also recognized.
+A title followed by a name-shaped phrase containing a connector such as
+of or for can also be a written office heading. It refuses with
+ambiguous-role-heading rather than closing the body as an oral turn.
 Other all-capital roles after The or THE refuse the current candidate;
 The Staff Director also refuses with a title-cased role. A lowercase the
 or a generic title-cased noun can be a hard-wrapped prose continuation and

@@ -110,7 +110,7 @@ _NAMED_SPEAKER_RE = re.compile(
     r"(?i)^(?:Senator|Representative|General|Admiral|Colonel|Captain|"
     r"Secretary|Director|Rear Admiral|Vice Admiral|Brigadier General|"
     r"Major General|Lieutenant General|Lieutenant Colonel)[ \t]+"
-    + _SPEAKER_NAME + r"\.(?:[ \t]+|$)"
+    + r"(?P<name>" + _SPEAKER_NAME + r")\.(?:[ \t]+|$)"
 )
 _HONORIFIC_SPEAKER_RE = re.compile(
     r"(?i)^(?:Mr|Ms|Mrs|Dr)\.[ \t]+" + _SPEAKER_NAME
@@ -307,16 +307,23 @@ def _witness_name(heading_tail: str) -> str:
 
 def _speaker_kind(line: str) -> str | None:
     """Classify supported and visibly transcript-shaped physical lines."""
-    if (
-        _STRUCTURAL_SPEAKER_RE.match(line)
-        or _NAMED_SPEAKER_RE.match(line)
-        or _HONORIFIC_SPEAKER_RE.match(line)
-    ):
+    if _STRUCTURAL_SPEAKER_RE.match(line):
+        return "oral-speaker-turn"
+    named = _NAMED_SPEAKER_RE.match(line)
+    if named:
+        # A role + connector phrase can be a written office heading. Its
+        # decoded line is ambiguous, so it cannot certify a clean oral close.
+        if re.search(
+            r"(?i)\b(?:of|for|to|in|at|on|and|the)\b",
+            named.group("name"),
+        ):
+            return "ambiguous-role-heading"
+        return "oral-speaker-turn"
+    if _HONORIFIC_SPEAKER_RE.match(line):
         return "oral-speaker-turn"
     if _UNKNOWN_STRUCTURAL_RE.match(line):
         return "unsupported-speaker-turn"
     return None
-
 
 def _split_prepared_statements(text: str) -> SplitResult:
     """Find candidate written blocks with a detected end or a named refusal.
@@ -389,6 +396,9 @@ def _split_prepared_statements(text: str) -> SplitResult:
             if speaker_kind == "oral-speaker-turn":
                 boundary_end = line_start
                 boundary_kind = speaker_kind
+                break
+            if speaker_kind == "ambiguous-role-heading":
+                refusal = speaker_kind
                 break
             if speaker_kind == "unsupported-speaker-turn":
                 refusal = "ambiguous-speaker-turn"
