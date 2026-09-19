@@ -58,33 +58,51 @@ Monday cron, which runs after the release object is normally up.
 
 ## Step A — cut the setec-voiceprint release
 
-SETEC follows the accumulate-then-cut practice: PRs ship `changelog.d/<slug>.md`
-fragments and do **not** pin a version; the version + CHANGELOG section are cut
-at release time. After the merge commit for the last PR in the wave lands on
-`main`:
+SETEC follows the accumulate-then-cut practice: constituent PRs ship
+`changelog.d/<slug>.md` fragments without pinning a version. Before preparing
+the cut, fetch `main` and verify that its tree already contains every fragment
+intended for this version. If an intended fragment is still on a draft branch,
+defer the cut until that work lands through a cleared train; the assembler does
+not read pending branches.
+
+Prepare the release changes in a clean, isolated worktree from fresh main:
 
 ```bash
-git checkout main
-git pull
+git fetch origin main
+git worktree add -b release/<cut-id> ../setec-voiceprint-release-<cut-id> origin/main
+cd ../setec-voiceprint-release-<cut-id>
 
-# 1. Assemble the accumulated changelog.d/ fragments into a version section.
+# Assemble the accumulated changelog.d/ fragments into a version section.
 python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD
 
-# 2. Bump the plugin version.
-#    Edit "version" in plugins/setec-voiceprint/.claude-plugin/plugin.json to X.Y.Z.
+# Set "version" in plugins/setec-voiceprint/.claude-plugin/plugin.json to X.Y.Z.
+git add -A CHANGELOG.md changelog.d plugins/setec-voiceprint/.claude-plugin/plugin.json
+git commit -m "chore: cut SETEC release X.Y.Z"
+git push -u origin HEAD
+```
 
-# 3. Commit the assembled CHANGELOG + plugin.json bump (merge-commit/PR per the
-#    repo's normal flow; small release-cut commits may use the direct-push path).
+Open this release cut as a **draft constituent PR** and independently review
+and validate its exact head. Include that head in a newly built, reviewed
+producer integration train from fresh main; land only the cleared train under
+the producer's [merge mechanics](../../../AGENTS.md#merge-mechanics). If main
+moves before the release cut lands, rebuild the cut from the new main and repeat
+its review and validation before admitting it to a train.
 
-# 4. Tag from main and push (v1.MAJOR.MINOR convention; CHANGELOG's versioning
-#    preamble enforces the v1. prefix).
-git tag v1.MAJOR.MINOR
+Only after the cleared train containing the release commit is on `main`, fetch
+and verify the landed release/train commit, then tag that commit from main and
+push the tag (the `v1.MAJOR.MINOR` convention is enforced by the CHANGELOG
+versioning preamble):
+
+```bash
+git fetch origin main
+git tag v1.MAJOR.MINOR <verified-release-train-commit-on-main>
 git push origin v1.MAJOR.MINOR
 ```
 
-Tags are required for the marketplace + plugin-install flow to find the right
-version. See `AGENTS.md` §Tagging and §"PRs and merges" for the canonical
-accumulate-then-cut text.
+Tags are required for the marketplace and plugin-install flow. Pushing a `v*`
+tag triggers the producer GitHub Release; only then should Step B dispatch
+consumer syncs. See [AGENTS.md tagging](../../../AGENTS.md#tagging) for the
+producer tag procedure.
 
 ---
 
@@ -197,26 +215,21 @@ complete or remove the sibling dir to skip them.)
 
 ### 1. `gh` OAuth workflow-scope merge 403 (public repos)
 
-A PR that touches `.github/workflows/` cannot be merged with the `gh` OAuth
-token on the **public** repos (apodictic, setec-voiceprint): you get a 403
-("refusing to allow an OAuth App to create or update workflow"). The *git*
-credential keeps the scope (it pushed the branch fine), so the fallbacks are:
+A PR that touches `.github/workflows/` can receive a 403 from the `gh` OAuth
+token on the public repositories (apodictic, setec-voiceprint): "refusing to
+allow an OAuth App to create or update workflow." This is an observed credential
+limit, not an ordinary push-to-main fallback.
 
-```bash
-# In a main worktree of the affected repo:
-git merge --no-ff origin/<branch>
-git push origin HEAD:main          # needs explicit OK for the direct-to-main push
-```
+For this producer, follow [AGENTS.md merge mechanics](../../../AGENTS.md#merge-mechanics)
+and [Spec 81's landing procedure](../../../specs/81-draft-first-integration-trains.md#landing-without-a-paid-ruleset):
+land only the cleared train using either a reliable strict-current-base merge
+with an expected-head guard, or the tested tree-identical two-parent merge
+with an exact-base lease and fresh live read-back. A stale base or rejected
+lease requires rebuilding and retesting; never retry blindly, push an ordinary
+merge to main, or merge a constituent separately.
 
-…or merge via the **GitHub web UI**. PRs that do **not** touch
-`.github/workflows/` merge via `gh pr merge` fine.
-
-**Public vs private:** the 403 is observed on the public repos. **voicewright
-is private and has not hit this block** — `gh pr merge` there has worked on
-workflow-touching PRs. (Treat this as observed behavior, not a guaranteed
-private-repo exemption; if voicewright ever 403s, use the same local-merge
-fallback.) See `AGENTS.md` §"Merge mechanics" and hub `PATTERNS.md` §4 for the
-verbose mechanics.
+The 403 has not been observed in private voicewright. That observation is not
+an exemption: each other fleet repository follows its own governing `AGENTS.md`.
 
 ### 2. Capability/surface goldens are drop-in — no re-splice
 
