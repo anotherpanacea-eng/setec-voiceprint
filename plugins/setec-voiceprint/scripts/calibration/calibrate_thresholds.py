@@ -65,15 +65,44 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from manifest_validator import validate_manifest  # type: ignore
-from validation_harness import (  # type: ignore
-    DEFAULT_NEGATIVE_STATUSES,
-    DEFAULT_POSITIVE_STATUSES,
-    _entry_uses,
-    collect_signal_records,
-    load_manifest_entries,
-    score_smoothing_entry,
+
+# These scoring imports are also public aliases used by calibration callers.
+# Resolve direct attribute/from-import access to the genuine object, while
+# keeping a plain import and argparse --help clear of scoring dependencies.
+_HARNESS_ALIASES = (
+    "DEFAULT_NEGATIVE_STATUSES",
+    "DEFAULT_POSITIVE_STATUSES",
+    "_entry_uses",
+    "collect_signal_records",
+    "load_manifest_entries",
+    "score_smoothing_entry",
 )
-from variance_audit import COMPRESSION_HEURISTICS  # type: ignore
+_RUNTIME_ALIASES = (*_HARNESS_ALIASES, "COMPRESSION_HEURISTICS")
+
+
+def __getattr__(name: str) -> Any:
+    if name in _HARNESS_ALIASES:
+        import validation_harness  # type: ignore
+
+        value = getattr(validation_harness, name)
+    elif name == "COMPRESSION_HEURISTICS":
+        from variance_audit import COMPRESSION_HEURISTICS  # type: ignore
+
+        value = COMPRESSION_HEURISTICS
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value
+    return value
+
+
+def _bind_runtime_dependencies() -> None:
+    """Fill missing scoring aliases without replacing caller-installed patches."""
+
+    module = sys.modules[__name__]
+    for name in _RUNTIME_ALIASES:
+        if name not in globals():
+            getattr(module, name)
+
 
 # Cache key bumped when the scoring code's record shape changes in a
 # way that invalidates older caches. Read by `cache_is_compatible`.
@@ -1378,6 +1407,7 @@ def score_corpus(
         here through the cache to the provenance entry).
       - ``scored_at`` — ISO timestamp.
     """
+    _bind_runtime_dependencies()
     manifest_path = Path(args.manifest)
     validation = validate_manifest(str(manifest_path))
     if validation["n_errors"] > 0:
@@ -2135,6 +2165,7 @@ def load_or_score_corpus(
     ``records`` are the raw `score_smoothing_entry` outputs (pure
     dicts; JSON-friendly).
     """
+    _bind_runtime_dependencies()
     manifest_path = Path(args.manifest)
     fresh_hash = _manifest_content_hash(manifest_path)
 
@@ -2432,6 +2463,7 @@ def derive_threshold_from_records(
     re-walked per worker. Pass ``records=[]`` when supplying pre-
     extracted pairs; the records list is unused on that path.
     """
+    _bind_runtime_dependencies()
     if args.signal not in COMPRESSION_HEURISTICS:
         raise SystemExit(
             f"Unknown signal {args.signal!r}. Known: "
