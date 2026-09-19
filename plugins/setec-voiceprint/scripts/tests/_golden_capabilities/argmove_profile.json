@@ -46,7 +46,7 @@
   "status": "empirically_oriented",
   "surface": "assertoric",
   "use_when": [
-    "building an argument-register population baseline (the profiles the acquisition-tier registers feed); grant_proposal_academic and grant_proposal_nonprofit are the preferred grant leaves, while bare grant_proposal remains accepted during its deprecation window)",
+    "building an argument-register population baseline (the profiles the acquisition-tier registers feed); grant_proposal_academic and grant_proposal_nonprofit are the preferred grant leaves, while bare grant_proposal remains accepted during its deprecation window",
     "answering whether deterministic signals separate two corpora (e.g. human vs LLM argument) before spending on the LLM judge"
   ]
 }
