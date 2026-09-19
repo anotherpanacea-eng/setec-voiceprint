@@ -33,7 +33,7 @@ Usage:
     python3 scripts/acquire_pdf_urls.py grant_pdf_urls.jsonl \\
         --persona opengrants \\
         --impostor-for argscope_grant_proposal \\
-        --register grant_proposal \\
+        --register grant_proposal_academic \\
         --consent-status cc_licensed \\
         --era pre_chatgpt \\
         --min-words 1500 --max-items 300
@@ -346,7 +346,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         prog=TOOL_NAME,
         description=(
             "Acquire prose from a curated list of remote PDF URLs into the "
-            "impostor pool (grant_proposal / expert_affidavit baselines). See "
+            "impostor pool (grant_proposal_academic / "
+            "grant_proposal_nonprofit / expert_affidavit baselines; bare "
+            "grant_proposal remains accepted during its deprecation window). "
+            "See "
             "internal/SPEC_acquire_pdf_urls.md."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -365,7 +368,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help=("Persona slug(s) this impostor pool serves "
                          "(required; the schema rejects empty)."))
     p.add_argument("--register", required=True,
-                   help="Manifest register; use grant_proposal or "
+                   help="Manifest register; prefer grant_proposal_academic or "
+                        "grant_proposal_nonprofit; bare grant_proposal remains "
+                        "accepted during the deprecation window, as does "
                         "expert_affidavit.")
     p.add_argument("--register-match",
                    choices=["high", "medium", "low"], default="high")

@@ -115,7 +115,7 @@ For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Req
 | Field | Values |
 |---|---|
 | `ai_status` | `pre_ai_human`, `ai_generated`, `ai_generated_from_outline`, `ai_assisted`, `ai_edited`, `mixed`, `unknown` |
-| `register` | `literary_fiction`, `blog_essay`, `academic_philosophy`, `testimony_policy`, `personal`, `policy_advocacy`, `literary_horror`, `policy_brief`, `scholarly_article`, `legal_brief`, `grant_proposal`, `expert_affidavit`, `regulatory_comment`, `professional_letter`, `teaching`, `message.imessage`, `message.facebook_messenger`, `social_media_twitter`, `forum_metafilter`, `social_media_facebook_posts`, `social_media_facebook_comments` |
+| `register` | `literary_fiction`, `blog_essay`, `academic_philosophy`, `testimony_policy`, `personal`, `policy_advocacy`, `literary_horror`, `policy_brief`, `scholarly_article`, `legal_brief`, `grant_proposal_academic`, `grant_proposal_nonprofit`, `grant_proposal` (deprecated compatibility input), `expert_affidavit`, `regulatory_comment`, `professional_letter`, `teaching`, `message.imessage`, `message.facebook_messenger`, `social_media_twitter`, `forum_metafilter`, `social_media_facebook_posts`, `social_media_facebook_comments` |
 | `split` | `baseline`, `train`, `test`, `holdout` |
 | `privacy` | `private`, `shareable`, `public_domain` |
 | `use` | `baseline`, `validation`, `voice_validation`, `voice_profile`, `voice_impostor`, `idiolect`, `negative_baseline`, `exclude` |
@@ -134,7 +134,7 @@ exactly one audience/composition tier. There is no default tier.
 
 | Tier | Leaves |
 |---|---|
-| `public_composed` | `literary_fiction`, `literary_horror`, `blog_essay`, `academic_philosophy`, `scholarly_article`, `testimony_policy`, `policy_advocacy`, `policy_brief`, `legal_brief`, `grant_proposal`, `expert_affidavit`, `regulatory_comment`, `teaching`, `social_media_facebook_posts` |
+| `public_composed` | `literary_fiction`, `literary_horror`, `blog_essay`, `academic_philosophy`, `scholarly_article`, `testimony_policy`, `policy_advocacy`, `policy_brief`, `legal_brief`, `grant_proposal_academic`, `grant_proposal_nonprofit`, `grant_proposal` (deprecated compatibility input), `expert_affidavit`, `regulatory_comment`, `teaching`, `social_media_facebook_posts` |
 | `public_responsive` | `social_media_twitter`, `forum_metafilter`, `social_media_facebook_comments` |
 | `private_composed` | `professional_letter`, `personal` |
 | `private_dyadic` | `message.imessage`, `message.facebook_messenger` |
@@ -142,6 +142,12 @@ exactly one audience/composition tier. There is no default tier.
 Tier policy is orthogonal to the receipt-frozen `register_families/v2`
 classifier. Newly admitted leaves therefore continue to resolve to that
 classifier's `unknown` sentinel unless already present in its frozen map.
+The preferred grant leaves are `grant_proposal_academic` and
+`grant_proposal_nonprofit`; bare `grant_proposal` remains accepted during the
+deprecation window and emits a validator warning naming both replacements.
+Normal validator CLI/API use therefore continues to accept bare
+`grant_proposal` with exit code 0, while `--strict` promotes its warning to
+exit code 1.
 `private_dyadic` leaves are profile-only: the validator rejects `baseline`
 use, and stylometric reference builders refuse to mix them with any
 non-private-dyadic or missing register. A reference composed only of
