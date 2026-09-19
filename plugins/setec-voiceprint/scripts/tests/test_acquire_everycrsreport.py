@@ -805,6 +805,146 @@ def test_historical_refuses_redirected_index_source(tmp_path):
     assert receipt["total_in_scope"] is None
     assert fetcher.fetched_urls == [CSV_URL]
 
+
+def test_review_regression_historical_preserves_sibling_report_sections(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    html = ("<html><body><article>" + "<p>Substantive synthetic analysis.</p>" * 20
+            + "</article><section class='footnotes'>Footnote citation retained.</section>"
+            + "<section class='appendix'>Appendix data retained.</section></body></html>")
+    assert ev.run(_historical_args(private), fetcher=_inline_fetcher(
+        _index("RA"), {"RA": {"id": "RA", "versions": [_version()]}},
+        {"old.html": html},
+    )) == 0
+    text = next((private / "candidates").glob("*.txt")).read_text(encoding="utf-8")
+    assert "Footnote citation retained." in text
+    assert "Appendix data retained." in text
+
+
+def test_review_regression_historical_refuses_content_selector_before_fetch(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    fetcher = _inline_fetcher(_index("RA"))
+    with pytest.raises(SystemExit):
+        ev.run(_historical_args(private, content_selector="article"), fetcher=fetcher)
+    assert fetcher.fetched_urls == []
+
+
+@pytest.mark.parametrize("tamper", ["status", "files", "acquired"])
+def test_review_regression_resume_rejects_impossible_receipt(tmp_path, tamper):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB")
+    first = private / "first.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    receipt = json.loads(first.read_text(encoding="utf-8"))
+    if tamper == "status":
+        receipt["status_rows"][0]["status"] = "made-up-terminal"
+    elif tamper == "files":
+        receipt["files_written"] = 999
+    else:
+        receipt["summary"]["acquired"] = 999
+    first.write_text(json.dumps(receipt), encoding="utf-8")
+    fetcher = _inline_fetcher(index)
+    second = private / "second.json"
+    args = _historical_args(
+        private, out=str(second), after_report_number="RA",
+        expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+        resume_receipt=str(first), allow_empty=True,
+    )
+    assert ev.run(args, fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    assert json.loads(second.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+def test_review_regression_resume_requires_noninitial_predecessor_hash(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA", "RB", "RC")
+    first = private / "first.json"
+    second = private / "second.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    digest = hashlib.sha256(index.encode()).hexdigest()
+    assert ev.run(_historical_args(private, out=str(second), allow_empty=True,
+                  after_report_number="RA", expected_index_sha256=digest,
+                  resume_receipt=str(first)), fetcher=_inline_fetcher(index)) == 0
+    forged = json.loads(second.read_text(encoding="utf-8"))
+    forged["predecessor_receipt_sha256"] = None
+    second.write_text(json.dumps(forged), encoding="utf-8")
+    third = private / "third.json"
+    fetcher = _inline_fetcher(index)
+    args = _historical_args(private, out=str(third), allow_empty=True,
+                            after_report_number="RB", expected_index_sha256=digest,
+                            resume_receipt=str(second))
+    assert ev.run(args, fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    assert json.loads(third.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+def test_review_regression_malformed_csv_writes_failure_receipt(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    malformed = "number,url\nRA," + "x" * 132000 + "\n"
+    fetcher = _inline_fetcher(malformed)
+    assert ev.run(_historical_args(private), fetcher=fetcher) == 1
+    assert fetcher.fetched_urls == [CSV_URL]
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["kind"] == "failure"
+    assert receipt["batch_attempted"] == 0
+
+
+def test_review_regression_exhausted_resume_refuses_new_batch(tmp_path):
+    import hashlib
+    private = tmp_path / "ai-prose-baselines-private"
+    index = _index("RA")
+    first = private / "first.json"
+    assert ev.run(_historical_args(private, out=str(first), allow_empty=True),
+                  fetcher=_inline_fetcher(index)) == 0
+    second = private / "second.json"
+    args = _historical_args(
+        private, out=str(second), allow_empty=True,
+        after_report_number="RA",
+        expected_index_sha256=hashlib.sha256(index.encode()).hexdigest(),
+        resume_receipt=str(first),
+    )
+    assert ev.run(args, fetcher=_inline_fetcher(index)) == 1
+    assert json.loads(second.read_text(encoding="utf-8"))["kind"] == "failure"
+
+
+def test_review_regression_malformed_authority_gets_locator_status(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    malformed = ("number,url,latestPubDate,title,latestHTML\n"
+                 "RA,https://[bad/reports/RA.json,2025-01-01,Current,files/x.html\n")
+    assert ev.run(_historical_args(private, allow_empty=True),
+                  fetcher=_inline_fetcher(malformed)) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [{"id": "RA", "status": "invalid-metadata-locator"}]
+
+
+def test_review_regression_one_status_one_summary_skip(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    assert ev.run(_historical_args(private, allow_empty=True),
+                  fetcher=_inline_fetcher(
+                      _index("RA"), {"RA": {"id": "RA", "versions": [_version()]}},
+                  )) == 0
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["status_rows"] == [{"id": "RA", "status": "html-fetch-failed"}]
+    summary = receipt["summary"]
+    assert summary["skipped_network_error"] == 1
+    assert summary["skipped_filtered"] == 0
+    assert len(summary["skip_log"]) == 1
+
+
+def test_review_regression_empty_index_frame_has_no_invalid_batch(tmp_path):
+    private = tmp_path / "ai-prose-baselines-private"
+    index = "number,url,latestPubDate,title,latestHTML\n"
+    fetcher = _inline_fetcher(index)
+    assert ev.run(_historical_args(private, allow_empty=True), fetcher=fetcher) == 1
+    receipt = json.loads((private / "receipt.json").read_text(encoding="utf-8"))
+    assert receipt["kind"] == "failure"
+    assert receipt["batch_attempted"] == 0
+    assert receipt["failure_reason"] == "empty-report-frame"
+    assert fetcher.fetched_urls == [CSV_URL]
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

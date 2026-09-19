@@ -428,6 +428,51 @@ def emit_piece(
 
 HISTORICAL_RECEIPT_SCHEMA = "everycrsreport-historical-receipt/v1"
 HISTORICAL_ORDER = "normalized-report-id-lexical/v1"
+_HISTORICAL_STATUS_CATEGORY = {
+    "written": "acquired",
+    "would_write": "acquired",
+    "duplicate-hash": "skipped_duplicate",
+    "metadata-redirected": "skipped_network_error",
+    "metadata-fetch-failed": "skipped_network_error",
+    "html-redirected": "skipped_network_error",
+    "html-fetch-failed": "skipped_network_error",
+    "malformed-metadata-json": "skipped_parse_error",
+    "nonobject-metadata-root": "skipped_parse_error",
+    "mismatched-report-id": "skipped_parse_error",
+    "missing-versions": "skipped_parse_error",
+    "no-dated-versions": "skipped_parse_error",
+    "malformed-version": "skipped_parse_error",
+    "ambiguous-version-date": "skipped_parse_error",
+    "invalid-selected-version-id": "skipped_parse_error",
+    "ambiguous-version-identity": "skipped_parse_error",
+    "ambiguous-same-date-versions": "skipped_parse_error",
+    "invalid-selected-formats": "skipped_parse_error",
+    "invalid-html-locator": "skipped_parse_error",
+    "empty-body": "skipped_parse_error",
+    "empty-after-preprocess": "skipped_parse_error",
+    "extract-error": "skipped_parse_error",
+    "write-error": "skipped_parse_error",
+    "report-processing-error": "skipped_parse_error",
+    "absent-from-index": "skipped_filtered",
+    "ambiguous-index-locator": "skipped_filtered",
+    "invalid-metadata-locator": "skipped_filtered",
+    "future-only": "skipped_filtered",
+    "before-since": "skipped_filtered",
+    "missing-version-title": "skipped_filtered",
+    "no-html": "skipped_filtered",
+    "ambiguous-html": "skipped_filtered",
+    "below-min-words": "skipped_filtered",
+}
+
+
+def _record_historical_terminal(summary: ac.RunSummary, number: str, status: str) -> None:
+    """Count and log a single report disposition exactly once."""
+    category = _HISTORICAL_STATUS_CATEGORY[status]
+    if category != "acquired":
+        setattr(summary, category, getattr(summary, category) + 1)
+        summary.log_skip(reason=status, url=number)
+
+
 _REPORT_ID_RE = re.compile(r"^[A-Z0-9]+(?:-[A-Z0-9]+)*$")
 _DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _VERSION_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2})?$")
@@ -478,15 +523,18 @@ def _safe_provider_url(base: str, locator: Any, prefix: str, suffix: str) -> str
     raw = locator.strip()
     if "\\" in raw or any(ord(c) < 32 for c in raw):
         return None
-    parsed_raw = urllib.parse.urlsplit(raw)
-    if parsed_raw.query or parsed_raw.fragment:
+    try:
+        parsed_raw = urllib.parse.urlsplit(raw)
+        if parsed_raw.query or parsed_raw.fragment:
+            return None
+        decoded = urllib.parse.unquote(raw)
+        if "%" in decoded or "\\" in decoded:
+            return None
+        url = urllib.parse.urljoin(base, raw)
+        base_parts = urllib.parse.urlsplit(base)
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
         return None
-    decoded = urllib.parse.unquote(raw)
-    if "%" in decoded or "\\" in decoded:
-        return None
-    url = urllib.parse.urljoin(base, raw)
-    base_parts = urllib.parse.urlsplit(base)
-    parts = urllib.parse.urlsplit(url)
     if parts.scheme not in ("http", "https") or (
         parts.scheme, parts.netloc.lower()
     ) != (base_parts.scheme, base_parts.netloc.lower()):
@@ -593,8 +641,45 @@ def _validated_prior(
         raise ValueError("invalid-resume-status-row")
     if [row["id"] for row in rows] != worklist[start:end + 1]:
         raise ValueError("noncontiguous-resume-statuses")
-    if type(prior.get("summary")) is not dict or prior["summary"].get("draft_manifest_path", object()) is not None:
+    statuses = [row["status"] for row in rows]
+    if any(status not in _HISTORICAL_STATUS_CATEGORY for status in statuses):
+        raise ValueError("invalid-resume-terminal-status")
+    predecessor = prior.get("predecessor_receipt_sha256")
+    if start == 0:
+        if predecessor is not None:
+            raise ValueError("invalid-initial-predecessor")
+    elif type(predecessor) is not str or not re.fullmatch(r"[0-9a-fA-F]{64}", predecessor):
+        raise ValueError("invalid-resume-predecessor-hash")
+    written = statuses.count("written")
+    if type(prior.get("files_written")) is not int or prior["files_written"] != written:
+        raise ValueError("invalid-resume-files-written")
+    summary = prior.get("summary")
+    if type(summary) is not dict or summary.get("draft_manifest_path", object()) is not None:
         raise ValueError("invalid-resume-summary")
+    expected_counts = {
+        "acquired": sum(_HISTORICAL_STATUS_CATEGORY[x] == "acquired" for x in statuses),
+        "skipped_duplicate": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_duplicate" for x in statuses),
+        "skipped_network_error": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_network_error" for x in statuses),
+        "skipped_parse_error": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_parse_error" for x in statuses),
+        "skipped_filtered": sum(_HISTORICAL_STATUS_CATEGORY[x] == "skipped_filtered" for x in statuses),
+        "skipped_paid": 0,
+        "skipped_robots": 0,
+    }
+    if any(type(summary.get(key)) is not int or summary[key] != value
+           for key, value in expected_counts.items()):
+        raise ValueError("invalid-resume-summary-counts")
+    expected_skips = [
+        (row["id"], row["status"]) for row in rows
+        if _HISTORICAL_STATUS_CATEGORY[row["status"]] != "acquired"
+    ]
+    skip_log = summary.get("skip_log")
+    if type(skip_log) is not list or len(skip_log) != len(expected_skips):
+        raise ValueError("invalid-resume-skip-log")
+    if any(type(log) is not dict or type(log.get("reason")) is not str or
+           type(log.get("url")) is not str or
+           (log["url"], log["reason"]) != expected
+           for log, expected in zip(skip_log, expected_skips)):
+        raise ValueError("invalid-resume-skip-log")
     if type(prior.get("index_sha256_decoded_text")) is not str or prior["index_sha256_decoded_text"] != selection["index_sha256_decoded_text"]:
         raise ValueError("invalid-resume-index")
     return end + 1
@@ -717,7 +802,7 @@ def _historical_select(
     }, "selected"
 
 
-def _historical_extract(html: str, selector: str | None) -> tuple[str, bool, str]:
+def _historical_extract(html: str) -> tuple[str, bool, str]:
     from bs4 import BeautifulSoup  # type: ignore
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
@@ -726,14 +811,9 @@ def _historical_extract(html: str, selector: str | None) -> tuple[str, bool, str
     for sel in _HISTORICAL_STRIP_SELECTORS:
         for tag in soup.select(sel):
             tag.decompose()
-    selectors = [selector] if selector else []
-    selectors.extend(DEFAULT_CONTENT_SELECTORS)
-    container = None
-    for sel in selectors:
-        if sel and (matched := soup.select_one(sel)) is not None:
-            container = matched
-            break
-    container = container or soup.body or soup
+    # Report appendices and footnotes may be siblings of article/main.
+    # Historical mode retains the visible body after confirmed site chrome.
+    container = soup.body or soup
     nontext = bool(container.select("img, svg, canvas, figure"))
     body = container.get_text("\n")
     body = re.sub(r"[ \t]+", " ", body)
@@ -749,15 +829,11 @@ def _historical_process(
     url = descriptor["html_url"]
     fetched = fetcher.fetch(url)
     if fetched.final_url and fetched.final_url != url:
-        summary.skipped_network_error += 1
-        summary.log_skip(reason="html-redirected", url=url)
         return "html-redirected"
     if not fetched.ok or not fetched.text:
-        summary.skipped_network_error += 1
-        summary.log_skip(reason="html-fetch-failed", url=url)
         return "html-fetch-failed"
     try:
-        body, nontext, _html_title = _historical_extract(fetched.text, args.content_selector)
+        body, nontext, _html_title = _historical_extract(fetched.text)
         if len(body) < 200:
             raise ValueError("empty-body")
         cleaned, prep_meta = ac.preprocess_text(
@@ -767,16 +843,11 @@ def _historical_process(
         if len(cleaned) < 200:
             raise ValueError("empty-after-preprocess")
     except Exception as exc:
-        summary.skipped_parse_error += 1
-        reason = str(exc) if isinstance(exc, ValueError) and str(exc) in (
+        return str(exc) if isinstance(exc, ValueError) and str(exc) in (
             "empty-body", "empty-after-preprocess",
         ) else "extract-error"
-        summary.log_skip(reason=reason, url=url, detail=type(exc).__name__)
-        return reason
     word_count = len(re.findall(r"\S+", cleaned))
     if word_count < options.min_words:
-        summary.skipped_filtered += 1
-        summary.log_skip(reason="below-min-words", url=url, detail=str(word_count))
         return "below-min-words"
     piece = ac.AcquiredPiece(
         title=descriptor["title"], author=options.author or CRS_AUTHOR,
@@ -789,8 +860,6 @@ def _historical_process(
         impostor_for=list(options.impostor_for),
     )
     if ac.content_hash_already_present(piece.content_hash, options.output_dir):
-        summary.skipped_duplicate += 1
-        summary.log_skip(reason="duplicate-hash", url=url)
         return "duplicate-hash"
     if options.dry_run:
         summary.acquired += 1
@@ -832,9 +901,7 @@ def _historical_process(
     try:
         ac.write_piece(piece, output_dir=options.output_dir,
                        scraper_version=SCRAPER_VERSION, extra_meta=extra)
-    except OSError as exc:
-        summary.skipped_parse_error += 1
-        summary.log_skip(reason="write-error", url=url, detail=type(exc).__name__)
+    except OSError:
         return "write-error"
     summary.acquired += 1
     summary.total_cleaned_words += piece.word_count
@@ -854,7 +921,7 @@ def run_historical(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) 
         _historical_invalid("invalid-metadata-limit")
     if type(args.max_items) is not int or args.max_items < limit:
         _historical_invalid("max-items-below-metadata-limit")
-    if not out_value or args.emit_manifest or args.allow_public_output or args.strip_aggressive or args.strip_rules:
+    if not out_value or args.emit_manifest or args.allow_public_output or args.strip_aggressive or args.strip_rules or args.content_selector:
         _historical_invalid("invalid-historical-output-or-stripping")
     target_input = getattr(args, "report_number", None) or []
     targets: list[str] = []
@@ -907,9 +974,11 @@ def run_historical(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) 
     index_sha = _decoded_sha(index_result.text)
     try:
         index = _historical_index(args.reports_csv_url, index_result.text)
-    except ValueError as exc:
+    except (ValueError, csv.Error) as exc:
         return _historical_failure(out, summary, stage="index-parse", reason=str(exc), index_sha=index_sha)
     worklist = targets if targets else sorted(index)
+    if not worklist:
+        return _historical_failure(out, summary, stage="index-parse", reason="empty-report-frame", index_sha=index_sha)
     selection = _historical_params(args, index_sha, targets or None)
     fingerprint = _decoded_sha(json.dumps(selection, sort_keys=True, separators=(",", ":")))
     start = 0
@@ -920,6 +989,8 @@ def run_historical(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) 
             start = _validated_prior(prior, worklist, selection, fingerprint, after)
         except ValueError as exc:
             return _historical_failure(out, summary, stage="resume", reason=str(exc), index_sha=index_sha)
+        if start >= len(worklist):
+            return _historical_failure(out, summary, stage="resume", reason="scope-exhausted", index_sha=index_sha)
     batch = worklist[start:start + limit]
     rows: list[dict[str, str]] = []
     for number in batch:
@@ -934,13 +1005,9 @@ def run_historical(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) 
                 )
                 if descriptor is not None:
                     status = _historical_process(descriptor, args, options, summary, fetcher)
-            except Exception as exc:
+            except Exception:
                 status = "report-processing-error"
-                summary.skipped_parse_error += 1
-                summary.log_skip(reason=status, url=number, detail=type(exc).__name__)
-        if status not in ("written", "would_write", "duplicate-hash"):
-            summary.skipped_filtered += 1
-            summary.log_skip(reason=status, url=number)
+        _record_historical_terminal(summary, number, status)
         rows.append({"id": number, "status": status})
     end = start + len(batch) - 1
     remaining = len(worklist) - start - len(batch)
@@ -1056,7 +1123,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     # Behavior.
     p.add_argument("--content-selector",
-                   help="CSS selector for the report body (rare override).")
+                   help="Legacy body override; historical mode rejects narrowing selectors.")
     p.add_argument("--rate-limit", type=float, default=2.0,
                    help="Seconds between same-host requests (default: 2.0).")
     ac.add_user_agent_arg(p)
