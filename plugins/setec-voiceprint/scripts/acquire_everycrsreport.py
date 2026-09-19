@@ -86,7 +86,7 @@ import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_everycrsreport"
-SCRAPER_VERSION = "1.0"
+SCRAPER_VERSION = "1.1"
 
 # The public bulk index. Positional ``reports_csv_url`` defaults to this.
 DEFAULT_REPORTS_CSV_URL = "https://www.everycrsreport.com/reports.csv"
@@ -162,6 +162,7 @@ class ProcessOptions:
     strip_aggressive: bool
     acquired_via: str
     content_selector: str | None = None
+    language_status: str = "unknown"
 
 
 # ---- Discovery ----------------------------------------------------
@@ -415,6 +416,7 @@ def emit_piece(
     entry = ac.compose_manifest_entry(
         piece, text_path=text_path,
         manifest_relative_to=options.manifest_path.parent,
+        language_status=options.language_status,
     )
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
@@ -1091,6 +1093,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    default="pre_chatgpt",
                    help="Era classification of the acquired prose.")
 
+    # Applies to ordinary manifest emission; historical mode remains candidate-only.
+    p.add_argument(
+        "--language-status",
+        choices=[
+            "native", "non_native_advanced", "non_native_intermediate",
+            "learner", "unknown",
+        ],
+        default="unknown",
+        help=(
+            "Author language status relative to the text language (default: "
+            "unknown). Every non-unknown value is a batch-wide operator "
+            "assertion requiring evidence for every affected record; English "
+            "text, institutional source, dates, and metadata custody do not "
+            "establish native status."
+        ),
+    )
+
     # Date window + caps.
     p.add_argument("--since", help="Inclusive lower-bound date (YYYY-MM-DD).")
     p.add_argument("--until", help="Inclusive upper-bound date (YYYY-MM-DD).")
@@ -1182,6 +1201,7 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         strip_aggressive=args.strip_aggressive,
         acquired_via=acquired_via,
         content_selector=args.content_selector,
+        language_status=getattr(args, "language_status", "unknown"),
     )
 
 

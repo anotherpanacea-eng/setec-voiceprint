@@ -2,6 +2,17 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-09-19)
+
+- **Explicit author-language status for EveryCRS and Mirrulations.** Ordinary
+  draft manifests now default to `unknown` and accept a batch-wide
+  `--language-status` assertion only when each affected record has appropriate
+  evidence. English text, federal affiliation, source dates, and metadata
+  custody do not establish native-language authorship. EveryCRS historical
+  candidates remain without a manifest or author-language annotation. This
+  acquisition metadata change does not alter the existing ESL calibration
+  ratchet or decide corpus admission.
+
 ## Status reconciliation (2026-09-03)
 
 - **Tanner academic-philosophy acquisition lane built.** A nested, checkpointed

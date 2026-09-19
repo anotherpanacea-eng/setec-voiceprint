@@ -396,6 +396,7 @@ def test_cli_help_lists_flags():
         "--prefix", "--bucket", "--text-key-pattern", "--persona",
         "--impostor-for", "--register", "--consent-status", "--min-words",
         "--dry-run", "--allow-public-output", "--metadata-mode",
+        "--language-status",
     ):
         assert flag in help_text, f"--help missing {flag}"
 
@@ -462,6 +463,7 @@ def test_standard_mode_emits_bound_source_dates_without_authored_date(tmp_path):
     assert store.metadata_got_keys == [STANDARD_METADATA_KEY]
     entry = read_manifest(manifest_path)[0]
     sidecar = json.loads(next(output_dir.glob("*.meta.json")).read_bytes())
+    assert sidecar["scraper_version"] == "1.2"
     receipt = sidecar["source_metadata"]
     assert "date_written" not in entry
     assert sidecar["date_written"] is None
@@ -1163,6 +1165,90 @@ def test_s3_metadata_client_distinguishes_missing_and_transport(
     _fake_s3_factory(monkeypatch, SyntheticClientError())
     store = mr.make_s3_store()
     assert store.get_metadata(STANDARD_METADATA_KEY).status == expected
+
+@pytest.mark.parametrize("metadata_mode", ["off", "standard"])
+@pytest.mark.parametrize(
+    "status",
+    ["unknown", "native", "non_native_advanced",
+     "non_native_intermediate", "learner"],
+)
+def test_language_status_manifest_and_text_conservation(
+    tmp_path, metadata_mode, status,
+):
+    def acquire(name, requested):
+        output_dir = tmp_path / "ai-prose-baselines-private" / name
+        args = make_args(
+            prefixes=[PREFIX] if metadata_mode == "off" else [STANDARD_PREFIX],
+            metadata_mode=metadata_mode, output_dir=str(output_dir),
+            emit_manifest=str(output_dir / "draft.jsonl"),
+            **({"language_status": requested} if requested is not None else {}),
+        )
+        store = make_store() if metadata_mode == "off" else standard_store()
+        assert mr.run(args, store=store) == 0
+        entries = sorted(read_manifest(output_dir / "draft.jsonl"), key=lambda e: e["id"])
+        texts = {p.name: p.read_bytes() for p in output_dir.glob("*.txt")}
+        sidecars = {p.name: json.loads(p.read_text(encoding="utf-8"))
+                    for p in output_dir.glob("*.meta.json")}
+        return entries, texts, sidecars
+
+    baseline_entries, baseline_texts, baseline_sidecars = acquire("baseline", None)
+    selected_entries, selected_texts, selected_sidecars = acquire("selected", status)
+    assert len(baseline_entries) == len(selected_entries) == (
+        2 if metadata_mode == "off" else 1
+    )
+    assert baseline_texts == selected_texts
+    assert all(e["language_status"] == "unknown" for e in baseline_entries)
+    assert all(e["language_status"] == status for e in selected_entries)
+    for baseline, selected in zip(baseline_entries, selected_entries):
+        assert {k: v for k, v in baseline.items() if k != "language_status"} == {
+            k: v for k, v in selected.items() if k != "language_status"
+        }
+    # Custody sidecars may differ by acquisition time, but the source receipt
+    # and cleaned-content hash must remain bound to the same source object.
+    for name, baseline in baseline_sidecars.items():
+        selected = selected_sidecars[name]
+        assert baseline["content_hash"] == selected["content_hash"]
+        source_before = baseline.get("source_metadata")
+        source_after = selected.get("source_metadata")
+        if source_before is None:
+            assert source_after is None
+        else:
+            assert source_after is not None
+            assert {k: v for k, v in source_before.items() if k != "retrieved_at"} == {
+                k: v for k, v in source_after.items() if k != "retrieved_at"
+            }
+
+
+def test_language_status_omitted_namespace_and_options_default():
+    parsed = mr.parse_options(make_args())
+    assert parsed.language_status == "unknown"
+    assert mr.ProcessOptions(**{
+        key: value for key, value in vars(parsed).items()
+        if key != "language_status"
+    }).language_status == "unknown"
+    assert mr.parse_options(make_args(language_status="learner")).language_status == "learner"
+    assert mr.build_arg_parser().parse_args([
+        "--prefix", PREFIX, "--impostor-for", "x",
+        "--register", "regulatory_comment",
+        "--consent-status", "public_record",
+    ]).language_status == "unknown"
+
+
+def test_invalid_language_status_cli_rejects_before_run(tmp_path, monkeypatch):
+    output_dir = tmp_path / "ai-prose-baselines-private" / "invalid"
+    def unexpected_run(*_args, **_kwargs):
+        pytest.fail("invalid CLI value must be rejected before acquisition")
+    monkeypatch.setattr(mr, "run", unexpected_run)
+    with pytest.raises(SystemExit) as exc:
+        mr.main([
+            "--prefix", PREFIX, "--impostor-for", "x",
+            "--register", "regulatory_comment",
+            "--consent-status", "public_record", "--output-dir", str(output_dir),
+            "--language-status", "unsupported",
+        ])
+    assert exc.value.code == 2
+    assert not output_dir.exists()
+
 
 if __name__ == "__main__":
     if pytest is None:

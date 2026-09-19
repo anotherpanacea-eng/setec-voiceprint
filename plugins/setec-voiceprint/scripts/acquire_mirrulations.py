@@ -72,7 +72,7 @@ import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_mirrulations"
-SCRAPER_VERSION = "1.1"
+SCRAPER_VERSION = "1.2"
 
 METADATA_MAX_BYTES = 2 * 1024 * 1024
 _METADATA_REASONS = frozenset({
@@ -310,6 +310,7 @@ class ProcessOptions:
     strip_rules: str | None
     strip_aggressive: bool
     acquired_via: str
+    language_status: str = "unknown"
 
 
 # ---- Bounded metadata join ----------------------------------------
@@ -736,6 +737,7 @@ def emit_piece(
         entry = ac.compose_manifest_entry(
             piece, text_path=text_path,
             manifest_relative_to=options.manifest_path.parent,
+            language_status=options.language_status,
         )
         ac.append_manifest_entry(options.manifest_path, entry)
         summary.acquired += 1
@@ -810,6 +812,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    ],
                    default="pre_chatgpt")
 
+    p.add_argument(
+        "--language-status",
+        choices=[
+            "native", "non_native_advanced", "non_native_intermediate",
+            "learner", "unknown",
+        ],
+        default="unknown",
+        help=(
+            "Author language status relative to the text language (default: "
+            "unknown). Every non-unknown value is a batch-wide operator "
+            "assertion requiring evidence for every affected record; English "
+            "text, institutional source, dates, and metadata custody do not "
+            "establish native status."
+        ),
+    )
+
     # Caps.
     p.add_argument("--max-items", type=int, default=500,
                    help="Maximum comments to acquire (default: 500).")
@@ -883,6 +901,7 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         strip_rules=args.strip_rules,
         strip_aggressive=args.strip_aggressive,
         acquired_via=acquired_via,
+        language_status=getattr(args, "language_status", "unknown"),
     )
 
 

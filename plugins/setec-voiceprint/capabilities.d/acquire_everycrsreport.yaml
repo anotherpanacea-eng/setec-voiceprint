@@ -16,6 +16,7 @@ entries:
   - the source is not the EveryCRSReport reports.csv index
   inputs:
     target: EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv)
+    language_status: unknown by default; native, non_native_advanced, non_native_intermediate, or learner requires evidence for every author in the acquisition batch (ordinary manifest output)
   outputs:
     schema_version: '1.0'
     artifacts:
@@ -35,5 +36,6 @@ entries:
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  - plugins/setec-voiceprint/references/acquisition-author-language-status.md
   - plugins/setec-voiceprint/references/acquire-everycrsreport-historical-versions.md
   _seeded_at: '2026-06-11'
