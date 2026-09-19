@@ -364,6 +364,236 @@ def test_tanner_artifact_repairs_are_opt_in_for_literal_urls_and_paths():
         pe.normalize_pdf_text_artifacts(raw, artifact_profile="other")
 
 
+def _synthetic_tanner_pdf(*, font_bytes: bytes = b"matched-font",
+                          cmap_target: str = "0160",
+                          missing_font: bool = False,
+                          encoding_glyph: str = "/Scaron") -> bytes:
+    """Make a neutral, one-page PDF with an affected and a decoy font."""
+    import io
+    from pypdf import PdfWriter
+    from pypdf.generic import (
+        ArrayObject, DecodedStreamObject, DictionaryObject, NameObject,
+        NumberObject,
+    )
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+
+    def make_font(program_bytes: bytes, target: str, *, descriptor: bool = True):
+        cmap = DecodedStreamObject()
+        cmap.set_data(
+            ("/CIDInit /ProcSet findresource begin\n"
+             "12 dict begin\nbegincmap\n"
+             "/CIDSystemInfo << /Registry (Test) /Ordering (Test) /Supplement 0 >> def\n"
+             "/CMapName /Test def\n/CMapType 2 def\n"
+             "1 begincodespacerange\n<00> <FF>\nendcodespacerange\n"
+             f"1 beginbfchar\n<97> <{target}>\nendbfchar\n"
+             "endcmap\nCMapName currentdict /CMap defineresource pop\n"
+             "end\nend\n").encode("ascii")
+        )
+        font = DictionaryObject({
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+            NameObject("/ToUnicode"): writer._add_object(cmap),
+            NameObject("/Encoding"): DictionaryObject({
+                NameObject("/Type"): NameObject("/Encoding"),
+                NameObject("/Differences"): ArrayObject([
+                    NumberObject(151), NameObject(encoding_glyph),
+                ]),
+            }),
+        })
+        if descriptor:
+            program = DecodedStreamObject()
+            program.set_data(program_bytes)
+            font[NameObject("/FontDescriptor")] = writer._add_object(
+                DictionaryObject({
+                    NameObject("/Type"): NameObject("/FontDescriptor"),
+                    NameObject("/FontName"): NameObject("/Helvetica"),
+                    NameObject("/FontFile3"): writer._add_object(program),
+                })
+            )
+        return writer._add_object(font)
+
+    fonts = DictionaryObject({
+        NameObject("/F1"): make_font(
+            font_bytes, cmap_target, descriptor=not missing_font,
+        ),
+        NameObject("/F2"): make_font(b"genuine-scaron", "0160"),
+    })
+    page[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): fonts,
+    })
+    content = DecodedStreamObject()
+    content.set_data(
+        b"BT /F1 12 Tf 10 150 Td (of\\227ce ) Tj "
+        b"/F2 12 Tf (\\227pecial) Tj ET"
+    )
+    page[NameObject("/Contents")] = writer._add_object(content)
+    out = io.BytesIO()
+    writer.write(out)
+    return out.getvalue()
+
+
+def test_tanner_font_policy_repairs_only_matched_font_through_pypdf(
+    tmp_path, monkeypatch,
+):
+    import hashlib
+    data = _synthetic_tanner_pdf()
+    path = tmp_path / "neutral.pdf"
+    path.write_bytes(data)
+    baseline = pe.extract_text_layer(path)
+    assert "ofŠce" in baseline and "Špecial" in baseline
+
+    policy = {
+        hashlib.sha256(data).hexdigest(): frozenset({
+            (
+                hashlib.sha256(b"matched-font").hexdigest(),
+                hashlib.sha256(_synthetic_cmap_bytes("0160")).hexdigest(),
+            ),
+        }),
+    }
+    monkeypatch.setattr(pe, "_TANNER_GLYPH_POLICY", policy)
+    corrected = pe.extract_text_layer(path, artifact_profile="tanner")
+    assert corrected == baseline.replace("ofŠce", "office")
+    assert "Špecial" in corrected
+    assert ac.pdf_text_from_bytes(data, artifact_profile="tanner") == corrected
+
+
+def _synthetic_cmap_bytes(target: str) -> bytes:
+    return (
+        "/CIDInit /ProcSet findresource begin\n"
+        "12 dict begin\nbegincmap\n"
+        "/CIDSystemInfo << /Registry (Test) /Ordering (Test) /Supplement 0 >> def\n"
+        "/CMapName /Test def\n/CMapType 2 def\n"
+        "1 begincodespacerange\n<00> <FF>\nendcodespacerange\n"
+        f"1 beginbfchar\n<97> <{target}>\nendbfchar\n"
+        "endcmap\nCMapName currentdict /CMap defineresource pop\n"
+        "end\nend\n"
+    ).encode("ascii")
+
+
+@pytest.mark.parametrize(
+    "change", ["source", "encoding", "font", "cmap", "missing_font"],
+)
+def test_tanner_policy_mismatch_retains_ordinary_page(
+    tmp_path, monkeypatch, change,
+):
+    import hashlib
+    original = _synthetic_tanner_pdf()
+    changed = {
+        "source": original,
+        "encoding": _synthetic_tanner_pdf(encoding_glyph="/Sacute"),
+        "font": _synthetic_tanner_pdf(font_bytes=b"changed-font"),
+        "cmap": _synthetic_tanner_pdf(cmap_target="0161"),
+        "missing_font": _synthetic_tanner_pdf(missing_font=True),
+    }[change]
+    path = tmp_path / "neutral.pdf"
+    path.write_bytes(changed)
+    policy_source = (
+        hashlib.sha256(original).hexdigest() if change == "encoding"
+        else ("0" * 64 if change == "source"
+              else hashlib.sha256(changed).hexdigest())
+    )
+    policy = {
+        policy_source: frozenset({
+            (
+                hashlib.sha256(b"matched-font").hexdigest(),
+                hashlib.sha256(_synthetic_cmap_bytes("0160")).hexdigest(),
+            ),
+        }),
+    }
+    monkeypatch.setattr(pe, "_TANNER_GLYPH_POLICY", policy)
+    ordinary = pe.extract_text_layer(path)
+    result = pe.extract_text_layer(path, artifact_profile="tanner")
+    assert result == pe.normalize_pdf_text_artifacts(
+        ordinary, artifact_profile="tanner",
+    )
+    assert "office" not in result
+
+
+def test_tanner_page_conservation_on_inspection_and_reconstruction_failure(
+    monkeypatch,
+):
+    pairs = frozenset({("x", "y")})
+    class FakePage:
+        def extract_text(self, *, visitor_text):
+            visitor_text("ofŠce ", None, None, {"/FontDescriptor": 1}, 12)
+            return "ofŠce " if not mismatch else "ofŠce extra"
+    for mismatch in (False, True):
+        def fail(_font, _pairs):
+            if mismatch:
+                return True
+            raise ValueError("malformed font stream")
+        monkeypatch.setattr(pe, "_tanner_font_matches", fail)
+        expected = "ofŠce extra" if mismatch else "ofŠce "
+        assert pe._extract_tanner_page(FakePage(), pairs, {}) == expected
+
+def test_tanner_byte_route_keeps_nonempty_text_on_inspection_failure(
+    tmp_path, monkeypatch,
+):
+    import hashlib
+    data = _synthetic_tanner_pdf()
+    monkeypatch.setattr(
+        pe, "_TANNER_GLYPH_POLICY",
+        {hashlib.sha256(data).hexdigest(): frozenset({("x", "y")})},
+    )
+
+    def fail(_font, _pairs):
+        raise ValueError("unreadable synthetic font stream")
+
+    monkeypatch.setattr(pe, "_tanner_font_matches", fail)
+    ordinary = ac.pdf_text_from_bytes(data)
+    assert ordinary
+    assert ac.pdf_text_from_bytes(data, artifact_profile="tanner") == (
+        pe.normalize_pdf_text_artifacts(ordinary, artifact_profile="tanner")
+    )
+
+
+def test_tanner_byte_route_keeps_returned_page_on_reconstruction_mismatch(
+    monkeypatch,
+):
+    import hashlib
+    from pypdf._page import PageObject
+
+    data = _synthetic_tanner_pdf()
+    monkeypatch.setattr(
+        pe, "_TANNER_GLYPH_POLICY",
+        {
+            hashlib.sha256(data).hexdigest(): frozenset({
+                (
+                    hashlib.sha256(b"matched-font").hexdigest(),
+                    hashlib.sha256(_synthetic_cmap_bytes("0160")).hexdigest(),
+                ),
+            }),
+        },
+    )
+    original_extract = PageObject.extract_text
+
+    def mismatched_extract(self, *args, **kwargs):
+        result = original_extract(self, *args, **kwargs)
+        if kwargs.get("visitor_text") is not None:
+            return result + " retained-return"
+        return result
+
+    monkeypatch.setattr(PageObject, "extract_text", mismatched_extract)
+    result = ac.pdf_text_from_bytes(data, artifact_profile="tanner")
+    assert result
+    assert "of\u0160ce" in result
+    assert result.endswith("retained-return")
+
+
+def test_tanner_page_with_none_font_preserves_original():
+    class FakePage:
+        def extract_text(self, *, visitor_text):
+            visitor_text("genuine \u0160", None, None, None, 12)
+            return "genuine \u0160"
+
+    assert pe._extract_tanner_page(FakePage(), frozenset({("x", "y")}), {}) == (
+        "genuine \u0160"
+    )
+
+
 def _augment_inventory_for_extract(
     rows: list[dict], persona: str = "synthetic_author_personal",
 ) -> list[dict]:

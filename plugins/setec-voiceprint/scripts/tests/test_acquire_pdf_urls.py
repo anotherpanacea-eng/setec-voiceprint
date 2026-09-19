@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -67,6 +68,7 @@ def make_args(**overrides) -> argparse.Namespace:
         topic_match="medium",
         consent_status="cc_licensed",
         era="pre_chatgpt",
+        language_status="unknown",
         since=None,
         until=None,
         max_items=300,
@@ -268,7 +270,109 @@ def test_end_to_end(decode_pdf, tmp_path):
         assert e["impostor_for"] == ["argscope_grant_proposal"]
         assert e["acquired_via"].startswith("acquire_pdf_urls_")
         assert e["persona"] == "opengrants"
+        assert e["language_status"] == "unknown"
     assert len({e["content_hash"] for e in entries}) == 2
+
+
+def test_fetched_pdf_hash_and_profile_in_preprocessing(decode_pdf, tmp_path):
+    output_dir = tmp_path / "ai-prose-baselines-private" / "custody"
+    manifest_path = output_dir / "draft.jsonl"
+    urls = tmp_path / "urls.jsonl"
+    urls.write_text(
+        '{"url":"https://ex.test/grant1.pdf","artifact_profile":"tanner"}\n',
+        encoding="utf-8",
+    )
+    args = make_args(
+        urls_file=str(urls), output_dir=str(output_dir),
+        emit_manifest=str(manifest_path),
+    )
+    assert pu.run(args, fetcher=make_fetcher()) == 0
+    entries = read_manifest(manifest_path)
+    assert len(entries) == 1
+    sidecar = json.loads(next(output_dir.glob("*.meta.json")).read_text(encoding="utf-8"))
+    prep = sidecar["preprocessing"]
+    assert sidecar["scraper_version"] == "1.1"
+    assert prep["source_pdf_sha256"] == hashlib.sha256(
+        (FIXTURE_DIR / "grant1.pdf").read_bytes()
+    ).hexdigest()
+    assert prep["artifact_profile"] == "tanner"
+    assert sidecar["content_hash"] == entries[0]["content_hash"]
+    assert sidecar["content_hash"] == ac.compute_content_hash(
+        next(output_dir.glob("*.txt")).read_bytes().decode("utf-8")
+    )
+
+
+def test_fetched_pdf_receipt_is_not_reused_for_mismatched_manual_processing(
+    monkeypatch,
+):
+    body = "Neutral academic prose records the described procedure. " * 20
+    monkeypatch.setattr(
+        ac, "pdf_text_from_bytes",
+        lambda data, *, artifact_profile=None: body,
+    )
+    item = pu.ItemMeta(locator="https://ex.test/grant1.pdf", artifact_profile="tanner")
+    options = pu.parse_options(make_args(min_words=1, allow_non_prose=True))
+    extracted, title, author, date = pu.extract_one(
+        item, options, make_fetcher({item.locator: "grant1.pdf"}),
+    )
+    summary = ac.RunSummary()
+    piece = pu.process_one_item(
+        item, extracted + " Additional text.", title, author, date,
+        options=options, summary=summary,
+    )
+    assert piece is not None
+    assert "source_pdf_sha256" not in piece.preprocessing_meta
+    assert "artifact_profile" not in piece.preprocessing_meta
+    assert item.fetched_pdf_sha256 is None
+    assert item.extracted_text_sha256 is None
+
+    # The same extracted text cannot be credited to a changed locator.
+    extracted, title, author, date = pu.extract_one(
+        item, options, make_fetcher({item.locator: "grant1.pdf"}),
+    )
+    item.locator = "https://ex.test/other.pdf"
+    piece = pu.process_one_item(
+        item, extracted, title, author, date,
+        options=options, summary=summary,
+    )
+    assert piece is not None
+    assert "source_pdf_sha256" not in piece.preprocessing_meta
+
+    # A later failed fetch cannot leave the first source's receipt behind.
+    item.fetched_pdf_sha256 = "stale"
+    item.extracted_text_sha256 = "stale"
+    assert pu.extract_one(item, options, make_fetcher({})) == ("", "", "", None)
+    assert item.fetched_pdf_sha256 is None
+
+
+@pytest.mark.parametrize(
+    "language_status",
+    ["native", "non_native_advanced", "non_native_intermediate", "learner", "unknown"],
+)
+def test_explicit_language_status_reaches_manifest(
+    decode_pdf, tmp_path, language_status,
+):
+    output_dir = tmp_path / "ai-prose-baselines-private" / language_status
+    manifest_path = output_dir / "draft.jsonl"
+    args = make_args(
+        output_dir=str(output_dir), emit_manifest=str(manifest_path),
+        language_status=language_status,
+    )
+    assert pu.run(args, fetcher=make_fetcher()) == 0
+    assert {e["language_status"] for e in read_manifest(manifest_path)} == {
+        language_status,
+    }
+
+
+def test_cli_language_status_default_and_invalid_choice():
+    parser = pu.build_arg_parser()
+    required = [
+        str(URLS_FILE), "--impostor-for", "x", "--register", "grant_proposal",
+        "--consent-status", "cc_licensed",
+    ]
+    assert parser.parse_args(required).language_status == "unknown"
+    with pytest.raises(SystemExit):
+        parser.parse_args(required + ["--language-status", "inferred_native"])
 
 
 def test_image_only_skipped(decode_pdf, tmp_path):
@@ -383,7 +487,8 @@ def test_cli_help_lists_flags():
     help_text = pu.build_arg_parser().format_help()
     for flag in (
         "urls_file", "--persona", "--impostor-for", "--register",
-        "--consent-status", "--min-words", "--dry-run", "--allow-public-output",
+        "--consent-status", "--language-status", "--min-words", "--dry-run",
+        "--allow-public-output",
     ):
         assert flag in help_text, f"--help missing {flag}"
 
