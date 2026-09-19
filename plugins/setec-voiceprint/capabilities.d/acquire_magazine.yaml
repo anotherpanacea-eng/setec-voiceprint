@@ -8,7 +8,7 @@ entries:
   # consumers: no code importer; surfaced by skills: corpus-acquisition, setup.
   consumers: []
   family: TODO
-  purpose: pull literary-horror short fiction from online magazines with optional primary extraction after magazine cleaning, retaining legacy extraction for table-bearing or unknown layouts.
+  purpose: pull literary-horror short fiction from online magazines.
   use_when:
   - TODO
   do_not_use_when:

@@ -357,9 +357,8 @@ def parse_story_page(
       1. Find the configured ``story_content_selector`` container.
       2. Drop noise (``<script>``, ``<style>``, share widgets,
          editorial intros, author-spotlight blocks).
-      3. Prefer the optional main-content extractor for a cleaned
-         container without a table; retain the legacy HTML-to-text
-         path for table-bearing or unknown layouts.
+      3. Convert what remains to plain text via the existing
+         ``acquisition_core.html_to_text`` pipeline.
     """
     try:
         from bs4 import BeautifulSoup  # type: ignore
@@ -398,15 +397,9 @@ def parse_story_page(
     else:
         body_html = html
 
-    # Tables can carry story prose that trafilatura intentionally omits.
-    # Keep the legacy path for those pages, and when the configured
-    # container is absent so unknown layouts retain their prior behavior.
-    extractor = (
-        ac.extract_main_content
-        if container is not None and container.find("table") is None
-        else ac.html_to_text
-    )
-    body_text, html_title = extractor(
+    # Reuse the shared HTML-to-text pipeline (drops <script> /
+    # <style> / <nav> globally and handles whitespace collapse).
+    body_text, html_title = ac.html_to_text(
         body_html,
         content_selector=config.story_content_selector,
         strip_selectors=(

@@ -27,7 +27,7 @@
     ],
     "schema_version": "1.0"
   },
-  "purpose": "pull literary-horror short fiction from online magazines with optional primary extraction after magazine cleaning, retaining legacy extraction for table-bearing or unknown layouts.",
+  "purpose": "pull literary-horror short fiction from online magazines.",
   "references": [],
   "registers": [
     "TODO"

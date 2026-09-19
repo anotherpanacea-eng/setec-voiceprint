@@ -1,3 +1,3 @@
-### Changed
+### Added
 
-Updated `acquire_magazine` to use optional main-content extraction after configured cleaning when a story container has no table. Table-bearing stories and missing-container layouts retain legacy extraction.
+Regression coverage for `acquire_magazine` preserves story prose inside a plain div and the existing empty-title fallback when the configured title selector misses. A proposed optional primary-extractor migration reproduced both losses and remains deferred pending a source-specific preservation contract; runtime extraction is unchanged.
