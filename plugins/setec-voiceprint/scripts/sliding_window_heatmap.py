@@ -63,6 +63,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from setec.core.script_console import enable_utf8_stdio  # noqa: E402
 from claim_license import ClaimLicense  # noqa: E402
 from output_schema import build_output  # noqa: E402
 
@@ -842,6 +843,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     args = build_arg_parser().parse_args(argv)
     try:
         windows_block = load_input(args.input_path)

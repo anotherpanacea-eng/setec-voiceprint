@@ -37,6 +37,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from setec.core.script_console import enable_utf8_stdio  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
 from stylometry_core import (  # noqa: E402
@@ -736,6 +737,7 @@ def _run_embedding_lens(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
 # ---------- CLI ------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
