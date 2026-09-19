@@ -52,6 +52,7 @@ from typing import Any
 
 # The math, smoothing, and POS tagger live in variance_audit.
 from claim_license import ClaimLicense  # type: ignore
+from setec.core.script_console import enable_utf8_stdio
 from output_schema import build_baseline_metadata, build_output  # type: ignore
 from variance_audit import (  # type: ignore
     HAS_SPACY,
@@ -486,6 +487,7 @@ def build_audit_payload(
 # ---------- main ----------
 
 def main() -> int:
+    enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Per-bigram POS-bigram diff: target vs. a comparison cluster."
     )
