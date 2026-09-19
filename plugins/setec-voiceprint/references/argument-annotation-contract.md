@@ -1,6 +1,6 @@
 # Argument annotation candidate contract (fixture-only)
 
-`argument_annotation_contract.validate_candidate_bundle(source_bytes, block_map_bytes, candidate_bytes)` is a pure, importable Python helper. All three inputs must be exact UTF-8 `bytes`. It returns `ValidationResult(candidate_projection, validation_summary)` or raises `ValidationError` with a stable `reason` and optional zero-based `ordinal`. It reads no files, calls no model or provider, and writes no output.
+`setec.core.argument_annotation_contract.validate_candidate_bundle(source_bytes, block_map_bytes, candidate_bytes)` is a pure, importable Python helper. All three inputs must be exact UTF-8 `bytes`. It returns `ValidationResult(candidate_projection, validation_summary)` or raises `ValidationError` with a stable `reason` and optional zero-based `ordinal`. It reads no files, calls no model or provider, and writes no output.
 
 Validation success establishes only that a structured **candidate** matches this mechanical contract. It does not establish source admission, correct extraction or paragraph boundaries, independent labelers, valid role judgments, adjudication, accepted labels, B1/B2 statistics, or a baseline. The candidate is the exact structured record at this boundary. A later provider adapter must retain and bind original provider responses and parse diagnostics separately.
 

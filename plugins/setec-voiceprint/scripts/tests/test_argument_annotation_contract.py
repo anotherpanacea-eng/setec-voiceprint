@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from argument_annotation_contract import (
+from setec.core.argument_annotation_contract import (
     ANNOTATION_SCHEMA,
     BLOCK_MAP_SCHEMA,
     ValidationError,
