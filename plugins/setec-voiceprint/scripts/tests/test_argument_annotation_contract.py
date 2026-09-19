@@ -200,6 +200,19 @@ def test_candidate_extra_key_and_wrong_input_type_refuse():
         validate_candidate_bundle(source, _bytes(block_map), "not bytes")
 
 
+def test_deep_json_refuses_through_both_public_artifact_paths():
+    source, block_map, candidate = _bundle()
+    nested = b"[" * 2000 + b"0" + b"]" * 2000
+    for map_bytes, candidate_bytes in (
+        (nested, _bytes(candidate)),
+        (_bytes(block_map), nested),
+    ):
+        with pytest.raises(ValidationError) as exc:
+            validate_candidate_bundle(source, map_bytes, candidate_bytes)
+        assert exc.value.reason == "invalid_json_depth"
+        assert str(exc.value) == "invalid_json_depth"
+
+
 def test_source_span_and_binding_refusals():
     source, block_map, candidate = _bundle()
     _fails("source_hash_mismatch", source=source + b"x")

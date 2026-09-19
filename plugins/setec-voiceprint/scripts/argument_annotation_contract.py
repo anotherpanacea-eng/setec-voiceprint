@@ -117,6 +117,8 @@ def _json_object(data: bytes) -> dict[str, Any]:
                            parse_constant=_reject_constant, parse_float=_finite_float)
     except ValidationError:
         raise
+    except RecursionError:
+        raise ValidationError("invalid_json_depth") from None
     except (json.JSONDecodeError, ValueError):
         raise ValidationError("invalid_json") from None
     if type(value) is not dict:
