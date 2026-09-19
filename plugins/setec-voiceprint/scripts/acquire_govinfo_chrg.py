@@ -98,24 +98,31 @@ _ORAL_HEADING_RE = re.compile(r"(?i)^STATEMENT OF[ \t]+\S")
 _PROCEDURAL_END_RE = re.compile(
     r"(?i)^\[(?:Questions and answers follow\.|Whereupon\b[^\]]*\badjourned\.)\]$"
 )
+# Keep standalone content labels to a label token, not free-form procedural
+# prose such as "[Exhibit A admitted.]".
 _CONTENT_BRACKET_RE = re.compile(
-    r"(?i)^\[(?:\d+|Exhibit[ \t]+[A-Z0-9][A-Z0-9 ._-]*|"
-    r"Table[ \t]+[A-Z0-9][A-Z0-9 ._-]*|"
-    r"\d+[ \t]+U\.S\.C\.[ \t]+[\w(). -]+)\]$"
+    r"(?i)^\[(?:\d+|(?:Exhibit|Table)[ \t]+[A-Z0-9]+(?:[-.][A-Z0-9]+)*|"
+    r"\d+[ \t]+U\.S\.C\.[ \t]+(?:§[ \t]*)?\d+[A-Z]?"
+    r"(?:\([A-Z0-9]+\))*)\]$"
 )
+_SPEAKER_NAME = r"[A-Za-z][A-Za-z'’\-]*(?:[ \t]+[A-Za-z][A-Za-z'’\-]*){0,3}"
 _NAMED_SPEAKER_RE = re.compile(
     r"(?i)^(?:Senator|Representative|General|Admiral|Colonel|Captain|"
-    r"Secretary|Director)[ \t]+[A-Za-z][A-Za-z'’.-]*\.(?:[ \t]+|$)"
+    r"Secretary|Director|Rear Admiral|Vice Admiral|Brigadier General|"
+    r"Major General|Lieutenant General|Lieutenant Colonel)[ \t]+"
+    + _SPEAKER_NAME + r"\.(?:[ \t]+|$)"
 )
 _HONORIFIC_SPEAKER_RE = re.compile(
-    r"(?i)^(?:Mr|Ms|Mrs|Dr)\.[ \t]+[A-Za-z][A-Za-z'’.-]*\.(?:[ \t]+|$)"
+    r"(?i)^(?:Mr|Ms|Mrs|Dr)\.[ \t]+" + _SPEAKER_NAME
+    + r"\.(?:[ \t]+|$)"
 )
 _STRUCTURAL_SPEAKER_RE = re.compile(
     r"(?i)^The[ \t]+(?:CHAIRMAN|CHAIRWOMAN|CHAIR|WITNESS|COUNSEL)\."
     r"(?:[ \t]+|$)"
 )
 _UNKNOWN_STRUCTURAL_RE = re.compile(
-    r"^The[ \t]+[A-Z][A-Z \t-]*\.(?:[ \t]+|$)"
+    r"^(?i:The)[ \t]+(?:(?i:STAFF DIRECTOR)|[A-Z][A-Z \t-]*|"
+    r"[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,3})\.(?:[ \t]+|$)"
 )
 _GPO_TERMINAL_SEPARATOR_RE = re.compile(
     r"(?m)^[ \t]*_{3,}[ \t]*(?:\r?\n[ \t]*)*\Z"
@@ -328,6 +335,7 @@ def _split_prepared_statements(text: str) -> SplitResult:
         boundary_kind = ""
         refusal = ""
         offset = start
+        open_quote = False
 
         for raw_line in text[start:limit].splitlines(keepends=True):
             line = raw_line.strip()
@@ -335,6 +343,22 @@ def _split_prepared_statements(text: str) -> SplitResult:
             offset += len(raw_line)
             if not line:
                 continue
+            # A standalone curly quote is a surviving textual cue. If a
+            # transcript-shaped boundary appears before its close, refuse
+            # this candidate rather than silently cutting a quotation.
+            if line == "“":
+                open_quote = True
+                continue
+            if line == "”" and open_quote:
+                open_quote = False
+                continue
+            if open_quote and (
+                _PROCEDURAL_END_RE.fullmatch(line)
+                or _ORAL_HEADING_RE.match(line)
+                or _speaker_kind(line)
+            ):
+                refusal = "ambiguous-quoted-boundary"
+                break
             if _PROCEDURAL_END_RE.fullmatch(line):
                 boundary_end = line_start
                 boundary_kind = "procedural-bracket"
@@ -370,6 +394,8 @@ def _split_prepared_statements(text: str) -> SplitResult:
                 refusal = "ambiguous-speaker-turn"
                 break
 
+        if open_quote and not refusal and boundary_end is None:
+            refusal = "ambiguous-open-quotation"
         if refusal:
             result.issues.append(BoundaryIssue(ordinal, head.start(), refusal))
             continue

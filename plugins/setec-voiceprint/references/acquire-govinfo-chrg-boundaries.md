@@ -16,6 +16,27 @@ independently. End-of-hearing text without a detected close and bodies over
 the safety cap are refused. Refusals appear in the local `--out` summary's
 `skip_log` and increment `skipped_parse_error`.
 
+Supported physical-line speaker labels include Senator, Representative,
+General, Admiral, Colonel, Captain, Secretary, Director, several two-word
+military ranks, and Mr./Ms./Mrs./Dr., followed by one to four name words and
+a period. The CHAIRMAN, The WITNESS, and The COUNSEL are also recognized.
+Other uppercase or title-cased The ... . transcript-shaped labels
+refuse the current candidate. The STAFF DIRECTOR label also refuses in any
+capitalization. A standalone opening curly double quote
+followed by a speaker or other boundary cue before its standalone close
+refuses that candidate; an unclosed cue also refuses it. These textual cues
+do not parse every possible quotation or transcript format.
+
+Standalone exhibit and table labels retain a compact identifier such as
+[Exhibit A], [Exhibit A-1], or [Table 2]; a statute citation retains a
+section number and optional subsections. Longer bracketed text such as
+[Exhibit A admitted.] is unresolved and refuses the current candidate.
+These recognizers are intentionally narrower than all valid source layouts.
+
+Generic manifest consumers check draft schema shape, not pending sidecar
+review fields; an operator must review the source before explicitly selecting
+or promoting any draft entry.
+
 The sidecar records a SHA-256 of the decoded hearing text, exact body
 character offsets, boundary kind, and pending role, rights, and completeness
 statuses. Offsets reproduce the retained raw body only when the **identical

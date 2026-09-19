@@ -288,6 +288,131 @@ def test_structural_turns_quote_cue_oral_heading_and_unbounded_refusals():
     ).issues[0].reason == "unbounded-eof"
 
 
+def _split_synthetic_html(lines):
+    """Exercise the same HTML decoding seam used by CHRG discovery."""
+    html = "<html><body><pre>" + "\n".join(lines) + "</pre></body></html>"
+    decoded, _ = ac.html_to_text(
+        html, strip_selectors=gi.DEFAULT_STRIP_SELECTORS,
+    )
+    return gi._split_prepared_statements(decoded)
+
+
+@pytest.mark.parametrize("label", (
+    "Senator Van Hollen.",
+    "Representative De La Cruz.",
+    "Director Van Hollen.",
+    "Mr. Van Hollen.",
+    "Dr. De La Cruz.",
+    "Rear Admiral Vale.",
+    "Rear Admiral Van Hollen.",
+    "Lieutenant Colonel Vale.",
+    "Ms. De La Cruz.",
+))
+def test_compound_speaker_name_closes_before_later_heading(label):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        label + " Oral turn here.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert [(block.witness, block.body, block.boundary_kind)
+            for block in result.statements] == [
+        ("Ada One", "Written block.", "oral-speaker-turn"),
+        ("Bea Two", "Independent body.", "procedural-bracket"),
+    ]
+
+
+def test_standalone_curly_quote_cue_refuses_ambiguous_speaker():
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Analysis starts.",
+        "“", "Senator Vale. Quoted source exchange.", "”",
+        "Analysis resumes.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-quoted-boundary")
+    ]
+    assert [(block.witness, block.body) for block in result.statements] == [
+        ("Bea Two", "Independent body.")
+    ]
+
+
+@pytest.mark.parametrize("bracket", (
+    "[Exhibit A admitted.]", "[Table 2 admitted.]",
+    "[42 U.S.C. 123 admitted.]",
+))
+def test_procedural_text_in_content_bracket_refuses_prior(bracket):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        bracket, "Oral transcript resumes.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-bracket-transition")
+    ]
+    assert [(block.witness, block.body) for block in result.statements] == [
+        ("Bea Two", "Independent body.")
+    ]
+
+@pytest.mark.parametrize("label", (
+    "THE STAFF DIRECTOR.", "The Staff Director.",
+    "the staff director.", "tHe StAfF DiReCtOr.",
+))
+def test_unsupported_structural_label_case_refuses_prior(label):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        label + " Oral question.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in result.issues] == [
+        (1, "ambiguous-speaker-turn")
+    ]
+    assert [block.witness for block in result.statements] == ["Bea Two"]
+
+def test_standalone_quote_cue_closes_and_unclosed_cue_refuses():
+    closed = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.",
+        "“", "An ordinary quoted sentence.", "”",
+        "Senator Vale. Oral turn after the quotation.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert closed.issues == []
+    assert closed.statements[0].boundary_kind == "oral-speaker-turn"
+    assert "An ordinary quoted sentence." in closed.statements[0].body
+    assert "Oral turn after" not in closed.statements[0].body
+    assert closed.statements[1].witness == "Bea Two"
+
+    unclosed = _split_synthetic_html([
+        "Prepared Statement of Ada One", "Written block.", "“",
+        "A quotation without a visible close.",
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert [(issue.heading_ordinal, issue.reason) for issue in unclosed.issues] == [
+        (1, "ambiguous-open-quotation")
+    ]
+    assert [block.witness for block in unclosed.statements] == ["Bea Two"]
+
+def test_compact_content_labels_and_inline_salutation_remain_written():
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One",
+        "Mr. Chairman, I cite Senator Van Hollen. in this same line.",
+        "[Exhibit A-1]", "[Table 2-A]", "[42 U.S.C. § 123(a)]",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert len(result.statements) == 1
+    body = result.statements[0].body
+    for retained in ("Mr. Chairman,", "Senator Van Hollen.", "[Exhibit A-1]",
+                     "[Table 2-A]", "[42 U.S.C. § 123(a)]"):
+        assert retained in body
+    assert result.statements[0].boundary_kind == "procedural-bracket"
+
 def test_overlong_candidate_refused_with_and_without_close():
     oversized = "X" * (gi.MAX_STATEMENT_CHARS + 1)
     for suffix in ("", "\n[Questions and answers follow.]"):
