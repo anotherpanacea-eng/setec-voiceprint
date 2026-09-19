@@ -121,8 +121,8 @@ _STRUCTURAL_SPEAKER_RE = re.compile(
     r"(?:[ \t]+|$)"
 )
 _UNKNOWN_STRUCTURAL_RE = re.compile(
-    r"^(?i:The)[ \t]+(?:(?i:STAFF DIRECTOR)|[A-Z][A-Z \t-]*|"
-    r"[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){0,3})\.(?:[ \t]+|$)"
+    r"^(?:The|THE)[ \t]+(?:[A-Z][A-Z \t-]*|"
+    r"(?i:Staff Director))\.(?:[ \t]+|$)"
 )
 _GPO_TERMINAL_SEPARATOR_RE = re.compile(
     r"(?m)^[ \t]*_{3,}[ \t]*(?:\r?\n[ \t]*)*\Z"

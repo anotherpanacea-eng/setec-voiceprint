@@ -20,11 +20,12 @@ Supported physical-line speaker labels include Senator, Representative,
 General, Admiral, Colonel, Captain, Secretary, Director, several two-word
 military ranks, and Mr./Ms./Mrs./Dr., followed by one to four name words and
 a period. The CHAIRMAN, The WITNESS, and The COUNSEL are also recognized.
-Other uppercase or title-cased The ... . transcript-shaped labels
-refuse the current candidate. The STAFF DIRECTOR label also refuses in any
-capitalization. A standalone opening curly double quote
-followed by a speaker or other boundary cue before its standalone close
-refuses that candidate; an unclosed cue also refuses it. These textual cues
+Other all-capital roles after The or THE refuse the current candidate;
+The Staff Director also refuses with a title-cased role. A lowercase the
+or a generic title-cased noun can be a hard-wrapped prose continuation and
+does not by itself count as a transcript label. A standalone opening
+curly double quote followed by a speaker or other boundary cue before its
+standalone close refuses that candidate; an unclosed cue also refuses it. These textual cues
 do not parse every possible quotation or transcript format.
 
 Standalone exhibit and table labels retain a compact identifier such as

@@ -359,7 +359,7 @@ def test_procedural_text_in_content_bracket_refuses_prior(bracket):
 
 @pytest.mark.parametrize("label", (
     "THE STAFF DIRECTOR.", "The Staff Director.",
-    "the staff director.", "tHe StAfF DiReCtOr.",
+    "The FIELD OFFICER.",
 ))
 def test_unsupported_structural_label_case_refuses_prior(label):
     result = _split_synthetic_html([
@@ -372,6 +372,26 @@ def test_unsupported_structural_label_case_refuses_prior(label):
         (1, "ambiguous-speaker-turn")
     ]
     assert [block.witness for block in result.statements] == ["Bea Two"]
+
+@pytest.mark.parametrize("continuation", (
+    "the Widget Committee. The synthetic plan continues.",
+    "the XYZ. The synthetic acronym remains in the argument.",
+    "The Widget Committee. A hard-wrapped name continues.",
+))
+def test_hard_wrapped_prose_is_not_structural_speaker(continuation):
+    result = _split_synthetic_html([
+        "Prepared Statement of Ada One",
+        "The written synthetic paragraph refers to",
+        continuation,
+        "Prepared Statement of Bea Two", "Independent body.",
+        "[Questions and answers follow.]",
+    ])
+    assert result.issues == []
+    assert len(result.statements) == 2
+    assert continuation in result.statements[0].body
+    assert result.statements[0].boundary_kind == "next-prepared-heading"
+    assert result.statements[1].witness == "Bea Two"
+
 
 def test_standalone_quote_cue_closes_and_unclosed_cue_refuses():
     closed = _split_synthetic_html([
