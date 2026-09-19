@@ -26,6 +26,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import types
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -238,6 +240,135 @@ def test_parse_story_page_extracts_date():
     _, _, _, date = am.parse_story_page(html, config=config)
     assert date == dt.date(2019, 3, 15)
 
+def test_parse_story_page_primary_removes_nested_widget():
+    """Real trafilatura removes nested newsletter/link chrome while
+    retaining every story paragraph and parsed metadata."""
+    pytest.importorskip("trafilatura")
+    html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
+        encoding="utf-8",
+    )
+    config = am.MAGAZINE_MODULES["nightmare"]
+    body, title, author, date = am.parse_story_page(html, config=config)
+    assert title == "Primary Fixture Story"
+    assert author == "Primary Fixture Author"
+    assert str(date) == "2022-04-05"
+    for marker in (
+        "Primary fixture paragraph one",
+        "Primary fixture paragraph two",
+        "Primary fixture paragraph three",
+    ):
+        assert marker in body
+    assert "Newsletter invitation boilerplate" not in body
+    assert "Related link boilerplate" not in body
+    assert "Another related link" not in body
+def test_parse_story_page_optional_extractor_absence_keeps_body(monkeypatch):
+    html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(sys.modules, "trafilatura", None)
+    body, title, author, date = am.parse_story_page(
+        html, config=am.MAGAZINE_MODULES["nightmare"],
+    )
+    for marker in (
+        "Primary fixture paragraph one",
+        "Primary fixture paragraph two",
+        "Primary fixture paragraph three",
+        "Newsletter invitation boilerplate",
+    ):
+        assert marker in body
+    assert title == "Primary Fixture Story"
+    assert author == "Primary Fixture Author"
+    assert str(date) == "2022-04-05"
+def test_parse_story_page_optional_extractor_miss_keeps_cleaned_body(monkeypatch):
+    html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
+        encoding="utf-8",
+    )
+    fake = types.ModuleType("trafilatura")
+    fake.extract = lambda *a, **k: None
+    fake.__path__ = []
+    metadata = types.ModuleType("trafilatura.metadata")
+    metadata.extract_metadata = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "trafilatura", fake)
+    monkeypatch.setitem(sys.modules, "trafilatura.metadata", metadata)
+    body, title, author, date = am.parse_story_page(
+        html, config=am.MAGAZINE_MODULES["nightmare"],
+    )
+    for marker in (
+        "Primary fixture paragraph one",
+        "Primary fixture paragraph two",
+        "Primary fixture paragraph three",
+        "Newsletter invitation boilerplate",
+    ):
+        assert marker in body
+    assert title == "Primary Fixture Story"
+    assert author == "Primary Fixture Author"
+    assert str(date) == "2022-04-05"
+def test_parse_story_page_optional_extractor_exception_keeps_body(monkeypatch):
+    html = (FIXTURE_DIR / "magazine_primary_story.html").read_text(
+        encoding="utf-8",
+    )
+    fake = types.ModuleType("trafilatura")
+    fake.extract = lambda *a, **k: (_ for _ in ()).throw(
+        RuntimeError("optional extractor failed")
+    )
+    fake.__path__ = []
+    metadata = types.ModuleType("trafilatura.metadata")
+    metadata.extract_metadata = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, "trafilatura", fake)
+    monkeypatch.setitem(sys.modules, "trafilatura.metadata", metadata)
+    body, title, author, date = am.parse_story_page(
+        html, config=am.MAGAZINE_MODULES["nightmare"],
+    )
+    for marker in (
+        "Primary fixture paragraph one",
+        "Primary fixture paragraph two",
+        "Primary fixture paragraph three",
+        "Newsletter invitation boilerplate",
+    ):
+        assert marker in body
+    assert title == "Primary Fixture Story"
+    assert author == "Primary Fixture Author"
+    assert str(date) == "2022-04-05"
+def test_parse_story_page_table_preserves_table_and_surrounding_prose():
+    before = "Before the table, the story remains in ordinary prose. " * 12
+    after = "After the table, the story continues in ordinary prose. " * 12
+    html = f"""<html><head><title>Table Story</title></head><body>
+    <h1 class="entry-title">Table Story</h1>
+    <div class="byline">By Table Author</div>
+    <time class="entry-date" datetime="2020-01-02">January 2</time>
+    <div class="entry-content">
+      <p>{before}</p>
+      <table><tr><td>Substantive story text in a table cell.</td></tr></table>
+      <p>{after}</p>
+    </div></body></html>"""
+    body, title, author, date = am.parse_story_page(
+        html, config=am.MAGAZINE_MODULES["nightmare"],
+    )
+    assert "Before the table" in body
+    assert "Substantive story text in a table cell" in body
+    assert "After the table" in body
+    assert title == "Table Story"
+    assert author == "Table Author"
+    assert str(date) == "2020-01-02"
+def test_parse_story_page_missing_container_preserves_legacy_body():
+    html = """<html><head><title>Fallback Story</title></head><body>
+    <h1 class="entry-title">Fallback Story</h1>
+    <div class="byline">By Fallback Author</div>
+    <time class="entry-date" datetime="2021-02-03">February 3</time>
+    <article><p>Fallback prose before the table.</p>
+    <table><tr><td>Fallback table story text.</td></tr></table>
+    <p>Fallback prose after the table.</p></article></body></html>"""
+    config = replace(
+        am.MAGAZINE_MODULES["nightmare"],
+        story_content_selector=".missing-container",
+    )
+    body, title, author, date = am.parse_story_page(html, config=config)
+    assert "Fallback prose before the table" in body
+    assert "Fallback table story text" in body
+    assert "Fallback prose after the table" in body
+    assert title == "Fallback Story"
+    assert author == "Fallback Author"
+    assert str(date) == "2021-02-03"
 
 # ------------------- End-to-end Nightmare ------------------------
 
