@@ -515,13 +515,15 @@ def test_emitted_manifest_validates_with_grant_proposal(decode_pdf, tmp_path):
     report = mv.validate_manifest(manifest_path)
     errors = [i for i in report["issues"] if i.get("severity") == "error"]
     assert errors == [], f"Manifest should validate without errors: {errors}"
-    unknown_register = [
-        i for i in report["issues"]
-        if "register" in i.get("message", "").lower()
-        and "grant_proposal" in i.get("message", "")
+    register_issues = [
+        i for i in report["issues"] if i.get("field") == "register"
     ]
-    assert unknown_register == [], \
-        f"grant_proposal should be a known register: {unknown_register}"
+    assert register_issues
+    assert all(i["severity"] == "warning" for i in register_issues)
+    assert all("Deprecated register" in i["message"] for i in register_issues)
+    assert all("grant_proposal_academic" in i["message"] for i in register_issues)
+    assert all("grant_proposal_nonprofit" in i["message"] for i in register_issues)
+    assert not any("Unknown register" in i["message"] for i in register_issues)
 
 
 def test_zero_output_exit_code(decode_pdf, tmp_path):

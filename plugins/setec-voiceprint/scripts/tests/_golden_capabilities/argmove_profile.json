@@ -29,7 +29,7 @@
     ],
     "schema_version": "1.0"
   },
-  "purpose": "aggregate the deterministic B4 stance + B3 abstraction signals plus the net-new AGD marker module (assuring/guarding/discounting) over a corpus into an argument-move population profile, and run the two-corpus separation test (Cliff's delta primary, Cohen's d secondary) \u2014 the cheap, judge-free half of ArgScope, gating any B1/B2 LLM-judge spend.",
+  "purpose": "aggregate the deterministic B4 stance + B3 abstraction signals plus the net-new AGD marker module (assuring/guarding/discounting) over a corpus into an argument-move population profile, and run the two-corpus separation test (Cliff's delta primary, Cohen's d secondary) — the cheap, judge-free half of ArgScope, gating any B1/B2 LLM-judge spend.",
   "references": [],
   "registers": [
     "policy_brief",
@@ -37,6 +37,8 @@
     "scholarly_article",
     "legal_brief",
     "regulatory_comment",
+    "grant_proposal_academic",
+    "grant_proposal_nonprofit",
     "grant_proposal",
     "expert_affidavit"
   ],
@@ -44,7 +46,7 @@
   "status": "empirically_oriented",
   "surface": "assertoric",
   "use_when": [
-    "building an argument-register population baseline (the profiles the acquisition-tier registers feed)",
+    "building an argument-register population baseline (the profiles the acquisition-tier registers feed); grant_proposal_academic and grant_proposal_nonprofit are the preferred grant leaves, while bare grant_proposal remains accepted during its deprecation window",
     "answering whether deterministic signals separate two corpora (e.g. human vs LLM argument) before spending on the LLM judge"
   ]
 }

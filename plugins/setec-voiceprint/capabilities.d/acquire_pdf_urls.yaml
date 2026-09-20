@@ -7,12 +7,17 @@ entries:
   consumers: []
   family: acquisition
   purpose: acquire prose from a curated list of remote PDF URLs into the impostor
-    pool (including grant_proposal, expert_affidavit, and academic_philosophy
-    population baselines); the generic PDF acquirer that per-source URL-list
-    builders feed.
+    pool (including grant_proposal_academic and grant_proposal_nonprofit
+    population baselines; bare grant_proposal remains accepted during its
+    deprecation window; expert_affidavit and academic_philosophy are also
+    supported); the generic PDF acquirer that per-source URL-list builders
+    feed.
   use_when:
-  - building the grant_proposal or expert_affidavit population baseline from a
-    curated list of direct PDF URLs
+  - building the grant_proposal_academic or grant_proposal_nonprofit population
+    baseline from a curated list of direct PDF URLs; bare grant_proposal remains
+    accepted during its deprecation window
+  - building the expert_affidavit population baseline from a curated list of
+    direct PDF URLs
   - building the private academic_philosophy impostor pool from a Tanner URL feed
   do_not_use_when:
   - the URLs are Zenodo/Figshare record pages rather than direct PDF links
@@ -30,6 +35,8 @@ entries:
     cost_note: network-bound; one PDF download + text-layer extraction per URL
     length_floor_words: 1500
   registers:
+  - grant_proposal_academic
+  - grant_proposal_nonprofit
   - grant_proposal
   - expert_affidavit
   - academic_philosophy
