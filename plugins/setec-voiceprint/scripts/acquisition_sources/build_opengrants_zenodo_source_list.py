@@ -44,11 +44,33 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
 
 def canonical_bytes(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":")).encode("utf-8")
+                      allow_nan=False, separators=(",", ":")).encode("utf-8")
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def validate_source_strings(value: object) -> None:
+    """Reject YAML strings that cannot survive exact UTF-8 provenance output."""
+    pending = [value]
+    seen = set()
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            try:
+                item.encode("utf-8")
+            except UnicodeError as exc:
+                raise ResolverError("frontmatter contains a non-UTF-8 string") from exc
+        elif isinstance(item, (dict, list, tuple, set)):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            if isinstance(item, dict):
+                pending.extend(item.keys())
+                pending.extend(item.values())
+            else:
+                pending.extend(item)
 
 
 def git(repo: Path, *args: str) -> bytes:
@@ -146,6 +168,7 @@ def frontmatter(blob: bytes) -> dict:
         raise ResolverError(f"malformed YAML frontmatter: {exc}") from exc
     if not isinstance(value, dict):
         raise ResolverError("frontmatter must be a mapping")
+    validate_source_strings(value)
     return value
 
 
@@ -225,8 +248,14 @@ def valid_locator(locator: str, record: int, key: str) -> bool:
 
 
 def metadata_candidates(raw: bytes, record: int) -> tuple[dict, list[dict]]:
+    def reject_constant(token: str) -> None:
+        raise ValueError(f"non-finite JSON constant {token}")
+
     try:
-        data = json.loads(raw)
+        data = json.loads(raw, parse_constant=reject_constant)
+        # This also rejects exponent overflow and escaped lone surrogates,
+        # including values and keys nested beyond the sidecar fields.
+        canonical_bytes(data)
     except (ValueError, UnicodeError) as exc:
         raise ResolverError(f"record {record}: invalid JSON: {exc}") from exc
     if not isinstance(data, dict) or type(data.get("id")) is not int or data["id"] != record:

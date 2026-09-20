@@ -345,3 +345,90 @@ def test_malformed_non_zenodo_link_is_source_insufficiency(tmp_path):
     with pytest.raises(resolver.ResolverError):
         resolver.run(args)
     assert error_report(args)["summary"]["source_insufficiencies"] == 1
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e999"])
+def test_nonfinite_metadata_is_failure_even_with_allow_empty(tmp_path, token):
+    args = prepare(tmp_path)
+    resolver.run(args)
+    prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
+    cache = Path(args.metadata_dir) / "zenodo-record-830239.json"
+    data = json.loads(cache.read_text())
+    data["metadata"]["license"] = "REPLACE"
+    cache.write_text(json.dumps(data).replace('"REPLACE"', token))
+    args.allow_empty = True
+    with pytest.raises(resolver.ResolverError):
+        resolver.run(args)
+    assert (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes()) == prior
+    assert error_report(args)["failures"][0]["stage"] == "metadata"
+
+
+@pytest.mark.parametrize("location", ["license_value", "creator_value", "nested_key"])
+def test_surrogate_json_anywhere_is_metadata_failure(tmp_path, location):
+    args = prepare(tmp_path)
+    resolver.run(args)
+    prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
+    cache = Path(args.metadata_dir) / "zenodo-record-830239.json"
+    data = json.loads(cache.read_text())
+    bad = chr(0xD800)
+    if location == "license_value":
+        data["metadata"]["license"] = {"nested": [{"value": bad}]}
+    elif location == "creator_value":
+        data["metadata"]["creators"] = [{"name": bad}]
+    else:
+        data["unselected_nested_metadata"] = {"inner": {bad: "value"}}
+    cache.write_text(json.dumps(data, ensure_ascii=True))
+    args.allow_empty = True
+    with pytest.raises(resolver.ResolverError):
+        resolver.run(args)
+    assert (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes()) == prior
+    assert error_report(args)["failures"][0]["stage"] == "metadata"
+
+
+@pytest.mark.parametrize("location", ["title", "author", "link", "nested_key"])
+def test_yaml_escaped_surrogate_is_source_failure(tmp_path, location):
+    args = prepare(tmp_path)
+    resolver.run(args)
+    prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
+    bad = json.dumps(chr(0xD800))
+    source = yaml_source()
+    if location == "title":
+        source = source.replace("title: Source title", "title: " + bad)
+    elif location == "author":
+        source = source.replace("author: Source author", "author: " + bad)
+    elif location == "link":
+        source = source.replace("link: https://zenodo.org/records/830239", "link: " + bad)
+    else:
+        source = source.replace("---\nBody\n", "extra:\n  " + bad + ": value\n---\nBody\n")
+    (Path(args.catalogue_repo) / "_grants" / "one.md").write_text(source)
+    git(args.catalogue_repo, "add", ".")
+    git(args.catalogue_repo, "commit", "-qm", "bad source unicode")
+    args.source_commit = git(args.catalogue_repo, "rev-parse", "HEAD")
+    args.allow_empty = True
+    with pytest.raises(resolver.ResolverError):
+        resolver.run(args)
+    assert (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes()) == prior
+    assert error_report(args)["failures"][0]["stage"] == "source"
+
+
+def test_absent_and_present_null_access_and_license_are_distinct(tmp_path):
+    args = prepare(tmp_path)
+    cache = Path(args.metadata_dir) / "zenodo-record-830239.json"
+    data = json.loads(cache.read_text())
+    data["metadata"].pop("access_right")
+    data["metadata"].pop("license")
+    cache.write_text(json.dumps(data))
+    resolver.run(args)
+    for candidate in sidecar(args)["candidates"]:
+        assert candidate["metadata"] == {
+            "access_right_present": False, "access_right": None,
+            "license_present": False, "license": None,
+        }
+    data["metadata"]["access_right"] = None
+    data["metadata"]["license"] = None
+    cache.write_text(json.dumps(data))
+    resolver.run(args)
+    for candidate in sidecar(args)["candidates"]:
+        assert candidate["metadata"] == {
+            "access_right_present": True, "access_right": None,
+            "license_present": True, "license": None,
+        }
