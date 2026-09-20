@@ -164,7 +164,7 @@ def frontmatter(blob: bytes) -> dict:
         raise ResolverError("missing YAML frontmatter closer")
     try:
         value = yaml.safe_load("\n".join(lines[1:end]))
-    except yaml.YAMLError as exc:
+    except (yaml.YAMLError, RecursionError) as exc:
         raise ResolverError(f"malformed YAML frontmatter: {exc}") from exc
     if not isinstance(value, dict):
         raise ResolverError("frontmatter must be a mapping")
@@ -256,7 +256,7 @@ def metadata_candidates(raw: bytes, record: int) -> tuple[dict, list[dict]]:
         # This also rejects exponent overflow and escaped lone surrogates,
         # including values and keys nested beyond the sidecar fields.
         canonical_bytes(data)
-    except (ValueError, UnicodeError) as exc:
+    except (ValueError, UnicodeError, RecursionError) as exc:
         raise ResolverError(f"record {record}: invalid JSON: {exc}") from exc
     if not isinstance(data, dict) or type(data.get("id")) is not int or data["id"] != record:
         raise ResolverError(f"record {record}: top-level id mismatch")

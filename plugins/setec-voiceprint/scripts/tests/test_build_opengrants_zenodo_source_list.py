@@ -432,3 +432,40 @@ def test_absent_and_present_null_access_and_license_are_distinct(tmp_path):
             "access_right_present": True, "access_right": None,
             "license_present": True, "license": None,
         }
+
+def test_deep_json_recursion_reports_metadata_failure_and_preserves_pair(tmp_path):
+    args = prepare(tmp_path)
+    resolver.run(args)
+    prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
+    cache = Path(args.metadata_dir) / "zenodo-record-830239.json"
+    raw = cache.read_text().rstrip()
+    deep = "[" * 2000 + "0" + "]" * 2000
+    cache.write_text(raw[:-1] + ',"unused":' + deep + "}")
+    args.allow_empty = True
+    with pytest.raises(resolver.ResolverError):
+        resolver.run(args)
+    assert (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes()) == prior
+    report = error_report(args)
+    assert report["summary"]["metadata_failures"] == 1
+    assert report["failures"][0]["stage"] == "metadata"
+    assert "recursion" in report["failures"][0]["error"].lower()
+
+
+def test_deep_yaml_recursion_reports_source_failure_and_preserves_pair(tmp_path):
+    args = prepare(tmp_path)
+    resolver.run(args)
+    prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
+    deep = "[" * 2000 + "0" + "]" * 2000
+    source = yaml_source().replace("---\nBody\n", "deep: " + deep + "\n---\nBody\n")
+    (Path(args.catalogue_repo) / "_grants" / "one.md").write_text(source)
+    git(args.catalogue_repo, "add", ".")
+    git(args.catalogue_repo, "commit", "-qm", "deep source")
+    args.source_commit = git(args.catalogue_repo, "rev-parse", "HEAD")
+    args.allow_empty = True
+    with pytest.raises(resolver.ResolverError):
+        resolver.run(args)
+    assert (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes()) == prior
+    report = error_report(args)
+    assert report["summary"]["source_insufficiencies"] == 1
+    assert report["failures"][0]["stage"] == "source"
+    assert "recursion" in report["failures"][0]["error"].lower()
