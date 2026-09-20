@@ -1,0 +1,53 @@
+{
+  "_seeded_at": "2026-09-19",
+  "compute": {
+    "cost_note": "bounded Git object and record metadata reads; live mode requests Zenodo API record JSON only",
+    "length_floor_words": null,
+    "tier": "acquisition"
+  },
+  "consumers": [
+    "acquire_pdf_urls"
+  ],
+  "dependencies": {
+    "python": [
+      "pyyaml"
+    ]
+  },
+  "do_not_use_when": [
+    "treating a metadata locator as a downloaded PDF, prose sample, or admission decision",
+    "inferring proposal writing dates from source years or Zenodo record dates"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/acquisition_sources/build_opengrants_zenodo_source_list.py --catalogue-repo /path/to/ogrants --source-commit FULL40SHA --metadata-dir zenodo-record-metadata --year-min 2013 --year-max 2021 --output opengrants-candidates.jsonl --sidecar opengrants-candidates.sidecar.json",
+      "description": "Render a cached pinned Open Grants candidate list."
+    }
+  ],
+  "family": "acquisition",
+  "handoff": "none",
+  "id": "build_opengrants_zenodo_source_list",
+  "inputs": {
+    "target": "a local weecology/ogrants Git worktree, full commit SHA, and cached or live Zenodo record metadata"
+  },
+  "outputs": {
+    "artifacts": [
+      "sorted acquire_pdf_urls-compatible JSONL with candidate_id, url, title, and author",
+      "provenance sidecar binding exact feed bytes and pinned Git source inventory",
+      "deterministic error report on source or metadata insufficiency"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "resolve revision-pinned Open Grants catalogue objects and Zenodo record metadata into a candidate PDF URL feed without requesting PDF bytes.",
+  "references": [
+    "plugins/setec-voiceprint/references/opengrants-zenodo-source-list.md"
+  ],
+  "registers": [
+    "grant_proposal"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/acquisition_sources/build_opengrants_zenodo_source_list.py",
+  "status": "structural_only",
+  "surface": "voice_coherence_acquisition",
+  "use_when": [
+    "preparing a grant_proposal candidate URL list for later private review and acquisition"
+  ]
+}
