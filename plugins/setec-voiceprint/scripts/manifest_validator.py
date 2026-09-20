@@ -90,7 +90,8 @@ ALLOWED_REGISTER = {
     "literary_fiction", "blog_essay", "academic_philosophy",
     "testimony_policy", "personal", "policy_advocacy",
     "literary_horror", "policy_brief", "scholarly_article",
-    "legal_brief", "grant_proposal", "expert_affidavit",
+    "legal_brief", "grant_proposal", "grant_proposal_academic",
+    "grant_proposal_nonprofit", "expert_affidavit",
     "regulatory_comment", "professional_letter", "teaching",
     "message.imessage", "message.facebook_messenger",
     "social_media_twitter", "forum_metafilter",
@@ -811,6 +812,12 @@ def validate_entry(
         issues.append(Issue(
             "error", lineno, entry_id, "register",
             f"Retired register '{register}' must be replaced by a split leaf.",
+        ))
+    elif isinstance(register, str) and register == "grant_proposal":
+        issues.append(Issue(
+            "warning", lineno, entry_id, "register",
+            "Deprecated register 'grant_proposal'; use "
+            "'grant_proposal_academic' or 'grant_proposal_nonprofit'.",
         ))
     elif isinstance(register, str) and register not in ALLOWED_REGISTER:
         issues.append(Issue(

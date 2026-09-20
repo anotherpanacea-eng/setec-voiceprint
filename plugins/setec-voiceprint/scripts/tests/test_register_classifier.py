@@ -398,6 +398,8 @@ class TestTaxonomy:
             "forum_metafilter",
             "social_media_facebook_posts",
             "social_media_facebook_comments",
+            "grant_proposal_academic",
+            "grant_proposal_nonprofit",
         }
         assert (
             manifest_validator.ALLOWED_REGISTER - set(CANONICAL_REGISTER_TO_FAMILY)

@@ -30,11 +30,13 @@
     ],
     "schema_version": "1.0"
   },
-  "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (including grant_proposal, expert_affidavit, and academic_philosophy population baselines); the generic PDF acquirer that per-source URL-list builders feed.",
+  "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (including grant_proposal_academic and grant_proposal_nonprofit population baselines; bare grant_proposal remains accepted during its deprecation window; expert_affidavit and academic_philosophy are also supported); the generic PDF acquirer that per-source URL-list builders feed.",
   "references": [
     "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
   ],
   "registers": [
+    "grant_proposal_academic",
+    "grant_proposal_nonprofit",
     "grant_proposal",
     "expert_affidavit",
     "academic_philosophy"
@@ -43,7 +45,8 @@
   "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
-    "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs",
+    "building the grant_proposal_academic or grant_proposal_nonprofit population baseline from a curated list of direct PDF URLs; bare grant_proposal remains accepted during its deprecation window",
+    "building the expert_affidavit population baseline from a curated list of direct PDF URLs",
     "building the private academic_philosophy impostor pool from a Tanner URL feed"
   ]
 }

@@ -588,3 +588,63 @@ if __name__ == "__main__":
         sys.stderr.write("pytest not installed; cannot run tests.\n")
         sys.exit(2)
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+
+def test_story_div_between_paragraphs_is_not_discarded():
+    """A nonempty extraction must still retain a story beat in a plain div.
+
+    The rejected trafilatura-primary migration returned both surrounding
+    paragraphs while silently dropping the middle block (issue #462).
+    """
+    opening = (
+        "The narrator entered the house and saw a strange new arrangement "
+        "of objects. "
+    ) * 12
+    middle = (
+        "The letter revealed that the narrator had inherited the house "
+        "from a stranger, which changed the ending."
+    )
+    ending = (
+        "In the morning the narrator understood the arrangement and "
+        "finally left the house. "
+    ) * 12
+    html = (
+        '<html><body><h1 class="entry-title">A Story</h1>'
+        '<div class="entry-content">'
+        f'<p>{opening}</p><div>{middle}</div><p>{ending}</p>'
+        '</div></body></html>'
+    )
+    body, title, _, _ = am.parse_story_page(
+        html, config=am.MAGAZINE_MODULES["nightmare"],
+    )
+    assert opening.strip() in body
+    assert middle in body
+    assert ending.strip() in body
+    assert title == "A Story"
+
+
+def test_title_miss_does_not_infer_title_from_body_heading():
+    """A heading in the selected body is not the legacy document-title fallback.
+
+    The outer title is outside the selected container. With no configured
+    title match the existing result is empty; readability metadata must not
+    invent a title from the body heading (issue #462).
+    """
+    from dataclasses import replace
+
+    paragraph = (
+        "The narrator entered the house and watched the winter light move "
+        "across the floor, wondering what the quiet room would reveal. "
+    ) * 12
+    html = (
+        '<html><head><title>Outer document title</title></head><body>'
+        '<div class="entry-content"><h2>INNER HEADING</h2>'
+        f'<p>{paragraph}</p></div></body></html>'
+    )
+    config = replace(
+        am.MAGAZINE_MODULES["nightmare"], title_selector=".no-title",
+    )
+    body, title, _, _ = am.parse_story_page(html, config=config)
+    assert paragraph.strip() in body
+    assert title == ""

@@ -86,8 +86,10 @@ EXPECTED_REGISTER_LEAVES = frozenset({
     "academic_philosophy",
     "blog_essay",
     "expert_affidavit",
+    "grant_proposal_academic",
     "forum_metafilter",
     "grant_proposal",
+    "grant_proposal_nonprofit",
     "legal_brief",
     "literary_fiction",
     "literary_horror",
@@ -106,7 +108,7 @@ EXPECTED_REGISTER_LEAVES = frozenset({
     "testimony_policy",
 })
 EXPECTED_REGISTRY_DIGEST = (
-    "sha256:4fdaf0252ab3a8787fa0bcc7cf62ee2345a8543b4b7f213e30a191cad35920a4"
+    "sha256:06d1949e9951ad5ac7383c41d85028aeeee2fb29a9e178c20d6993b79a1e69aa"
 )
 
 
