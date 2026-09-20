@@ -439,7 +439,15 @@ def test_deep_json_recursion_reports_metadata_failure_and_preserves_pair(tmp_pat
     prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
     cache = Path(args.metadata_dir) / "zenodo-record-830239.json"
     raw = cache.read_text().rstrip()
-    deep = "[" * 2000 + "0" + "]" * 2000
+    # Depth has to clear the C scanner's own stack guard, not the interpreter's
+    # recursion limit. Through 3.11 the scanner consulted sys.getrecursionlimit()
+    # and 2000 was already past it; from 3.12 it carries its own guard that
+    # ignores setrecursionlimit() and does not fire until about 9998. CI pins
+    # 3.12, so the original 2000 parsed cleanly there and the test never reached
+    # the ResolverError it names. 40000 raises on 3.11, 3.12 and 3.13 alike, with
+    # margin -- and a thread with a smaller stack only trips it sooner, which is
+    # the safe direction.
+    deep = "[" * 40000 + "0" + "]" * 40000
     cache.write_text(raw[:-1] + ',"unused":' + deep + "}")
     args.allow_empty = True
     with pytest.raises(resolver.ResolverError):
