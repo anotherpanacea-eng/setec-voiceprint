@@ -345,6 +345,7 @@ def run(args: argparse.Namespace) -> dict:
     error_path = Path(f"{args.sidecar}.error.json")
     repo_arg = Path(args.catalogue_repo).resolve()
     repo, git_dir, common = worktree_info(repo_arg)
+    repo_arg = repo  # Git pathspecs must be relative to the checkout root.
     safe_paths(repo, git_dir, common, [output, sidecar, error_path], [], False)
     try:
         commit = verified_commit(repo_arg, args.source_commit)

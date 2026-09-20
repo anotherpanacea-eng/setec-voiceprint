@@ -469,3 +469,14 @@ def test_deep_yaml_recursion_reports_source_failure_and_preserves_pair(tmp_path)
     assert report["summary"]["source_insufficiencies"] == 1
     assert report["failures"][0]["stage"] == "source"
     assert "recursion" in report["failures"][0]["error"].lower()
+
+def test_catalogue_subdirectory_argument_has_identical_pinned_inventory(tmp_path):
+    args = prepare(tmp_path)
+    root_summary = resolver.run(args)
+    prior = (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes())
+    args.catalogue_repo = str(Path(args.catalogue_repo) / "_grants")
+    subdir_summary = resolver.run(args)
+    assert subdir_summary == root_summary
+    assert subdir_summary["catalogue_rows"] == 1
+    assert subdir_summary["emitted_candidates"] == 2
+    assert (Path(args.output).read_bytes(), Path(args.sidecar).read_bytes()) == prior
