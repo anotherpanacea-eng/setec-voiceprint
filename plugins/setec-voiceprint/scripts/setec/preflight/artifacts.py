@@ -1,0 +1,83 @@
+"""Private artifact census and local two-direction calibration command."""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import sys
+
+from .artifacts_core import (
+    calibrate, census, load_artifact_labels, load_artifact_policy,
+)
+from .common import (
+    Refusal, canonical_json, load_manifest, load_manifest_for_calibration,
+    publish_bundle, validate_output_path,
+)
+
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:
+        raise Refusal("input_contract")
+
+
+def run_census(manifest_path: Path, policy_path: Path, out_bundle: Path) -> dict:
+    validate_output_path(manifest_path.parent, out_bundle)
+    manifest = load_manifest(manifest_path)
+    policy = load_artifact_policy(policy_path)
+    result = census(manifest, policy)
+    publish_bundle(out_bundle, {"detail.json": canonical_json(result.detail),
+                                "receipt.json": canonical_json(result.receipt)})
+    return result.receipt["stage_status"]
+
+
+def run_calibrate(manifest_path: Path, expected_manifest: str,
+                  labels_path: Path, expected_labels: str, policy_path: Path,
+                  out_bundle: Path) -> dict:
+    validate_output_path(manifest_path.parent, out_bundle)
+    manifest, violations, identity = load_manifest_for_calibration(
+        manifest_path, expected_sha256=expected_manifest)
+    policy = load_artifact_policy(policy_path)
+    labels, labels_sha256 = load_artifact_labels(
+        labels_path, policy, {record.id for record in manifest.records} | set(violations),
+        expected_sha256=expected_labels)
+    result = calibrate(manifest, violations, identity, labels, labels_sha256, policy)
+    publish_bundle(out_bundle, {"detail.json": canonical_json(result.detail),
+                                "receipt.json": canonical_json(result.receipt)})
+    return {"calibration": result.receipt["calibration_status"]}
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _Parser(add_help=False, allow_abbrev=False)
+    sub = parser.add_subparsers(dest="mode", required=True, parser_class=_Parser)
+    for mode in ("census", "calibrate"):
+        entry = sub.add_parser(mode, add_help=False, allow_abbrev=False)
+        entry.add_argument("--manifest", required=True)
+        entry.add_argument("--policy", required=True)
+        entry.add_argument("--out-bundle", required=True)
+        if mode == "calibrate":
+            entry.add_argument("--expect-manifest-sha256", required=True)
+            entry.add_argument("--labels", required=True)
+            entry.add_argument("--expect-labels-sha256", required=True)
+    try:
+        args = parser.parse_args(argv)
+        if args.mode == "census":
+            statuses = run_census(Path(args.manifest), Path(args.policy),
+                                  Path(args.out_bundle))
+        else:
+            statuses = run_calibrate(
+                Path(args.manifest), args.expect_manifest_sha256,
+                Path(args.labels), args.expect_labels_sha256,
+                Path(args.policy), Path(args.out_bundle))
+        for name in statuses:
+            sys.stderr.write(name + "\n")
+        return 0
+    except Refusal as exc:
+        sys.stderr.write(exc.code + "\n")
+        return 4 if exc.code == "output_unavailable" else 2
+    except Exception:
+        sys.stderr.write("internal_refusal\n")
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
