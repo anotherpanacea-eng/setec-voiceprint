@@ -497,6 +497,14 @@ def render_report(
     if rmatch:
         target_cls = rmatch.get("target_classification", {})
         match_block = rmatch.get("match", {})
+        refusal_reason = target_cls.get("refusal_reason")
+        warning = target_cls.get("warning")
+        if refusal_reason or warning:
+            lines.append("")
+        if refusal_reason:
+            lines.append(f"**Register classification refusal:** `{refusal_reason}`")
+        if warning:
+            lines.append(f"**Register classification warning:** {warning}")
         primary = target_cls.get("primary")
         conf = target_cls.get("confidence")
         if primary and primary != "unknown":
@@ -635,7 +643,7 @@ def _build_register_guard(
     baseline_entries: list[dict[str, Any]],
     target_classification: dict[str, Any],
 ) -> dict[str, Any]:
-    """Project the classifier's public v2 marker and build its match block."""
+    """Project public classifier diagnostics and build its v2 match block."""
     from register_classifier import REGISTER_TAXONOMY  # type: ignore
 
     return {
@@ -644,6 +652,8 @@ def _build_register_guard(
             "confidence": target_classification.get("confidence"),
             "secondary": target_classification.get("secondary"),
             "taxonomy": REGISTER_TAXONOMY,
+            "refusal_reason": target_classification.get("refusal_reason"),
+            "warning": target_classification.get("warning"),
         },
         "match": _build_register_match(
             baseline_entries,

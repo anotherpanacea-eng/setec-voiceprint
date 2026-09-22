@@ -131,3 +131,19 @@ Six documents and 135 function words (plus 200 char-ngrams per n) is a small fix
 **Rolling-window Delta oracle is blocked on the stylo API.** `stylo::rolling.delta` exposes only four parameters in its function signature (gui, path, primary.corpus.dir, secondary.corpus.dir); the window controls a SETEC user would want to verify against (`text.slice.length`, `text.slice.overlap`, `mfw`, `distance.measure`) are baked into the function body as local defaults. The documented `config.txt` override path hangs the R process under the conditions tested. If rolling-window verification becomes load-bearing later, the right move is a SETEC-internal pytest contract test on the windowing logic rather than a cross-tool oracle pass — `stylo::rolling.delta` was never going to provide a clean cross-tool reference at this API surface. The cross-tool oracle stays focused on what `stylo` is well-suited to be a reference for: feature-set frequency tables and pairwise distance math on those tables.
 
 The fixture is bounded by the public-domain commit constraint. The author's personal baseline corpus is not committed (it's voice-cloning input), so the oracle test cannot speak directly to the framework's distance-correctness on production data. The Federalist fixture is a valid proxy: same Burrows-Delta math, different register.
+
+## Register-classification diagnostics in voice-distance output
+
+The normalized voice-distance envelope preserves the classifier's nullable
+`refusal_reason` and `warning` at
+`results.register_match.target_classification`. A missing diagnostic in a legacy
+classification becomes `null`. The Markdown report displays a **register
+classification refusal** and any warning independently, including when the
+primary register is unknown. A refusal need not include a warning, and a warning
+need not indicate refusal.
+
+These fields explain the register classifier's result; they do not mean the
+voice-distance computation itself refused, add an authorship verdict, or change
+distance values, register match strength, taxonomy, or claim-license behavior.
+They remain nested diagnostics: the envelope's top-level `warnings` contract is
+unchanged. This forwarding change adds no new oracle or calibration evidence.

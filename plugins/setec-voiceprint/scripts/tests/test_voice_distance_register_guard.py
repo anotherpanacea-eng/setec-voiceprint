@@ -210,9 +210,89 @@ class TestBuildRegisterMatch:
             "confidence": 0.8,
             "secondary": ["first_person_essay"],
             "taxonomy": REGISTER_TAXONOMY,
+            "refusal_reason": None,
+            "warning": None,
         }
         assert guard["match"]["strength"] == "unavailable"
         assert guard["match"]["taxonomy"] == REGISTER_TAXONOMY
+
+
+def _diagnostic_result(classification):
+    """Small synthetic distance result, retaining the real register guard."""
+    return {
+        "target_summary": {"n_words": 5},
+        "baseline_summary": {"n_files": 2, "total_words": 400, "mean_words": 200},
+        "warnings": ["Synthetic distance warning."],
+        "families": {},
+        "overall": {"band": "Within range", "weighted_delta": 0.1,
+                    "interpretation": "Synthetic distance result."},
+        "register_match": vd._build_register_guard(
+            [{"metadata": {"register": "blog_essay"}}], classification,
+        ),
+    }
+
+
+class TestRegisterDiagnostics:
+    def test_real_short_text_refusal_survives_envelope_and_report(self):
+        from register_classifier import classify_register
+
+        classification = classify_register("The blue cup stood empty.")
+        assert classification["refusal_reason"] == "short_text"
+        assert classification["warning"]
+        result = _diagnostic_result(classification)
+        payload = vd.build_audit_payload(result, target_path=Path("synthetic.md"))
+        projected = payload["results"]["register_match"]["target_classification"]
+        assert projected["primary"] == "unknown"
+        assert projected["refusal_reason"] == classification["refusal_reason"]
+        assert projected["warning"] == classification["warning"]
+        assert "scores" not in projected and "evidence" not in projected
+        assert payload["warnings"] == ["Synthetic distance warning."]
+        rendered = vd.render_report(result, Path("synthetic.md"), 5)
+        assert "**Register classification refusal:** `short_text`" in rendered
+        assert classification["warning"] in rendered
+        assert "Synthetic distance result." in rendered
+
+    def test_reason_and_warning_are_independent_and_do_not_change_comparison(self):
+        cases = [
+            ("unknown", "short_text", "Synthetic short-text warning."),
+            ("unknown", "all_weak", None),
+            ("unknown", "exact_top_tie", "Synthetic tie warning."),
+            ("narrative_fiction", None, "Synthetic unrecognized-hint warning."),
+            ("narrative_fiction", None, None),
+        ]
+        for primary, reason, warning in cases:
+            classification = {"primary": primary, "confidence": 0.5,
+                              "secondary": [], "refusal_reason": reason, "warning": warning}
+            result = _diagnostic_result(classification)
+            legacy = _diagnostic_result({key: value for key, value in classification.items()
+                                         if key not in {"refusal_reason", "warning"}})
+            payload = vd.build_audit_payload(result, target_path="synthetic.md")
+            legacy_payload = vd.build_audit_payload(legacy, target_path="synthetic.md")
+            projected = payload["results"]["register_match"]["target_classification"]
+            assert projected["refusal_reason"] == reason
+            assert projected["warning"] == warning
+            assert result["register_match"]["match"] == legacy["register_match"]["match"]
+            assert payload["claim_license"] == legacy_payload["claim_license"]
+            assert payload["warnings"] == legacy_payload["warnings"]
+            assert payload["results"]["overall"] == legacy_payload["results"]["overall"]
+            rendered = vd.render_report(result, Path("synthetic.md"), 5)
+            assert ("**Register classification refusal:**" in rendered) == (reason is not None)
+            assert ("**Register classification warning:**" in rendered) == (warning is not None)
+            if reason:
+                assert f"`{reason}`" in rendered
+            if warning:
+                assert warning in rendered
+            if reason is None and warning is None:
+                assert rendered == vd.render_report(legacy, Path("synthetic.md"), 5)
+
+    def test_legacy_projection_uses_null_diagnostics_without_inventing_reason(self):
+        result = _diagnostic_result({"primary": "unknown", "confidence": 0.0, "secondary": []})
+        classification = result["register_match"]["target_classification"]
+        assert classification["refusal_reason"] is None
+        assert classification["warning"] is None
+        rendered = vd.render_report(result, Path("synthetic.md"), 5)
+        assert "Register classification refusal" not in rendered
+        assert "Register classification warning" not in rendered
 
 
 if __name__ == "__main__":
