@@ -558,3 +558,31 @@ def test_calibration_receipt_strict_mutations(tmp_path, mutation):
     path.write_bytes(candidate)
     with pytest.raises(Refusal, match="receipt_contract"):
         load_calibration_receipt(path, expected_hash)
+
+
+@pytest.mark.parametrize("name,inside,outside", [
+    ("markup_html", "<a>", "<a"),
+    ("markup_css", ".note {\n" + "color: red;\n" * 48 + "}",
+     ".note {\n" + "color: red;\n" * 49 + "}"),
+    ("markup_script", "<SCRIPT>", "<ſcript>"),
+    ("navigation_boilerplate", "Home", "Homecoming"),
+    ("markdown_apparatus", "# Heading", "#Heading"),
+    ("tei_xml_apparatus", "<TEI>", "<TEIsomething>"),
+    ("footnote_definition", "[^1]: note", "inline [^1] note"),
+    ("page_header", "Page 123456", "Page 1234567"),
+    ("line_number", "Before\n123456\nAfter", "Before\n1234567\nAfter"),
+    ("ocr_hyphenation", "well-\nknown", "well-\nKnown"),
+    ("running_head", "abc\n\nx\n\nabc\n\ny\n\nabc",
+     "ab\n\nx\n\nab\n\ny\n\nab"),
+    ("truncation_marker", "[truncated]", "[truncated?]"),
+    ("unbalanced_fence", "```python\ncode", "```\ncode\n```"),
+    ("verse_likely", "one two three four\n" * 39 + "one two three four",
+     "one two three four\n" * 40 + "one two three four"),
+    ("replacement_character", "a\ufffdb", "ordinary prose"),
+    ("private_use_character", "a\uf8ffb", "a\uf900b"),
+])
+def test_each_detector_at_boundary_and_one_outside(name, inside, outside):
+    def names(text):
+        return {item.artifact_type for item in detect_artifacts(text, WorkBudget(CEILINGS))}
+    assert name in names(inside)
+    assert name not in names(outside)
