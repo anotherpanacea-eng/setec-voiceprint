@@ -607,6 +607,9 @@ def _looks_like_css_block(removed: str) -> bool:
     )
 
 
+is_css_rule_block = _looks_like_css_block
+
+
 def _strip_line_groups(
     text: str,
     active: set[str],
