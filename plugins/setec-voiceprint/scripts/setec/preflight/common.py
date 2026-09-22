@@ -110,11 +110,15 @@ def _nonfinite(value: str) -> None:
     raise ValueError("non-finite number")
 
 
+def _reject_float(value: str) -> None:
+    raise ValueError("floating-point number")
+
+
 def parse_json(data: bytes, code: str) -> object:
     try:
         return json.loads(data.decode("utf-8", errors="strict"),
                           object_pairs_hook=_no_duplicates,
-                          parse_constant=_nonfinite)
+                          parse_constant=_nonfinite, parse_float=_reject_float)
     except (UnicodeError, ValueError, TypeError):
         raise Refusal(code) from None
 
