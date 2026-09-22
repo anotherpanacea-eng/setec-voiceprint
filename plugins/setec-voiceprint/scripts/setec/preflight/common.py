@@ -236,10 +236,16 @@ def record_set_sha256(records: Sequence[Record]) -> str:
     return domain_hash("setec-preflight-record-set-v1", canonical_json(pairs))
 
 
-def load_manifest(path: Path, *, combined_limit: int | None = None) -> Manifest:
+def _load_manifest(path: Path, *, combined_limit: int | None = None,
+                   calibration: bool = False,
+                   expected_sha256: str | None = None) -> tuple[Manifest, dict[str, str], str]:
     path = Path(os.path.abspath(path))
     root = path.parent
     snapshot = read_bounded(root, path.name, MANIFEST_LIMIT)
+    if expected_sha256 is not None:
+        require_hex(expected_sha256, "calibration_binding")
+        if snapshot.sha256 != expected_sha256:
+            raise Refusal("calibration_binding")
     rows = snapshot.data.split(b"\n")
     if rows and rows[-1] == b"":
         rows.pop()
@@ -294,10 +300,11 @@ def load_manifest(path: Path, *, combined_limit: int | None = None) -> Manifest:
         cache[name] = _read_bound(target, root, CANDIDATE_LIMIT, fingerprint)
         total += len(cache[name].data)
     records: list[Record] = []
+    violations: dict[str, str] = {}
+    content_pairs: list[list[str]] = []
     for row in parsed:
         span = row["span"]
         candidate = cache[row["path"]]
-        view, analysis_sha = _analysis(candidate.data)
         self_span = span["source_path"] == row["path"]
         if self_span and (span["start_byte"] != 0 or span["end_byte"] != len(candidate.data)
                           or span["source_bytes_sha256"] != candidate.sha256):
@@ -307,13 +314,33 @@ def load_manifest(path: Path, *, combined_limit: int | None = None) -> Manifest:
             "source_bytes_sha256": span["source_bytes_sha256"],
             "start_byte": span["start_byte"], "end_byte": span["end_byte"],
         }))
+        content_pairs.append([row["id"], content_sha])
+        violation = text_rule_violation(candidate.data)
+        if violation is not None:
+            if not calibration:
+                raise Refusal("input_contract")
+            violations[row["id"]] = violation
+            continue
+        view, analysis_sha = _analysis(candidate.data)
         records.append(Record(row["id"], row["group_id"], row["stratum"], row["path"],
                               span["source_path"], span["source_bytes_sha256"],
                               span["start_byte"], span["end_byte"], candidate,
                               view, analysis_sha, content_sha, self_span))
-    return Manifest(snapshot.sha256, root,
-                    {name: (fingerprint[0], fingerprint[1])
-                     for name, (_, fingerprint) in bound.items()}, tuple(records))
+    manifest = Manifest(snapshot.sha256, root,
+                        {name: (fingerprint[0], fingerprint[1])
+                         for name, (_, fingerprint) in bound.items()}, tuple(records))
+    record_set = domain_hash("setec-preflight-record-set-v1", canonical_json(
+        sorted(content_pairs, key=lambda pair: pair[0])))
+    return manifest, violations, record_set
+
+
+def load_manifest(path: Path, *, combined_limit: int | None = None) -> Manifest:
+    return _load_manifest(path, combined_limit=combined_limit)[0]
+
+
+def load_manifest_for_calibration(path: Path, *,
+                                  expected_sha256: str | None = None) -> tuple[Manifest, dict[str, str], str]:
+    return _load_manifest(path, calibration=True, expected_sha256=expected_sha256)
 
 
 def coordination_label(label: str, allowed: tuple[str, ...]) -> str:
