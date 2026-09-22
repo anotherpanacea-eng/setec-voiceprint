@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from setec.preflight.common import Refusal, canonical_json, domain_hash, load_manifest, plain_hash
+from setec.preflight.common import Refusal, canonical_json, domain_hash, load_manifest, parse_json, plain_hash
 from setec.preflight.overlap import run
 from setec.preflight.overlap_core import (
     load_overlap_detail, load_overlap_receipt, preflight_word_ngrams_v1,
@@ -106,6 +106,11 @@ def test_empty_manifest_never_passes(tmp_path):
     manifest.write_bytes(b"")
     with pytest.raises(Refusal, match="input_contract"):
         load_manifest(manifest)
+
+
+def test_nonfinite_json_number_uses_contract_refusal():
+    with pytest.raises(Refusal, match="input_contract"):
+        parse_json(b'{"value":1e999}', "input_contract")
 
 
 def test_alias_refused_even_with_distinct_names(tmp_path):
