@@ -11,7 +11,9 @@ import secrets
 import shutil
 import tempfile
 import unicodedata
+from collections import defaultdict
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Mapping, Sequence
 
 import atomic_publish
@@ -436,3 +438,63 @@ def validate_coordination_strata(value: object) -> tuple[str, ...]:
             or len(set(value)) != len(value)):
         raise Refusal("policy_contract")
     return tuple(value)
+
+
+def verify_overlap_detail(detail: dict, manifest: Manifest) -> None:
+    """Bind a strict overlap detail to live packet bytes and its components."""
+    code = "detail_contract"
+    if (detail["inputs"]["manifest_sha256"] != manifest.manifest_sha256 or
+            detail["inputs"]["record_set_sha256"] != record_set_sha256(manifest.records)):
+        raise Refusal(code)
+    live = {record.id: record for record in manifest.records}
+    rows = {row["id"]: row for row in detail["records"]}
+    if set(rows) != set(live):
+        raise Refusal(code)
+    for record_id, record in live.items():
+        row = rows[record_id]
+        expected = {
+            "group_id": record.group_id, "stratum": record.stratum,
+            "candidate_bytes_sha256": record.candidate.sha256,
+            "analysis_sha256": record.analysis_sha256,
+            "content_sha256": record.content_sha256,
+            "source_bytes_sha256": record.source_bytes_sha256,
+            "start_byte": record.start_byte, "end_byte": record.end_byte,
+            "self_span": record.self_span,
+        }
+        if any(row[key] != value for key, value in expected.items()):
+            raise Refusal(code)
+    parent = {record_id: record_id for record_id in live}
+
+    def find(item: str) -> str:
+        while parent[item] != item:
+            parent[item] = parent[parent[item]]
+            item = parent[item]
+        return item
+
+    actual_exact: set[tuple[str, str]] = set()
+    for edge in detail["edges"]:
+        left, right = edge["left_id"], edge["right_id"]
+        if left not in live or right not in live:
+            raise Refusal(code)
+        if edge["edge_type"] == "exact":
+            if live[left].analysis_sha256 != live[right].analysis_sha256:
+                raise Refusal(code)
+            actual_exact.add((left, right))
+        first, second = find(left), find(right)
+        if first != second:
+            parent[max(first, second)] = min(first, second)
+    by_analysis: dict[str, list[str]] = defaultdict(list)
+    for record in manifest.records:
+        by_analysis[record.analysis_sha256].append(record.id)
+    if sum(len(ids) * (len(ids) - 1) // 2 for ids in by_analysis.values()) > len(actual_exact):
+        raise Refusal(code)
+    expected_exact = {pair for ids in by_analysis.values()
+                      for pair in combinations(sorted(ids), 2)}
+    if actual_exact != expected_exact:
+        raise Refusal(code)
+    components: dict[str, set[str]] = defaultdict(set)
+    for record_id in live:
+        components[find(record_id)].add(record_id)
+    cluster_members = {frozenset(cluster["member_ids"]) for cluster in detail["clusters"]}
+    if cluster_members != {frozenset(members) for members in components.values()}:
+        raise Refusal(code)
