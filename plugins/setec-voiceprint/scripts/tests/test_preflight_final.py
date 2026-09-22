@@ -251,3 +251,55 @@ def test_final_detail_rejects_false_reason_count(tmp_path, reason):
     path.write_bytes(data)
     with pytest.raises(Refusal, match="detail_contract"):
         load_final_detail(path, plain_hash(data))
+
+
+def test_final_detail_rejects_edge_finding_without_changed_edge(tmp_path):
+    _, _, _, _, final, *_ = _fixture(
+        tmp_path, ["plain independent prose"], ["plain independent prose"])
+    value = json.loads((final / "detail.json").read_bytes())
+    assert value["projection"]["edge_changes"] == []
+    value["records"][0]["findings"] = ["edge_changed"]
+    value["projection"]["status"] = "failed"
+    value["stage_status"]["projection"] = "failed"
+    value["reason_counts"]["ok"] -= 1
+    data = canonical_json(value)
+    path = tmp_path / "false-edge-finding.json"
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="detail_contract"):
+        load_final_detail(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("extra", ["rekeyed_id", "retained_tuple_changed",
+                                   "split_reassigned", "edge_changed"])
+def test_final_detail_rejects_impossible_new_id_findings(tmp_path, extra):
+    _, _, _, _, final, *_ = _fixture(
+        tmp_path, ["intake prose"], ["new prose"], final_ids=["new"])
+    value = json.loads((final / "detail.json").read_bytes())
+    assert value["records"][0]["findings"] == ["added_id"]
+    value["records"][0]["findings"] = sorted(["added_id", extra])
+    value["reason_counts"][extra] += 1
+    data = canonical_json(value)
+    path = tmp_path / "impossible-new-id.json"
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="detail_contract"):
+        load_final_detail(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("count_name,value", [
+    ("final_clusters", 2), ("fragmented_intake_clusters", 1),
+    ("cluster_merged", 2), ("retained_tuple_changed", 2),
+])
+def test_final_receipt_rejects_impossible_aggregate_counts(tmp_path, count_name, value):
+    _, _, _, _, final, *_ = _fixture(
+        tmp_path, ["plain independent prose"], ["plain independent prose"])
+    receipt = json.loads((final / "receipt.json").read_bytes())
+    receipt["projection_counts"][count_name] = value
+    if count_name in receipt["reason_counts"]:
+        receipt["reason_counts"][count_name] = value
+        receipt["stage_status"]["projection"] = "failed"
+        receipt["reason_counts"]["ok"] -= 1
+    data = canonical_json(receipt)
+    path = tmp_path / "impossible-count-receipt.json"
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="receipt_contract"):
+        load_final_receipt(path, plain_hash(data))

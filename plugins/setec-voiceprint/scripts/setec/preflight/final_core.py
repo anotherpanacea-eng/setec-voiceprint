@@ -198,6 +198,7 @@ def project_final(intake_detail: dict, manifest: Manifest, policy: dict,
               "fragmented_intake_clusters": len(fragmented)}
     receipt = {"schema": RECEIPT_SCHEMA, "tool": TOOL, "tool_version": 1,
                **inputs, "detail_sha256": plain_hash(detail_bytes),
+               "overlap_detail_sha256": plain_hash(overlap_bytes),
                "record_set_sha256": record_set_sha256(manifest.records),
                "record_count": len(final_records), "stage_status": stages,
                "reason_counts": reasons, "projection_counts": counts,
@@ -277,8 +278,12 @@ def load_final_detail(path: Path, expected_sha256: str) -> dict:
         require_hex(row["cluster_sha256"], code)
         if row["intake_cluster_sha256"] is not None:
             require_hex(row["intake_cluster_sha256"], code)
-        if (row["intake_cluster_sha256"] is None) != bool(
-                {"added_id", "rekeyed_id"} & set(row["findings"])):
+        names = set(row["findings"])
+        new_names = names & {"added_id", "rekeyed_id"}
+        if ((row["intake_cluster_sha256"] is None) != (len(new_names) == 1) or
+                len(new_names) > 1 or
+                (new_names and names & {"retained_tuple_changed", "split_reassigned",
+                                       "edge_changed"})):
             raise Refusal(code)
         ids.append(row["id"])
         findings[row["id"]] = row["findings"]
@@ -363,10 +368,12 @@ def load_final_detail(path: Path, expected_sha256: str) -> dict:
     if edge_change_keys != sorted(set(edge_change_keys)):
         raise Refusal(code)
     current_edges = set(edge_keys)
+    changed_endpoints = {item for left, right, _, _ in edge_change_keys
+                         for item in (left, right)}
     if (any(((left, right, kind) in current_edges) != (side == "final_only")
             for left, right, kind, side in edge_change_keys) or
-            any("edge_changed" not in findings[item]
-                for left, right, _, _ in edge_change_keys for item in (left, right))):
+            any(("edge_changed" in names) != (record_id in changed_endpoints)
+                for record_id, names in findings.items())):
         raise Refusal(code)
     expected_fragmented = sorted(intake_hash for intake_hash in
                                  {item for item in intake_clusters_of.values() if item is not None}
@@ -407,12 +414,14 @@ def load_final_receipt(path: Path, expected_sha256: str) -> dict:
     value = _load(path, expected_sha256, RECEIPT_LIMIT,
                   {"schema", "tool", "tool_version", "manifest_sha256", "policy_sha256",
                    "split_map_sha256", "intake_manifest_sha256", "intake_receipt_sha256",
-                   "intake_detail_sha256", "detail_sha256", "record_set_sha256",
+                   "intake_detail_sha256", "detail_sha256", "overlap_detail_sha256",
+                   "record_set_sha256",
                    "record_count", "stage_status", "reason_counts",
                    "projection_counts", "span_evidence"}, RECEIPT_SCHEMA, code)
     for name in ("manifest_sha256", "policy_sha256", "split_map_sha256",
                  "intake_manifest_sha256", "intake_receipt_sha256",
-                 "intake_detail_sha256", "detail_sha256", "record_set_sha256"):
+                 "intake_detail_sha256", "detail_sha256", "overlap_detail_sha256",
+                 "record_set_sha256"):
         require_hex(value[name], code)
     if (type(value["record_count"]) is not int or not 1 <= value["record_count"] <= 5000 or
             value["span_evidence"] != "declared"):
@@ -424,7 +433,18 @@ def load_final_receipt(path: Path, expected_sha256: str) -> dict:
                                                    "fragmented_intake_clusters"}, code)
     if any(type(item) is not int or item < 0 for item in counts.values()):
         raise Refusal(code)
-    if (counts["intake_records"] < 1 or counts["retained"] + counts["removed"] !=
+    if (not 1 <= counts["intake_records"] <= 5000 or
+            not 1 <= counts["final_clusters"] <= value["record_count"] or
+            counts["fragmented_intake_clusters"] > counts["retained"] // 2 or
+            counts["cluster_merged"] > counts["final_clusters"] or
+            any(counts[name] > counts["retained"] for name in
+                ("retained_tuple_changed", "split_reassigned")) or
+            counts["edge_changed"] > 6 * counts["retained"] *
+            (counts["retained"] - 1) // 2 or
+            reasons["fuzzy_insufficient_evidence"] > value["record_count"] or
+            reasons["split_cluster"] > counts["final_clusters"] or
+            reasons["split_group"] > value["record_count"] or
+            counts["retained"] + counts["removed"] !=
             counts["intake_records"] or
             counts["retained"] + counts["added_id"] + counts["rekeyed_id"] !=
             value["record_count"] or

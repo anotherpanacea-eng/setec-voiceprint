@@ -307,6 +307,16 @@ def test_optional_receipt_purpose_register_and_calibration_binding(tmp_path):
     with pytest.raises(Refusal, match="receipt_binding"):
         run_report(manifest, "rewrite_mirror", paths, register,
                    tmp_path / "wrong-purpose")
+    multiplicity = json.loads(paths["multiplicity"].read_bytes())
+    multiplicity["overlap_detail_sha256"] = "0" * 64
+    wrong_graph = tmp_path / "wrong-graph-multiplicity.json"
+    wrong_graph.write_bytes(canonical_json(multiplicity))
+    original_multiplicity = paths["multiplicity"]
+    paths["multiplicity"] = wrong_graph
+    with pytest.raises(Refusal, match="receipt_binding"):
+        run_report(manifest, "conditioning_target", paths, register,
+                   tmp_path / "wrong-graph-report")
+    paths["multiplicity"] = original_multiplicity
     changed_register = tmp_path / "wrong-register.json"
     changed_register.write_bytes(canonical_json({
         "schema": "setec-preflight-sealed-register/1",

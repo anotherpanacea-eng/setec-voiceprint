@@ -90,7 +90,10 @@ def run(manifest_path: Path, purpose: str, receipt_paths: dict[str, Path | None]
                 receipt["record_set_sha256"] != record_set):
             raise Refusal("receipt_binding")
     multiplicity = receipts.get("multiplicity")
-    if multiplicity is not None and multiplicity[0]["purpose"] != purpose:
+    if multiplicity is not None and (
+            multiplicity[0]["purpose"] != purpose or
+            multiplicity[0]["overlap_detail_sha256"] !=
+            final_receipt["overlap_detail_sha256"]):
         raise Refusal("receipt_binding")
     holdout = receipts.get("holdout")
     if holdout is not None:
