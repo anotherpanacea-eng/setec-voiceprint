@@ -343,12 +343,13 @@ eight emittable families have distinct scorers, exact top ties refuse, and
 `voice_distance` propagates the taxonomy and live match strength into its
 claim-license block. Spec 76 adds a closed nullable `refusal_reason` for short
 text, all-weak scores, or exact top ties, so a consumer can bind those
-outcomes without parsing warning prose. **Known deferral:** the reason is
-carried on the `classify_register` result but is *not* forwarded through
-`voice_distance._build_register_guard`'s four-field projection, so it is not
-yet operator-visible — a documented Spec 76 scope choice, not an oversight,
-and the follow-up that forwards both `refusal_reason` and the classifier
-`warning` is still open. This
+outcomes without parsing warning prose. **Follow-up candidate (2026-09-22):** the voice-distance projection now
+forwards nullable `refusal_reason` and classifier `warning`, and Markdown renders
+both independently, including unknown classifications. The report labels a
+register classification refusal explicitly; it is not a distance-computation
+refusal. Top-level warnings, scoring and claim-license behavior are unchanged.
+This candidate remains subject to local validation and independent review;
+no release or consumer repin is claimed. The original classifier change
 did not itself build the H2 register-composition sweep. Spec 73's exact
 repaired contract was independently clear at SHA-256 `c2202380…`; the file then
 hashed to `80dbf2f4…` because its status header and dependency-state prose were
