@@ -3,7 +3,8 @@
 
 Model-free and network-free. They protect the run's safety boundaries (the
 spend ceiling refuses before any SDK is touched; non-public-domain works are
-refused), the consumer contract (emitted keyed manifests are accepted by the
+refused; the headless transport pins model, effort and prompt and stops on a
+usage limit), the consumer contract (emitted keyed manifests are accepted by the
 spec-79 long-form audit unchanged), and the answer validation and agreement
 arithmetic the pilot report depends on.
 """
@@ -11,7 +12,10 @@ arithmetic the pilot report depends on.
 from __future__ import annotations
 
 import json
+import os
+import stat
 import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -246,3 +250,116 @@ def test_actual_cost_uses_batch_and_cache_prices():
         "cache_creation_input_tokens": 0, "cache_read_input_tokens": 1_000_000}}]
     # (2.00 + 0.20 cache read + 1.00 output) * 0.5 batch
     assert sa.actual_cost(rows)["usd"] == pytest.approx(1.6)
+
+
+# ---------- headless transport (subscription) ------------------------
+
+_FAKE_CLAUDE = textwrap.dedent("""\
+    #!{python}
+    import json, os, sys
+    if sys.argv[1:] == ["--version"]:
+        print("9.9.9 (Claude Code)")
+        sys.exit(0)
+    prompt = sys.stdin.read()
+    with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as f:
+        f.write(json.dumps({{"argv": sys.argv[1:], "stdin": prompt}}) + "\\n")
+    model = sys.argv[sys.argv.index("--model") + 1]
+    if os.environ.get("FAKE_MODE") == "limit":
+        print(json.dumps({{"type": "result", "subtype": "error_during_execution",
+                          "is_error": True, "api_error_status": 429,
+                          "result": "Claude usage limit reached"}}))
+        sys.exit(1)
+    print(json.dumps({{
+        "type": "result", "subtype": "success", "is_error": False,
+        "stop_reason": "end_turn", "total_cost_usd": 0.01,
+        "result": open(os.environ["FAKE_ANSWER"], encoding="utf-8").read(),
+        "usage": {{"input_tokens": 3, "output_tokens": 40,
+                   "cache_creation_input_tokens": 900, "cache_read_input_tokens": 0}},
+        "modelUsage": {{
+            "claude-haiku-4-5-20251001": {{"outputTokens": 10, "canonicalModel": "claude-haiku-4-5"}},
+            model: {{"outputTokens": 40, "canonicalModel": model}}}}}}))
+""")
+
+
+@pytest.fixture()
+def fake_claude(run, tmp_path_factory, monkeypatch):
+    d = tmp_path_factory.mktemp("bin")
+    exe = d / "claude"
+    exe.write_text(_FAKE_CLAUDE.format(python=sys.executable), encoding="utf-8")
+    exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+    plan = json.loads((run / "plan.json").read_text())
+    answer = d / "answer.txt"
+    answer.write_text(json.dumps({"values": _answer(sa._plan_features(plan), 0)}), encoding="utf-8")
+    log = d / "log.jsonl"
+    monkeypatch.setenv("FAKE_LOG", str(log))
+    monkeypatch.setenv("FAKE_ANSWER", str(answer))
+    return exe, log
+
+
+def _calls(log: Path) -> list[dict]:
+    return [json.loads(x) for x in log.read_text().splitlines()] if log.exists() else []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in executable is a POSIX script")
+def test_headless_pins_model_effort_and_prompt_and_resumes(run, fake_claude):
+    exe, log = fake_claude
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
+    reqs = sa._read_jsonl(run / "requests" / "features.jsonl")
+    args = ["headless", "--run", str(run), "--step", "features", "--claude", str(exe)]
+    assert sa.main(args) == 0
+
+    calls = _calls(log)
+    assert len(calls) == len(reqs)
+    assert sorted(c["stdin"] for c in calls) == sorted(r["params"]["messages"][0]["content"] for r in reqs)
+    system = reqs[0]["params"]["system"][0]["text"]
+    for c in calls:
+        a = c["argv"]
+        assert a[a.index("--model") + 1] == "claude-sonnet-5"
+        assert a[a.index("--effort") + 1] == "low"
+        assert a[a.index("--tools") + 1] == ""
+        assert "--safe-mode" in a
+        assert Path(a[a.index("--system-prompt-file") + 1]).read_text(encoding="utf-8") == system
+
+    assert sa.main(args) == 0  # everything succeeded, so a rerun calls nothing
+    assert len(_calls(log)) == len(reqs)
+
+    assert sa.main(["emit", "--run", str(run)]) == 0
+    keyed = json.loads((run / "out" / "manifest-core-features.json").read_text())
+    ident = next(iter(keyed.values()))["judge_identity"]
+    pv = json.loads((run / "requests" / "features.meta.json").read_text())["prompt_version"]
+    assert ident == {"model": "claude-sonnet-5", "model_revision": "claude-sonnet-5",
+                     "prompt_version": f"{pv};claude-code/9.9.9 (Claude Code)"}
+    cost = json.loads((run / "out" / "cost.json").read_text())
+    assert cost["total_usd"] == 0
+    assert cost["subscription_list_usd"] == pytest.approx(0.01 * len(reqs))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in executable is a POSIX script")
+def test_headless_stops_on_usage_limit_and_resumes_later(run, fake_claude, monkeypatch):
+    exe, log = fake_claude
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
+    n = len(sa._read_jsonl(run / "requests" / "features.jsonl"))
+    assert n > 3
+    args = ["headless", "--run", str(run), "--step", "features", "--claude", str(exe),
+            "--parallel", "1"]
+    monkeypatch.setenv("FAKE_MODE", "limit")
+    assert sa.main(args) == 2
+    assert len(_calls(log)) < n
+    monkeypatch.delenv("FAKE_MODE")
+    assert sa.main(args) == 0
+    rows = sa._read_jsonl(run / "results" / "features.jsonl")
+    assert len(rows) == n and all(r["type"] == "succeeded" for r in rows)
+
+
+def test_headless_refuses_a_step_already_sent_as_a_batch(run):
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
+    (run / "state.json").write_text(json.dumps(
+        {"steps": {"features": {"batch_id": "b", "ceiling_usd": 1.0, "collected": False}}}))
+    assert sa.main(["headless", "--run", str(run), "--step", "features"]) == 2
+
+
+def test_headless_answer_from_a_fallback_model_is_an_error():
+    out = json.dumps({"subtype": "success", "is_error": False, "result": "{}",
+                      "usage": {}, "modelUsage": {"claude-opus-5": {"canonicalModel": "claude-opus-5"}}})
+    row = sa.parse_headless(out, "claude-opus-5-5")
+    assert row["type"] == "errored" and "claude-opus-5" in row["error"]

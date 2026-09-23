@@ -16,6 +16,8 @@ Pipeline (each step writes files; every network step is resumable):
   build     write Message Batches request files for one step
   submit    send one step's requests (refuses above --max-usd)
   collect   poll and download a step's results, recording token usage
+  headless  run one step's requests through headless Claude Code on the
+            operator's subscription instead of submit/collect
   emit      keyed spec-79 manifests (30 core features), all feature values,
             chapter cards, Sonnet/Opus agreement per feature, and actual cost
 
@@ -38,12 +40,19 @@ Run from ``plugins/setec-voiceprint/scripts``::
   ...
   python3 -m setec.calibration.storyscope_atlas emit --run RUN
 
+Transport: ``submit``/``collect`` bill the Message Batches API.
+``headless`` sends the same requests through ``claude -p`` with the step's
+model, effort and system prompt pinned, all tools off and all local
+customizations off (``--safe-mode``), so a subscription can carry the run.
+Claude Code adds a short environment preamble of its own; its version is
+folded into the prompt version so the two transports never share one.
+
 Data boundary: ``plan`` refuses any work that did not come from
 ``fetch`` (Project Gutenberg) unless ``--attest-public-domain`` is passed for
 a locally added file. Private corpus text must never be sent.
 
 The ``anthropic`` SDK is imported only by ``submit`` and ``collect``; all
-other steps are stdlib-only.
+other steps are stdlib-only (``headless`` needs the ``claude`` CLI).
 """
 
 from __future__ import annotations
@@ -53,10 +62,13 @@ import hashlib
 import json
 import math
 import re
+import shutil
+import subprocess
 import sys
 import time
 import urllib.request
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -631,7 +643,7 @@ def committed_usd(run: Path) -> float:
     return total
 
 
-def check_budget(run: Path, step: str, max_usd: float) -> dict:
+def _verified_meta(run: Path, step: str) -> dict:
     meta_p = run / "requests" / f"{step}.meta.json"
     if not meta_p.exists():
         raise AtlasError(f"no built requests for {step}; run build first")
@@ -639,6 +651,11 @@ def check_budget(run: Path, step: str, max_usd: float) -> dict:
     req_p = run / "requests" / f"{step}.jsonl"
     if _sha256_bytes(req_p.read_bytes()) != meta["requests_sha256"]:
         raise AtlasError(f"{step}: request file changed after build; rebuild")
+    return meta
+
+
+def check_budget(run: Path, step: str, max_usd: float) -> dict:
+    meta = _verified_meta(run, step)
     if step in _state(run)["steps"]:
         raise AtlasError(f"{step} was already submitted; collect it instead")
     already = committed_usd(run)
@@ -717,20 +734,157 @@ def cmd_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+# ------------------------------------------- headless (subscription)
+
+HEADLESS = "claude-code"
+_HEADLESS_FLAGS = ("--safe-mode", "--tools", "", "--strict-mcp-config",
+                   "--no-session-persistence", "--output-format", "json")
+_LIMIT_MARKERS = ("usage limit", "rate limit", "rate_limit", "overloaded")
+
+
+def headless_argv(claude: str, model: str, effort: str, system_file: Path) -> list[str]:
+    return [claude, "-p", "--model", model, "--effort", effort,
+            "--system-prompt-file", str(system_file), *_HEADLESS_FLAGS]
+
+
+def parse_headless(stdout: str, model: str) -> dict:
+    """A results row body from ``claude -p --output-format json`` output.
+
+    The answering model comes from ``modelUsage``; Claude Code may make a
+    small side call on another model, so the requested model must be among
+    the entries or the row is an error (a fallback model is not the judge
+    this step declared).
+    """
+    try:
+        obj = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        return {"type": "errored", "error": f"unparseable CLI output: {stdout[:300]!r}"}
+    if obj.get("is_error") or obj.get("subtype") != "success":
+        detail = obj.get("api_error_status") or obj.get("result") or obj.get("subtype")
+        return {"type": "errored", "error": str(detail)[:500]}
+    used = obj.get("modelUsage") or {}
+    answered = next((m for m, u in used.items()
+                     if model in (m, u.get("canonicalModel"))), None)
+    if answered is None:
+        return {"type": "errored", "error": f"answered by {sorted(used)}, not {model}"}
+    u = obj.get("usage") or {}
+    return {
+        "type": "succeeded",
+        "model": answered,
+        "stop_reason": obj.get("stop_reason"),
+        "text": obj.get("result") or "",
+        "usage": {k: int(u.get(k) or 0) for k in
+                  ("input_tokens", "output_tokens",
+                   "cache_creation_input_tokens", "cache_read_input_tokens")},
+        "transport": HEADLESS,
+        "list_usd": obj.get("total_cost_usd"),
+    }
+
+
+def _limit_hit(row: dict) -> bool:
+    err = str(row.get("error", "")).lower()
+    return row["type"] == "errored" and (
+        err.startswith(("429", "529")) or any(m in err for m in _LIMIT_MARKERS))
+
+
+def cmd_headless(args: argparse.Namespace) -> int:
+    run: Path = args.run
+    step = args.step
+    meta = _verified_meta(run, step)
+    st = _state(run)
+    s = st["steps"].get(step)
+    if s and s.get("transport") != HEADLESS:
+        raise AtlasError(f"{step} was submitted as a batch; collect it instead")
+    claude = shutil.which(args.claude)
+    if not claude:
+        raise AtlasError(f"no claude CLI found as {args.claude!r}")
+    version = subprocess.run([claude, "--version"], capture_output=True, text=True,
+                             encoding="utf-8", timeout=120).stdout.strip()
+    if not version:
+        raise AtlasError(f"{claude} --version printed nothing")
+    if s and s["claude_code"] != version:
+        raise AtlasError(f"{step} started under {s['claude_code']!r}, now {version!r}; "
+                         f"delete results/{step}.jsonl and its state entry to restart it")
+    reqs = _read_jsonl(run / "requests" / f"{step}.jsonl")
+    sys_file = run / "requests" / f"{step}.system.txt"
+    sys_file.write_text(reqs[0]["params"]["system"][0]["text"], encoding="utf-8")
+    cwd = run / "headless-cwd"  # empty, so no project files sit beside the call
+    cwd.mkdir(exist_ok=True)
+    res_p = run / "results" / f"{step}.jsonl"
+    done = {r["custom_id"]: r for r in _read_jsonl(res_p)} if res_p.exists() else {}
+    todo = [r for r in reqs if done.get(r["custom_id"], {}).get("type") != "succeeded"]
+    if args.limit:
+        todo = todo[:args.limit]
+    st["steps"][step] = {"transport": HEADLESS, "claude_code": version,
+                         "n_requests": len(reqs), "prompt_version": meta["prompt_version"],
+                         "ceiling_usd": 0.0, "collected": False}
+    _write_json(run / "state.json", st)
+    _log(f"{step}: {len(todo)} of {len(reqs)} requests to run through {version}")
+
+    def one(r: dict) -> dict:
+        p = r["params"]
+        argv = headless_argv(claude, p["model"], p["output_config"]["effort"], sys_file)
+        try:
+            proc = subprocess.run(argv, input=p["messages"][0]["content"], capture_output=True,
+                                  text=True, encoding="utf-8", cwd=cwd, timeout=args.timeout)
+            body = parse_headless(proc.stdout, p["model"])
+            if body["type"] == "errored" and proc.stderr.strip():
+                body["error"] += f" | stderr: {proc.stderr.strip()[:300]}"
+        except subprocess.TimeoutExpired:
+            body = {"type": "errored", "error": f"timed out after {args.timeout}s"}
+        return {"custom_id": r["custom_id"], "unit": r["unit"], **body}
+
+    stopped = None
+    seen = good = 0
+    with ThreadPoolExecutor(max_workers=max(1, args.parallel)) as ex:
+        futs = [ex.submit(one, r) for r in todo]
+        for fut in as_completed(futs):
+            if fut.cancelled():
+                continue
+            row = fut.result()
+            done[row["custom_id"]] = row
+            _write_jsonl(res_p, sorted(done.values(), key=lambda x: x["custom_id"]))
+            seen += 1
+            good += row["type"] == "succeeded"
+            if row["type"] != "succeeded":
+                _log(f"{row['custom_id']}: {row['error']}")
+            if stopped is None and _limit_hit(row):
+                stopped = f"a usage or rate limit ({row['error']})"
+            elif stopped is None and seen >= 3 and good == 0:
+                stopped = f"the first three calls all failed ({row['error']})"
+            if stopped:
+                for f in futs:
+                    f.cancel()
+    ok = sum(1 for r in reqs if done.get(r["custom_id"], {}).get("type") == "succeeded")
+    st["steps"][step]["collected"] = ok == len(reqs)
+    _write_json(run / "state.json", st)
+    _log(f"{step}: {ok} of {len(reqs)} succeeded")
+    if stopped:
+        raise AtlasError(f"{step}: stopped on {stopped}; "
+                         f"rerun the same command to resume once it is fixed")
+    return 0 if ok == len(reqs) else 3
+
+
 def actual_cost(rows: list[dict]) -> dict:
+    """USD billed through the API, plus what subscription-carried rows would
+    have cost at list price (reported, never billed)."""
     usd = 0.0
+    list_usd = 0.0
     tok = Counter()
     for r in rows:
         u = r.get("usage")
         if not u:
             continue
-        p = PRICES.get(r.get("model", ""), PRICES["claude-opus-5-5"])
         tok.update(u)
+        if r.get("transport") == HEADLESS:
+            list_usd += r.get("list_usd") or 0.0
+            continue
+        p = PRICES.get(r.get("model", ""), PRICES["claude-opus-5-5"])
         usd += (u["input_tokens"] * p["input"]
                 + u["cache_creation_input_tokens"] * p["input"] * CACHE_WRITE_MULT
                 + u["cache_read_input_tokens"] * p["input"] * CACHE_READ_MULT
                 + u["output_tokens"] * p["output"]) / 1e6 * BATCH_DISCOUNT
-    return {"usd": round(usd, 4), "tokens": dict(tok)}
+    return {"usd": round(usd, 4), "subscription_list_usd": round(list_usd, 4), "tokens": dict(tok)}
 
 
 # --------------------------------------------------------------- emit
@@ -848,6 +1002,9 @@ def cmd_emit(args: argparse.Namespace) -> int:
             continue
         meta = _read_json(meta_p) if meta_p.exists() else {}
         pv = meta.get("prompt_version")
+        ran = _state(run)["steps"].get(step, {})
+        if ran.get("transport") == HEADLESS and pv:
+            pv = f"{pv};{HEADLESS}/{ran['claude_code']}"
         requested_model = meta.get("model")
         cost[step] = actual_cost(rows)
         if step == "cards":
@@ -884,8 +1041,11 @@ def cmd_emit(args: argparse.Namespace) -> int:
     if "features" in by_step and "gold" in by_step:
         _write_json(out / "agreement.json", agreement(by_step["features"], by_step["gold"], seg_feats))
     total = round(sum(c["usd"] for c in cost.values()), 4)
-    _write_json(out / "cost.json", {"per_step": cost, "total_usd": total})
-    _log(f"emit: {len(all_rows)} judged units, actual cost ${total:.2f}; see {out}")
+    sub = round(sum(c["subscription_list_usd"] for c in cost.values()), 4)
+    _write_json(out / "cost.json", {"per_step": cost, "total_usd": total,
+                                    "subscription_list_usd": sub})
+    _log(f"emit: {len(all_rows)} judged units, billed ${total:.2f}, "
+         f"subscription list-price equivalent ${sub:.2f}; see {out}")
     return 0
 
 
@@ -935,6 +1095,14 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--wait", action="store_true", help="poll until the batch ends")
     c.add_argument("--poll-seconds", type=int, default=60)
     c.set_defaults(func=cmd_collect)
+
+    h = with_run(sub.add_parser("headless", help="run a step through claude -p on a subscription"))
+    h.add_argument("--step", choices=STEPS, required=True)
+    h.add_argument("--claude", default="claude", help="the Claude Code executable")
+    h.add_argument("--parallel", type=int, default=4, help="concurrent claude processes")
+    h.add_argument("--limit", type=int, default=0, help="run at most N pending requests")
+    h.add_argument("--timeout", type=int, default=900, help="seconds per request")
+    h.set_defaults(func=cmd_headless)
 
     e = with_run(sub.add_parser("emit", help="manifests, feature table, agreement, cost"))
     e.set_defaults(func=cmd_emit)
