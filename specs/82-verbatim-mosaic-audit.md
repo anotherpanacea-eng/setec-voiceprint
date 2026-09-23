@@ -6,8 +6,8 @@
 > how many distinct sources its covered spans come from, and how the style
 > shifts at the joins between them.
 
-- **Status:** Draft (2026-09-23, project thread on n-gram stitching). Number 82
-  is provisional; nothing on `origin` claims it as of this draft.
+- **Status:** M1 build-contract after review; M2 gated on a separate replay
+  protocol and operator authorization (2026-09-23).
 - **Tier:** near-term for M1 (stdlib); M2 replay of model-backed signals on the
   local box.
 - **GPU required:** no for M1; M2 re-scoring uses the existing model-backed
@@ -119,25 +119,50 @@ Given a target and a reference pool (directory or manifest, same inputs as
    `min_ngram` default 8) and keep **every** counted span with its start,
    length and the reference document it matches. Per-span source lookup is
    the same first-containing-document rule `_source_of` already applies to the
-   top five. This needs either an additive option on `audit_originality`
+   top five. This is a canonical assignment, not proof of the actual source:
+   duplicate/shared passages may occur in several documents, so multiplicity
+   is a pool-order-dependent diagnostic, not an origin count. Preserve
+   `originality_audit._run`'s path **or canonical token-fingerprint**
+   self-exclusion before matching; a target equal to its sole reference must
+   refuse as bad input. This needs either an additive option on `audit_originality`
    (default off, existing envelope unchanged) or an import of its matcher, as
    spec 75 imports `_tokens`; the build chooses and the review checks that the
-   existing capability's output is byte-identical with the option off.
-2. **Source multiplicity:** distinct sources over counted spans; sources per
-   100 covered tokens; the share of covered tokens contributed by the single
-   largest source.
+   existing capability's output is byte-identical with the option off. Carry
+   `--max-span` (default 256) and report `max_span_cap` and
+   `longest_match_capped`; cap-induced splits are not source joins and must
+   not inflate junction counts. A capped span length is a lower bound.
+2. **Source multiplicity:** distinct canonically assigned source IDs over
+   counted spans; sources per 100 covered tokens; the share of covered tokens
+   assigned to the single largest source. With zero counted spans, report zero
+   distinct sources and `null` for both ratios, without a division by zero.
 3. **Junctions:** every boundary between two consecutive counted spans whose
    sources differ, plus every boundary between a counted span and uncovered
    text. For each, compute the stylometric distance between the 1 to 2
-   sentences on either side using the `within_doc_segmentation` feature lens
-   (`_window_features`, `_z_score_features`, `_cosine_similarity`), imported,
-   not copied. A per-sentence series of the same features is also emitted so
-   an operator can run change-point segmentation over it (the 2605.03723
-   framing) without this surface choosing change points itself.
-4. **Junction discontinuity:** the distribution of junction distances against
-   the distribution of distances between adjacent same-size windows lying
-   wholly inside single spans. Report both distributions as quantiles, never
-   a ratio promoted to a headline.
+   sentences on either side using the `within_doc_segmentation` feature
+   families and standardization/distance math. Extract an import-clean,
+   shared pure lens if needed: importing `within_doc_segmentation` currently
+   reaches optional NLTK/download paths through `variance_audit`, so the M1
+   CLI must use a fixed stdlib sentence split and make no download or model
+   import. Map word-token offsets to character offsets and clip windows at
+   the join so a mid-sentence join never compares a sentence with itself.
+   Fix one document-wide feature-name vocabulary: all function-word and
+   sentence-shape features, plus the top 256 character n-grams by summed raw
+   per-window frequency across the target (lexicographic tie break). Then
+   z-score over the complete document-wide window
+   population and apply that same basis to junction and interior distances;
+   never fit a separate z-score basis per pair. Use the sibling lens's
+   zero-variance and zero-norm handling. If a side lacks usable text, emit
+   `null` distance with a reason. Emit every sentence's offsets and numeric
+   features under the fixed vocabulary (no copied prose); bound the feature
+   vocabulary, not the number of sentences. Never choose change points on
+   this surface.
+4. **Junction discontinuity:** compare source-to-source joins and
+   covered-to-uncovered joins as separate typed distributions against
+   distances between adjacent same-size, nonoverlapping windows wholly
+   inside one maximal contiguous same-assigned-source run (including spans
+   split only by `max_span`). Short runs may have no such windows; use an empty
+   distribution and `null` quantiles in that case. Report quantiles, never a
+   ratio promoted to a headline.
 5. Uncovered text is reported as a share and as a run-length distribution
    (connective runs in a Frankentext are short).
 
@@ -146,7 +171,12 @@ Given a target and a reference pool (directory or manifest, same inputs as
 A deterministic, model-free generator that builds labeled mosaics from a
 public-domain pool: sample paragraphs by seeded hash, truncate each to a
 sentence boundary, join them with connective sentences drawn from a small
-fixed list, and emit token-level copied/connective labels. This is a weak
+fixed list, and emit token-level copied/connective labels. Fixture assertions
+must use source excerpts with unique >=`min_ngram` token runs, no cross-boundary
+match or connective match, distinct source IDs and cap-aware lengths (the
+matcher caps one span at 256 tokens by default). Compare token-level coverage
+and canonical source assignments, not paragraph boundaries that the greedy
+matcher may legitimately merge or split. This is a weak
 proxy for an LLM-composed Frankentext (no selection for relevance, no
 smoothing edits), and the spec says so; it exists so M1a has exact ground
 truth in CI.
@@ -156,13 +186,19 @@ truth in CI.
 1. Compose LLM Frankentexts locally from a **public-domain** pool (Project
    Gutenberg or the admitted public Victorian corpus) with the paper's
    published prompts, at copy targets 25/50/75/90%, plus vanilla generations
-   on the same prompts and the human snippets alone. Labels come from M1a's
-   cover against the pool.
+   on the same prompts and the human snippets alone. Human, vanilla and mosaic
+   class labels come from generation provenance, independently of M1a. Its
+   measured coverage is a covariate, never a ground-truth class label.
 2. Re-score every shipped discrimination and smoothing signal on the three
    classes (human, vanilla machine, mosaic). Report per signal and per copy
    target the oriented AUC and TPR at FPR {0.05, 0.10}, reusing
    `plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py`'s `oriented_auc` and
-   `tpr_at_fpr_budgets` so signal orientation is not re-derived.
+   `tpr_at_fpr_budgets` where registered. Before replay, publish a per-signal
+   scalar, meaning and fixed orientation registry for every named surface;
+   the existing `DETECTOR_DIRECTION` covers only a subset and its helpers
+   refuse unknown names. Any surface without a defensible scalar/orientation
+   is reported as unscorable with a reason, never silently omitted or assigned
+   a direction from the replay data.
 3. Run M1a on the mosaics against (a) the true source pool, (b) a disjoint
    pool of the same register, and (c) the operator's default impostor pool, to
    show how the profile degrades when the source is not held.
@@ -180,17 +216,24 @@ threshold or a detector.
   `plugins/setec-voiceprint/scripts/claim_license_surfaces/set_level_diversity.txt` already exists.
 - **CLI:** `python3 plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py
   --target T (--reference-dir D | --manifest M) [--min-ngram 8]
-  [--junction-sentences 2] [--json] [--out PATH]`.
+  [--max-span 256] [--junction-sentences 2] [--json] [--out PATH]`.
 - **JSON envelope:** via `output_schema.build_output()`. `results` keys:
   `coverage`, `n_counted_spans`, `span_length_quantiles`, `n_distinct_sources`,
   `sources_per_100_covered_tokens`, `largest_source_share`,
-  `uncovered_run_quantiles`, `junctions` (offsets, lengths, source ids, distance;
-  no prose beyond what `originality_audit` already emits for its top spans),
-  `junction_distance_quantiles`, `within_span_distance_quantiles`,
-  `min_ngram`, `n_reference_docs`, `assumptions`.
+  `uncovered_run_quantiles`, `junctions` (token offsets, lengths, canonical
+  source ids, boundary type, distance or null and reason; no prose beyond what
+  `originality_audit` already emits for its top spans), `sentence_features`
+  (all sentence token/character offsets plus a fixed bounded numeric feature
+  vocabulary, no prose),
+  `source_join_distance_quantiles`, `coverage_join_distance_quantiles`,
+  `within_span_distance_quantiles` (null when no samples),
+  `min_ngram`, `max_span_cap`, `longest_match_capped`,
+  `n_reference_docs`, `assumptions`.
 - **Claim license:** licenses "this much of the target is covered by verbatim
-  spans of at least `min_ngram` tokens from this pool, drawn from this many
-  sources, with these style distances at the joins". Refuses: AI/human,
+  spans of at least `min_ngram` tokens from this pool, canonically assigned to
+  this many source IDs under the first-containing rule, with these style
+  distances at the joins". The assigned IDs need not be the actual origins
+  when passages occur in multiple sources. Refuses: AI/human,
   authorship, plagiarism, copyright, intent, and any statement about text
   whose sources are not in the pool. A low coverage against a pool that lacks
   the sources says nothing.
@@ -207,13 +250,18 @@ File (planned): *plugins/setec-voiceprint/scripts/tests/test_verbatim_mosaic_aud
 - Deterministic output for fixed inputs.
 - Envelope shape and claim license present; recursive no-verdict walk finds no
   `is_ai`, `is_human`, `verdict`, `label` or selection key.
-- On an M1b fixture, recovered span boundaries and sources match the
-  generator's labels exactly (the method-specific pin).
-- A single-source long quotation yields `n_distinct_sources == 1`; an M1b
+- On an M1b fixture satisfying the uniqueness/cap constraints above,
+  token-level coverage and canonical source assignments match the generator's
+  labels exactly (the method-specific pin).
+- A strict excerpt of a single-source long quotation yields
+  `n_distinct_sources == 1`; an M1b
   mosaic of k paragraphs from k documents yields k.
 - With the option off, `originality_audit` output is unchanged (regression
   guard for the additive change, as a behavior test, not a source-shape test).
 - Empty target or empty pool returns the existing bad-input refusal.
+- A nonempty target and pool with no matching spans returns null ratios and
+  null/empty distance summaries without crashing; an identical sole pool
+  document is self-excluded and refuses bad input.
 
 ## Calibration posture
 
