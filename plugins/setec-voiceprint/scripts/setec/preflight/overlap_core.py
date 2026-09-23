@@ -10,7 +10,7 @@ from typing import Mapping, Sequence
 import unicodedata
 
 from .common import (
-    Manifest, Record, Refusal, WorkBudget, canonical_json, collapse_strata,
+    Manifest, Record, Refusal, Snapshot, WorkBudget, canonical_json, collapse_strata,
     domain_hash, exact_keys, load_strict_json, plain_hash, read_bounded,
     record_set_sha256, require_hex, validate_coordination_strata, parse_json,
     OVERLAP_DETAIL_LIMIT, POLICY_LIMIT, RECEIPT_LIMIT, SPLIT_LIMIT,
@@ -56,9 +56,9 @@ class SplitIntegrity:
     cross_split_groups: tuple[str, ...]
 
 
-def load_overlap_policy(path: Path) -> tuple[dict, str]:
+def parse_overlap_policy(snapshot: Snapshot) -> tuple[dict, str]:
+    """Validate policy bytes already read under ``POLICY_LIMIT`` (§5)."""
     keys = frozenset({"schema", "fuzzy", "coordination_strata"})
-    snapshot = read_bounded(path.parent, path.name, POLICY_LIMIT)
     policy = exact_keys(parse_json(snapshot.data, "policy_contract"), keys,
                         "policy_contract")
     if policy["schema"] != POLICY_SCHEMA:
@@ -79,8 +79,13 @@ def load_overlap_policy(path: Path) -> tuple[dict, str]:
     return policy, snapshot.sha256
 
 
-def load_split_map(path: Path, records: Sequence[Record]) -> tuple[dict[str, str], str]:
-    snapshot = read_bounded(path.parent, path.name, SPLIT_LIMIT)
+def load_overlap_policy(path: Path) -> tuple[dict, str]:
+    return parse_overlap_policy(read_bounded(path.parent, path.name, POLICY_LIMIT))
+
+
+def parse_split_map(snapshot: Snapshot,
+                    records: Sequence[Record]) -> tuple[dict[str, str], str]:
+    """Validate split-map bytes already read under ``SPLIT_LIMIT`` (§6.6)."""
     value = exact_keys(parse_json(snapshot.data, "split_contract"),
                        {"schema", "assignments"}, "split_contract")
     if value["schema"] != SPLIT_SCHEMA:
@@ -91,6 +96,10 @@ def load_split_map(path: Path, records: Sequence[Record]) -> tuple[dict[str, str
                    for item in assignments.values())):
         raise Refusal("split_contract")
     return assignments, snapshot.sha256
+
+
+def load_split_map(path: Path, records: Sequence[Record]) -> tuple[dict[str, str], str]:
+    return parse_split_map(read_bounded(path.parent, path.name, SPLIT_LIMIT), records)
 
 
 def _separator(char: str) -> bool:
