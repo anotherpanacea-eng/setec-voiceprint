@@ -94,6 +94,24 @@ def test_exact_conflict_and_private_pairwise_detail(tmp_path):
                                   load_manifest(candidate_path)) == generator
 
 
+@pytest.mark.parametrize("alias_first", [True, False])
+def test_confinement_outranks_alias_across_manifests(tmp_path, alias_first):
+    manifests = [_manifest(tmp_path / name, ["alpha beta gamma"], prefix=name)
+                 for name in ("candidate", "sealed")]
+    alias, missing = manifests if alias_first else manifests[::-1]
+    row = json.loads(alias.read_bytes())
+    os.link(alias.parent / row["path"], alias.parent / "alias.txt")
+    row["span"]["source_path"] = "alias.txt"
+    alias.write_bytes(canonical_json(row))
+    row = json.loads(missing.read_bytes())
+    row["path"] = "missing.txt"
+    missing.write_bytes(canonical_json(row))
+    with pytest.raises(Refusal) as caught:
+        run(manifests[0], [("sealed", manifests[1])], _policy(tmp_path),
+            tmp_path / "private", tmp_path / "conflicts")
+    assert caught.value.code == "path_confinement"
+
+
 def test_exact_analysis_normalizes_crlf_and_nfc(tmp_path):
     detail, receipt, _, statuses, *_ = _run(
         tmp_path, ["café\nnext"], ["cafe\u0301\r\nnext"])

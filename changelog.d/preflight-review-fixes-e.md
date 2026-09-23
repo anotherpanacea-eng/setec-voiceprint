@@ -22,3 +22,5 @@
 - The holdout detail and receipt reloaders now refuse `detail_contract` and
   `receipt_contract` when two sealed entries share a manifest hash. A genuine
   run refuses such input, so a P7 report can no longer accept one.
+
+The holdout manifest-planning phase compares refusals across all input manifests, so an earlier alias or manifest-size failure cannot mask later path confinement.

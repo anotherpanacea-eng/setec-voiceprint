@@ -68,8 +68,22 @@ def run(candidate_manifest_path: Path, sealed_paths: list[tuple[str, Path]],
     candidate_input = bind_input(candidate_manifest_path)
     sealed_inputs = [(label, bind_input(path)) for label, path in sealed_paths]
     policy_input = bind_input(policy_path)
-    candidate_plan = plan_manifest(candidate_input)
-    sealed_plans = [(label, plan_manifest(source)) for label, source in sealed_inputs]
+    # Each manifest plan can refuse before the next manifest is inspected.
+    # Collect this phase's refusals across the whole packet, so an alias (or
+    # oversized manifest) cannot hide confinement failure in a later manifest.
+    plans = []
+    plan_refusals = []
+    for source in (candidate_input, *(source for _, source in sealed_inputs)):
+        try:
+            plans.append(plan_manifest(source))
+        except Refusal as exc:
+            plan_refusals.append(exc)
+    if plan_refusals:
+        priority = {code: index for index, code in enumerate(
+            ("input_changed", "path_confinement", "path_alias", "size_limit"))}
+        raise min(plan_refusals, key=lambda exc: priority[exc.code])
+    candidate_plan = plans[0]
+    sealed_plans = [(label, plan) for (label, _), plan in zip(sealed_inputs, plans[1:])]
     # Sizes: the policy, then every manifest's candidates under one combined ceiling.
     policy_input.check_size(POLICY_LIMIT)
     remaining = COMBINED_CANDIDATE_LIMIT
