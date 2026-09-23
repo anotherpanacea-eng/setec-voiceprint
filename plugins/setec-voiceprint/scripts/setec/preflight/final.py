@@ -22,9 +22,11 @@ def run(intake_bundle: Path, manifest_path: Path, policy_path: Path,
         split_map_path: Path, out_bundle: Path) -> tuple[bytes, dict[str, str]]:
     manifest = load_manifest(manifest_path)
     policy, policy_sha256 = load_overlap_policy(policy_path)
+    # Slice 1 section 4.6 ranks split_contract above the intake bundle's
+    # receipt, detail, and binding refusals, so the split map is read first.
+    assignments, split_hash = load_split_map(split_map_path, manifest.records)
     intake_detail, _, intake_receipt_hash, intake_detail_hash = load_intake_bundle(
         intake_bundle, policy, policy_sha256)
-    assignments, split_hash = load_split_map(split_map_path, manifest.records)
     result = project_final(intake_detail, manifest, policy, assignments, split_hash,
                            intake_receipt_hash, intake_detail_hash)
     detail_bytes = canonical_json(result.detail)

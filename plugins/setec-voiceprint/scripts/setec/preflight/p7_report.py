@@ -57,21 +57,23 @@ def _register(path: Path) -> list[str]:
 
 def run(manifest_path: Path, purpose: str, receipt_paths: dict[str, Path | None],
         sealed_register: Path | None, out_bundle: Path) -> tuple[bytes, tuple]:
+    # Phases follow slice 1 section 4.6's order, first match wins: the manifest
+    # (input_contract and above), then purpose (policy_contract), then every
+    # receipt and register contract (receipt_contract), then binding
+    # (receipt_binding), then output.
+    manifest = load_manifest(manifest_path)
     if purpose not in PURPOSES:
         raise Refusal("policy_contract")
-    if ((receipt_paths.get("holdout") is None) != (sealed_register is None) or
+    if (receipt_paths.get("final") is None or receipt_paths.get("intake") is None or
+            (receipt_paths.get("holdout") is None) != (sealed_register is None) or
             (receipt_paths.get("calibration") is not None and
              receipt_paths.get("artifact") is None)):
         raise Refusal("receipt_contract")
-    manifest = load_manifest(manifest_path)
     receipts = {name: (_receipt(path, name) if path is not None else None)
                 for name, path in receipt_paths.items()}
-    final = receipts["final"]
-    intake = receipts["intake"]
-    if final is None or intake is None:
-        raise Refusal("receipt_contract")
-    final_receipt, final_sha = final
-    intake_receipt, intake_sha = intake
+    register = _register(sealed_register) if sealed_register is not None else None
+    final_receipt, final_sha = receipts["final"]
+    intake_receipt, intake_sha = receipts["intake"]
     record_set = record_set_sha256(manifest.records)
     if (final_receipt["manifest_sha256"] != manifest.manifest_sha256 or
             final_receipt["record_set_sha256"] != record_set or
@@ -96,10 +98,9 @@ def run(manifest_path: Path, purpose: str, receipt_paths: dict[str, Path | None]
             final_receipt["overlap_detail_sha256"]):
         raise Refusal("receipt_binding")
     holdout = receipts.get("holdout")
-    if holdout is not None:
-        actual = sorted(item["manifest_sha256"] for item in holdout[0]["sealed"])
-        if actual != _register(sealed_register):
-            raise Refusal("receipt_binding")
+    if holdout is not None and (
+            {item["manifest_sha256"] for item in holdout[0]["sealed"]} != set(register)):
+        raise Refusal("receipt_binding")
     calibration = receipts.get("calibration")
     artifact = receipts.get("artifact")
     if calibration is not None and artifact is not None and any(

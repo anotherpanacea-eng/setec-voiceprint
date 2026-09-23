@@ -103,6 +103,71 @@ def test_required_receipt_contract_and_intake_binding(tmp_path):
         run_report(manifest, "conditioning_target", paths, None, tmp_path / "report")
 
 
+def test_clusters_at_intake_row_reads_intake_split_integrity(tmp_path):
+    manifest, _, final, policy, _ = _fixture(tmp_path)
+    unsplit = tmp_path / "intake-without-splits"
+    run_overlap(manifest, policy, unsplit)
+    intake_receipt = json.loads((unsplit / "receipt.json").read_bytes())
+    assert intake_receipt["stage_status"]["split_integrity"] == "not_run"
+    # Task A refuses such an intake, so the final receipt must be hand-built.
+    forged = json.loads((final / "receipt.json").read_bytes())
+    forged["intake_receipt_sha256"] = plain_hash((unsplit / "receipt.json").read_bytes())
+    forged["intake_detail_sha256"] = intake_receipt["detail_sha256"]
+    forged_path = tmp_path / "hand-built-final.json"
+    forged_path.write_bytes(canonical_json(forged))
+    paths = _paths(unsplit, final)
+    paths["final"] = forged_path
+    data, _ = run_report(manifest, "conditioning_target", paths, None,
+                         tmp_path / "report")
+    row = next(item for item in json.loads(data)["rows"]
+               if item["obligation"] == "clusters_at_intake")
+    assert row["status"] == "not_run"
+    assert row["receipt_sha256"] == forged["intake_receipt_sha256"]
+
+
+def test_refusal_order_follows_master_order(tmp_path):
+    manifest, intake, final, *_ = _fixture(tmp_path)
+    bad_manifest = manifest.parent / "bad.jsonl"
+    bad_manifest.write_bytes(b"not json\n")
+    # input_contract outranks policy_contract (purpose) and receipt_contract
+    # (a holdout receipt without a register).
+    with pytest.raises(Refusal, match="input_contract"):
+        run_report(bad_manifest, "unknown_purpose", _paths(intake, final), None,
+                   tmp_path / "r1")
+    paths = _paths(intake, final)
+    paths["holdout"] = final / "receipt.json"
+    with pytest.raises(Refusal, match="input_contract"):
+        run_report(bad_manifest, "conditioning_target", paths, None, tmp_path / "r2")
+    # receipt_contract (a malformed register) outranks receipt_binding (rule 1).
+    sealed = _sealed(tmp_path, "unrelated sealed words", "sealed-order")
+    holdout_receipt, _ = _holdout(tmp_path, manifest, sealed, 50)
+    unbound = json.loads((final / "receipt.json").read_bytes())
+    unbound["record_set_sha256"] = "0" * 64
+    unbound_path = tmp_path / "unbound-final.json"
+    unbound_path.write_bytes(canonical_json(unbound))
+    paths = _paths(intake, final)
+    paths["final"] = unbound_path
+    paths["holdout"] = holdout_receipt
+    malformed = tmp_path / "malformed-register.json"
+    malformed.write_bytes(b"not a register")
+    with pytest.raises(Refusal, match="receipt_contract"):
+        run_report(manifest, "conditioning_target", paths, malformed, tmp_path / "r3")
+
+
+def test_sealed_register_binding_compares_sets(tmp_path):
+    # Spec 06 section 6.2 rule 6 compares the set of sealed manifest hashes.
+    manifest, intake, final, *_ = _fixture(tmp_path)
+    sealed = _sealed(tmp_path, "unrelated sealed words", "sealed-set")
+    holdout_receipt, register = _holdout(tmp_path, manifest, sealed, 60, label="a")
+    receipt = json.loads(holdout_receipt.read_bytes())
+    receipt["sealed"] = [receipt["sealed"][0], {**receipt["sealed"][0], "label": "b"}]
+    repeated = tmp_path / "repeated-sealed-hash.json"
+    repeated.write_bytes(canonical_json(receipt))
+    paths = _paths(intake, final)
+    paths["holdout"] = repeated
+    run_report(manifest, "conditioning_target", paths, register, tmp_path / "report")
+
+
 def test_decision_precedence_and_all_purposes_unreachable():
     base = tuple(Row(name, "unavailable" if name in
                      {"semantic_dedup", "perplexity_two_tail"} else "passed",
