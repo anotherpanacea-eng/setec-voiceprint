@@ -12,7 +12,18 @@
       "WebFetch(domain:api.openalex.org)",
       "WebFetch(domain:openreview.net)",
       "WebFetch(domain:en.wikipedia.org)",
-      "WebFetch(domain:docs.claude.com)"
+      "WebFetch(domain:docs.claude.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:www.semanticscholar.org)",
+      "WebFetch(domain:archive.org)",
+      "WebFetch(domain:doi.org)",
+      "WebFetch(domain:dl.acm.org)",
+      "WebFetch(domain:zenodo.org)",
+      "WebFetch(domain:platform.claude.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:www.alphaxiv.org)",
+      "WebFetch(domain:pan.webis.de)",
+      "WebFetch(domain:tinker-docs.thinkingmachines.ai)"
     ]
   }
 }
