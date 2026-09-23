@@ -72,6 +72,17 @@ limit; rerun once, and if they fail again, report the errors from the results fi
 
 ## Check and hand back
 
+Plans bind the work bytes. Once requests exist, use a new run directory to
+replan; once a step starts or has results, it cannot be rebuilt in place.
+Older runs without the plan/request bindings must also start in a new directory.
+This prevents resumed answers from acquiring a different prompt or passage identity.
+
+For the optional batch route, `--max-usd` checks an estimated allowance using
+the selected model, maximum output tokens and cold-cache writes. Input token
+counts and configured prices are estimates, so this is not an absolute billing
+cap; verify prices and allow headroom before submitting. A constant-label gold
+sample has undefined kappa and cannot recommend a cheaper judge.
+
 - Read `out/cost.json` (billed USD should be 0; `subscription_list_usd` is what the run
   would have cost at API list price) and `out/agreement.json`. Sample `out/features.jsonl`
   and `out/cards.jsonl`, looking for parse failures, `warnings`, and any `stop_reason`

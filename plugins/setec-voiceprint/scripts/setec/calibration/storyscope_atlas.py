@@ -421,13 +421,18 @@ def estimate_tokens(chars: int) -> int:
 
 def step_cost(model: str, input_tokens: int, cached_prefix_tokens: int, n_requests: int,
               output_tokens: int) -> dict:
-    """USD for one step under batch pricing: an uncached ceiling and a
-    cached expectation (first request writes the prefix, the rest read it)."""
+    """Estimated batch allowance and cached expectation.
+
+    The allowance reserves maximum output and a cold cache write per request.
+    Input token counts and configured prices remain estimates, so this is not
+    an absolute provider billing cap.
+    """
     p = PRICES[model]
     base_in = input_tokens * p["input"] / 1e6
     prefix_all = cached_prefix_tokens * n_requests * p["input"] / 1e6
     out = output_tokens * p["output"] / 1e6
-    ceiling = (base_in + prefix_all + out) * BATCH_DISCOUNT
+    ceiling = (base_in + prefix_all * CACHE_WRITE_MULT
+               + n_requests * MAX_TOKENS * p["output"] / 1e6) * BATCH_DISCOUNT
     if n_requests:
         cached_prefix = (cached_prefix_tokens * p["input"] / 1e6) * (
             CACHE_WRITE_MULT + CACHE_READ_MULT * (n_requests - 1))
@@ -439,6 +444,8 @@ def step_cost(model: str, input_tokens: int, cached_prefix_tokens: int, n_reques
 
 def cmd_plan(args: argparse.Namespace) -> int:
     run: Path = args.run
+    if any((run / "requests").glob("*.meta.json")):
+        raise AtlasError("requests already built; use a new run directory to replan")
     works = _load_inventory(run)
     if not works:
         raise AtlasError("no works; run fetch first")
@@ -463,6 +470,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
                                 **stdlib_counts(text[c["start"]:c["end"]])})
         plan_works.append({
             "work_id": w["work_id"], "title": w["title"], "author": w["author"],
+            "text_sha256": w["text_sha256"],
             "chapters": chapters,
             "segmentation": nls.segmentation_dict(seg),
             "segment_spans": [[s.start, s.end] for s in seg.segments],
@@ -553,6 +561,8 @@ def step_requests(run: Path, plan: dict, step: str, model: str | None = None) ->
     sys_text = system_prompt(step, feats, schema["card_fields"])
     mdl, effort, answer, thinking = STEP_DEFAULTS[step]
     mdl = model or mdl
+    if mdl not in PRICES:
+        raise AtlasError(f"no price record for model {mdl!r}")
     reqs: list[dict] = []
 
     def params(user_text: str) -> dict:
@@ -567,6 +577,8 @@ def step_requests(run: Path, plan: dict, step: str, model: str | None = None) ->
 
     for w in plan["works"]:
         text = _read_work(run, w["work_id"])
+        if _sha256_bytes(text.encode("utf-8")) != w.get("text_sha256"):
+            raise AtlasError("work text differs from plan; use a new run directory")
         head = f"Work: {w['title']} by {w['author']}."
         if step == "cards":
             n = len(w["chapters"])
@@ -590,7 +602,9 @@ def step_requests(run: Path, plan: dict, step: str, model: str | None = None) ->
             lines = []
             for c in w["chapters"]:
                 r = cards.get((w["work_id"], c["index"]))
-                card = (r or {}).get("parsed", {}).get("card") if r else None
+                card = ((r or {}).get("parsed") or {}).get("card")
+                if not r or r["type"] != "succeeded" or not isinstance(card, dict) or set(card) != set(schema["card_fields"]):
+                    raise AtlasError("works needs a successful complete card for every chapter")
                 lines.append(json.dumps({"chapter": c["index"] + 1, "card": card}, ensure_ascii=False))
             reqs.append({"custom_id": f"works-{w['work_id']}",
                          "unit": {"work_id": w["work_id"]},
@@ -598,8 +612,9 @@ def step_requests(run: Path, plan: dict, step: str, model: str | None = None) ->
     return sys_text, reqs
 
 
-def estimate_step(run: Path, plan: dict, step: str) -> dict:
+def estimate_step(run: Path, plan: dict, step: str, model: str | None = None) -> dict:
     mdl, _effort, answer, thinking = STEP_DEFAULTS[step]
+    mdl = model or mdl
     if step == "works" and not (run / "results" / "cards.jsonl").exists():
         # Cards do not exist yet: estimate each work's card text from chapter count.
         feats = _plan_features(plan)
@@ -608,7 +623,7 @@ def estimate_step(run: Path, plan: dict, step: str) -> dict:
         user_tokens = n_ch * STEP_DEFAULTS["cards"][2]
         n = len(plan["works"])
     else:
-        sys_text, reqs = step_requests(run, plan, step)
+        sys_text, reqs = step_requests(run, plan, step, mdl)
         user_tokens = sum(estimate_tokens(len(r["params"]["messages"][0]["content"])) for r in reqs)
         n = len(reqs)
     prefix = estimate_tokens(len(sys_text))
@@ -619,14 +634,17 @@ def estimate_step(run: Path, plan: dict, step: str) -> dict:
 
 def cmd_build(args: argparse.Namespace) -> int:
     run: Path = args.run
+    if args.step in _state(run)["steps"] or (run / "results" / f"{args.step}.jsonl").exists():
+        raise AtlasError("step already started; use a new run directory to rebuild")
     plan = _read_json(run / "plan.json")
     if args.step == "works" and not (run / "results" / "cards.jsonl").exists():
         raise AtlasError("works needs collected cards; submit and collect cards first")
     sys_text, reqs = step_requests(run, plan, args.step, args.model)
     path = run / "requests" / f"{args.step}.jsonl"
     _write_jsonl(path, reqs)
-    est = estimate_step(run, plan, args.step)
+    est = estimate_step(run, plan, args.step, args.model)
     meta = {"step": args.step, "prompt_version": prompt_version(sys_text),
+            "plan_sha256": _sha256_bytes((run / "plan.json").read_bytes()),
             "model": reqs[0]["params"]["model"] if reqs else None,
             "n_requests": len(reqs), "requests_sha256": _sha256_bytes(path.read_bytes()),
             "estimate": est}
@@ -663,10 +681,17 @@ def _verified_meta(run: Path, step: str) -> dict:
     req_p = run / "requests" / f"{step}.jsonl"
     if _sha256_bytes(req_p.read_bytes()) != meta["requests_sha256"]:
         raise AtlasError(f"{step}: request file changed after build; rebuild")
+    if _sha256_bytes((run / "plan.json").read_bytes()) != meta.get("plan_sha256"):
+        raise AtlasError("plan changed after build; use a new run directory")
+    state = _state(run)["steps"].get(step)
+    if state and state.get("requests_sha256") != meta["requests_sha256"]:
+        raise AtlasError("requests differ from started step; use a new run directory")
     return meta
 
 
 def check_budget(run: Path, step: str, max_usd: float) -> dict:
+    if not math.isfinite(max_usd) or max_usd < 0:
+        raise AtlasError("--max-usd must be finite and nonnegative")
     meta = _verified_meta(run, step)
     if step in _state(run)["steps"]:
         raise AtlasError(f"{step} was already submitted; collect it instead")
@@ -690,6 +715,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
         requests=[{"custom_id": r["custom_id"], "params": r["params"]} for r in reqs])
     st = _state(run)
     st["steps"][args.step] = {"batch_id": batch.id, "n_requests": len(reqs),
+                              "requests_sha256": meta["requests_sha256"],
                               "prompt_version": meta["prompt_version"],
                               "ceiling_usd": meta["estimate"]["ceiling_usd"],
                               "submitted_unix": int(time.time()), "collected": False}
@@ -700,6 +726,7 @@ def cmd_submit(args: argparse.Namespace) -> int:
 
 def cmd_collect(args: argparse.Namespace) -> int:
     run: Path = args.run
+    _verified_meta(run, args.step)
     st = _state(run)
     s = st["steps"].get(args.step)
     if not s:
@@ -738,6 +765,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
             })
         rows.append(row)
     rows.sort(key=lambda r: r["custom_id"])
+    _validate_result_rows(run, args.step, rows)
     _write_jsonl(run / "results" / f"{args.step}.jsonl", rows)
     s["collected"] = True
     _write_json(run / "state.json", st)
@@ -771,15 +799,27 @@ def parse_headless(stdout: str, model: str) -> dict:
         obj = json.loads(stdout)
     except (json.JSONDecodeError, ValueError):
         return {"type": "errored", "error": f"unparseable CLI output: {stdout[:300]!r}"}
+    if not isinstance(obj, dict):
+        return {"type": "errored", "error": "CLI output is not a result object"}
     if obj.get("is_error") or obj.get("subtype") != "success":
         detail = obj.get("api_error_status") or obj.get("result") or obj.get("subtype")
         return {"type": "errored", "error": str(detail)[:500]}
-    used = obj.get("modelUsage") or {}
+    used = obj.get("modelUsage", {})
+    if not isinstance(used, dict) or any(not isinstance(u, dict) for u in used.values()):
+        return {"type": "errored", "error": "CLI model usage is malformed"}
     answered = next((m for m, u in used.items()
                      if model in (m, u.get("canonicalModel"))), None)
     if answered is None:
         return {"type": "errored", "error": f"answered by {sorted(used)}, not {model}"}
-    u = obj.get("usage") or {}
+    u = obj.get("usage", {})
+    if not isinstance(u, dict) or any(type(u.get(k, 0)) is not int or u.get(k, 0) < 0 for k in
+                                    ("input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")):
+        return {"type": "errored", "error": "CLI token usage is malformed"}
+    if not isinstance(obj.get("result"), str):
+        return {"type": "errored", "error": "CLI result text is malformed"}
+    cost = obj.get("total_cost_usd")
+    if cost is not None and (type(cost) not in (int, float) or not math.isfinite(cost) or cost < 0):
+        return {"type": "errored", "error": "CLI cost is malformed"}
     return {
         "type": "succeeded",
         "model": answered,
@@ -818,16 +858,19 @@ def cmd_headless(args: argparse.Namespace) -> int:
         raise AtlasError(f"{step} started under {s['claude_code']!r}, now {version!r}; "
                          f"delete results/{step}.jsonl and its state entry to restart it")
     reqs = _read_jsonl(run / "requests" / f"{step}.jsonl")
-    sys_file = run / "requests" / f"{step}.system.txt"
+    sys_file = (run / "requests" / f"{step}.system.txt").resolve()
     sys_file.write_bytes(reqs[0]["params"]["system"][0]["text"].encode("utf-8"))
     cwd = run / "headless-cwd"  # empty, so no project files sit beside the call
     cwd.mkdir(exist_ok=True)
     res_p = run / "results" / f"{step}.jsonl"
-    done = {r["custom_id"]: r for r in _read_jsonl(res_p)} if res_p.exists() else {}
+    previous = _read_jsonl(res_p)
+    _validate_result_rows(run, step, previous)
+    done = {r["custom_id"]: r for r in previous}
     todo = [r for r in reqs if done.get(r["custom_id"], {}).get("type") != "succeeded"]
     if args.limit:
         todo = todo[:args.limit]
     st["steps"][step] = {"transport": HEADLESS, "claude_code": version,
+                         "requests_sha256": meta["requests_sha256"],
                          "n_requests": len(reqs), "prompt_version": meta["prompt_version"],
                          "ceiling_usd": 0.0, "collected": False}
     _write_json(run / "state.json", st)
@@ -847,7 +890,8 @@ def cmd_headless(args: argparse.Namespace) -> int:
                 body["error"] += f" | stderr: {err[:300]}"
         except subprocess.TimeoutExpired:
             body = {"type": "errored", "error": f"timed out after {args.timeout}s"}
-        return {"custom_id": r["custom_id"], "unit": r["unit"], **body}
+        return {"custom_id": r["custom_id"], "unit": r["unit"],
+                "transport": HEADLESS, **body}
 
     stopped = None
     seen = good = 0
@@ -940,9 +984,35 @@ def validate_values(values: Any, feats: list[Feature]) -> tuple[dict, list[str]]
     return out, warns
 
 
+def _validate_result_rows(run: Path, step: str, rows: list[dict]) -> None:
+    if not rows:
+        return
+    _verified_meta(run, step)
+    requests = {r["custom_id"]: r for r in _read_jsonl(run / "requests" / f"{step}.jsonl")}
+    seen = set()
+    transport = _state(run)["steps"].get(step, {}).get("transport")
+    for row in rows:
+        cid = row.get("custom_id") if isinstance(row, dict) else None
+        if not isinstance(cid, str) or cid not in requests or cid in seen:
+            raise AtlasError("results contain duplicate or unknown request IDs")
+        seen.add(cid)
+        request = requests[cid]
+        if row.get("unit") != request["unit"]:
+            raise AtlasError("result unit differs from its built request")
+        if row.get("transport") != transport:
+            raise AtlasError("result transport differs from its recorded step")
+        if row.get("type") == "succeeded":
+            model = row.get("model")
+            requested = request["params"]["model"]
+            if not isinstance(model, str) or not (model == requested or model.startswith(requested + "-")):
+                raise AtlasError("result model differs from its built request")
+
+
 def _parsed_rows(run: Path, step: str) -> list[dict]:
     rows = []
-    for r in _read_jsonl(run / "results" / f"{step}.jsonl"):
+    raw_rows = _read_jsonl(run / "results" / f"{step}.jsonl")
+    _validate_result_rows(run, step, raw_rows)
+    for r in raw_rows:
         r = dict(r)
         r["parsed"] = extract_json(r.get("text", "")) if r["type"] == "succeeded" else None
         rows.append(r)
@@ -957,7 +1027,7 @@ def cohen_kappa(a: list[str], b: list[str]) -> float | None:
     ca, cb = Counter(a), Counter(b)
     pe = sum(ca[k] * cb[k] for k in set(ca) | set(cb)) / (n * n)
     if pe == 1.0:
-        return 1.0 if po == 1.0 else None
+        return None
     return (po - pe) / (1 - pe)
 
 
@@ -1007,15 +1077,22 @@ def cmd_emit(args: argparse.Namespace) -> int:
     work_feats = [f for f in feats if f.scope == "work"]
     core_ids = {f.key for f in nfs.CORE_FEATURES}
     out = run / "out"
+    # Validate every present result set before replacing derived products.
+    for step in STEPS:
+        _parsed_rows(run, step)
+    # An empty/current result set must retire an earlier successful export.
+    for step in ("features", "gold"):
+        _write_json(out / f"manifest-core-{step}.json", {})
+    _write_json(out / "agreement.json", [])
+    _write_jsonl(out / "cards.jsonl", [])
     all_rows: list[dict] = []
     by_step: dict[str, dict[str, dict]] = {}
     cost: dict[str, dict] = {}
     for step in STEPS:
-        meta_p = run / "requests" / f"{step}.meta.json"
         rows = _parsed_rows(run, step)
         if not rows:
             continue
-        meta = _read_json(meta_p) if meta_p.exists() else {}
+        meta = _verified_meta(run, step)
         pv = meta.get("prompt_version")
         ran = _state(run)["steps"].get(step, {})
         if ran.get("transport") == HEADLESS and pv:
@@ -1102,7 +1179,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = with_run(sub.add_parser("submit", help="send a step's batch"))
     s.add_argument("--step", choices=STEPS, required=True)
     s.add_argument("--max-usd", type=float, required=True,
-                   help="refuse if committed spend plus this step's ceiling exceeds it")
+                   help="refuse above estimated allowance (input tokens/prices are estimates, not a billing cap)")
     s.set_defaults(func=cmd_submit)
 
     c = with_run(sub.add_parser("collect", help="download a step's results"))

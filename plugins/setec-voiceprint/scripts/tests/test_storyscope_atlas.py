@@ -264,6 +264,99 @@ def test_actual_cost_uses_batch_and_cache_prices():
     assert sa.actual_cost(rows)["usd"] == pytest.approx(1.6)
 
 
+def test_constant_labels_do_not_claim_perfect_chance_corrected_agreement():
+    assert sa.cohen_kappa(["absent"] * 8, ["absent"] * 8) is None
+
+
+def test_budget_reserves_maximum_output_and_model_override(run):
+    assert sa.main(["build", "--run", str(run), "--step", "features",
+                    "--model", "claude-opus-5-5"]) == 0
+    meta = sa._verified_meta(run, "features")
+    output_only = meta["n_requests"] * sa.MAX_TOKENS * 20 / 1e6 * sa.BATCH_DISCOUNT
+    assert meta["estimate"]["model"] == "claude-opus-5-5"
+    assert meta["estimate"]["ceiling_usd"] > output_only
+    with pytest.raises(sa.AtlasError):
+        sa.check_budget(run, "features", output_only)
+
+
+@pytest.mark.parametrize("limit", [float("nan"), float("inf"), -1.0])
+def test_invalid_budget_cannot_bypass_refusal(run, limit):
+    with pytest.raises(sa.AtlasError):
+        sa.check_budget(run, "features", limit)
+
+
+def test_changed_work_cannot_be_judged_under_old_segment_hashes(run):
+    path = run / "works" / "pg1.txt"
+    path.write_bytes(path.read_bytes().replace(b"Speech", b"Altered"))
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 2
+    assert not (run / "requests" / "features.jsonl").exists()
+
+
+def test_rebuild_cannot_relabel_existing_results(run):
+    args = ["build", "--run", str(run), "--step", "features"]
+    assert sa.main(args) == 0
+    _fake_results(run, "features")
+    before = (run / "requests" / "features.meta.json").read_bytes()
+    assert sa.main(args + ["--model", "claude-opus-5-5"]) == 2
+    assert (run / "requests" / "features.meta.json").read_bytes() == before
+
+
+def test_changed_plan_refuses_emit_and_transport(run):
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
+    _fake_results(run, "features")
+    plan = sa._read_json(run / "plan.json")
+    plan["features"][0]["options"] = ["different"]
+    sa._write_json(run / "plan.json", plan)
+    assert sa.main(["emit", "--run", str(run)]) == 2
+    with pytest.raises(sa.AtlasError):
+        sa.check_budget(run, "features", 100)
+
+
+def test_replan_refuses_after_requests_built(run):
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
+    before = (run / "plan.json").read_bytes()
+    assert sa.main(["plan", "--run", str(run), "--taxonomy", str(run / "taxonomy.json")]) == 2
+    assert (run / "plan.json").read_bytes() == before
+
+
+def test_emit_retires_previous_manifests_and_agreement(run):
+    for step in ("features", "gold"):
+        assert sa.main(["build", "--run", str(run), "--step", step]) == 0
+        _fake_results(run, step)
+    assert sa.main(["emit", "--run", str(run)]) == 0
+    assert sa._read_json(run / "out" / "manifest-core-features.json")
+    assert sa._read_json(run / "out" / "agreement.json")
+    rows = sa._read_jsonl(run / "results" / "features.jsonl")
+    for row in rows:
+        row["text"] = "{}"
+    sa._write_jsonl(run / "results" / "features.jsonl", rows)
+    (run / "results" / "gold.jsonl").unlink()
+    assert sa.main(["emit", "--run", str(run)]) == 0
+    assert sa._read_json(run / "out" / "manifest-core-features.json") == {}
+    assert sa._read_json(run / "out" / "manifest-core-gold.json") == {}
+    assert sa._read_json(run / "out" / "agreement.json") == []
+
+
+@pytest.mark.parametrize("mutation", ["unit", "unknown", "duplicate", "model", "transport"])
+def test_emit_rejects_results_rebound_to_other_requests(run, mutation):
+    assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
+    _fake_results(run, "features")
+    rows = sa._read_jsonl(run / "results" / "features.jsonl")
+    if mutation == "unit":
+        rows[0]["unit"]["content_sha256"] = "f" * 64
+    elif mutation == "unknown":
+        rows[0]["custom_id"] = "unknown"
+    elif mutation == "duplicate":
+        rows.append(rows[0])
+    elif mutation == "model":
+        rows[0]["model"] = "claude-opus-5-5"
+    else:
+        rows[0]["transport"] = sa.HEADLESS
+    sa._write_jsonl(run / "results" / "features.jsonl", rows)
+    assert sa.main(["emit", "--run", str(run)]) == 2
+    assert not (run / "out" / "manifest-core-features.json").exists()
+
+
 # ---------- headless transport (subscription) ------------------------
 
 _FAKE_CLAUDE = textwrap.dedent("""\
@@ -313,11 +406,13 @@ def _calls(log: Path) -> list[dict]:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the stand-in executable is a POSIX script")
-def test_headless_pins_model_effort_and_prompt_and_resumes(run, fake_claude):
+@pytest.mark.parametrize("relative", [False, True])
+def test_headless_pins_model_effort_and_prompt_and_resumes(run, fake_claude, monkeypatch, relative):
     exe, log = fake_claude
     assert sa.main(["build", "--run", str(run), "--step", "features"]) == 0
     reqs = sa._read_jsonl(run / "requests" / "features.jsonl")
-    args = ["headless", "--run", str(run), "--step", "features", "--claude", str(exe)]
+    monkeypatch.chdir(run.parent)
+    args = ["headless", "--run", run.name if relative else str(run), "--step", "features", "--claude", str(exe)]
     assert sa.main(args) == 0
 
     calls = _calls(log)
@@ -330,7 +425,9 @@ def test_headless_pins_model_effort_and_prompt_and_resumes(run, fake_claude):
         assert a[a.index("--effort") + 1] == "low"
         assert a[a.index("--tools") + 1] == ""
         assert "--safe-mode" in a
-        assert Path(a[a.index("--system-prompt-file") + 1]).read_text(encoding="utf-8") == system
+        prompt_file = Path(a[a.index("--system-prompt-file") + 1])
+        assert prompt_file.is_absolute()
+        assert prompt_file.read_text(encoding="utf-8") == system
 
     assert sa.main(args) == 0  # everything succeeded, so a rerun calls nothing
     assert len(_calls(log)) == len(reqs)
@@ -375,3 +472,28 @@ def test_headless_answer_from_a_fallback_model_is_an_error():
                       "usage": {}, "modelUsage": {"claude-opus-5": {"canonicalModel": "claude-opus-5"}}})
     row = sa.parse_headless(out, "claude-opus-5-5")
     assert row["type"] == "errored" and "claude-opus-5" in row["error"]
+
+
+@pytest.mark.parametrize("output", [[], None, {"subtype": "success", "modelUsage": [1]}])
+def test_malformed_headless_output_is_a_retryable_error(output):
+    assert sa.parse_headless(json.dumps(output), "claude-sonnet-5")["type"] == "errored"
+
+
+@pytest.mark.parametrize("field,value", [("usage", []), ("modelUsage", []),
+    ("total_cost_usd", "1"), ("total_cost_usd", float("inf")), ("total_cost_usd", -1)])
+def test_malformed_headless_accounting_is_a_retryable_error(field, value):
+    output = {"subtype": "success", "result": "{}", "usage": {},
+              "modelUsage": {"claude-sonnet-5": {}}, "total_cost_usd": 0}
+    output[field] = value
+    assert sa.parse_headless(json.dumps(output), "claude-sonnet-5")["type"] == "errored"
+
+
+def test_work_judging_refuses_incomplete_chapter_cards(run):
+    assert sa.main(["build", "--run", str(run), "--step", "cards"]) == 0
+    req = sa._read_jsonl(run / "requests" / "cards.jsonl")[0]
+    sa._write_jsonl(run / "results" / "cards.jsonl", [{
+        "custom_id": req["custom_id"], "unit": req["unit"], "type": "succeeded",
+        "model": req["params"]["model"], "text": "{\"card\": {}}",
+    }])
+    assert sa.main(["build", "--run", str(run), "--step", "works"]) == 2
+    assert not (run / "requests" / "works.jsonl").exists()
