@@ -143,7 +143,8 @@ def _match_len(target: list[str], i: int, ref_search: str, max_len: int) -> int:
 
 def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
                       min_ngram: int = DEFAULT_MIN_NGRAM,
-                      max_span: int = _MAX_SPAN) -> dict[str, Any]:
+                      max_span: int = _MAX_SPAN,
+                      include_spans: bool = False) -> dict[str, Any]:
     """Greedily cover the target with longest left-to-right reference matches (DJ Search).
 
     Returns the value-level results: `coverage`/`originality`, span stats, and attribution for the
@@ -188,10 +189,12 @@ def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
         histogram[b] = histogram.get(b, 0) + 1
 
     # Attribution: for the longest few spans, the first reference source that contains them.
+    source_strings = [(src, " " + " ".join(toks) + " ") for src, toks in ref_docs]
+
     def _source_of(span_text: str) -> str | None:
         needle = " " + span_text + " "
-        for src, toks in ref_docs:
-            if needle in " " + " ".join(toks) + " ":
+        for src, source_text in source_strings:
+            if needle in source_text:
                 return src
         return None
 
@@ -200,7 +203,7 @@ def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
         for s in sorted(spans, key=lambda s: -s["length"])[:5]
     ]
 
-    return {
+    result = {
         "coverage": round(coverage, 6),
         "originality": round(1.0 - coverage, 6),
         "longest_match_tokens": longest_overall,
@@ -228,6 +231,13 @@ def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
                         "match continues from the next position).",
         },
     }
+    if include_spans:
+        # Same first-containing-document rule as attribution, without emitting prose.
+        result["all_spans"] = [
+            {"start": s["start"], "length": s["length"],
+             "source": _source_of(s["text"])} for s in spans
+        ]
+    return result
 
 
 def _claim_license() -> dict[str, str]:
