@@ -131,6 +131,13 @@ Given a target and a reference pool (directory or manifest, same inputs as
    `--max-span` (default 256) and report `max_span_cap` and
    `longest_match_capped`; cap-induced splits are not source joins and must
    not inflate junction counts. A capped span length is a lower bound.
+   Keep this bounded core run below the repo's long-job checkpoint trigger:
+   hard ceilings are 60,000 target tokens, 100,000 post-exclusion reference
+   tokens, 5,000 reference documents, and `max_span <= 1024`. Callers may
+   lower these ceilings with CLI flags but cannot raise them. Exceeding one
+   returns `bad_input` naming the actual count and limit. The build PR records
+   local runtime benchmarks for these ceilings. Revisit the ceilings or add
+   checkpoint/resume before admitting materially larger pools.
 2. **Source multiplicity:** distinct canonically assigned source IDs over
    counted spans; sources per 100 covered tokens; the share of covered tokens
    assigned to the single largest source. With zero counted spans, report zero
@@ -152,10 +159,10 @@ Given a target and a reference pool (directory or manifest, same inputs as
    population and apply that same basis to junction and interior distances;
    never fit a separate z-score basis per pair. Use the sibling lens's
    zero-variance and zero-norm handling. If a side lacks usable text, emit
-   `null` distance with a reason. Emit every sentence's offsets and numeric
-   features under the fixed vocabulary (no copied prose); bound the feature
-   vocabulary, not the number of sentences. Never choose change points on
-   this surface.
+   `null` distance with a reason. Emit every sentence's offsets and sparse
+   nonzero numeric features under a fixed `feature_vocabulary` (absent keys
+   mean zero; no copied prose); bound the feature vocabulary, not the number
+   of sentences. Never choose change points on this surface.
 4. **Junction discontinuity:** compare source-to-source joins and
    covered-to-uncovered joins as separate typed distributions against
    distances between adjacent same-size, nonoverlapping windows wholly
@@ -216,19 +223,22 @@ threshold or a detector.
   `plugins/setec-voiceprint/scripts/claim_license_surfaces/set_level_diversity.txt` already exists.
 - **CLI:** `python3 plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py
   --target T (--reference-dir D | --manifest M) [--min-ngram 8]
-  [--max-span 256] [--junction-sentences 2] [--json] [--out PATH]`.
+  [--max-span 256] [--junction-sentences 2]
+  [--max-target-tokens 60000] [--max-reference-tokens 100000]
+  [--max-reference-docs 5000] [--json] [--out PATH]`.
 - **JSON envelope:** via `output_schema.build_output()`. `results` keys:
   `coverage`, `n_counted_spans`, `span_length_quantiles`, `n_distinct_sources`,
   `sources_per_100_covered_tokens`, `largest_source_share`,
   `uncovered_run_quantiles`, `junctions` (token offsets, lengths, canonical
   source ids, boundary type, distance or null and reason; no prose beyond what
-  `originality_audit` already emits for its top spans), `sentence_features`
-  (all sentence token/character offsets plus a fixed bounded numeric feature
-  vocabulary, no prose),
+  `originality_audit` already emits for its top spans), `feature_vocabulary`,
+  `sentence_features` (all sentence token/character offsets plus sparse
+  nonzero numeric values keyed by that fixed bounded vocabulary, no prose),
   `source_join_distance_quantiles`, `coverage_join_distance_quantiles`,
   `within_span_distance_quantiles` (null when no samples),
   `min_ngram`, `max_span_cap`, `longest_match_capped`,
-  `n_reference_docs`, `assumptions`.
+  `n_reference_docs`, `assumptions` (including `input_limits` and actual
+  post-self-exclusion `reference_tokens`).
 - **Claim license:** licenses "this much of the target is covered by verbatim
   spans of at least `min_ngram` tokens from this pool, canonically assigned to
   this many source IDs under the first-containing rule, with these style
