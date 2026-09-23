@@ -13,7 +13,7 @@ import json
 import re
 from pathlib import Path
 
-from originality_audit import _TOKEN, _load_reference_dir
+from originality_audit import _TOKEN, _load_reference_dir, audit_originality
 from segmentation_feature_lens import sentence_spans
 
 CONNECTIVES = (
@@ -69,7 +69,22 @@ def generate_fixture(reference: list[tuple[str, str]], *, seed: str,
         n = len(_TOKEN.findall(passage.lower()))
         labels.append({"start": cursor, "length": n, "kind": "copied", "source": source})
         cursor += n
-    return "\n\n".join(parts) + "\n", labels
+    target = "\n\n".join(parts) + "\n"
+    # Labels are ground truth only when the shipped greedy matcher recovers
+    # their token-level source assignments. Common/duplicated excerpts and
+    # connective text that occurs in the pool can break that property even
+    # when every chosen source ID is distinct. Refuse such a fixture rather
+    # than publish plausible-looking but false labels.
+    expected: list[str | None] = [None] * cursor
+    for label in labels:
+        expected[label["start"]:label["start"] + label["length"]] = [label["source"]] * label["length"]
+    recovered = audit_originality(target, reference, min_ngram=8, include_spans=True)
+    actual: list[str | None] = [None] * cursor
+    for span in recovered["all_spans"]:
+        actual[span["start"]:span["start"] + span["length"]] = [span["source"]] * span["length"]
+    if actual != expected:
+        raise ValueError("reference pool cannot yield unambiguous token-level fixture labels")
+    return target, labels
 
 
 def main(argv: list[str] | None = None) -> int:

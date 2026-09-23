@@ -65,19 +65,28 @@ def window_features(window_text: str) -> dict[str, float]:
         "n_sentences": len(lengths), "mean": mean, "sd": sd,
         "min": float(min(lengths)), "max": float(max(lengths)),
         "variance": variance,
-        "burstiness_B": (sd - mean) / (sd + mean) if sd + mean > 0 else 0.0,
+        "burstiness_B": (sd - mean) / (sd + mean) if len(lengths) > 1 and sd + mean > 0 else 0.0,
     }
     combined.update({f"sent_shape_{k}": float(v) for k, v in shape.items()})
     return combined
 
 
 def z_score_features(raw: list[dict[str, float]], names: list[str]) -> list[dict[str, float]]:
+    return z_score_against(raw, raw, names)
+
+
+def z_score_against(raw: list[dict[str, float]], basis: list[dict[str, float]],
+                    names: list[str]) -> list[dict[str, float]]:
+    """Apply the document's fixed feature moments to another window population."""
     z: list[dict[str, float]] = [{} for _ in raw]
     for name in names:
-        values = [row.get(name, 0.0) for row in raw]
+        values = [row.get(name, 0.0) for row in basis]
         mean, sd = safe_mean(values), safe_sd(values)
         for i, row in enumerate(raw):
-            z[i][name] = (row.get(name, 0.0) - mean) / (sd + EPSILON)
+            # A clipped junction can contain a feature absent from every
+            # whole-document basis window. Its standardized value is
+            # undefined, not a billion-sigma observation.
+            z[i][name] = (row.get(name, 0.0) - mean) / (sd + EPSILON) if sd else 0.0
     return z
 
 

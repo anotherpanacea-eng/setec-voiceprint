@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -21,7 +22,7 @@ from originality_audit import (
 )
 from output_schema import build_error_output, build_output
 from segmentation_feature_lens import (
-    cosine_distance, sentence_spans, window_features, z_score_features,
+    cosine_distance, sentence_spans, window_features, z_score_against,
 )
 
 TASK_SURFACE = "set_level_diversity"
@@ -45,14 +46,36 @@ def _quantiles(values: list[int] | list[float]) -> dict[str, int | float] | None
     return {"p10": q(.1), "p50": q(.5), "p90": q(.9)}
 
 
+def _coalesce_cap_spans(spans: list[dict[str, Any]], target_tokens: list[str],
+                        reference: list[tuple[str, str]], max_span: int) -> list[dict[str, Any]]:
+    """Attribute a capped continuation to the first document containing its full run."""
+    source_strings = [(source, " " + " ".join(_TOKEN.findall(text.lower())) + " ")
+                      for source, text in reference]
+    out: list[dict[str, Any]] = []
+    last_was_capped = False
+    for span in spans:
+        start, end = span["start"], span["start"] + span["length"]
+        source = None
+        if out and last_was_capped and out[-1]["end"] == start:
+            needle = " " + " ".join(target_tokens[out[-1]["start"]:end]) + " "
+            source = next((src for src, body in source_strings if needle in body), None)
+        if source is not None:
+            out[-1]["end"] = end
+            out[-1]["source"] = source
+        else:
+            out.append({"start": start, "end": end, "source": span["source"]})
+        last_was_capped = span["length"] == max_span
+    return out
+
+
 def _segments(spans: list[dict[str, Any]], n_tokens: int) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     cursor = 0
     for span in spans:
         if cursor < span["start"]:
             out.append({"start": cursor, "end": span["start"], "source": None})
-        end = span["start"] + span["length"]
-        out.append({"start": span["start"], "end": end, "source": span["source"]})
+        end = span["end"]
+        out.append(span.copy())
         cursor = end
     if cursor < n_tokens:
         out.append({"start": cursor, "end": n_tokens, "source": None})
@@ -87,8 +110,8 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
                  max_reference_tokens: int = HARD_MAX_REFERENCE_TOKENS,
                  max_reference_docs: int = HARD_MAX_REFERENCE_DOCS) -> dict[str, Any]:
     """Reuse DJ-Search's exact greedy cover and first-containing source rule."""
-    if junction_sentences < 1 or max_span < min_ngram or min_ngram < 1:
-        raise ValueError("junction_sentences and min_ngram must be >= 1; max_span >= min_ngram")
+    if not 1 <= junction_sentences <= 2 or max_span < min_ngram or min_ngram < 1:
+        raise ValueError("junction_sentences must be 1 or 2; min_ngram >= 1; max_span >= min_ngram")
     if max_span > HARD_MAX_SPAN:
         raise ValueError(f"max_span exceeds hard limit {HARD_MAX_SPAN}")
     for name, requested, hard in (
@@ -110,12 +133,13 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
                                 max_span=max_span, include_spans=True)
     spans = original["all_spans"]
     tokens = list(_TOKEN.finditer(target_text.lower()))
-    segments = _segments(spans, len(tokens))
+    attributed = _coalesce_cap_spans(spans, [m.group() for m in tokens], reference, max_span)
+    segments = _segments(attributed, len(tokens))
     covered = sum(s["length"] for s in spans)
     source_tokens = Counter()
-    for span in spans:
+    for span in attributed:
         if span["source"] is not None:
-            source_tokens[span["source"]] += span["length"]
+            source_tokens[span["source"]] += span["end"] - span["start"]
     uncovered = [s["end"] - s["start"] for s in segments if s["source"] is None]
     sentences = sentence_spans(target_text)
 
@@ -164,23 +188,31 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
                 pairs.append(pair)
 
     features = [window_features(w) for pair in pairs for w in pair]
+    # Fit on every whole-document window of each compared size, including
+    # uncovered regions. Both one- and two-sentence rows are required: fitting
+    # sentence count on singleton rows alone would give a false zero variance.
+    sentence_rows = [window_features(target_text[a:b]) for a, b in sentences]
+    document_windows = [target_text[a:b] for a, b in sentences]
+    if junction_sentences == 2:
+        document_windows.extend(target_text[sentences[i][0]:sentences[i + 1][1]]
+                                for i in range(len(sentences) - 1))
+    basis_rows = [window_features(window) for window in document_windows]
     # Bounded vocabulary, deterministic across machines: all function words and
     # shape features, then top 256 character n-grams by aggregate raw frequency.
     is_char = lambda name: name.startswith(("ch3:", "ch4:", "ch5:"))
-    stable_names = {name for row in features for name in row if not is_char(name)}
+    stable_names = {name for row in basis_rows for name in row if not is_char(name)}
     char_totals: Counter[str] = Counter()
-    for row in features:
-        char_totals.update({name: value for name, value in row.items() if is_char(name)})
-    # Stream sentence features: keep the complete series, but do not retain an
-    # unbounded list of dense per-sentence maps while choosing the vocabulary.
-    for a, b in sentences:
-        row = window_features(target_text[a:b])
-        stable_names.update(name for name in row if not is_char(name))
-        char_totals.update({name: value for name, value in row.items() if is_char(name)})
+    def count_chars(window: str) -> None:
+        normalized_text = re.sub(r"\s+", " ", window.lower()).strip()
+        for n in (3, 4, 5):
+            char_totals.update(f"ch{n}:{normalized_text[i:i+n]}"
+                               for i in range(max(0, len(normalized_text) - n + 1)))
+    for window in document_windows:
+        count_chars(window)
     stable = sorted(stable_names)
     selected_chars = sorted(char_totals, key=lambda name: (-char_totals[name], name))[:256]
     names = stable + selected_chars
-    normalized = z_score_features(features, names) if features else []
+    normalized = z_score_against(features, basis_rows, names) if features else []
     distances = [round(cosine_distance(normalized[i], normalized[i + 1], names), 6)
                  for i in range(0, len(normalized), 2)]
     for junction in junctions:
@@ -190,8 +222,7 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
     within_distances = [distances[i] for i in control_indices]
     sentence_series = []
     token_cursor = 0
-    for a, b in sentences:
-        row = window_features(target_text[a:b])
+    for (a, b), row in zip(sentences, sentence_rows):
         while token_cursor < len(tokens) and tokens[token_cursor].end() <= a:
             token_cursor += 1
         first = token_cursor
