@@ -210,3 +210,39 @@ exemptions:
   owner: packaging
   introduced_sha: cec38a1dd665b39983bad632778e2c7398c7fcbf
   removal_phase: P4
+- module: verbatim_mosaic_audit.py
+  reason: >-
+    New set_level_diversity SURFACE (spec 82 M1), and surfaces stay flat until P4
+    relocates them family by family (specs/svp-packaging-conversion.md P4). It sits
+    beside its sibling originality_audit.py in the frozen baseline, carries its own
+    capabilities.d card, and that card invokes it directly by this path. Its shared
+    logic is not in this file: the DJ-Search cover and pool loaders live in L1
+    verbatim_cover.py and the window lens in L1 segmentation_feature_lens.py, so
+    both of its internal edges are L2->L1 and this row exempts the surface leaf only.
+  owner: packaging
+  introduced_sha: 32791aa881900de4c72d116e328990ff7acd50f3
+  removal_phase: P4
+- module: generate_verbatim_mosaic_fixture.py
+  reason: >-
+    Spec 82 M1 fixture generator: a CLI (`__main__`) that stitches deterministic,
+    token-labelled mechanical mosaic fixtures from an operator-supplied public-domain
+    pool. It is the operator-side companion of verbatim_mosaic_audit.py and moves with
+    that surface's family in P4 (specs/svp-packaging-conversion.md P4). It imports only
+    the L1 verbatim_cover.py and segmentation_feature_lens.py modules, so it adds no
+    L2->L2 edge and carries no shared code of its own.
+  owner: packaging
+  introduced_sha: 32791aa881900de4c72d116e328990ff7acd50f3
+  removal_phase: P4
+- module: segmentation_feature_lens.py
+  reason: >-
+    L1 library (no capabilities.d card, no `__main__`, no build_output emission)
+    extracted from within_doc_segmentation.py so the within-document feature lens is
+    single-sourced between that surface and verbatim_mosaic_audit.py without an
+    L2->L2 import or the optional tiers the segmentation CLI loads. It imports only
+    stylometry_distance.py and setec.core.textprims. It stays flat beside the
+    within_doc_segmentation.py it was split from, next to its still-flat
+    stylometry_distance.py dependency; P3 (eligible L1 core) is where flat modules that
+    satisfy the live L1 predicate move (specs/svp-packaging-conversion.md P3).
+  owner: packaging
+  introduced_sha: 32791aa881900de4c72d116e328990ff7acd50f3
+  removal_phase: P3

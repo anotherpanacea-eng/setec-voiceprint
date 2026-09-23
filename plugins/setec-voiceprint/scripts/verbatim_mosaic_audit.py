@@ -6,23 +6,18 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
 from claim_license import from_legacy
-from originality_audit import (
-    DEFAULT_MIN_NGRAM, _MAX_SPAN, _TOKEN, _content_fingerprint,
-    _load_reference_dir, _load_reference_manifest, audit_originality,
-)
 from output_schema import build_error_output, build_output
 from segmentation_feature_lens import (
     cosine_distance, sentence_spans, window_features, z_score_against,
+)
+from verbatim_cover import (
+    DEFAULT_MIN_NGRAM, _MAX_SPAN, _TOKEN, _content_fingerprint,
+    _load_reference_dir, _load_reference_manifest, audit_originality,
 )
 
 TASK_SURFACE = "set_level_diversity"
@@ -142,6 +137,18 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
             source_tokens[span["source"]] += span["end"] - span["start"]
     uncovered = [s["end"] - s["start"] for s in segments if s["source"] is None]
     sentences = sentence_spans(target_text)
+    # Each sentence's [token_start, token_end) range. Source runs are token
+    # ranges, so containment is decided in token space: a sentence's char span
+    # also carries closing punctuation and leading quotes that no token covers.
+    sentence_tokens: list[tuple[int, int] | None] = []
+    token_cursor = 0
+    for a, b in sentences:
+        while token_cursor < len(tokens) and tokens[token_cursor].end() <= a:
+            token_cursor += 1
+        first = token_cursor
+        while token_cursor < len(tokens) and tokens[token_cursor].start() < b:
+            token_cursor += 1
+        sentence_tokens.append((first, token_cursor) if first < token_cursor else None)
 
     # One normalization population for both junction and within-span comparisons.
     pairs: list[tuple[str, str]] = []
@@ -172,9 +179,9 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
     for segment in segments:
         if segment["source"] is None:
             continue
-        seg_start = tokens[segment["start"]].start()
-        seg_end = tokens[segment["end"] - 1].end()
-        whole = [(a, b) for a, b in sentences if seg_start <= a and b <= seg_end]
+        whole = [span for span, rng in zip(sentences, sentence_tokens)
+                 if rng is not None and segment["start"] <= rng[0]
+                 and rng[1] <= segment["end"]]
         for boundary_index in range(junction_sentences,
                                     len(whole) - junction_sentences + 1):
             left = whole[boundary_index - junction_sentences:boundary_index]
@@ -221,17 +228,11 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
             junction["distance"] = distances[idx]
     within_distances = [distances[i] for i in control_indices]
     sentence_series = []
-    token_cursor = 0
-    for (a, b), row in zip(sentences, sentence_rows):
-        while token_cursor < len(tokens) and tokens[token_cursor].end() <= a:
-            token_cursor += 1
-        first = token_cursor
-        while token_cursor < len(tokens) and tokens[token_cursor].start() < b:
-            token_cursor += 1
+    for (a, b), rng, row in zip(sentences, sentence_tokens, sentence_rows):
         sentence_series.append({
             "char_start": a, "char_end": b,
-            "token_start": first if first < token_cursor else None,
-            "token_end": token_cursor if first < token_cursor else None,
+            "token_start": rng[0] if rng else None,
+            "token_end": rng[1] if rng else None,
             "features": {name: row[name] for name in names if row.get(name, 0.0) != 0.0},
         })
     return {

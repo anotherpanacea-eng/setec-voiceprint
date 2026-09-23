@@ -13,8 +13,8 @@ import json
 import re
 from pathlib import Path
 
-from originality_audit import _TOKEN, _load_reference_dir, audit_originality
 from segmentation_feature_lens import sentence_spans
+from verbatim_cover import _TOKEN, _load_reference_dir, audit_originality
 
 CONNECTIVES = (
     "Meanwhile, another account took up the matter.",

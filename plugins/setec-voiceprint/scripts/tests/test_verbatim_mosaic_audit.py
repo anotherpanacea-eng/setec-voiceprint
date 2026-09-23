@@ -111,6 +111,18 @@ def test_single_source_and_max_span_split_still_form_one_control_run():
     assert result["max_span_cap"] == 12 and result["longest_match_capped"]
 
 
+def test_copied_run_final_sentence_counts_toward_within_span_control():
+    """Regression: containment used sentence char offsets, which include the
+    closing period no token covers, so every run's last sentence was dropped and
+    a four-sentence copy yielded no two-plus-two within-span control."""
+    source = POOL[0][1] + " " + POOL[1][1]
+    result = mosaic.audit_mosaic(source, [("a", source)], min_ngram=8,
+                                 junction_sentences=2)
+    assert len(result["sentence_features"]) == 4
+    assert result["junctions"] == []
+    assert result["within_span_distance_quantiles"] is not None
+
+
 def test_cap_split_does_not_invent_source_join_or_extra_source():
     words = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa"
     short = " ".join(words.split()[:8])
