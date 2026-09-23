@@ -127,7 +127,17 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
     original = audit_originality(target_text, reference, min_ngram=min_ngram,
                                 max_span=max_span, include_spans=True)
     spans = original["all_spans"]
-    tokens = list(_TOKEN.finditer(target_text.lower()))
+    lowered = target_text.lower()
+    tokens = list(_TOKEN.finditer(lowered))
+    # Matching uses lowercase text, but published offsets and style windows
+    # refer to the original. Unicode lowercasing can expand a character (İ),
+    # shifting every subsequent match in the lowercase string.
+    if len(lowered) == len(target_text):
+        token_spans = [(m.start(), m.end()) for m in tokens]
+    else:
+        original_offsets = [i for i, ch in enumerate(target_text) for _ in ch.lower()]
+        token_spans = [(original_offsets[m.start()], original_offsets[m.end() - 1] + 1)
+                       for m in tokens]
     attributed = _coalesce_cap_spans(spans, [m.group() for m in tokens], reference, max_span)
     segments = _segments(attributed, len(tokens))
     covered = sum(s["length"] for s in spans)
@@ -143,10 +153,10 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
     sentence_tokens: list[tuple[int, int] | None] = []
     token_cursor = 0
     for a, b in sentences:
-        while token_cursor < len(tokens) and tokens[token_cursor].end() <= a:
+        while token_cursor < len(tokens) and token_spans[token_cursor][1] <= a:
             token_cursor += 1
         first = token_cursor
-        while token_cursor < len(tokens) and tokens[token_cursor].start() < b:
+        while token_cursor < len(tokens) and token_spans[token_cursor][0] < b:
             token_cursor += 1
         sentence_tokens.append((first, token_cursor) if first < token_cursor else None)
 
@@ -156,9 +166,9 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
     for left, right in zip(segments, segments[1:]):
         if left["source"] == right["source"]:
             continue
-        boundary = tokens[right["start"]].start()
-        left_start = tokens[left["start"]].start()
-        right_end = tokens[right["end"] - 1].end()
+        boundary = token_spans[right["start"]][0]
+        left_start = token_spans[left["start"]][0]
+        right_end = token_spans[right["end"] - 1][1]
         pair = _window_pair(target_text, boundary, left_start, right_end,
                             sentences, junction_sentences)
         idx = len(pairs) if all(pair) else None

@@ -101,6 +101,16 @@ def test_zero_cover_and_empty_control_are_null():
     assert result["within_span_distance_quantiles"] is None
 
 
+def test_unicode_lowercase_expansion_preserves_original_offsets():
+    text = "\u0130. Alpha beta gamma delta. Red blue green gold."
+    result = mosaic.audit_mosaic(
+        text, [("a", "i alpha beta gamma delta"), ("b", "red blue green gold")],
+        min_ngram=4, junction_sentences=1)
+    assert result["junctions"][0]["char_offset"] == text.index("Red")
+    assert [(s["token_start"], s["token_end"]) for s in result["sentence_features"]] == [
+        (0, 1), (1, 5), (5, 9)]
+
+
 def test_single_source_and_max_span_split_still_form_one_control_run():
     text = POOL[0][1]
     result = mosaic.audit_mosaic(text, [("a", text + " A distinct tail follows here.")],
