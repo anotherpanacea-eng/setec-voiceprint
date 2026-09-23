@@ -11,7 +11,7 @@ import re
 import unicodedata
 
 from .common import (
-    Manifest, Refusal, WorkBudget, canonical_json, exact_keys, parse_json,
+    Manifest, Refusal, Snapshot, WorkBudget, canonical_json, exact_keys, parse_json,
     plain_hash, read_bounded, record_set_sha256, require_hex,
 )
 from .overlap_core import preflight_word_ngrams_v1
@@ -27,12 +27,20 @@ STAGES = ("intake", "exact", "ngram", "span", "release")
 REASONS = ("ok", "exact_conflict", "ngram_conflict",
            "ngram_insufficient_evidence", "span_conflict", "sealed_below_floor")
 LABEL = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
-CEILINGS = {"tokens": 4_000_000, "gram memberships": 4_000_000,
+CEILINGS = {"tokens": 4_000_000, "gram memberships": 500_000,
             "posting visits": 20_000_000, "cross pairs": 1_000_000,
             "span pair visits": 1_000_000}
 DETAIL_LIMIT = 256 * 1024 * 1024
 RECEIPT_LIMIT = 64 * 1024
-CONFLICTS_LIMIT = 2 * 1024 * 1024
+POLICY_LIMIT = 64 * 1024
+# The largest valid conflicts file (5,000 flagged ids of 128 astral scalars,
+# each escaped to 12 bytes) is 8,060,304 bytes, so this cap never refuses one.
+CONFLICTS_LIMIT = 8 * 1024 * 1024
+_BIT = {name: 1 << index for index, name in enumerate(CLASSES)}
+
+
+def _names(mask: int) -> list[str]:
+    return [name for name in sorted(CLASSES) if mask & _BIT[name]]
 
 
 @dataclass(frozen=True)
@@ -62,7 +70,11 @@ class FirewallResult:
 
 
 def load_holdout_policy(path: Path) -> tuple[HoldoutPolicy, str]:
-    snapshot = read_bounded(path.parent, path.name, 64 * 1024)
+    return parse_holdout_policy(read_bounded(path.parent, path.name, POLICY_LIMIT))
+
+
+def parse_holdout_policy(snapshot: Snapshot) -> tuple[HoldoutPolicy, str]:
+    """Validate policy bytes already bound and size-checked by `read_bounded`."""
     value = exact_keys(parse_json(snapshot.data, "policy_contract"),
                        {"schema", "ngram", "shared_run", "candidate_containment",
                         "sealed_containment", "min_sealed_distinct"}, "policy_contract")
@@ -138,61 +150,71 @@ def holdout_firewall(candidates: Manifest, sealed: tuple[SealedSet, ...],
                      policy: HoldoutPolicy, budget: WorkBudget) -> FirewallResult:
     sealed_records = {(item.label, record.id): record
                       for item in sealed for record in item.manifest.records}
-    candidate_grams = {record.id: preflight_word_ngrams_v1(record.analysis_text,
-                                                            policy.ngram, budget)
-                       for record in candidates.records}
-    sealed_grams = {key: preflight_word_ngrams_v1(record.analysis_text,
-                                                  policy.ngram, budget)
-                    for key, record in sealed_records.items()}
-    pair_classes: dict[tuple[str, str, str], set[str]] = {}
+    # A pair's classes are a bit mask over CLASSES: a million pairs at the
+    # cross-pair ceiling cannot afford a set object each (slice 4 section 8).
+    pair_classes: dict[tuple[str, str, str], int] = {}
     shared: dict[tuple[str, str, str], int] = defaultdict(int)
 
-    def touch(key: tuple[str, str, str]) -> set[str]:
+    def touch(key: tuple[str, str, str], bit: int = 0) -> None:
         if key not in pair_classes:
             budget.charge("cross pairs")
-            pair_classes[key] = set()
-        return pair_classes[key]
+            pair_classes[key] = bit
+        else:
+            pair_classes[key] |= bit
 
     by_analysis: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for (label, sealed_id), record in sealed_records.items():
         by_analysis[record.analysis_sha256].append((label, sealed_id))
     for candidate in candidates.records:
         for label, sealed_id in by_analysis[candidate.analysis_sha256]:
-            touch((candidate.id, label, sealed_id)).add("exact")
+            touch((candidate.id, label, sealed_id), _BIT["exact"])
 
+    # Only the sealed side is indexed. Each gram tuple lives once, as a posting
+    # key; per-record gram sets are dropped as soon as they are counted, and each
+    # candidate's set exists only while its postings are walked (slice 4 section 8).
     postings: dict[tuple[str, ...], list[tuple[str, str]]] = defaultdict(list)
-    for key, grams in sealed_grams.items():
+    sealed_gram_counts: dict[tuple[str, str], int] = {}
+    for key, record in sealed_records.items():
+        grams = preflight_word_ngrams_v1(record.analysis_text, policy.ngram, budget)
+        sealed_gram_counts[key] = len(grams)
         for gram in grams:
             postings[gram].append(key)
+    grams = frozenset()
+    candidate_gram_counts: dict[str, int] = {}
     for candidate in candidates.records:
-        for gram in candidate_grams[candidate.id]:
+        grams = preflight_word_ngrams_v1(candidate.analysis_text, policy.ngram, budget)
+        candidate_gram_counts[candidate.id] = len(grams)
+        for gram in grams:
             for label, sealed_id in postings.get(gram, ()):
                 budget.charge("posting visits")
                 key = (candidate.id, label, sealed_id)
                 touch(key)
                 shared[key] += 1
+    grams = frozenset()
+    del postings
     for key, count in shared.items():
         candidate_id, label, sealed_id = key
-        classes = pair_classes[key]
+        mask = 0
         if policy.shared_run:
-            classes.add("shared_run")
+            mask |= _BIT["shared_run"]
         if policy.candidate_containment is not None:
             numerator, denominator = policy.candidate_containment
-            size = len(candidate_grams[candidate_id])
+            size = candidate_gram_counts[candidate_id]
             if size and count * denominator >= numerator * size:
-                classes.add("candidate_contained")
+                mask |= _BIT["candidate_contained"]
         if policy.sealed_containment is not None:
             numerator, denominator = policy.sealed_containment
-            size = len(sealed_grams[(label, sealed_id)])
+            size = sealed_gram_counts[(label, sealed_id)]
             if size and count * denominator >= numerator * size:
-                classes.add("sealed_contained")
+                mask |= _BIT["sealed_contained"]
+        pair_classes[key] |= mask
     for key in _span_pairs(candidates, sealed, budget):
-        touch(key).add("declared_span")
+        touch(key, _BIT["declared_span"])
     pairs = tuple({"candidate_id": candidate_id, "sealed_label": label,
-                   "sealed_id": sealed_id, "classes": sorted(classes),
-                   "shared_grams": shared[(candidate_id, label, sealed_id)]}
-                  for (candidate_id, label, sealed_id), classes in sorted(pair_classes.items())
-                  if classes)
+                   "sealed_id": sealed_id, "classes": _names(mask),
+                   "shared_grams": shared.get((candidate_id, label, sealed_id), 0)}
+                  for (candidate_id, label, sealed_id), mask in sorted(pair_classes.items())
+                  if mask)
     candidate_classes: dict[str, set[str]] = {record.id: set() for record in candidates.records}
     for pair in pairs:
         candidate_classes[pair["candidate_id"]].update(pair["classes"])
@@ -201,8 +223,8 @@ def holdout_firewall(candidates: Manifest, sealed: tuple[SealedSet, ...],
                           ("shared_run", "candidate_contained", "sealed_contained"))
                       for pair in pairs)
     span_count = sum("declared_span" in pair["classes"] for pair in pairs)
-    empty_grams = sum(not grams for grams in candidate_grams.values()) + sum(
-        not grams for grams in sealed_grams.values())
+    empty_grams = sum(not count for count in candidate_gram_counts.values()) + sum(
+        not count for count in sealed_gram_counts.values())
     below_floor = sum(len({record.analysis_sha256 for record in item.manifest.records}) <
                       policy.min_sealed_distinct for item in sealed)
     release = "withheld" if below_floor else "released"
@@ -218,8 +240,7 @@ def holdout_firewall(candidates: Manifest, sealed: tuple[SealedSet, ...],
     return FirewallResult(pairs,
                           {key: frozenset(value) for key, value in candidate_classes.items()},
                           statuses, reasons, release,
-                          {key: len(value) for key, value in candidate_grams.items()},
-                          {key: len(value) for key, value in sealed_grams.items()})
+                          candidate_gram_counts, sealed_gram_counts)
 
 
 def build_outputs(result: FirewallResult, candidates: Manifest,

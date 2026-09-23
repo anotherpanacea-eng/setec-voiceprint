@@ -478,3 +478,85 @@ def test_nonfinite_json_number_refuses_with_contract_code(tmp_path, artifact):
             load_holdout_receipt(path, plain_hash(raw))
         else:
             load_holdout_conflicts(path, load_manifest(candidate_path))
+
+
+def test_confinement_outranks_label_and_input_outranks_collision(tmp_path):
+    # Slice 1 section 4.6 master order, first match wins: path_confinement before
+    # holdout_contract, and every input check before output_collision.
+    candidate = _manifest(tmp_path / "candidate", ["same source"], prefix="c")
+    nested = _manifest(candidate.parent / "nested", ["same source"], prefix="s")
+    policy = _policy(tmp_path)
+    with pytest.raises(Refusal, match="path_confinement"):
+        run(candidate, [("Bad Label", nested)], policy,
+            tmp_path / "private", tmp_path / "conflicts")
+    sealed = _manifest(tmp_path / "sealed", ["same source"], prefix="s")
+    (tmp_path / "private").mkdir()
+    sealed.write_bytes(b"not json\n")
+    with pytest.raises(Refusal, match="input_contract"):
+        run(candidate, [("s", sealed)], policy, tmp_path / "private", tmp_path / "conflicts")
+    bad_policy = tmp_path / "bad-policy"
+    bad_policy.mkdir()
+    (bad_policy / "policy.json").write_bytes(b"{}")
+    good = _manifest(tmp_path / "sealed-ok", ["same source"], prefix="s")
+    with pytest.raises(Refusal, match="policy_contract"):
+        run(candidate, [("Bad Label", good)], bad_policy / "policy.json",
+            tmp_path / "private2", tmp_path / "conflicts2")
+
+
+def test_missing_output_parent_is_unavailable_after_input_checks(tmp_path):
+    candidate = _manifest(tmp_path / "candidate", ["same source"], prefix="c")
+    sealed = _manifest(tmp_path / "sealed", ["same source"], prefix="s")
+    policy = _policy(tmp_path)
+    missing = tmp_path / "missing" / "private"
+    with pytest.raises(Refusal, match="output_unavailable"):
+        run(candidate, [("s", sealed)], policy, missing, tmp_path / "conflicts")
+    candidate.write_bytes(b"not json\n")
+    with pytest.raises(Refusal, match="input_contract"):
+        run(candidate, [("s", sealed)], policy, missing, tmp_path / "conflicts")
+
+
+def test_largest_valid_conflicts_file_publishes(tmp_path):
+    # 5,000 flagged candidates whose ids are 128 astral scalars each: the
+    # escaped conflicts file is about 7.7 MiB and must not refuse size_limit.
+    root = tmp_path / "candidate"
+    root.mkdir()
+    (root / "shared.txt").write_bytes(b"shared words")
+    source = plain_hash(b"shared words")
+    ids = sorted(chr(0x10000 + index) + "\U0010fffd" * 127 for index in range(5000))
+    rows = [{"id": record_id, "group_id": "g", "stratum": "synthetic", "path": "shared.txt",
+             "span": {"source_path": "shared.txt", "source_bytes_sha256": source,
+                      "start_byte": 0, "end_byte": 12}} for record_id in ids]
+    candidate = root / "packet.jsonl"
+    candidate.write_bytes(b"".join(json.dumps(row, ensure_ascii=False).encode() + b"\n"
+                                   for row in rows))
+    sealed = _manifest(tmp_path / "sealed", ["shared words"], prefix="s")
+    conflicts = tmp_path / "conflicts"
+    _, released = run(candidate, [("s", sealed)], _policy(tmp_path),
+                      tmp_path / "private", conflicts)
+    assert released
+    data = (conflicts / "conflicts.json").read_bytes()
+    assert len(data) > 2 * 1024 * 1024
+    assert [row["candidate_id"] for row in json.loads(data)["conflicts"]] == ids
+
+
+def test_gram_membership_ceiling_is_the_stated_limit(tmp_path):
+    # Slice 4 section 8: 500,000 gram memberships pass, one more refuses
+    # work_limit. The ceiling keeps the n=64 gram sets inside the memory bound.
+    half = CEILINGS["gram memberships"] // 2
+    assert CEILINGS["gram memberships"] == 500_000
+    texts = {"at": [" ".join(f"c{i}" for i in range(half + 1)),
+                    " ".join(f"s{i}" for i in range(half + 1))],
+             "over": [" ".join(f"c{i}" for i in range(half + 2)),
+                      " ".join(f"s{i}" for i in range(half + 1))]}
+    policy, _ = load_holdout_policy(_policy(tmp_path, ngram=2))
+    for name, (candidate_text, sealed_text) in texts.items():
+        candidate = load_manifest(_manifest(tmp_path / name / "c", [candidate_text], prefix="c"))
+        sealed = SealedSet("s", load_manifest(
+            _manifest(tmp_path / name / "s", [sealed_text], prefix="s")))
+        budget = WorkBudget(CEILINGS)
+        if name == "at":
+            holdout_firewall(candidate, (sealed,), policy, budget)
+            assert budget.used["gram memberships"] == CEILINGS["gram memberships"]
+        else:
+            with pytest.raises(Refusal, match="work_limit"):
+                holdout_firewall(candidate, (sealed,), policy, budget)

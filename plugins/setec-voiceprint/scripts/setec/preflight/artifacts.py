@@ -11,7 +11,7 @@ from .artifacts_core import (
 )
 from .common import (
     Refusal, canonical_json, load_manifest, load_manifest_for_calibration,
-    publish_bundle, validate_output_path,
+    publish_bundle, require_hex, validate_output_path,
 )
 
 
@@ -20,30 +20,37 @@ class _Parser(argparse.ArgumentParser):
         raise Refusal("input_contract")
 
 
-def run_census(manifest_path: Path, policy_path: Path, out_bundle: Path) -> dict:
-    validate_output_path(manifest_path.parent, out_bundle)
+def run_census(manifest_path: Path, policy_path: Path,
+               out_bundle: Path) -> tuple[bytes, dict[str, str]]:
     manifest = load_manifest(manifest_path)
     policy = load_artifact_policy(policy_path)
     result = census(manifest, policy)
-    publish_bundle(out_bundle, {"detail.json": canonical_json(result.detail),
-                                "receipt.json": canonical_json(result.receipt)})
-    return result.receipt["stage_status"]
+    receipt = canonical_json(result.receipt)
+    dest = validate_output_path(manifest.root, out_bundle)
+    publish_bundle(dest, {"detail.json": canonical_json(result.detail),
+                          "receipt.json": receipt})
+    return receipt, result.receipt["stage_status"]
 
 
 def run_calibrate(manifest_path: Path, expected_manifest: str,
                   labels_path: Path, expected_labels: str, policy_path: Path,
-                  out_bundle: Path) -> dict:
-    validate_output_path(manifest_path.parent, out_bundle)
-    manifest, violations, identity = load_manifest_for_calibration(
-        manifest_path, expected_sha256=expected_manifest)
+                  out_bundle: Path) -> tuple[bytes, dict[str, str]]:
+    # Slice 1 section 4.6 ranks calibration_binding after the input, policy,
+    # work and labels contracts, so the expected hashes are compared last.
+    manifest, violations, identity = load_manifest_for_calibration(manifest_path)
     policy = load_artifact_policy(policy_path)
     labels, labels_sha256 = load_artifact_labels(
-        labels_path, policy, {record.id for record in manifest.records} | set(violations),
-        expected_sha256=expected_labels)
+        labels_path, policy, {record.id for record in manifest.records} | set(violations))
     result = calibrate(manifest, violations, identity, labels, labels_sha256, policy)
-    publish_bundle(out_bundle, {"detail.json": canonical_json(result.detail),
-                                "receipt.json": canonical_json(result.receipt)})
-    return {"calibration": result.receipt["calibration_status"]}
+    for expected, actual in ((expected_manifest, manifest.manifest_sha256),
+                             (expected_labels, labels_sha256)):
+        if require_hex(expected, "calibration_binding") != actual:
+            raise Refusal("calibration_binding")
+    receipt = canonical_json(result.receipt)
+    dest = validate_output_path(manifest.root, out_bundle)
+    publish_bundle(dest, {"detail.json": canonical_json(result.detail),
+                          "receipt.json": receipt})
+    return receipt, {"calibration": result.receipt["calibration_status"]}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -61,15 +68,18 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args = parser.parse_args(argv)
         if args.mode == "census":
-            statuses = run_census(Path(args.manifest), Path(args.policy),
-                                  Path(args.out_bundle))
+            receipt, statuses = run_census(Path(args.manifest), Path(args.policy),
+                                           Path(args.out_bundle))
         else:
-            statuses = run_calibrate(
+            receipt, statuses = run_calibrate(
                 Path(args.manifest), args.expect_manifest_sha256,
                 Path(args.labels), args.expect_labels_sha256,
                 Path(args.policy), Path(args.out_bundle))
-        for name in statuses:
-            sys.stderr.write(name + "\n")
+        # Slice 1 section 4.7 streams: stdout carries only the committed
+        # receipt bytes, stderr one aggregate line per completed stage.
+        sys.stdout.buffer.write(receipt)
+        for name, status in statuses.items():
+            sys.stderr.write(f"{name} {status}\n")
         return 0
     except Refusal as exc:
         sys.stderr.write(exc.code + "\n")
