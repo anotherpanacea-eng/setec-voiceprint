@@ -98,7 +98,7 @@ without any claim about who or what assembled it.
 **Why it matters to the fleet.** Voicewright consumes SETEC as its held-out
 audit. AGENTS.md there already warns that "a memorized passage spuriously
 passes the voice validators". Voicewright's companion draft
-(setec-voicewright spec 98, *victorian-phrase-grounding*) proposes asking a reviser to
+(the setec-voicewright Victorian phrase-grounding draft) proposes asking a reviser to
 build its connective phrasing from short Victorian n-grams. Any SETEC voice or
 register reading of such output is only honest if SETEC can also report how
 much of the text is verbatim mosaic and from how many sources.
@@ -177,7 +177,7 @@ threshold or a detector.
 
 - **task_surface:** `set_level_diversity` (existing; `originality_audit` and
   `corpus_novelty_audit` live there). The claim-license drop-in
-  `scripts/claim_license_surfaces/set_level_diversity.txt` already exists.
+  `plugins/setec-voiceprint/scripts/claim_license_surfaces/set_level_diversity.txt` already exists.
 - **CLI:** `python3 plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py
   --target T (--reference-dir D | --manifest M) [--min-ngram 8]
   [--junction-sentences 2] [--json] [--out PATH]`.
