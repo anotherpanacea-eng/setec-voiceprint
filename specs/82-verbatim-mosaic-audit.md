@@ -98,7 +98,7 @@ without any claim about who or what assembled it.
 **Why it matters to the fleet.** Voicewright consumes SETEC as its held-out
 audit. AGENTS.md there already warns that "a memorized passage spuriously
 passes the voice validators". Voicewright's companion draft
-(setec-voicewright `specs/98-victorian-phrase-grounding.md`) proposes asking a reviser to
+(setec-voicewright spec 98, *victorian-phrase-grounding*) proposes asking a reviser to
 build its connective phrasing from short Victorian n-grams. Any SETEC voice or
 register reading of such output is only honest if SETEC can also report how
 much of the text is verbatim mosaic and from how many sources.
@@ -161,7 +161,7 @@ truth in CI.
 2. Re-score every shipped discrimination and smoothing signal on the three
    classes (human, vanilla machine, mosaic). Report per signal and per copy
    target the oriented AUC and TPR at FPR {0.05, 0.10}, reusing
-   `calibration/paraphrase_robustness.py`'s `oriented_auc` and
+   `plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py`'s `oriented_auc` and
    `tpr_at_fpr_budgets` so signal orientation is not re-derived.
 3. Run M1a on the mosaics against (a) the true source pool, (b) a disjoint
    pool of the same register, and (c) the operator's default impostor pool, to
@@ -202,7 +202,7 @@ threshold or a detector.
 
 ## Test contract
 
-File: `plugins/setec-voiceprint/scripts/tests/test_verbatim_mosaic_audit.py`.
+File (planned): *plugins/setec-voiceprint/scripts/tests/test_verbatim_mosaic_audit.py*.
 
 - Deterministic output for fixed inputs.
 - Envelope shape and claim license present; recursive no-verdict walk finds no
