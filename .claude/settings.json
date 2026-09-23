@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:export.arxiv.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:aclanthology.org)",
+      "WebFetch(domain:gutenberg.org)",
+      "WebFetch(domain:www.gutenberg.org)",
+      "WebFetch(domain:huggingface.co)",
+      "WebFetch(domain:api.semanticscholar.org)",
+      "WebFetch(domain:api.openalex.org)",
+      "WebFetch(domain:openreview.net)",
+      "WebFetch(domain:en.wikipedia.org)",
+      "WebFetch(domain:docs.claude.com)"
+    ]
+  }
+}
