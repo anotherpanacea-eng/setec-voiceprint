@@ -104,7 +104,8 @@ def compose_rows(purpose: str,
                                   for stage in ("exact", "ngram", "span")))
                 rows.append(_row(name, status, holdout, final_manifest))
         elif name == "clusters_at_intake":
-            rows.append(_row(name, "passed", intake, intake_manifest))
+            rows.append(_row(name, intake[0]["stage_status"]["split_integrity"],
+                             intake, intake_manifest))
         elif name == "cluster_whole_split":
             rows.append(_row(name, final[0]["stage_status"]["split_integrity"],
                              final, final_manifest))

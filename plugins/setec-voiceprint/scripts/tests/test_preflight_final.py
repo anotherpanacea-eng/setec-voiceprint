@@ -111,6 +111,18 @@ def test_intake_policy_binding_and_detail_hash(tmp_path):
         run_final(intake, final_manifest, policy, split_map, tmp_path / "blocked")
 
 
+def test_split_contract_outranks_intake_bundle_refusal(tmp_path):
+    # Slice 1 section 4.6: split_contract ranks above receipt_contract.
+    _, _, _, intake, _, final_manifest, policy, _ = _fixture(
+        tmp_path, ["alpha beta gamma"], ["alpha beta gamma"])
+    (intake / "receipt.json").write_bytes(b"not a receipt")
+    bad_split = tmp_path / "bad-splits.json"
+    bad_split.write_bytes(canonical_json({"schema": "setec-preflight-splits/1",
+                                          "assignments": {}}))
+    with pytest.raises(Refusal, match="split_contract"):
+        run_final(intake, final_manifest, policy, bad_split, tmp_path / "blocked")
+
+
 @pytest.mark.parametrize("mutation", ["wrong_hash", "added", "missing", "noncanonical"])
 def test_final_detail_strict_reloader(tmp_path, mutation):
     _, receipt, _, _, final, *_ = _fixture(
