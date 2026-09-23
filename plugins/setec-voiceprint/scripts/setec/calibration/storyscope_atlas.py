@@ -152,6 +152,16 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(x) for x in path.read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
+def _normalize_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _read_work(run: Path, work_id: str) -> str:
+    """A work's text exactly as `_add_work` wrote it. Bytes, not text mode,
+    so no platform newline translation can change what was hashed."""
+    return (run / "works" / f"{work_id}.txt").read_bytes().decode("utf-8")
+
+
 def _write_jsonl(path: Path, rows: Iterable[dict]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -175,8 +185,10 @@ def strip_gutenberg(raw: str) -> tuple[str, dict]:
     """Return (body, meta) with the Project Gutenberg wrapper removed.
 
     Refuses text without both START and END markers, so a truncated
-    download or a non-PG file cannot pass as a clean work.
+    download or a non-PG file cannot pass as a clean work. Gutenberg serves
+    CRLF; newlines are normalized to LF before anything is hashed or saved.
     """
+    raw = _normalize_newlines(raw)
     start = _PG_START.search(raw)
     end = _PG_END.search(raw)
     if not start or not end or end.start() <= start.end():
@@ -187,7 +199,7 @@ def strip_gutenberg(raw: str) -> tuple[str, dict]:
         m = re.search(rf"^{field}:\s*(.+)$", header, re.M)
         if m:
             meta[field.lower().replace(" ", "_")] = m.group(1).strip()
-    body = raw[start.end(): end.start()].strip("\r\n") + "\n"
+    body = raw[start.end(): end.start()].strip("\n") + "\n"
     return body, meta
 
 
@@ -204,7 +216,7 @@ def _add_work(run: Path, work_id: str, body: str, meta: dict, source: str) -> di
     works = [w for w in _load_inventory(run) if w["work_id"] != work_id]
     path = run / "works" / f"{work_id}.txt"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
+    path.write_bytes(body.encode("utf-8"))
     row = {
         "work_id": work_id,
         "source": source,
@@ -242,7 +254,7 @@ def cmd_fetch(args: argparse.Namespace) -> int:
 def cmd_add_local(args: argparse.Namespace) -> int:
     if not args.attest_public_domain:
         raise AtlasError("add-local needs --attest-public-domain: only public-domain text may be sent")
-    body = Path(args.file).read_text(encoding="utf-8")
+    body = _normalize_newlines(Path(args.file).read_bytes().decode("utf-8-sig"))
     row = _add_work(args.run, args.work_id, body,
                     {"title": args.title, "author": args.author}, "local-attested-public-domain")
     _log(f"added {row['work_id']} ({row['n_words']:,} words)")
@@ -439,7 +451,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     plan_works = []
     counts_rows = []
     for w in works:
-        text = (run / "works" / f"{w['work_id']}.txt").read_text(encoding="utf-8")
+        text = _read_work(run, w["work_id"])
         if _sha256_bytes(text.encode("utf-8")) != w["text_sha256"]:
             raise AtlasError(f"{w['work_id']}: work text changed since fetch")
         chapters = split_chapters(text)
@@ -554,7 +566,7 @@ def step_requests(run: Path, plan: dict, step: str, model: str | None = None) ->
         }
 
     for w in plan["works"]:
-        text = (run / "works" / f"{w['work_id']}.txt").read_text(encoding="utf-8")
+        text = _read_work(run, w["work_id"])
         head = f"Work: {w['title']} by {w['author']}."
         if step == "cards":
             n = len(w["chapters"])
@@ -807,7 +819,7 @@ def cmd_headless(args: argparse.Namespace) -> int:
                          f"delete results/{step}.jsonl and its state entry to restart it")
     reqs = _read_jsonl(run / "requests" / f"{step}.jsonl")
     sys_file = run / "requests" / f"{step}.system.txt"
-    sys_file.write_text(reqs[0]["params"]["system"][0]["text"], encoding="utf-8")
+    sys_file.write_bytes(reqs[0]["params"]["system"][0]["text"].encode("utf-8"))
     cwd = run / "headless-cwd"  # empty, so no project files sit beside the call
     cwd.mkdir(exist_ok=True)
     res_p = run / "results" / f"{step}.jsonl"
@@ -825,11 +837,14 @@ def cmd_headless(args: argparse.Namespace) -> int:
         p = r["params"]
         argv = headless_argv(claude, p["model"], p["output_config"]["effort"], sys_file)
         try:
-            proc = subprocess.run(argv, input=p["messages"][0]["content"], capture_output=True,
-                                  text=True, encoding="utf-8", cwd=cwd, timeout=args.timeout)
-            body = parse_headless(proc.stdout, p["model"])
-            if body["type"] == "errored" and proc.stderr.strip():
-                body["error"] += f" | stderr: {proc.stderr.strip()[:300]}"
+            # Bytes both ways: text-mode pipes would turn LF into CRLF on Windows
+            # and change the prompt the recorded prompt_version describes.
+            proc = subprocess.run(argv, input=p["messages"][0]["content"].encode("utf-8"),
+                                  capture_output=True, cwd=cwd, timeout=args.timeout)
+            body = parse_headless(proc.stdout.decode("utf-8", errors="replace"), p["model"])
+            err = proc.stderr.decode("utf-8", errors="replace").strip()
+            if body["type"] == "errored" and err:
+                body["error"] += f" | stderr: {err[:300]}"
         except subprocess.TimeoutExpired:
             body = {"type": "errored", "error": f"timed out after {args.timeout}s"}
         return {"custom_id": r["custom_id"], "unit": r["unit"], **body}

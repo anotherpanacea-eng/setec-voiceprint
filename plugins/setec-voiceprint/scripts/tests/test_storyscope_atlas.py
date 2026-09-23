@@ -77,6 +77,18 @@ def test_gutenberg_wrapper_removed_and_metadata_read():
     assert meta == {"title": "Hard Times", "author": "Nobody"}
 
 
+def test_crlf_gutenberg_text_plans_after_fetch(tmp_path):
+    # Reproduces the Code-PC pilot refusal: Gutenberg serves CRLF, and the
+    # saved text must hash the same when plan reads it back.
+    raw = _pg_wrap(_novel()).replace("\n", "\r\n")
+    body, meta = sa.strip_gutenberg(raw)
+    assert "\r" not in body
+    sa._add_work(tmp_path, "pg1", body, meta, "gutenberg:1")
+    tax = tmp_path / "taxonomy.json"
+    tax.write_text(json.dumps(_taxonomy()), encoding="utf-8")
+    assert sa.main(["plan", "--run", str(tmp_path), "--taxonomy", str(tax)]) == 0
+
+
 def test_truncated_gutenberg_download_refused():
     raw = _pg_wrap("text\n").split("*** END")[0]
     with pytest.raises(sa.AtlasError):
