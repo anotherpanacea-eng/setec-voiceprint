@@ -276,8 +276,17 @@ def audit_mosaic(target_text: str, reference: list[tuple[str, str]], *,
 
 def _claim_license() -> dict[str, str]:
     return {
-        "licenses": "Coverage by verbatim token spans from the named pool, source multiplicity, and style distances at source joins.",
-        "does_not_license": "AI/human, authorship, plagiarism, copyright, intent, or claims about sources absent from the pool. No threshold or verdict is supplied.",
+        "licenses": (
+            "Coverage by verbatim token spans of at least min_ngram tokens from the named pool, "
+            "the number of source IDs canonically assigned under the first-containing-document "
+            "rule, and style distances at their joins."
+        ),
+        "does_not_license": (
+            "AI/human, authorship, plagiarism, copyright, intent, or claims about sources absent "
+            "from the pool. A low-coverage result cannot rule out reuse; a canonically assigned "
+            "source ID need not be the actual origin when several documents contain a passage. "
+            "No threshold or verdict is supplied."
+        ),
     }
 
 
