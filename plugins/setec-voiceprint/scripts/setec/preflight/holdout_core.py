@@ -373,13 +373,17 @@ def load_holdout_detail(path: Path, expected_sha256: str) -> dict:
     if type(sealed_manifests) is not list or not 1 <= len(sealed_manifests) <= 8:
         raise Refusal(code)
     labels = []
+    hashes = set()
     for item in sealed_manifests:
         obj = exact_keys(item, {"label", "manifest_sha256"}, code)
         if type(obj["label"]) is not str or LABEL.fullmatch(obj["label"]) is None:
             raise Refusal(code)
         require_hex(obj["manifest_sha256"], code)
         labels.append(obj["label"])
-    if labels != sorted(set(labels)):
+        hashes.add(obj["manifest_sha256"])
+    # A run refuses two sealed manifests with equal hashes (holdout_contract),
+    # so a detail naming one hash twice was not written by a run.
+    if labels != sorted(set(labels)) or len(hashes) != len(labels):
         raise Refusal(code)
     candidates = value["candidates"]
     sealed = value["sealed_records"]
@@ -476,6 +480,7 @@ def load_holdout_receipt(path: Path, expected_sha256: str) -> dict:
     if type(value["sealed"]) is not list or not 1 <= len(value["sealed"]) <= 8:
         raise Refusal(code)
     labels = []
+    hashes = set()
     for item in value["sealed"]:
         obj = exact_keys(item, {"label", "manifest_sha256", "distinct_record_count",
                                 "conflicting_record_count"}, code)
@@ -487,7 +492,10 @@ def load_holdout_receipt(path: Path, expected_sha256: str) -> dict:
             raise Refusal(code)
         require_hex(obj["manifest_sha256"], code)
         labels.append(obj["label"])
-    if labels != sorted(set(labels)):
+        hashes.add(obj["manifest_sha256"])
+    # A run refuses two sealed manifests with equal hashes (holdout_contract),
+    # so a receipt naming one hash twice was not written by a run.
+    if labels != sorted(set(labels)) or len(hashes) != len(labels):
         raise Refusal(code)
     if (type(value["candidate_count"]) is not int or not 1 <= value["candidate_count"] <= 5000 or
             type(value["conflicting_candidate_count"]) is not int or

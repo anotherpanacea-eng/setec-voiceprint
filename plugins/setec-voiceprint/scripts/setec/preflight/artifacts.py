@@ -7,11 +7,12 @@ from pathlib import Path
 import sys
 
 from .artifacts_core import (
-    calibrate, census, load_artifact_labels, load_artifact_policy,
+    LABEL_LIMIT, calibrate, census, parse_artifact_labels, parse_artifact_policy,
 )
 from .common import (
-    Refusal, canonical_json, load_manifest, load_manifest_for_calibration,
-    publish_bundle, require_hex, validate_output_path,
+    Refusal, bind_input, canonical_json, check_candidate_sizes, confine_output_path,
+    emit_committed, finish_manifest, plan_manifest, publish_bundle, require_hex,
+    validate_output_path, POLICY_LIMIT,
 )
 
 
@@ -22,8 +23,18 @@ class _Parser(argparse.ArgumentParser):
 
 def run_census(manifest_path: Path, policy_path: Path,
                out_bundle: Path) -> tuple[bytes, dict[str, str]]:
-    manifest = load_manifest(manifest_path)
-    policy = load_artifact_policy(policy_path)
+    """Run in phases so the first refusal matches slice 1 §4.6's master order."""
+    # Confinement: every named input and the output location.
+    manifest_input = bind_input(manifest_path)
+    policy_input = bind_input(policy_path)
+    confine_output_path(manifest_input.root, out_bundle)
+    # Manifest paths (confinement, then aliasing), then every size ceiling.
+    plan = plan_manifest(manifest_input)
+    policy_input.check_size(POLICY_LIMIT)
+    check_candidate_sizes(plan)
+    # Contracts in master order: manifest, then policy.
+    manifest = finish_manifest(plan)[0]
+    policy = parse_artifact_policy(policy_input.read(POLICY_LIMIT))
     result = census(manifest, policy)
     receipt = canonical_json(result.receipt)
     dest = validate_output_path(manifest.root, out_bundle)
@@ -35,12 +46,21 @@ def run_census(manifest_path: Path, policy_path: Path,
 def run_calibrate(manifest_path: Path, expected_manifest: str,
                   labels_path: Path, expected_labels: str, policy_path: Path,
                   out_bundle: Path) -> tuple[bytes, dict[str, str]]:
-    # Slice 1 section 4.6 ranks calibration_binding after the input, policy,
-    # work and labels contracts, so the expected hashes are compared last.
-    manifest, violations, identity = load_manifest_for_calibration(manifest_path)
-    policy = load_artifact_policy(policy_path)
-    labels, labels_sha256 = load_artifact_labels(
-        labels_path, policy, {record.id for record in manifest.records} | set(violations))
+    """The census phases plus the labels file; the expected hashes compare last,
+    since §4.6 ranks calibration_binding after every contract."""
+    manifest_input = bind_input(manifest_path)
+    policy_input = bind_input(policy_path)
+    labels_input = bind_input(labels_path)
+    confine_output_path(manifest_input.root, out_bundle)
+    plan = plan_manifest(manifest_input)
+    policy_input.check_size(POLICY_LIMIT)
+    labels_input.check_size(LABEL_LIMIT)
+    check_candidate_sizes(plan)
+    manifest, violations, identity = finish_manifest(plan, calibration=True)
+    policy = parse_artifact_policy(policy_input.read(POLICY_LIMIT))
+    labels, labels_sha256 = parse_artifact_labels(
+        labels_input.read(LABEL_LIMIT), policy,
+        {record.id for record in manifest.records} | set(violations))
     result = calibrate(manifest, violations, identity, labels, labels_sha256, policy)
     for expected, actual in ((expected_manifest, manifest.manifest_sha256),
                              (expected_labels, labels_sha256)):
@@ -75,18 +95,16 @@ def main(argv: list[str] | None = None) -> int:
                 Path(args.manifest), args.expect_manifest_sha256,
                 Path(args.labels), args.expect_labels_sha256,
                 Path(args.policy), Path(args.out_bundle))
-        # Slice 1 section 4.7 streams: stdout carries only the committed
-        # receipt bytes, stderr one aggregate line per completed stage.
-        sys.stdout.buffer.write(receipt)
-        for name, status in statuses.items():
-            sys.stderr.write(f"{name} {status}\n")
-        return 0
     except Refusal as exc:
         sys.stderr.write(exc.code + "\n")
         return 4 if exc.code == "output_unavailable" else 2
     except Exception:
         sys.stderr.write("internal_refusal\n")
         return 2
+    # Slice 1 section 4.7 streams: stdout carries only the committed receipt
+    # bytes, stderr one aggregate line per completed stage.
+    emit_committed(receipt, [f"{name} {status}" for name, status in statuses.items()])
+    return 0
 
 
 if __name__ == "__main__":

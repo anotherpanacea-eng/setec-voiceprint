@@ -7,8 +7,9 @@ from pathlib import Path
 import sys
 
 from .common import (
-    Refusal, bind_input, check_candidate_sizes, confine_output_path, finish_manifest,
-    plan_manifest, publish_bundle, validate_output_path, POLICY_LIMIT, SPLIT_LIMIT,
+    Refusal, bind_input, check_candidate_sizes, confine_output_path, emit_committed,
+    finish_manifest, plan_manifest, publish_bundle, validate_output_path, POLICY_LIMIT,
+    SPLIT_LIMIT,
 )
 from .overlap_core import build_overlap, parse_overlap_policy, parse_split_map
 
@@ -64,18 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         sys.stderr.write("internal_refusal\n")
         return 2
-    # The bundle is committed (§4.7: exit 0 means published). A failing stream
-    # after that point cannot un-publish it, so it is not reported as a refusal.
-    try:
-        sys.stdout.buffer.write(receipt)
-        sys.stdout.buffer.flush()
-    except Exception:
-        pass
-    try:
-        for name, status in statuses.items():
-            sys.stderr.write(f"{name} {status}\n")
-    except Exception:
-        pass
+    emit_committed(receipt, [f"{name} {status}" for name, status in statuses.items()])
     return 0
 
 

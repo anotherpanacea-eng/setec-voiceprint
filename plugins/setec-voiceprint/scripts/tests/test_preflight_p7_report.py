@@ -155,9 +155,36 @@ def test_refusal_order_follows_master_order(tmp_path):
 
 
 def test_sealed_register_binding_compares_sets(tmp_path):
-    # Spec 06 section 6.2 rule 6 compares the set of sealed manifest hashes.
+    # Spec 06 section 6.2 rule 6 compares the set of sealed manifest hashes:
+    # the receipt lists sealed sets by label, the register by hash.
     manifest, intake, final, *_ = _fixture(tmp_path)
-    sealed = _sealed(tmp_path, "unrelated sealed words", "sealed-set")
+    low, high = sorted((plain_hash(path.read_bytes()), path) for path in (
+        _sealed(tmp_path, "unrelated sealed words", "sealed-one"),
+        _sealed(tmp_path, "other sealed words", "sealed-two")))
+    policy = tmp_path / "holdout-policy-set.json"
+    policy.write_bytes(canonical_json({"schema": "setec-preflight-holdout-policy/1",
+                                       "ngram": 2, "shared_run": True,
+                                       "candidate_containment": None,
+                                       "sealed_containment": None,
+                                       "min_sealed_distinct": 1}))
+    private = tmp_path / "private-set"
+    run_holdout(manifest, [("a", high[1]), ("b", low[1])], policy, private,
+                tmp_path / "conflicts-set")
+    receipt = json.loads((private / "receipt.json").read_bytes())
+    assert [item["manifest_sha256"] for item in receipt["sealed"]] == [high[0], low[0]]
+    register = tmp_path / "register-set.json"
+    register.write_bytes(canonical_json({"schema": "setec-preflight-sealed-register/1",
+                                         "manifest_sha256s": [low[0], high[0]]}))
+    paths = _paths(intake, final)
+    paths["holdout"] = private / "receipt.json"
+    run_report(manifest, "conditioning_target", paths, register, tmp_path / "report")
+
+
+def test_holdout_receipt_with_repeated_sealed_hash_is_a_contract_refusal(tmp_path):
+    # A genuine holdout run refuses two sealed manifests with equal hashes
+    # (spec 04 section 5), so a receipt naming one twice is forged.
+    manifest, intake, final, *_ = _fixture(tmp_path)
+    sealed = _sealed(tmp_path, "unrelated sealed words", "sealed-repeat")
     holdout_receipt, register = _holdout(tmp_path, manifest, sealed, 60, label="a")
     receipt = json.loads(holdout_receipt.read_bytes())
     receipt["sealed"] = [receipt["sealed"][0], {**receipt["sealed"][0], "label": "b"}]
@@ -165,7 +192,8 @@ def test_sealed_register_binding_compares_sets(tmp_path):
     repeated.write_bytes(canonical_json(receipt))
     paths = _paths(intake, final)
     paths["holdout"] = repeated
-    run_report(manifest, "conditioning_target", paths, register, tmp_path / "report")
+    with pytest.raises(Refusal, match="receipt_contract"):
+        run_report(manifest, "conditioning_target", paths, register, tmp_path / "report")
 
 
 def test_decision_precedence_and_all_purposes_unreachable():
@@ -425,3 +453,38 @@ def test_composed_rows_never_clear_for_any_optional_subset_or_purpose(tmp_path):
                 assert {row.status for row in rows if row.obligation in
                         {"semantic_dedup", "perplexity_two_tail"}} == {"unavailable"}
                 assert decide(purpose, rows) not in {"eligible", "needs_human_review"}
+
+
+def test_output_inside_manifest_dir_outranks_receipt_contract(tmp_path):
+    # Slice 1 section 4.6: path_confinement ranks first, before any receipt.
+    manifest, intake, final, *_ = _fixture(tmp_path)
+    paths = _paths(intake, final)
+    paths["final"] = intake / "receipt.json"
+    with pytest.raises(Refusal, match="path_confinement"):
+        run_report(manifest, "conditioning_target", paths, None, manifest.parent / "report")
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_keeps_the_report_exit_code(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: once the report is published a failing stream is
+    # not a refusal; the exit code still reports the pending stages (3).
+    manifest, intake, final, *_ = _fixture(tmp_path)
+    paths = _paths(intake, final)
+    out = tmp_path / "report"
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert main(["--manifest", str(manifest), "--purpose", "conditioning_target",
+                 "--final-receipt", str(paths["final"]),
+                 "--intake-overlap-receipt", str(paths["intake"]),
+                 "--out-bundle", str(out)]) == 3
+    assert (out / "receipt.json").is_file()

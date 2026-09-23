@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Sequence
 
 from .common import (
-    Manifest, Record, Refusal, Snapshot, WorkBudget, _bind, canonical_json, domain_hash,
+    Manifest, ManifestPlan, Record, Refusal, Snapshot, WorkBudget, _bind, canonical_json,
+    domain_hash,
     exact_keys, parse_json, plain_hash, read_bounded, record_set_sha256, require_hex,
 )
 
@@ -253,14 +254,28 @@ def bind_span_sources(manifest: Manifest) -> SpanSources:
     if any((fingerprint[0], fingerprint[1]) != manifest.path_identities[name]
            for name, fingerprint in bound.items()):
         raise Refusal("input_changed")
+    return SpanSources(reused, _source_limits(
+        {name: fingerprint[2] for name, fingerprint in bound.items()}))
+
+
+def _source_limits(sizes: dict[str, int]) -> dict[str, int]:
+    """Per-source read limits under the per-file and combined ceilings."""
     limits: dict[str, int] = {}
     total = 0
-    for name, fingerprint in sorted(bound.items()):
+    for name, size in sorted(sizes.items()):
         limits[name] = min(SOURCE_LIMIT, COMBINED_SOURCE_LIMIT - total)
-        if fingerprint[2] > limits[name]:
+        if size > limits[name]:
             raise Refusal("size_limit")
-        total += fingerprint[2]
-    return SpanSources(reused, limits)
+        total += size
+    return limits
+
+
+def check_source_sizes(plan: ManifestPlan) -> None:
+    """Refuse ``size_limit`` for source files from their bindings alone, so the
+    ceiling outranks the manifest contract (slice 1 §4.6). A source that is
+    also a candidate is sized as a candidate and read once."""
+    _source_limits({name: fingerprint[2] for name, (_, fingerprint) in plan.bound.items()
+                    if name not in plan.candidates})
 
 
 def prove_spans(manifest: Manifest, policy: SpanPolicy,

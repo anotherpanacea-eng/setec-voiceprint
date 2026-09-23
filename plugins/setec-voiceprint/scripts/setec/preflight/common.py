@@ -9,6 +9,7 @@ from pathlib import Path, PureWindowsPath
 import re
 import secrets
 import shutil
+import sys
 import tempfile
 import unicodedata
 from collections import defaultdict
@@ -493,28 +494,52 @@ def _real_chain(path: Path) -> list[tuple[int, int]]:
     return chain
 
 
+def _location(path: Path) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
+    """The identity chain of ``path``'s deepest existing self-or-ancestor, and
+    the names below it that do not exist yet."""
+    path = Path(os.path.abspath(path))
+    tail: list[str] = []
+    while not os.path.exists(path) and path.parent != path:
+        tail.append(path.name)
+        path = path.parent
+    return _real_chain(path), tuple(reversed(tail))
+
+
+def paths_nest(first: Path, second: Path) -> bool:
+    """True when either path equals or lies beneath the other.
+
+    Existing components compare by file identity, so a case-folding or
+    symlinked spelling cannot slip past. Names that do not exist yet can only
+    compare by spelling; they compare case-folded, refusing rather than
+    trusting that the file system is case-sensitive. A symlink loop counts as
+    a missing name, so it is left to the availability check.
+    """
+    first_chain, first_tail = _location(first)
+    second_chain, second_tail = _location(second)
+    if not second_tail and second_chain[0] in first_chain:
+        return True
+    if not first_tail and first_chain[0] in second_chain:
+        return True
+    if first_chain[0] != second_chain[0]:
+        return False
+    common = min(len(first_tail), len(second_tail))
+    return ([name.casefold() for name in first_tail[:common]] ==
+            [name.casefold() for name in second_tail[:common]])
+
+
 def confine_output_path(manifest_root: Path, dest: Path) -> Path:
     """Refuse ``path_confinement`` when the bundle and manifest directory nest (§4.2).
 
-    Containment compares file identities, not strings, so a case-folding or
-    symlinked spelling of the manifest directory cannot slip past. Missing
-    tail components of ``dest`` are fine here; availability is checked later.
+    Missing tail components of ``dest`` are fine here; availability is checked
+    later, after every input check.
     """
     dest = Path(os.path.abspath(dest))
     try:
-        info = os.stat(manifest_root)
-        root = (info.st_dev, info.st_ino)
-        existing = dest.parent
-        while not os.path.exists(existing) and existing.parent != existing:
-            existing = existing.parent
-        if root in _real_chain(existing):
-            raise Refusal("path_confinement")
-        if os.path.exists(dest):
-            info = os.stat(dest)
-            if (info.st_dev, info.st_ino) in _real_chain(manifest_root):
-                raise Refusal("path_confinement")
+        nested = paths_nest(manifest_root, dest)
     except OSError:
         raise Refusal("output_unavailable") from None
+    if nested:
+        raise Refusal("path_confinement")
     return dest
 
 
@@ -600,6 +625,26 @@ def publish_bundle(dest: Path, files: dict[str, bytes]) -> None:
             winio.close(stage_handle)
         if staging is not None:
             shutil.rmtree(staging, ignore_errors=True)
+
+
+def emit_committed(stdout: bytes, lines: Sequence[str]) -> None:
+    """Write a published command's streams (§4.7), never failing the run.
+
+    The bundle is committed before this runs, so exit 0 already holds; a
+    closed or broken stream cannot un-publish it and is not a refusal.
+    """
+    try:
+        if stdout:
+            sys.stdout.buffer.write(stdout)
+            sys.stdout.buffer.flush()
+    except Exception:
+        pass
+    try:
+        for line in lines:
+            sys.stderr.write(line + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def validate_coordination_strata(value: object) -> tuple[str, ...]:

@@ -457,3 +457,68 @@ def test_receipt_reloader_refuses_impossible_cluster_counts(tmp_path, changes):
     path.write_bytes(data)
     with pytest.raises(Refusal, match="receipt_contract"):
         load_multiplicity_receipt(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("output_inside_manifest_dir+policy_contract", "path_confinement"),
+    ("admission_map_directory+detail_contract", "path_confinement"),
+    ("manifest_contract+policy_oversize", "size_limit"),
+    ("manifest_contract+admission_oversize", "size_limit"),
+    ("manifest_contract+output_collision", "input_contract"),
+])
+def test_combined_violations_report_the_earliest_master_order_code(
+        tmp_path, capsysbinary, case, expected):
+    # Slice 1 section 4.6, first match wins: confinement of every input and
+    # the output, then every size ceiling, then contracts, then the output.
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    out = tmp_path / "out"
+    if "output_inside" in case:
+        out = root / "out"
+    args = _main_args(root, manifest, detail, detail_hash, out)
+    policy = root / "multiplicity-policy.json"
+    admission = root / "admission.json"
+    admission.write_bytes(canonical_json({
+        "schema": "setec-preflight-admission/1", "overlap_detail_sha256": detail_hash,
+        "assignments": {"r0": {"admitted": True, "micro_weight": 1}}}))
+    if "policy_contract" in case:
+        policy.write_bytes(b"{}")
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (64 * 1024 + 1))
+    if "admission_map_directory" in case:
+        admission = root / "admission-dir"
+        admission.mkdir()
+    if "admission_oversize" in case:
+        admission.write_bytes(b" " * (8 * 1024 * 1024 + 1))
+    if "detail_contract" in case:
+        args[args.index("--overlap-detail-sha256") + 1] = "0" * 64
+    if "manifest_contract" in case:
+        row = json.loads(manifest.read_bytes())
+        row["unknown"] = True
+        manifest.write_bytes(canonical_json(row))
+    if "output_collision" in case:
+        out.mkdir()
+    assert multiplicity.main([*args, "--admission-map", str(admission)]) == 2
+    assert capsysbinary.readouterr() == (b"", expected.encode() + b"\n")
+    assert not (out / "receipt.json").exists()
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: exit 0 means the bundle is published, and a stream
+    # that fails afterwards cannot un-publish it.
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    out = tmp_path / "out"
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert multiplicity.main(_main_args(root, manifest, detail, detail_hash, out)) == 0
+    assert (out / "receipt.json").is_file()

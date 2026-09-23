@@ -251,17 +251,17 @@ def test_source_refusals_outrank_policy_contract(tmp_path, monkeypatch):
         with pytest.raises(Refusal, match="size_limit"):
             run(manifest, policy, tmp_path / "size")
 
-    loaded = load_manifest
+    loaded = span.finish_manifest
 
-    def load_then_replace(path):
-        result = loaded(path)
+    def load_then_replace(plan):
+        result = loaded(plan)
         replacement = tmp_path / "in" / "replacement.txt"
         replacement.write_bytes(source)
         replacement.replace(tmp_path / "in" / "source.txt")
         return result
 
     with monkeypatch.context() as patch:
-        patch.setattr(span, "load_manifest", load_then_replace)
+        patch.setattr(span, "finish_manifest", load_then_replace)
         with pytest.raises(Refusal, match="input_changed"):
             run(manifest, policy, tmp_path / "changed")
 
@@ -347,7 +347,7 @@ def test_reused_candidate_and_identical_sources_are_read_once(tmp_path, monkeypa
 
     monkeypatch.setattr(span_core, "read_bounded", counting_read)
     run(manifest, policy, tmp_path / "out")
-    assert sorted(reads) == ["policy.json", "s1.txt", "s2.txt"]
+    assert sorted(reads) == ["s1.txt", "s2.txt"]
     assert _proof_results(tmp_path / "out") == ["proved"] * 5
 
 
@@ -526,3 +526,61 @@ def test_detail_reloader_refuses_rows_that_contradict_each_other(tmp_path, forge
         rows[2]["disposition"] = "disallowed"
     with pytest.raises(Refusal, match="detail_contract"):
         _forge(tmp_path, _restamp(detail), load_span_detail)
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("output_inside_manifest_dir+policy_contract", "path_confinement"),
+    ("manifest_contract+policy_oversize", "size_limit"),
+    ("manifest_contract+source_oversize", "size_limit"),
+    ("manifest_contract+output_collision", "input_contract"),
+])
+def test_combined_violations_report_the_earliest_master_order_code(
+        tmp_path, monkeypatch, capsysbinary, case, expected):
+    # Slice 1 section 4.6, first match wins: confinement of every input and
+    # the output, then every size ceiling, then contracts, then the output.
+    source = b"A.\n\nB."
+    manifest, policy = _packet(tmp_path / "in", {"source.txt": source},
+                               [("candidate.txt", b"B.", "source.txt", 4, 6)])
+    out = tmp_path / "out"
+    if "output_inside" in case:
+        out = manifest.parent / "out"
+    if "policy_contract" in case:
+        policy.write_bytes(b"{}")
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (4 * 1024 + 1))
+    if "source_oversize" in case:
+        monkeypatch.setattr(span_core, "SOURCE_LIMIT", len(source) - 1)
+    if "manifest_contract" in case:
+        row = json.loads(manifest.read_bytes())
+        row["unknown"] = True
+        manifest.write_bytes(canonical_json(row))
+    if "output_collision" in case:
+        out.mkdir()
+    assert span.main(["--manifest", str(manifest), "--policy", str(policy),
+                      "--out-bundle", str(out)]) == 2
+    assert capsysbinary.readouterr() == (b"", expected.encode() + b"\n")
+    assert not (out / "receipt.json").exists()
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: exit 0 means the bundle is published, and a stream
+    # that fails afterwards cannot un-publish it.
+    manifest, policy = _packet(tmp_path / "in", {"source.txt": b"A.\n\nB."},
+                               [("candidate.txt", b"B.", "source.txt", 4, 6)])
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    out = tmp_path / "out"
+    assert span.main(["--manifest", str(manifest), "--policy", str(policy),
+                      "--out-bundle", str(out)]) == 0
+    assert (out / "receipt.json").is_file()

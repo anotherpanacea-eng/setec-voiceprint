@@ -12,9 +12,10 @@ from typing import Mapping, Sequence
 import preprocessing
 
 from .common import (
-    Manifest, Record, Refusal, WorkBudget, canonical_json, collapse_strata,
+    Manifest, Record, Refusal, Snapshot, WorkBudget, canonical_json, collapse_strata,
     coordination_label, domain_hash, exact_keys, parse_json, plain_hash,
     read_bounded, record_set_sha256, require_hex, validate_coordination_strata,
+    POLICY_LIMIT,
 )
 
 TOOL = "setec.preflight.artifacts"
@@ -132,7 +133,11 @@ class CalibrationResult:
 
 
 def load_artifact_policy(path: Path) -> ArtifactPolicy:
-    snapshot = read_bounded(path.parent, path.name, 64 * 1024)
+    return parse_artifact_policy(read_bounded(path.parent, path.name, POLICY_LIMIT))
+
+
+def parse_artifact_policy(snapshot: Snapshot) -> ArtifactPolicy:
+    """Validate policy bytes already read under ``POLICY_LIMIT``."""
     value = exact_keys(parse_json(snapshot.data, "policy_contract"),
                        {"schema", "dispositions", "coordination_strata"}, "policy_contract")
     if value["schema"] != POLICY_SCHEMA:
@@ -401,14 +406,9 @@ def census(manifest: Manifest, policy: ArtifactPolicy) -> CensusResult:
     return CensusResult(detail, receipt)
 
 
-def load_artifact_labels(path: Path, policy: ArtifactPolicy,
-                         manifest_ids: set[str], *,
-                         expected_sha256: str | None = None) -> tuple[dict[str, dict], str]:
-    snapshot = read_bounded(path.parent, path.name, LABEL_LIMIT)
-    if expected_sha256 is not None:
-        require_hex(expected_sha256, "calibration_binding")
-        if snapshot.sha256 != expected_sha256:
-            raise Refusal("calibration_binding")
+def parse_artifact_labels(snapshot: Snapshot, policy: ArtifactPolicy,
+                          manifest_ids: set[str]) -> tuple[dict[str, dict], str]:
+    """Validate label bytes already read under ``LABEL_LIMIT``."""
     code = "labels_contract"
     value = exact_keys(parse_json(snapshot.data, code),
                        {"schema", "register_cells", "labels"}, code)

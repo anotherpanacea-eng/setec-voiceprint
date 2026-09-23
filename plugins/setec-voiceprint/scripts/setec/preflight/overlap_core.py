@@ -13,7 +13,7 @@ from .common import (
     Manifest, Record, Refusal, Snapshot, WorkBudget, canonical_json, collapse_strata,
     domain_hash, exact_keys, load_strict_json, plain_hash, read_bounded,
     record_set_sha256, require_hex, validate_coordination_strata, parse_json,
-    OVERLAP_DETAIL_LIMIT, POLICY_LIMIT, RECEIPT_LIMIT, SPLIT_LIMIT,
+    OVERLAP_DETAIL_LIMIT, RECEIPT_LIMIT,
     STAGE_STATUSES,
 )
 
@@ -79,10 +79,6 @@ def parse_overlap_policy(snapshot: Snapshot) -> tuple[dict, str]:
     return policy, snapshot.sha256
 
 
-def load_overlap_policy(path: Path) -> tuple[dict, str]:
-    return parse_overlap_policy(read_bounded(path.parent, path.name, POLICY_LIMIT))
-
-
 def parse_split_map(snapshot: Snapshot,
                     records: Sequence[Record]) -> tuple[dict[str, str], str]:
     """Validate split-map bytes already read under ``SPLIT_LIMIT`` (§6.6)."""
@@ -96,10 +92,6 @@ def parse_split_map(snapshot: Snapshot,
                    for item in assignments.values())):
         raise Refusal("split_contract")
     return assignments, snapshot.sha256
-
-
-def load_split_map(path: Path, records: Sequence[Record]) -> tuple[dict[str, str], str]:
-    return parse_split_map(read_bounded(path.parent, path.name, SPLIT_LIMIT), records)
 
 
 def _separator(char: str) -> bool:

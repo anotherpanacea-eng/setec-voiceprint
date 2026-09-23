@@ -632,3 +632,71 @@ def test_refusal_order_follows_master_order(tmp_path, capsys):
     labels = _labels(tmp_path, [_label(0, "artifact"), _label(9, "artifact")])
     with pytest.raises(Refusal, match="labels_contract"):
         run_calibrate(manifest, "0" * 64, labels, "0" * 64, policy, tmp_path / "cal")
+
+
+def _break_manifest(manifest: Path) -> None:
+    row = json.loads(manifest.read_bytes().splitlines()[0])
+    row["unknown"] = True
+    manifest.write_bytes(canonical_json(row))
+
+
+@pytest.mark.parametrize("mode, case, expected", [
+    (mode, case, expected) for mode in ("census", "calibrate")
+    for case, expected in (("output_inside_manifest_dir+policy_contract", "path_confinement"),
+                           ("manifest_contract+policy_oversize", "size_limit"),
+                           ("manifest_contract+output_collision", "input_contract"))
+] + [("calibrate", "manifest_contract+labels_oversize", "size_limit")])
+def test_combined_violations_report_the_earliest_master_order_code(
+        tmp_path, capsys, mode, case, expected):
+    # Slice 1 section 4.6, first match wins: confinement of every input and
+    # the output, then every size ceiling, then contracts, then the output.
+    import setec.preflight.artifacts as command
+    manifest = _manifest(tmp_path / "packet", [b"<p>artifact</p>", b"dialect prose"])
+    policy = _policy(tmp_path)
+    labels = _labels(tmp_path, [_label(0, "artifact"),
+                                _label(1, "legitimate_variation", "dialect")])
+    out = tmp_path / "out"
+    if "output_inside" in case:
+        out = manifest.parent / "out"
+    if "policy_contract" in case:
+        policy.write_bytes(b"{}")
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (64 * 1024 + 1))
+    if "labels_oversize" in case:
+        labels.write_bytes(b" " * (1024 * 1024 + 1))
+    if "manifest_contract" in case:
+        _break_manifest(manifest)
+    if "output_collision" in case:
+        out.mkdir()
+    args = [mode, "--manifest", str(manifest), "--policy", str(policy),
+            "--out-bundle", str(out)]
+    if mode == "calibrate":
+        args += ["--expect-manifest-sha256", "0" * 64, "--labels", str(labels),
+                 "--expect-labels-sha256", "0" * 64]
+    assert command.main(args) == 2
+    assert capsys.readouterr() == ("", expected + "\n")
+    assert not (out / "receipt.json").exists()
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: exit 0 means the bundle is published, and a stream
+    # that fails afterwards cannot un-publish it.
+    import setec.preflight.artifacts as command
+    manifest = _manifest(tmp_path / "packet", [b"<p>artifact</p>"])
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    out = tmp_path / "out"
+    assert command.main(["census", "--manifest", str(manifest), "--policy",
+                         str(_policy(tmp_path)), "--out-bundle", str(out)]) == 0
+    assert (out / "receipt.json").is_file()
