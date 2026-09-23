@@ -55,7 +55,7 @@ def main(argv: list[str] | None = None) -> int:
         receipt, statuses = run(Path(args.manifest), Path(args.policy),
                                 Path(args.overlap_detail), args.overlap_detail_sha256,
                                 Path(args.out_bundle),
-                                Path(args.admission_map) if args.admission_map else None)
+                                None if args.admission_map is None else Path(args.admission_map))
         sys.stdout.buffer.write(receipt)
         for name, status in statuses.items():
             sys.stderr.write(f"{name} {status}\n")

@@ -9,6 +9,7 @@ import random
 import pytest
 
 from setec.preflight.common import Refusal, canonical_json, plain_hash
+from setec.preflight import multiplicity, overlap_core
 from setec.preflight.overlap import run as run_overlap
 from setec.preflight.multiplicity import run as run_multiplicity
 from setec.preflight.multiplicity_core import (
@@ -369,6 +370,89 @@ def test_receipt_reloader_derives_cluster_limit_from_counts(tmp_path, rule, cap)
     receipt["reason_counts"]["ok"] = 1
     receipt["stage_status"]["multiplicity"] = "passed"
     path = tmp_path / "forged-limit-receipt.json"
+    data = canonical_json(receipt)
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="receipt_contract"):
+        load_multiplicity_receipt(path, plain_hash(data))
+
+
+def _main_args(root: Path, manifest: Path, detail: Path, detail_hash: str, out: Path) -> list[str]:
+    policy = root / "multiplicity-policy.json"
+    policy.write_bytes(canonical_json({"schema": "setec-preflight-multiplicity-policy/1",
+                                       "purpose": "conditioning_target",
+                                       "rule": "cap_per_cluster", "cap": 1}))
+    return ["--manifest", str(manifest), "--policy", str(policy),
+            "--overlap-detail", str(detail), "--overlap-detail-sha256", detail_hash,
+            "--out-bundle", str(out)]
+
+
+def test_empty_admission_map_argument_refuses_instead_of_not_supplied(tmp_path, capsysbinary):
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    out = tmp_path / "out"
+    args = _main_args(root, manifest, detail, detail_hash, out)
+    assert multiplicity.main([*args, "--admission-map", ""]) == 2
+    streams = capsysbinary.readouterr()
+    assert streams.out == b"" and streams.err == b"admission_contract\n"
+    assert not out.exists()
+
+
+def test_injected_exception_is_internal_refusal_only(tmp_path, monkeypatch, capsysbinary):
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["CANARY prose text"])
+
+    def explode(*_args):
+        raise RuntimeError("CANARY-EXCEPTION r0")
+
+    monkeypatch.setattr(multiplicity, "evaluate_multiplicity", explode)
+    out = tmp_path / "out"
+    assert multiplicity.main(_main_args(root, manifest, detail, detail_hash, out)) == 2
+    streams = capsysbinary.readouterr()
+    assert streams.out == b"" and streams.err == b"internal_refusal\n"
+    assert not out.exists()
+
+
+def test_overlap_detail_over_its_ceiling_refuses_detail_contract(tmp_path, monkeypatch):
+    """Slice 1 §7.1 owns the overlap detail's reloader and its refusal code."""
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    policy = root / "multiplicity-policy.json"
+    policy.write_bytes(canonical_json({"schema": "setec-preflight-multiplicity-policy/1",
+                                       "purpose": "conditioning_target",
+                                       "rule": "cap_per_cluster", "cap": 1}))
+    size = len(detail.read_bytes())
+    monkeypatch.setattr(overlap_core, "OVERLAP_DETAIL_LIMIT", size)
+    run_multiplicity(manifest, policy, detail, detail_hash, tmp_path / "at-limit")
+    monkeypatch.setattr(overlap_core, "OVERLAP_DETAIL_LIMIT", size - 1)
+    with pytest.raises(Refusal, match="detail_contract"):
+        run_multiplicity(manifest, policy, detail, detail_hash, tmp_path / "over-limit")
+
+
+@pytest.mark.parametrize("rule,weights,reason,forged", [
+    ("cluster_weighting", [999_999], "cluster_weight_sum", 2),
+    ("one_representative_per_cluster", [999_999], "representative_weight", 2),
+])
+def test_receipt_reloader_bounds_violation_counts(tmp_path, rule, weights, reason, forged):
+    _, receipt, statuses, _ = _run(tmp_path, ["one text"], weights, rule=rule)
+    assert statuses["multiplicity"] == "failed"
+    assert receipt["reason_counts"][reason] == 1
+    assert receipt["counts"]["clusters"] == receipt["counts"]["admitted"] == 1
+    receipt["reason_counts"][reason] = forged
+    path = tmp_path / "forged-bound-receipt.json"
+    data = canonical_json(receipt)
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="receipt_contract"):
+        load_multiplicity_receipt(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("changes", [
+    {"withheld_cluster_not_admitted": 0, "withheld_exact_copy": 1},
+    {"clusters_with_admitted": 2},
+], ids=["unadmitted_cluster_without_withheld_row", "more_admitted_clusters_than_records"])
+def test_receipt_reloader_refuses_impossible_cluster_counts(tmp_path, changes):
+    _, receipt, statuses, _ = _run(tmp_path, ["first unrelated prose", "second other words"],
+                                   [1_000_000, 0])
+    assert statuses["multiplicity"] == "passed"
+    assert receipt["counts"]["clusters"] == 2 and receipt["counts"]["admitted"] == 1
+    receipt["counts"].update(changes)
+    path = tmp_path / "forged-cluster-receipt.json"
     data = canonical_json(receipt)
     path.write_bytes(data)
     with pytest.raises(Refusal, match="receipt_contract"):

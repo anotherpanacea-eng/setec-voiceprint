@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from .common import Refusal, load_manifest, publish_bundle, validate_output_path
-from .span_core import build_span, load_span_policy
+from .span_core import bind_span_sources, build_span, parse_span_policy, read_span_policy
 
 
 class _Parser(argparse.ArgumentParser):
@@ -16,9 +16,13 @@ class _Parser(argparse.ArgumentParser):
 
 
 def run(manifest_path: Path, policy_path: Path, output_path: Path) -> tuple[bytes, dict]:
+    # Phases follow slice 1 §4.6: every read and bind, then the policy
+    # contract, then the counted classifier work.
     manifest = load_manifest(manifest_path)
-    policy = load_span_policy(policy_path)
-    detail, receipt, statuses = build_span(manifest, policy)
+    policy_snapshot = read_span_policy(policy_path)
+    sources = bind_span_sources(manifest)
+    policy = parse_span_policy(policy_snapshot)
+    detail, receipt, statuses = build_span(manifest, policy, sources)
     dest = validate_output_path(manifest.root, output_path)
     publish_bundle(dest, {"detail.json": detail, "receipt.json": receipt})
     return receipt, statuses

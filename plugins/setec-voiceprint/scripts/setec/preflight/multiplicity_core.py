@@ -77,7 +77,8 @@ def load_multiplicity_policy(path: Path) -> tuple[MultiplicityPolicy, str]:
 
 def load_admission_map(path: Path, manifest: Manifest, overlap_detail_sha256: str,
                        policy: MultiplicityPolicy) -> tuple[dict[str, Admission], str]:
-    if policy.rule == "no_training_consumption":
+    # An empty argument names no map; it is refused, never read as "not supplied".
+    if policy.rule == "no_training_consumption" or not path.name:
         raise Refusal("admission_contract")
     value, sha = _control(path, 8 * 1024 * 1024, ADMISSION_SCHEMA,
                           {"schema", "overlap_detail_sha256", "assignments"},
@@ -312,6 +313,19 @@ def _validate_common(value: dict, code: str) -> str:
                 (counts["max_admitted_per_cluster"] >= 2) !=
                 (counts["clusters_multi_admitted"] > 0) or
                 reasons["admitted_exact_duplicate"] > counts["admitted"] // 2):
+            raise Refusal(code)
+        # A violating cluster has an admitted member (a zero-sum cluster admits
+        # nothing), each counted record is admitted, and every cluster without
+        # an admitted member withholds at least one record as not admitted.
+        if (reasons["cluster_over_limit"] > counts["clusters_with_admitted"] or
+                reasons["cluster_weight_sum"] > counts["clusters_with_admitted"] or
+                reasons["representative_weight"] > counts["admitted"] or
+                counts["clusters_with_admitted"] + counts["clusters_multi_admitted"] >
+                counts["admitted"] or
+                counts["withheld_cluster_not_admitted"] <
+                counts["clusters"] - counts["clusters_with_admitted"] or
+                (counts["withheld_cluster_not_admitted"] == 0) !=
+                (counts["clusters_with_admitted"] == counts["clusters"])):
             raise Refusal(code)
         if value["rule"] == "one_representative_per_cluster" or (
                 value["rule"] == "cap_per_cluster" and value["cap"] == 1):
