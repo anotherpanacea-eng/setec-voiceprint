@@ -6,8 +6,8 @@
 > how many distinct sources its covered spans come from, and how the style
 > shifts at the joins between them.
 
-- **Status:** M1 build-contract after review; M2 gated on a separate replay
-  protocol and operator authorization (2026-09-23).
+- **Status:** M1 built and independently reviewed in draft PR #480;
+  M2 gated on a separate replay protocol and operator authorization (2026-09-23).
 - **Tier:** near-term for M1 (stdlib); M2 replay of model-backed signals on the
   local box.
 - **GPU required:** no for M1; M2 re-scoring uses the existing model-backed
@@ -130,7 +130,10 @@ Given a target and a reference pool (directory or manifest, same inputs as
    existing capability's output is byte-identical with the option off. Carry
    `--max-span` (default 256) and report `max_span_cap` and
    `longest_match_capped`; cap-induced splits are not source joins and must
-   not inflate junction counts. A capped span length is a lower bound.
+   not inflate junction counts. A capped continuation is assigned to the
+   first reference containing the full contiguous run, while raw counted
+   span lengths remain the DJ-Search cover. A capped span length is a lower
+   bound.
    Keep this bounded core run below the repo's long-job checkpoint trigger:
    hard ceilings are 60,000 target tokens, 100,000 post-exclusion reference
    tokens, 5,000 reference documents, and `max_span <= 1024`. Callers may
@@ -145,7 +148,7 @@ Given a target and a reference pool (directory or manifest, same inputs as
 3. **Junctions:** every boundary between two consecutive counted spans whose
    sources differ, plus every boundary between a counted span and uncovered
    text. For each, compute the stylometric distance between the 1 to 2
-   sentences on either side using the `within_doc_segmentation` feature
+   sentences on either side (`--junction-sentences` is 1 or 2) using the `within_doc_segmentation` feature
    families and standardization/distance math. Extract an import-clean,
    shared pure lens if needed: importing `within_doc_segmentation` currently
    reaches optional NLTK/download paths through `variance_audit`, so the M1
@@ -155,10 +158,12 @@ Given a target and a reference pool (directory or manifest, same inputs as
    Fix one document-wide feature-name vocabulary: all function-word and
    sentence-shape features, plus the top 256 character n-grams by summed raw
    per-window frequency across the target (lexicographic tie break). Then
-   z-score over the complete document-wide window
-   population and apply that same basis to junction and interior distances;
-   never fit a separate z-score basis per pair. Use the sibling lens's
-   zero-variance and zero-norm handling. If a side lacks usable text, emit
+   z-score over the complete document-wide population of one- and
+   two-sentence windows and apply that same basis to junction and interior distances;
+   never fit a separate z-score basis per pair. A feature with zero variance
+   in the complete basis has standardized value zero even if a clipped
+   junction window contains it. Use the sibling lens's zero-norm handling.
+   If a side lacks usable text, emit
    `null` distance with a reason. Emit every sentence's offsets and sparse
    nonzero numeric features under a fixed `feature_vocabulary` (absent keys
    mean zero; no copied prose); bound the feature vocabulary, not the number
@@ -248,7 +253,7 @@ threshold or a detector.
   whose sources are not in the pool. A low coverage against a pool that lacks
   the sources says nothing.
 - **capabilities.d entry:** `verbatim_mosaic_audit.yaml` plus a drop-in
-  `_golden_capabilities/verbatim_mosaic_audit.json` fragment (no `==N` count
+  `plugins/setec-voiceprint/scripts/tests/_golden_capabilities/verbatim_mosaic_audit.json` fragment (no `==N` count
   literal, per post-#170 practice), `status: heuristic`, `compute.tier: core`,
   `length_floor_words: 24`, `consumers: []`.
 - **Dependencies:** none beyond stdlib for M1. M2 inherits existing model tiers.
