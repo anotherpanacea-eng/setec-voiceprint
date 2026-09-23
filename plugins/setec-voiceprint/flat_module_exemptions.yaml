@@ -246,3 +246,18 @@ exemptions:
   owner: packaging
   introduced_sha: 32791aa881900de4c72d116e328990ff7acd50f3
   removal_phase: P3
+- module: verbatim_cover.py
+  reason: >-
+    L1 library (no capabilities.d card, no `__main__`, no build_output emission)
+    holding the DJ-Search matcher, its token unit, the reference-pool loaders and the
+    content fingerprint, moved verbatim out of originality_audit.py (which re-exports the
+    same objects) so verbatim_mosaic_audit.py and its fixture generator reach them as
+    L2->L1 instead of adding L2->L2 edges the layering ratchet forbids. Unlike
+    setec.core.acquisition_primitives it is deliberately flat: it now DEFINES the shared
+    _load_reference_* pool loaders, and the spec-36 pool-guard and register-isolation
+    closure sweeps scan only the non-recursive scripts/*.py glob, so moving it under
+    setec/core would take the canonical definer out of their reach. P3 relocation must
+    carry those sweeps' scope with it.
+  owner: packaging
+  introduced_sha: f80b2b5a6fe8868ab5505e694298b7ce79d9c7d8
+  removal_phase: P3
