@@ -3,7 +3,13 @@ name: claude
 # On-demand Claude work from GitHub: a comment, review, or issue that mentions
 # `@claude` starts one run of claude-code-action. Nothing else triggers it, so
 # ordinary pushes and PR updates spend no Actions minutes here; events without
-# the mention are skipped before a runner starts.
+# the mention are skipped before a runner starts. Issues trigger only when
+# opened, so editing or assigning an old issue never re-runs it.
+#
+# There is deliberately no concurrency group: GitHub keeps only one pending
+# run per group, so a third mention would silently replace the second. Each
+# mention gets its own run; if two push to the same branch, the later push
+# fails visibly instead of a request vanishing.
 #
 # Only repository owners, members, and collaborators can start a run. Bot
 # accounts are refused by the action unless listed in `allowed_bots`.
@@ -19,7 +25,7 @@ on:
   pull_request_review:
     types: [submitted]
   issues:
-    types: [opened, assigned]
+    types: [opened]
 
 jobs:
   claude:
@@ -36,10 +42,6 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # One run per issue or PR at a time; a second mention queues behind it.
-    concurrency:
-      group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
-      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write

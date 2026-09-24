@@ -15,7 +15,6 @@ WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 RELEASE_SHA256 = "2d5385b0793ad82dcb28e9d2ecf7feb95a5da1f01c2afdab672a20e4c49d5b05"
 CLAUDE = ROOT / ".github" / "workflows" / "claude.yml"
-CLAUDE_SHA256 = "77a123ac548fba7d26760646835918a6cf70f37a8c29cea4c543d094b7dfe598"
 EVENTS = [
     "opened", "synchronize", "reopened", "ready_for_review",
     "converted_to_draft", "labeled", "unlabeled",
@@ -339,6 +338,69 @@ def _violations(text: str) -> list[str]:
     return problems
 
 
+CLAUDE_EVENTS = {
+    "issue_comment": ["created"],
+    "pull_request_review_comment": ["created"],
+    "pull_request_review": ["submitted"],
+    "issues": ["opened"],
+}
+CLAUDE_TRUSTED = """fromJSON('["OWNER","MEMBER","COLLABORATOR"]')"""
+CLAUDE_PERMISSIONS = {
+    "contents": "write", "pull-requests": "write", "issues": "write",
+    "id-token": "write", "actions": "read",
+}
+CLAUDE_ACTION = "anthropics/claude-code-action@v1"
+
+
+def _claude_violations(text: str) -> list[str]:
+    """Policy for the on-demand @claude workflow (public repo, billed runner).
+
+    Only a trusted author's mention may start a run, on one bounded job,
+    with no widened actor allowlist and no extra commands.
+    """
+    problems: list[str] = []
+    try:
+        workflow = _load(text)
+    except Exception as exc:  # noqa: BLE001 - any parse failure is a violation
+        return [f"unparseable: {exc}"]
+    on = workflow.get("on") or {}
+    if set(on) != set(CLAUDE_EVENTS):
+        problems.append(f"triggers: {sorted(on)}")
+    for event, types in CLAUDE_EVENTS.items():
+        if (on.get(event) or {}).get("types") != types:
+            problems.append(f"{event}: types")
+    if "permissions" in workflow or "concurrency" in workflow:
+        problems.append("workflow-level permissions or concurrency")
+    jobs = workflow.get("jobs") or {}
+    if set(jobs) != {"claude"}:
+        return problems + [f"jobs: {sorted(jobs)}"]
+    job = jobs["claude"]
+    if set(job) != {"if", "runs-on", "timeout-minutes", "permissions", "steps"}:
+        problems.append(f"job keys: {sorted(job)}")
+    condition = job.get("if", "")
+    if condition.count("'@claude'") != 5 or condition.count(CLAUDE_TRUSTED) != 4:
+        problems.append("job gate: every event must require a trusted @claude mention")
+    if job.get("runs-on") != "ubuntu-latest":
+        problems.append("runner")
+    timeout = job.get("timeout-minutes", "")
+    if not timeout.isdigit() or int(timeout) > 30:
+        problems.append("timeout")
+    if job.get("permissions") != CLAUDE_PERMISSIONS:
+        problems.append("job permissions")
+    steps = job.get("steps") or []
+    if [step.get("uses") for step in steps] != ["actions/checkout@v4", CLAUDE_ACTION]:
+        problems.append("steps")
+    for step in steps:
+        if "run" in step or "continue-on-error" in step:
+            problems.append(f"{step.get('uses')}: run or continue-on-error")
+    inputs = (steps[-1].get("with") or {}) if steps else {}
+    if set(inputs) - {"claude_code_oauth_token", "additional_permissions"}:
+        problems.append(f"action inputs: {sorted(inputs)}")
+    if inputs.get("claude_code_oauth_token") != "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}":
+        problems.append("token source")
+    return problems
+
+
 def test_current_workflow_holds_closed_train_policy():
     workflow_paths = _workflow_names(ROOT / ".github" / "workflows")
     assert workflow_paths == {
@@ -350,15 +412,7 @@ def test_current_workflow_holds_closed_train_policy():
     release = _load(release_text)
     assert release["on"] == {"push": {"tags": ["v*"]}}
     assert set(release["jobs"]) == {"publish"}
-    claude_text = CLAUDE.read_text(encoding="utf-8").replace("\r\n", "\n")
-    assert _release_digest(claude_text) == CLAUDE_SHA256
-    claude = _load(claude_text)
-    assert set(claude["on"]) == {
-        "issue_comment", "pull_request_review_comment",
-        "pull_request_review", "issues",
-    }
-    assert set(claude["jobs"]) == {"claude"}
-    assert "@claude" in claude["jobs"]["claude"]["if"]
+    assert _claude_violations(CLAUDE.read_text(encoding="utf-8")) == []
 
 
 def test_workflow_inventory_includes_yaml_extension(tmp_path: Path):
@@ -410,3 +464,30 @@ def test_policy_mutations_fail_closed(old: str, new: str):
     assert old in text
     mutated = text.replace(old, new, 1)
     assert _violations(mutated), f"mutation escaped: {old!r}"
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("  issue_comment:\n", "  pull_request_target:\n  issue_comment:\n"),
+        ("    types: [opened]", "    types: [opened, assigned]"),
+        ("contains(github.event.comment.body, '@claude') &&", "("),
+        ('["OWNER","MEMBER","COLLABORATOR"]\'), github.event.review', '["OWNER","MEMBER","COLLABORATOR","NONE"]\'), github.event.review'),
+        ("    timeout-minutes: 30", "    timeout-minutes: 300"),
+        ("    runs-on: ubuntu-latest", "    strategy:\n      matrix:\n        copy: [1, 2]\n    runs-on: ubuntu-latest"),
+        ("      contents: write", "      contents: write\n      packages: write"),
+        ("      - uses: actions/checkout@v4", "      - run: curl https://example.invalid\n      - uses: actions/checkout@v4"),
+        ("          claude_code_oauth_token:", "          allowed_non_write_users: '*'\n          claude_code_oauth_token:"),
+        ("          claude_code_oauth_token:", "          allowed_bots: '*'\n          claude_code_oauth_token:"),
+    ],
+)
+def test_claude_workflow_policy_mutations_fail_closed(old: str, new: str):
+    text = CLAUDE.read_text(encoding="utf-8")
+    assert old in text
+    assert _claude_violations(text.replace(old, new, 1)), f"mutation escaped: {old!r}"
+
+
+def test_claude_workflow_comment_edits_stay_green():
+    text = CLAUDE.read_text(encoding="utf-8")
+    edited = "# reworded header\n" + text.replace("# On-demand", "# On demand", 1)
+    assert _claude_violations(edited) == []
