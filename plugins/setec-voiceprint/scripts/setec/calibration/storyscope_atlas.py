@@ -839,6 +839,22 @@ def _limit_hit(row: dict) -> bool:
         err.startswith(("429", "529")) or any(m in err for m in _LIMIT_MARKERS))
 
 
+def _usable(step: str, row: dict | None) -> bool:
+    """A result later steps can use: it succeeded and its answer parses, and
+    a chapter card carries every card field (works refuses anything less).
+    headless reruns rows that fail this, so one malformed answer cannot
+    strand a run that is not allowed to be rebuilt."""
+    if not row or row.get("type") != "succeeded":
+        return False
+    parsed = extract_json(row.get("text", ""))
+    if parsed is None:
+        return False
+    if step == "cards":
+        card = parsed.get("card")
+        return isinstance(card, dict) and set(card) == set(load_atlas_schema()["card_fields"])
+    return True
+
+
 def cmd_headless(args: argparse.Namespace) -> int:
     run: Path = args.run
     step = args.step
@@ -866,7 +882,7 @@ def cmd_headless(args: argparse.Namespace) -> int:
     previous = _read_jsonl(res_p)
     _validate_result_rows(run, step, previous)
     done = {r["custom_id"]: r for r in previous}
-    todo = [r for r in reqs if done.get(r["custom_id"], {}).get("type") != "succeeded"]
+    todo = [r for r in reqs if not _usable(step, done.get(r["custom_id"]))]
     if args.limit:
         todo = todo[:args.limit]
     st["steps"][step] = {"transport": HEADLESS, "claude_code": version,
@@ -914,7 +930,7 @@ def cmd_headless(args: argparse.Namespace) -> int:
             if stopped:
                 for f in futs:
                     f.cancel()
-    ok = sum(1 for r in reqs if done.get(r["custom_id"], {}).get("type") == "succeeded")
+    ok = sum(1 for r in reqs if _usable(step, done.get(r["custom_id"])))
     st["steps"][step]["collected"] = ok == len(reqs)
     _write_json(run / "state.json", st)
     _log(f"{step}: {ok} of {len(reqs)} succeeded")

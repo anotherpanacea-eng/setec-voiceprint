@@ -497,3 +497,24 @@ def test_work_judging_refuses_incomplete_chapter_cards(run):
     }])
     assert sa.main(["build", "--run", str(run), "--step", "works"]) == 2
     assert not (run / "requests" / "works.jsonl").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in executable is a POSIX script")
+def test_headless_reruns_incomplete_cards_so_works_can_build(run, fake_claude):
+    # works refuses unless every chapter has a complete card, and a started
+    # step cannot be rebuilt, so headless must retry a card that came back short.
+    exe, log = fake_claude
+    answer = Path(os.environ["FAKE_ANSWER"])
+    assert sa.main(["build", "--run", str(run), "--step", "cards"]) == 0
+    n = len(sa._read_jsonl(run / "requests" / "cards.jsonl"))
+    args = ["headless", "--run", str(run), "--step", "cards", "--claude", str(exe)]
+
+    answer.write_text(json.dumps({"card": {"cast": []}}), encoding="utf-8")
+    assert sa.main(args) == 3
+    assert sa.main(["build", "--run", str(run), "--step", "works"]) == 2
+
+    fields = sa.load_atlas_schema()["card_fields"]
+    answer.write_text(json.dumps({"card": {k: None for k in fields}}), encoding="utf-8")
+    assert sa.main(args) == 0
+    assert len(_calls(log)) == 2 * n
+    assert sa.main(["build", "--run", str(run), "--step", "works"]) == 0
