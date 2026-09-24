@@ -480,6 +480,10 @@ def _claude_violations(text: str) -> list[str]:
             problems.append(f"{step.get('id') or step.get('uses')}: continue-on-error")
         if "run" in step and step.get("id") != "fork_guard":
             problems.append(f"{step.get('uses')}: run")
+        # A step condition such as `if: always()` after the guard would run
+        # the privileged steps even when the fork guard failed.
+        if "if" in step and step.get("id") != "fork_guard":
+            problems.append(f"{step.get('uses')}: step condition")
     guard = steps[0] if steps else {}
     # The guard must run for every PR-bound event and fail on a fork.
     if (
@@ -573,6 +577,8 @@ def test_policy_mutations_fail_closed(old: str, new: str):
         ("(github.event_name == 'pull_request_review' &&", "(github.event_name == 'pull_request_review' || github.event_name == 'issues' &&"),
         ("claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c", "claude-code-action@v1"),
         ("actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "actions/checkout@v4"),
+        ("      - uses: anthropics/claude-code-action@", "      - if: always()\n        uses: anthropics/claude-code-action@"),
+        ("      - uses: actions/checkout@11d5960", "      - if: ${{ !cancelled() }}\n        uses: actions/checkout@11d5960"),
         ("        if: github.event.issue.pull_request || github.event.pull_request", "        if: github.event.pull_request"),
         ('          if [ "$cross" != "false" ]; then', '          if [ "$cross" = "true" ]; then'),
         ("            exit 1\n", "            exit 0\n"),
