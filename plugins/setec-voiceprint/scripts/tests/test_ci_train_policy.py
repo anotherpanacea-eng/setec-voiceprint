@@ -351,6 +351,7 @@ CLAUDE_PERMISSIONS = {
 }
 # Pinned to a commit: the step holds the OAuth token and write permissions.
 CLAUDE_ACTION = "anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c"
+CLAUDE_CHECKOUT = "actions/checkout@11d5960a326750d5838078e36cf38b85af677262"
 
 
 # Per event: the payload object whose author is checked, and the text fields
@@ -471,7 +472,7 @@ def _claude_violations(text: str) -> list[str]:
         problems.append("job permissions")
     steps = job.get("steps") or []
     if [step.get("id") or step.get("uses") for step in steps] != [
-        "fork_guard", "actions/checkout@v4", CLAUDE_ACTION,
+        "fork_guard", CLAUDE_CHECKOUT, CLAUDE_ACTION,
     ]:
         problems.append("steps")
     for step in steps:
@@ -571,6 +572,7 @@ def test_policy_mutations_fail_closed(old: str, new: str):
         ("contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.issue.author_association)", "true"),
         ("(github.event_name == 'pull_request_review' &&", "(github.event_name == 'pull_request_review' || github.event_name == 'issues' &&"),
         ("claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c", "claude-code-action@v1"),
+        ("actions/checkout@11d5960a326750d5838078e36cf38b85af677262", "actions/checkout@v4"),
         ("        if: github.event.issue.pull_request || github.event.pull_request", "        if: github.event.pull_request"),
         ('          if [ "$cross" != "false" ]; then', '          if [ "$cross" = "true" ]; then'),
         ("            exit 1\n", "            exit 0\n"),
@@ -578,7 +580,7 @@ def test_policy_mutations_fail_closed(old: str, new: str):
         ("    timeout-minutes: 30", "    timeout-minutes: 300"),
         ("    runs-on: ubuntu-latest", "    strategy:\n      matrix:\n        copy: [1, 2]\n    runs-on: ubuntu-latest"),
         ("      contents: write", "      contents: write\n      packages: write"),
-        ("      - uses: actions/checkout@v4", "      - run: curl https://example.invalid\n      - uses: actions/checkout@v4"),
+        ("      - uses: actions/checkout@11d5960", "      - run: curl https://example.invalid\n      - uses: actions/checkout@11d5960"),
         ("          claude_code_oauth_token:", "          allowed_non_write_users: '*'\n          claude_code_oauth_token:"),
         ("          claude_code_oauth_token:", "          allowed_bots: '*'\n          claude_code_oauth_token:"),
     ],
