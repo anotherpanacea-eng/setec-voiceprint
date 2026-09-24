@@ -518,3 +518,43 @@ def test_headless_reruns_incomplete_cards_so_works_can_build(run, fake_claude):
     assert sa.main(args) == 0
     assert len(_calls(log)) == 2 * n
     assert sa.main(["build", "--run", str(run), "--step", "works"]) == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in executable is a POSIX script")
+def test_rerun_keeps_the_cost_of_the_unusable_answer_it_replaces(run, fake_claude):
+    # An unusable answer was still answered and spent; replacing it with a
+    # usable one must not drop that spend from the step's cost.
+    exe, log = fake_claude
+    answer = Path(os.environ["FAKE_ANSWER"])
+    assert sa.main(["build", "--run", str(run), "--step", "cards"]) == 0
+    n = len(sa._read_jsonl(run / "requests" / "cards.jsonl"))
+    args = ["headless", "--run", str(run), "--step", "cards", "--claude", str(exe)]
+    answer.write_text(json.dumps({"card": {"cast": []}}), encoding="utf-8")
+    assert sa.main(args) == 3
+    fields = sa.load_atlas_schema()["card_fields"]
+    answer.write_text(json.dumps({"card": {k: None for k in fields}}), encoding="utf-8")
+    assert sa.main(args) == 0
+
+    assert sa.main(["emit", "--run", str(run)]) == 0
+    cost = json.loads((run / "out" / "cost.json").read_text())["per_step"]["cards"]
+    assert cost["subscription_list_usd"] == pytest.approx(0.01 * 2 * n)
+    assert cost["tokens"]["output_tokens"] == 40 * 2 * n
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in executable is a POSIX script")
+def test_an_answer_that_stays_unusable_stops_being_resent(run, fake_claude, capsys):
+    exe, log = fake_claude
+    answer = Path(os.environ["FAKE_ANSWER"])
+    answer.write_text(json.dumps({"card": {"cast": []}}), encoding="utf-8")
+    assert sa.main(["build", "--run", str(run), "--step", "cards"]) == 0
+    reqs = sa._read_jsonl(run / "requests" / "cards.jsonl")
+    args = ["headless", "--run", str(run), "--step", "cards", "--claude", str(exe)]
+    for _ in range(sa.MAX_ATTEMPTS + 2):
+        assert sa.main(args) == 3
+    assert len(_calls(log)) == sa.MAX_ATTEMPTS * len(reqs)
+    err = capsys.readouterr().err
+    assert all(r["custom_id"] in err for r in reqs)  # reported, not silently dropped
+
+    # The operator can raise the cap deliberately.
+    assert sa.main(args + ["--max-attempts", str(sa.MAX_ATTEMPTS + 1)]) == 3
+    assert len(_calls(log)) == (sa.MAX_ATTEMPTS + 1) * len(reqs)
