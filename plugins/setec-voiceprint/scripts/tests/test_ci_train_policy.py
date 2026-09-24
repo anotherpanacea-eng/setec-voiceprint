@@ -349,7 +349,8 @@ CLAUDE_PERMISSIONS = {
     "contents": "write", "pull-requests": "write", "issues": "write",
     "id-token": "write", "actions": "read",
 }
-CLAUDE_ACTION = "anthropics/claude-code-action@v1"
+# Pinned to a commit: the step holds the OAuth token and write permissions.
+CLAUDE_ACTION = "anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c"
 
 
 # Per event: the payload object whose author is checked, and the text fields
@@ -556,6 +557,7 @@ def test_policy_mutations_fail_closed(old: str, new: str):
         ('["OWNER","MEMBER","COLLABORATOR"]\'), github.event.review', '["OWNER","MEMBER","COLLABORATOR","NONE"]\'), github.event.review'),
         ("contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.issue.author_association)", "true"),
         ("(github.event_name == 'pull_request_review' &&", "(github.event_name == 'pull_request_review' || github.event_name == 'issues' &&"),
+        ("claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c", "claude-code-action@v1"),
         ("    timeout-minutes: 30", "    timeout-minutes: 300"),
         ("    runs-on: ubuntu-latest", "    strategy:\n      matrix:\n        copy: [1, 2]\n    runs-on: ubuntu-latest"),
         ("      contents: write", "      contents: write\n      packages: write"),
