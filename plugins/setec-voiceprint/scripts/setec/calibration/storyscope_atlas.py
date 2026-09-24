@@ -780,6 +780,10 @@ HEADLESS = "claude-code"
 _HEADLESS_FLAGS = ("--safe-mode", "--tools", "", "--strict-mcp-config",
                    "--no-session-persistence", "--output-format", "json")
 _LIMIT_MARKERS = ("usage limit", "rate limit", "rate_limit", "overloaded")
+# Answers received per request before an unusable one is left for the operator
+# instead of re-sent, so a request that fails the same way cannot spend quota on
+# every rerun. Errors that returned no answer (limits, timeouts) do not count.
+MAX_ATTEMPTS = 3
 
 
 def headless_argv(claude: str, model: str, effort: str, system_file: Path) -> list[str]:
@@ -839,20 +843,46 @@ def _limit_hit(row: dict) -> bool:
         err.startswith(("429", "529")) or any(m in err for m in _LIMIT_MARKERS))
 
 
-def _usable(step: str, row: dict | None) -> bool:
-    """A result later steps can use: it succeeded and its answer parses, and
-    a chapter card carries every card field (works refuses anything less).
-    headless reruns rows that fail this, so one malformed answer cannot
-    strand a run that is not allowed to be rebuilt."""
-    if not row or row.get("type") != "succeeded":
-        return False
+def _unusable_reason(step: str, row: dict | None, card_fields: dict) -> str | None:
+    """None for a result later steps can use: it succeeded, its answer
+    parses, and a chapter card carries every card field (works refuses
+    anything less). Otherwise, why not. headless reruns rows that fail this,
+    so one malformed answer cannot strand a run that is not allowed to be
+    rebuilt."""
+    if not row:
+        return "not run"
+    if row.get("type") != "succeeded":
+        return "errored"
     parsed = extract_json(row.get("text", ""))
     if parsed is None:
-        return False
+        return "answer has no JSON object"
     if step == "cards":
         card = parsed.get("card")
-        return isinstance(card, dict) and set(card) == set(load_atlas_schema()["card_fields"])
-    return True
+        if not isinstance(card, dict):
+            return "answer has no card object"
+        missing, extra = set(card_fields) - set(card), set(card) - set(card_fields)
+        if missing or extra:
+            return f"card fields differ (missing {sorted(missing)}, extra {sorted(extra)})"
+    return None
+
+
+def _spend_records(row: dict | None) -> list[dict]:
+    """Every answered attempt a result row accounts for: the attempts it
+    superseded, then itself. A rerun must never drop what an earlier answer
+    spent, and the attempt cap counts these."""
+    if not row:
+        return []
+    recs = list(row.get("superseded") or [])
+    if row.get("usage"):
+        recs.append(row)
+    return recs
+
+
+def _supersede(prev: dict | None, row: dict) -> dict:
+    """``row`` carrying forward the spend records of the row it replaces."""
+    recs = [{k: r.get(k) for k in ("model", "transport", "stop_reason", "usage", "list_usd")}
+            for r in _spend_records(prev)]
+    return {**row, "superseded": recs} if recs else row
 
 
 def cmd_headless(args: argparse.Namespace) -> int:
@@ -863,6 +893,8 @@ def cmd_headless(args: argparse.Namespace) -> int:
     s = st["steps"].get(step)
     if s and s.get("transport") != HEADLESS:
         raise AtlasError(f"{step} was submitted as a batch; collect it instead")
+    if args.max_attempts < 1:
+        raise AtlasError("--max-attempts must be at least 1")
     claude = shutil.which(args.claude)
     if not claude:
         raise AtlasError(f"no claude CLI found as {args.claude!r}")
@@ -882,7 +914,23 @@ def cmd_headless(args: argparse.Namespace) -> int:
     previous = _read_jsonl(res_p)
     _validate_result_rows(run, step, previous)
     done = {r["custom_id"]: r for r in previous}
-    todo = [r for r in reqs if not _usable(step, done.get(r["custom_id"]))]
+    card_fields = load_atlas_schema()["card_fields"]
+
+    def usable(cid: str) -> bool:
+        return _unusable_reason(step, done.get(cid), card_fields) is None
+
+    def capped(cid: str) -> bool:
+        return not usable(cid) and len(_spend_records(done.get(cid))) >= args.max_attempts
+
+    todo = []
+    for r in reqs:
+        cid = r["custom_id"]
+        if capped(cid):
+            _log(f"{cid}: {_unusable_reason(step, done[cid], card_fields)} after "
+                 f"{len(_spend_records(done[cid]))} answers; not re-sent (--max-attempts "
+                 f"{args.max_attempts})")
+        elif not usable(cid):
+            todo.append(r)
     if args.limit:
         todo = todo[:args.limit]
     st["steps"][step] = {"transport": HEADLESS, "claude_code": version,
@@ -917,12 +965,16 @@ def cmd_headless(args: argparse.Namespace) -> int:
             if fut.cancelled():
                 continue
             row = fut.result()
-            done[row["custom_id"]] = row
+            cid = row["custom_id"]
+            row = done[cid] = _supersede(done.get(cid), row)
             _write_jsonl(res_p, sorted(done.values(), key=lambda x: x["custom_id"]))
             seen += 1
             good += row["type"] == "succeeded"
             if row["type"] != "succeeded":
-                _log(f"{row['custom_id']}: {row['error']}")
+                _log(f"{cid}: {row['error']}")
+            elif not usable(cid):
+                _log(f"{cid}: answer {len(_spend_records(row))} of at most "
+                     f"{args.max_attempts} unusable: {_unusable_reason(step, row, card_fields)}")
             if stopped is None and _limit_hit(row):
                 stopped = f"a usage or rate limit ({row['error']})"
             elif stopped is None and seen >= 3 and good == 0:
@@ -930,10 +982,12 @@ def cmd_headless(args: argparse.Namespace) -> int:
             if stopped:
                 for f in futs:
                     f.cancel()
-    ok = sum(1 for r in reqs if _usable(step, done.get(r["custom_id"])))
+    ok = sum(1 for r in reqs if usable(r["custom_id"]))
+    n_capped = sum(1 for r in reqs if capped(r["custom_id"]))
     st["steps"][step]["collected"] = ok == len(reqs)
     _write_json(run / "state.json", st)
-    _log(f"{step}: {ok} of {len(reqs)} succeeded")
+    _log(f"{step}: {ok} of {len(reqs)} usable"
+         + (f"; {n_capped} left unusable at --max-attempts {args.max_attempts}" if n_capped else ""))
     if stopped:
         raise AtlasError(f"{step}: stopped on {stopped}; "
                          f"rerun the same command to resume once it is fixed")
@@ -942,14 +996,13 @@ def cmd_headless(args: argparse.Namespace) -> int:
 
 def actual_cost(rows: list[dict]) -> dict:
     """USD billed through the API, plus what subscription-carried rows would
-    have cost at list price (reported, never billed)."""
+    have cost at list price (reported, never billed). Answers a headless
+    rerun superseded are counted: they were spent even though unused."""
     usd = 0.0
     list_usd = 0.0
     tok = Counter()
-    for r in rows:
-        u = r.get("usage")
-        if not u:
-            continue
+    for r in (rec for row in rows for rec in _spend_records(row)):
+        u = r["usage"]
         tok.update(u)
         if r.get("transport") == HEADLESS:
             list_usd += r.get("list_usd") or 0.0
@@ -959,7 +1012,8 @@ def actual_cost(rows: list[dict]) -> dict:
                 + u["cache_creation_input_tokens"] * p["input"] * CACHE_WRITE_MULT
                 + u["cache_read_input_tokens"] * p["input"] * CACHE_READ_MULT
                 + u["output_tokens"] * p["output"]) / 1e6 * BATCH_DISCOUNT
-    return {"usd": round(usd, 4), "subscription_list_usd": round(list_usd, 4), "tokens": dict(tok)}
+    return {"usd": round(usd, 4), "subscription_list_usd": round(list_usd, 4), "tokens": dict(tok),
+            "superseded_answers": sum(len(row.get("superseded") or []) for row in rows)}
 
 
 # --------------------------------------------------------------- emit
@@ -1210,6 +1264,9 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--parallel", type=int, default=4, help="concurrent claude processes")
     h.add_argument("--limit", type=int, default=0, help="run at most N pending requests")
     h.add_argument("--timeout", type=int, default=900, help="seconds per request")
+    h.add_argument("--max-attempts", type=int, default=MAX_ATTEMPTS,
+                   help="answers to accept per request before an unusable one stops being re-sent "
+                        "(errors without an answer, such as a usage limit, do not count)")
     h.set_defaults(func=cmd_headless)
 
     e = with_run(sub.add_parser("emit", help="manifests, feature table, agreement, cost"))
