@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[4]
 WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 RELEASE = ROOT / ".github" / "workflows" / "release.yml"
 RELEASE_SHA256 = "2d5385b0793ad82dcb28e9d2ecf7feb95a5da1f01c2afdab672a20e4c49d5b05"
+CLAUDE = ROOT / ".github" / "workflows" / "claude.yml"
+CLAUDE_SHA256 = "77a123ac548fba7d26760646835918a6cf70f37a8c29cea4c543d094b7dfe598"
 EVENTS = [
     "opened", "synchronize", "reopened", "ready_for_review",
     "converted_to_draft", "labeled", "unlabeled",
@@ -340,7 +342,7 @@ def _violations(text: str) -> list[str]:
 def test_current_workflow_holds_closed_train_policy():
     workflow_paths = _workflow_names(ROOT / ".github" / "workflows")
     assert workflow_paths == {
-        "release.yml", "tests.yml",
+        "claude.yml", "release.yml", "tests.yml",
     }
     assert _violations(WORKFLOW.read_text(encoding="utf-8")) == []
     release_text = RELEASE.read_text(encoding="utf-8").replace("\r\n", "\n")
@@ -348,6 +350,15 @@ def test_current_workflow_holds_closed_train_policy():
     release = _load(release_text)
     assert release["on"] == {"push": {"tags": ["v*"]}}
     assert set(release["jobs"]) == {"publish"}
+    claude_text = CLAUDE.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert _release_digest(claude_text) == CLAUDE_SHA256
+    claude = _load(claude_text)
+    assert set(claude["on"]) == {
+        "issue_comment", "pull_request_review_comment",
+        "pull_request_review", "issues",
+    }
+    assert set(claude["jobs"]) == {"claude"}
+    assert "@claude" in claude["jobs"]["claude"]["if"]
 
 
 def test_workflow_inventory_includes_yaml_extension(tmp_path: Path):
