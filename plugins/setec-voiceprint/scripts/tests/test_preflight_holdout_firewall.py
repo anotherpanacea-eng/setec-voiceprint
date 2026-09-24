@@ -94,6 +94,24 @@ def test_exact_conflict_and_private_pairwise_detail(tmp_path):
                                   load_manifest(candidate_path)) == generator
 
 
+@pytest.mark.parametrize("alias_first", [True, False])
+def test_confinement_outranks_alias_across_manifests(tmp_path, alias_first):
+    manifests = [_manifest(tmp_path / name, ["alpha beta gamma"], prefix=name)
+                 for name in ("candidate", "sealed")]
+    alias, missing = manifests if alias_first else manifests[::-1]
+    row = json.loads(alias.read_bytes())
+    os.link(alias.parent / row["path"], alias.parent / "alias.txt")
+    row["span"]["source_path"] = "alias.txt"
+    alias.write_bytes(canonical_json(row))
+    row = json.loads(missing.read_bytes())
+    row["path"] = "missing.txt"
+    missing.write_bytes(canonical_json(row))
+    with pytest.raises(Refusal) as caught:
+        run(manifests[0], [("sealed", manifests[1])], _policy(tmp_path),
+            tmp_path / "private", tmp_path / "conflicts")
+    assert caught.value.code == "path_confinement"
+
+
 def test_exact_analysis_normalizes_crlf_and_nfc(tmp_path):
     detail, receipt, _, statuses, *_ = _run(
         tmp_path, ["café\nnext"], ["cafe\u0301\r\nnext"])
@@ -449,6 +467,9 @@ def test_seeded_cross_pair_shared_gram_enumeration(tmp_path):
     lambda detail: detail["pairs"][0].update(shared_grams=999),
     lambda detail: detail["pairs"][0].update(shared_grams=0),
     lambda detail: detail["sealed_records"][0].update(analysis_sha256="0" * 64),
+    # A run refuses two sealed manifests with equal hashes (spec 04 section 5).
+    lambda detail: detail["inputs"]["sealed_manifests"].append(
+        {**detail["inputs"]["sealed_manifests"][0], "label": "zz-repeat"}),
 ])
 def test_private_detail_reloader_checks_pair_evidence(tmp_path, mutation):
     detail, _, _, _, _, _, _ = _run(tmp_path, ["same shared words"],
@@ -478,3 +499,150 @@ def test_nonfinite_json_number_refuses_with_contract_code(tmp_path, artifact):
             load_holdout_receipt(path, plain_hash(raw))
         else:
             load_holdout_conflicts(path, load_manifest(candidate_path))
+
+
+def test_confinement_outranks_label_and_input_outranks_collision(tmp_path):
+    # Slice 1 section 4.6 master order, first match wins: path_confinement before
+    # holdout_contract, and every input check before output_collision.
+    candidate = _manifest(tmp_path / "candidate", ["same source"], prefix="c")
+    nested = _manifest(candidate.parent / "nested", ["same source"], prefix="s")
+    policy = _policy(tmp_path)
+    with pytest.raises(Refusal, match="path_confinement"):
+        run(candidate, [("Bad Label", nested)], policy,
+            tmp_path / "private", tmp_path / "conflicts")
+    sealed = _manifest(tmp_path / "sealed", ["same source"], prefix="s")
+    (tmp_path / "private").mkdir()
+    sealed.write_bytes(b"not json\n")
+    with pytest.raises(Refusal, match="input_contract"):
+        run(candidate, [("s", sealed)], policy, tmp_path / "private", tmp_path / "conflicts")
+    bad_policy = tmp_path / "bad-policy"
+    bad_policy.mkdir()
+    (bad_policy / "policy.json").write_bytes(b"{}")
+    good = _manifest(tmp_path / "sealed-ok", ["same source"], prefix="s")
+    with pytest.raises(Refusal, match="policy_contract"):
+        run(candidate, [("Bad Label", good)], bad_policy / "policy.json",
+            tmp_path / "private2", tmp_path / "conflicts2")
+
+
+def test_missing_output_parent_is_unavailable_after_input_checks(tmp_path):
+    candidate = _manifest(tmp_path / "candidate", ["same source"], prefix="c")
+    sealed = _manifest(tmp_path / "sealed", ["same source"], prefix="s")
+    policy = _policy(tmp_path)
+    missing = tmp_path / "missing" / "private"
+    with pytest.raises(Refusal, match="output_unavailable"):
+        run(candidate, [("s", sealed)], policy, missing, tmp_path / "conflicts")
+    candidate.write_bytes(b"not json\n")
+    with pytest.raises(Refusal, match="input_contract"):
+        run(candidate, [("s", sealed)], policy, missing, tmp_path / "conflicts")
+
+
+def test_largest_valid_conflicts_file_publishes(tmp_path):
+    # 5,000 flagged candidates whose ids are 128 astral scalars each: the
+    # escaped conflicts file is about 7.7 MiB and must not refuse size_limit.
+    root = tmp_path / "candidate"
+    root.mkdir()
+    (root / "shared.txt").write_bytes(b"shared words")
+    source = plain_hash(b"shared words")
+    ids = sorted(chr(0x10000 + index) + "\U0010fffd" * 127 for index in range(5000))
+    rows = [{"id": record_id, "group_id": "g", "stratum": "synthetic", "path": "shared.txt",
+             "span": {"source_path": "shared.txt", "source_bytes_sha256": source,
+                      "start_byte": 0, "end_byte": 12}} for record_id in ids]
+    candidate = root / "packet.jsonl"
+    candidate.write_bytes(b"".join(json.dumps(row, ensure_ascii=False).encode() + b"\n"
+                                   for row in rows))
+    sealed = _manifest(tmp_path / "sealed", ["shared words"], prefix="s")
+    conflicts = tmp_path / "conflicts"
+    _, released = run(candidate, [("s", sealed)], _policy(tmp_path),
+                      tmp_path / "private", conflicts)
+    assert released
+    data = (conflicts / "conflicts.json").read_bytes()
+    assert len(data) > 2 * 1024 * 1024
+    assert [row["candidate_id"] for row in json.loads(data)["conflicts"]] == ids
+
+
+def test_gram_membership_ceiling_is_the_stated_limit(tmp_path):
+    # Slice 4 section 8: 500,000 gram memberships pass, one more refuses
+    # work_limit. The ceiling keeps the n=64 gram sets inside the memory bound.
+    half = CEILINGS["gram memberships"] // 2
+    assert CEILINGS["gram memberships"] == 500_000
+    texts = {"at": [" ".join(f"c{i}" for i in range(half + 1)),
+                    " ".join(f"s{i}" for i in range(half + 1))],
+             "over": [" ".join(f"c{i}" for i in range(half + 2)),
+                      " ".join(f"s{i}" for i in range(half + 1))]}
+    policy, _ = load_holdout_policy(_policy(tmp_path, ngram=2))
+    for name, (candidate_text, sealed_text) in texts.items():
+        candidate = load_manifest(_manifest(tmp_path / name / "c", [candidate_text], prefix="c"))
+        sealed = SealedSet("s", load_manifest(
+            _manifest(tmp_path / name / "s", [sealed_text], prefix="s")))
+        budget = WorkBudget(CEILINGS)
+        if name == "at":
+            holdout_firewall(candidate, (sealed,), policy, budget)
+            assert budget.used["gram memberships"] == CEILINGS["gram memberships"]
+        else:
+            with pytest.raises(Refusal, match="work_limit"):
+                holdout_firewall(candidate, (sealed,), policy, budget)
+
+
+def _symlink(link: Path, target: Path) -> None:
+    try:
+        os.symlink(target, link, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unavailable")
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("sealed_row_outside_root+policy_oversize", "path_confinement"),
+    ("output_through_symlink_into_candidate_root", "path_confinement"),
+    ("outputs_differ_only_in_case", "path_confinement"),
+    ("output_parent_symlink_loop", "output_unavailable"),
+    ("output_parent_symlink_loop+candidate_contract", "input_contract"),
+])
+def test_combined_violations_report_the_earliest_master_order_code(tmp_path, case, expected):
+    # Slice 1 section 4.6, first match wins; spec 04 section 5 confinement by
+    # file identity; a missing or unusable output parent is output_unavailable.
+    candidate = _manifest(tmp_path / "candidate", ["same source"], prefix="c")
+    sealed = _manifest(tmp_path / "sealed", ["other words"], prefix="s")
+    policy = _policy(tmp_path)
+    private, conflicts = tmp_path / "private", tmp_path / "conflicts"
+    if "sealed_row_outside_root" in case:
+        row = json.loads(sealed.read_bytes())
+        row["path"] = str(tmp_path / "outside.txt")
+        sealed.write_bytes(canonical_json(row))
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (64 * 1024 + 1))
+    if "through_symlink" in case:
+        _symlink(tmp_path / "alias", candidate.parent)
+        private = tmp_path / "alias" / "private"
+    if "differ_only_in_case" in case:
+        conflicts = tmp_path / "PRIVATE"
+    if "symlink_loop" in case:
+        _symlink(tmp_path / "loop", tmp_path / "loop")
+        private = tmp_path / "loop" / "private"
+    if "candidate_contract" in case:
+        candidate.write_bytes(b"not json\n")
+    with pytest.raises(Refusal, match=expected):
+        run(candidate, [("s", sealed)], policy, private, conflicts)
+    assert not (tmp_path / "private").exists() and not (tmp_path / "conflicts").exists()
+
+
+class _BrokenStderr:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+def test_stream_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7 as spec 04 inherits it: exit 0 means published, and a
+    # stream that fails afterwards cannot un-publish the bundles.
+    from setec.preflight import holdout_firewall
+    candidate = _manifest(tmp_path / "candidate", ["same source"], prefix="c")
+    sealed = _manifest(tmp_path / "sealed", ["other words"], prefix="s")
+    private = tmp_path / "private"
+    monkeypatch.setattr("sys.stderr", _BrokenStderr())
+    assert holdout_firewall.main([
+        "--candidate-manifest", str(candidate), "--sealed", "s", str(sealed),
+        "--policy", str(_policy(tmp_path)), "--private-out", str(private),
+        "--conflicts-out", str(tmp_path / "conflicts")]) == 0
+    assert (private / "receipt.json").is_file()

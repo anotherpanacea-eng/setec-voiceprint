@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Sequence
 
 from .common import (
-    Manifest, Record, Refusal, WorkBudget, canonical_json, domain_hash, exact_keys, parse_json,
-    plain_hash, read_bounded, record_set_sha256, require_hex,
+    Manifest, ManifestPlan, Record, Refusal, Snapshot, WorkBudget, _bind, canonical_json,
+    domain_hash,
+    exact_keys, parse_json, plain_hash, read_bounded, record_set_sha256, require_hex,
 )
 
 TOOL = "setec.preflight.span"
@@ -24,8 +25,10 @@ PROOF_RESULTS = ("proved", "span_source_hash_mismatch", "span_source_encoding",
 DISPOSITIONS = ("allowed", "disallowed", "unproved")
 REASONS = ("ok", *PROOF_RESULTS[1:], "span_class_disallowed", "span_unclassified")
 STAGES = ("intake", "span_proof", "span_boundary")
+POLICY_LIMIT = 4 * 1024
 SOURCE_LIMIT = 8 * 1024 * 1024
 COMBINED_SOURCE_LIMIT = 256 * 1024 * 1024
+BOUNDARY_VISIT_LIMIT = 10_000_000
 DETAIL_LIMIT = 64 * 1024 * 1024
 RECEIPT_LIMIT = 64 * 1024
 W = frozenset(b"\t\n\r ")
@@ -48,8 +51,23 @@ class SpanResult:
     span_evidence: str
 
 
+@dataclass(frozen=True)
+class SpanSources:
+    """Distinct source paths bound and size-checked, not yet read."""
+
+    reused: dict[str, Snapshot]
+    limits: dict[str, int]
+
+
+def read_span_policy(path: Path) -> Snapshot:
+    return read_bounded(path.parent, path.name, POLICY_LIMIT)
+
+
 def load_span_policy(path: Path) -> SpanPolicy:
-    snapshot = read_bounded(path.parent, path.name, 4 * 1024)
+    return parse_span_policy(read_span_policy(path))
+
+
+def parse_span_policy(snapshot: Snapshot) -> SpanPolicy:
     policy = exact_keys(parse_json(snapshot.data, "policy_contract"),
                         {"schema", "allowed_classes"}, "policy_contract")
     if policy["schema"] != POLICY_SCHEMA or type(policy["allowed_classes"]) is not list:
@@ -222,22 +240,59 @@ def _proof(record: Record, source: bytes, observed_hash: str,
     }
 
 
-def prove_spans(manifest: Manifest, policy: SpanPolicy) -> SpanResult:
-    records_by_source: dict[str, list[Record]] = defaultdict(list)
+def bind_span_sources(manifest: Manifest) -> SpanSources:
+    """Run every source-file refusal that needs no source bytes.
+
+    Binding every source before the policy is parsed lets `input_changed`,
+    `path_confinement`, and `size_limit` outrank `policy_contract` (slice 1
+    §4.6) without holding more than one source in memory.
+    """
     candidates = {record.path: record.candidate for record in manifest.records}
+    names = sorted({record.source_path for record in manifest.records})
+    reused = {name: candidates[name] for name in names if name in candidates}
+    bound = {name: _bind(manifest.root, name)[1] for name in names if name not in reused}
+    if any((fingerprint[0], fingerprint[1]) != manifest.path_identities[name]
+           for name, fingerprint in bound.items()):
+        raise Refusal("input_changed")
+    return SpanSources(reused, _source_limits(
+        {name: fingerprint[2] for name, fingerprint in bound.items()}))
+
+
+def _source_limits(sizes: dict[str, int]) -> dict[str, int]:
+    """Per-source read limits under the per-file and combined ceilings."""
+    limits: dict[str, int] = {}
+    total = 0
+    for name, size in sorted(sizes.items()):
+        limits[name] = min(SOURCE_LIMIT, COMBINED_SOURCE_LIMIT - total)
+        if size > limits[name]:
+            raise Refusal("size_limit")
+        total += size
+    return limits
+
+
+def check_source_sizes(plan: ManifestPlan) -> None:
+    """Refuse ``size_limit`` for source files from their bindings alone, so the
+    ceiling outranks the manifest contract (slice 1 §4.6). A source that is
+    also a candidate is sized as a candidate and read once."""
+    _source_limits({name: fingerprint[2] for name, (_, fingerprint) in plan.bound.items()
+                    if name not in plan.candidates})
+
+
+def prove_spans(manifest: Manifest, policy: SpanPolicy,
+                sources: SpanSources | None = None) -> SpanResult:
+    if sources is None:
+        sources = bind_span_sources(manifest)
+    records_by_source: dict[str, list[Record]] = defaultdict(list)
     for record in manifest.records:
         records_by_source[record.source_path].append(record)
-    source_bytes_total = 0
-    budget = WorkBudget({"boundary byte visits": 10_000_000})
+    budget = WorkBudget({"boundary byte visits": BOUNDARY_VISIT_LIMIT})
     allowed = set(policy.allowed_classes)
     findings = []
     for source_name in sorted(records_by_source):
-        if source_name in candidates:
-            snapshot = candidates[source_name]
+        if source_name in sources.reused:
+            snapshot = sources.reused[source_name]
         else:
-            snapshot = read_bounded(manifest.root, source_name,
-                                    min(SOURCE_LIMIT, COMBINED_SOURCE_LIMIT - source_bytes_total))
-            source_bytes_total += len(snapshot.data)
+            snapshot = read_bounded(manifest.root, source_name, sources.limits[source_name])
         if snapshot.identity != manifest.path_identities[source_name]:
             raise Refusal("input_changed")
         try:
@@ -298,8 +353,9 @@ def prove_spans(manifest: Manifest, policy: SpanPolicy) -> SpanResult:
     return SpanResult(detail, receipt, receipt["span_evidence"])
 
 
-def build_span(manifest: Manifest, policy: SpanPolicy) -> tuple[bytes, bytes, dict]:
-    result = prove_spans(manifest, policy)
+def build_span(manifest: Manifest, policy: SpanPolicy,
+               sources: SpanSources | None = None) -> tuple[bytes, bytes, dict]:
+    result = prove_spans(manifest, policy, sources)
     return canonical_json(result.detail), canonical_json(result.receipt), result.detail["stage_status"]
 
 
@@ -362,11 +418,23 @@ def load_span_detail(path: Path, expected_sha256: str) -> dict:
         matched = item["matched_classes"]
         if type(matched) is not list or any(type(name) is not str for name in matched):
             raise Refusal(code)
-        if item["proof_result"] == "proved":
-            if (item["observed_source_sha256"] != item["source_bytes_sha256"] or
-                    item["end_byte"] > item["source_size"] or
-                    not matched or matched[-1] != "none" or
+        result = item["proof_result"]
+        # §6.2 runs its checks in order, so each code fixes what the earlier
+        # checks saw; a self-span reuses the strict-UTF-8 candidate and proves.
+        hash_matches = item["observed_source_sha256"] == item["source_bytes_sha256"]
+        in_range = item["end_byte"] <= item["source_size"]
+        if ((result == "span_source_hash_mismatch") == hash_matches or
+                (result == "span_range" and in_range) or
+                (result in ("span_code_point", "span_slice_mismatch", "proved") and
+                 not in_range) or
+                (item["self_span"] and (result != "proved" or item["start_byte"] != 0 or
+                                        item["end_byte"] != item["source_size"]))):
+            raise Refusal(code)
+        if result == "proved":
+            if (not matched or matched[-1] != "none" or
                     matched != [name for name in CLASSES if name in matched] or
+                    ("whole_document" in matched and "blank_line_paragraph" not in matched) or
+                    ("blank_line_paragraph" in matched and "physical_line" not in matched) or
                     item["boundary_class"] != matched[0] or
                     item["disposition"] not in ("allowed", "disallowed")):
                 raise Refusal(code)
@@ -376,6 +444,22 @@ def load_span_detail(path: Path, expected_sha256: str) -> dict:
         proof_counts[item["proof_result"]] += 1
         disposition_counts[item["disposition"]] += 1
     if ids != sorted(set(ids)):
+        raise Refusal(code)
+    # Rows that observed the same source bytes saw one size and one decode
+    # result, and one policy decided every disposition.
+    sizes: dict[str, set[int]] = defaultdict(set)
+    encodings: dict[str, set[bool]] = defaultdict(set)
+    for row in rows:
+        sizes[row["observed_source_sha256"]].add(row["source_size"])
+        if row["proof_result"] != "span_source_hash_mismatch":
+            encodings[row["observed_source_sha256"]].add(
+                row["proof_result"] != "span_source_encoding")
+    disallowed_classes = {name for row in rows if row["disposition"] == "disallowed"
+                          for name in row["matched_classes"]}
+    if (any(len(item) != 1 for item in sizes.values()) or
+            any(len(item) != 1 for item in encodings.values()) or
+            any(row["disposition"] == "allowed" and
+                set(row["matched_classes"]) <= disallowed_classes for row in rows)):
         raise Refusal(code)
     expected_record_set = domain_hash(
         "setec-preflight-record-set-v1",
@@ -426,8 +510,19 @@ def load_span_receipt(path: Path, expected_sha256: str) -> dict:
         _counts(item, ("allowed", "disallowed"), code)
     matched = _counts(value["matched_class_counts"], CLASSES, code)
     proved = dispositions["allowed"] + dispositions["disallowed"]
+    strongest = {name: classes[name]["allowed"] + classes[name]["disallowed"] for name in CLASSES}
+    # Classes 1 to 3 nest and `boundary_class` is the first match (§6.3), so a
+    # row matching a structural class has that class or a stronger one.
     if (matched["none"] != proved or
             any(number > proved for number in matched.values()) or
+            matched["whole_document"] != strongest["whole_document"] or
+            matched["blank_line_paragraph"] != (strongest["whole_document"] +
+                                                strongest["blank_line_paragraph"]) or
+            matched["physical_line"] != (matched["blank_line_paragraph"] +
+                                         strongest["physical_line"]) or
+            not strongest["sentence_terminal"] <= matched["sentence_terminal"] <=
+            strongest["sentence_terminal"] + matched["physical_line"] or
+            (classes["none"]["allowed"] and dispositions["disallowed"]) or
             sum(item["allowed"] for item in classes.values()) != dispositions["allowed"] or
             sum(item["disallowed"] for item in classes.values()) != dispositions["disallowed"] or
             statuses["intake"] != "passed" or

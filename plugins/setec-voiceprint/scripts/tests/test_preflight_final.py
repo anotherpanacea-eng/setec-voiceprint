@@ -111,6 +111,18 @@ def test_intake_policy_binding_and_detail_hash(tmp_path):
         run_final(intake, final_manifest, policy, split_map, tmp_path / "blocked")
 
 
+def test_split_contract_outranks_intake_bundle_refusal(tmp_path):
+    # Slice 1 section 4.6: split_contract ranks above receipt_contract.
+    _, _, _, intake, _, final_manifest, policy, _ = _fixture(
+        tmp_path, ["alpha beta gamma"], ["alpha beta gamma"])
+    (intake / "receipt.json").write_bytes(b"not a receipt")
+    bad_split = tmp_path / "bad-splits.json"
+    bad_split.write_bytes(canonical_json({"schema": "setec-preflight-splits/1",
+                                          "assignments": {}}))
+    with pytest.raises(Refusal, match="split_contract"):
+        run_final(intake, final_manifest, policy, bad_split, tmp_path / "blocked")
+
+
 @pytest.mark.parametrize("mutation", ["wrong_hash", "added", "missing", "noncanonical"])
 def test_final_detail_strict_reloader(tmp_path, mutation):
     _, receipt, _, _, final, *_ = _fixture(
@@ -303,3 +315,64 @@ def test_final_receipt_rejects_impossible_aggregate_counts(tmp_path, count_name,
     path.write_bytes(data)
     with pytest.raises(Refusal, match="receipt_contract"):
         load_final_receipt(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("output_inside_manifest_dir+policy_contract", "path_confinement"),
+    ("manifest_contract+policy_oversize", "size_limit"),
+    ("manifest_contract+split_oversize", "size_limit"),
+    ("manifest_contract+output_collision", "input_contract"),
+])
+def test_combined_violations_report_the_earliest_master_order_code(
+        tmp_path, capsysbinary, case, expected):
+    # Slice 1 section 4.6, first match wins: confinement of every input and
+    # the output, then every size ceiling, then contracts, then the output.
+    from setec.preflight import final
+    _, _, _, intake, _, manifest, policy, split_map = _fixture(
+        tmp_path, ["alpha beta gamma"], ["alpha beta gamma"])
+    out = tmp_path / "out"
+    if "output_inside" in case:
+        out = manifest.parent / "out"
+    if "policy_contract" in case:
+        policy.write_bytes(b"{}")
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (64 * 1024 + 1))
+    if "split_oversize" in case:
+        split_map.write_bytes(b" " * (8 * 1024 * 1024 + 1))
+    if "manifest_contract" in case:
+        row = json.loads(manifest.read_bytes())
+        row["unknown"] = True
+        manifest.write_bytes(canonical_json(row))
+    if "output_collision" in case:
+        out.mkdir()
+    assert final.main(["--intake-bundle", str(intake), "--manifest", str(manifest),
+                       "--policy", str(policy), "--split-map", str(split_map),
+                       "--out-bundle", str(out)]) == 2
+    assert capsysbinary.readouterr() == (b"", expected.encode() + b"\n")
+    assert not (out / "receipt.json").exists()
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: exit 0 means the bundle is published, and a stream
+    # that fails afterwards cannot un-publish it.
+    from setec.preflight import final
+    _, _, _, intake, _, manifest, policy, split_map = _fixture(
+        tmp_path, ["alpha beta gamma"], ["alpha beta gamma"])
+    out = tmp_path / "out"
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert final.main(["--intake-bundle", str(intake), "--manifest", str(manifest),
+                       "--policy", str(policy), "--split-map", str(split_map),
+                       "--out-bundle", str(out)]) == 0
+    assert (out / "receipt.json").is_file()

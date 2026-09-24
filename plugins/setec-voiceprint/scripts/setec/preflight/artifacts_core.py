@@ -12,9 +12,10 @@ from typing import Mapping, Sequence
 import preprocessing
 
 from .common import (
-    Manifest, Record, Refusal, WorkBudget, canonical_json, collapse_strata,
+    Manifest, Record, Refusal, Snapshot, WorkBudget, canonical_json, collapse_strata,
     coordination_label, domain_hash, exact_keys, parse_json, plain_hash,
     read_bounded, record_set_sha256, require_hex, validate_coordination_strata,
+    POLICY_LIMIT,
 )
 
 TOOL = "setec.preflight.artifacts"
@@ -132,7 +133,11 @@ class CalibrationResult:
 
 
 def load_artifact_policy(path: Path) -> ArtifactPolicy:
-    snapshot = read_bounded(path.parent, path.name, 64 * 1024)
+    return parse_artifact_policy(read_bounded(path.parent, path.name, POLICY_LIMIT))
+
+
+def parse_artifact_policy(snapshot: Snapshot) -> ArtifactPolicy:
+    """Validate policy bytes already read under ``POLICY_LIMIT``."""
     value = exact_keys(parse_json(snapshot.data, "policy_contract"),
                        {"schema", "dispositions", "coordination_strata"}, "policy_contract")
     if value["schema"] != POLICY_SCHEMA:
@@ -145,9 +150,12 @@ def load_artifact_policy(path: Path) -> ArtifactPolicy:
     return ArtifactPolicy(dispositions, strata, snapshot.sha256)
 
 
+_ASCII_LOWER = {code: code + 32 for code in range(ord("A"), ord("Z") + 1)}
+_PRIVATE_USE = re.compile("[\ue000-\uf8ff\U000f0000-\U000ffffd\U00100000-\U0010fffd]")
+
+
 def _ascii_lower(value: str) -> str:
-    return "".join(chr(ord(char) + 32) if "A" <= char <= "Z" else char
-                   for char in value)
+    return value.translate(_ASCII_LOWER)
 
 
 def _trim(value: str) -> str:
@@ -159,22 +167,33 @@ def _collapse(value: str) -> str:
 
 
 def _tag_segments(line: str) -> list[tuple[int, int]]:
-    segments = []
+    """Each `<` restarts a candidate and each `>` closes the open one, found
+    with `str.find` so a line costs C-speed scans rather than a Python loop."""
+    segments: list[tuple[int, int]] = []
     start = None
-    for index, char in enumerate(line):
-        if char == "<":
-            start = index
-        elif char == ">" and start is not None:
-            if HTML_TAG.fullmatch(line, start, index + 1):
-                segments.append((start, index + 1))
-            start = None
-    return segments
+    size = len(line)
+    next_open = line.find("<")
+    next_close = line.find(">")
+    while True:
+        if next_open < 0:
+            next_open = size
+        if next_close < 0:
+            next_close = size
+        if next_open == next_close == size:
+            return segments
+        if next_open < next_close:
+            start = next_open
+            next_open = line.find("<", next_open + 1)
+        else:
+            if start is not None:
+                if HTML_TAG.fullmatch(line, start, next_close + 1):
+                    segments.append((start, next_close + 1))
+                start = None
+            next_close = line.find(">", next_close + 1)
 
 
 def _private_use(text: str) -> bool:
-    return any(0xE000 <= ord(char) <= 0xF8FF or
-               0xF0000 <= ord(char) <= 0xFFFFD or
-               0x100000 <= ord(char) <= 0x10FFFD for char in text)
+    return _PRIVATE_USE.search(text) is not None
 
 
 def detect_artifacts(analysis_text: str, budget: WorkBudget) -> tuple[Observation, ...]:
@@ -229,10 +248,13 @@ def detect_artifacts(analysis_text: str, budget: WorkBudget) -> tuple[Observatio
         budget.charge("lines")
         if not paragraph_of[index]:
             continue
+        # ASCII lowering maps no character into or out of WS, so trimming the
+        # lowered line equals lowering the trimmed one.
         trimmed = _trim(line)
         collapsed = _collapse(trimmed)
         ascii_line = _ascii_lower(line)
-        segments = _tag_segments(line)
+        lower_trimmed = _trim(ascii_line)
+        segments = _tag_segments(line) if "<" in line else []
         if segments or "<!--" in line or "-->" in line:
             emit("markup_html", index)
         if (SCRIPT_OPEN.search(ascii_line) or SCRIPT_CLOSE.search(ascii_line) or
@@ -247,22 +269,21 @@ def detect_artifacts(analysis_text: str, budget: WorkBudget) -> tuple[Observatio
             emit("tei_xml_apparatus", index)
         if FOOTNOTE.search(line):
             emit("footnote_definition", index)
-        page = bool(PAGE.fullmatch(_ascii_lower(trimmed)) and
-                    (index == 0 or not _trim(lines[index - 1]) or
-                     index + 1 == len(lines) or not _trim(lines[index + 1])))
+        page = bool(PAGE.fullmatch(lower_trimmed) and
+                    (index == 0 or not paragraph_of[index - 1] or
+                     index + 1 == len(lines) or not paragraph_of[index + 1]))
         if page:
             emit("page_header", index)
         elif NUMBER.fullmatch(trimmed):
             emit("line_number", index)
-        if (index + 1 < len(lines) and _trim(lines[index + 1]) and
+        if (index + 1 < len(lines) and paragraph_of[index + 1] and
                 OCR_END.search(line) and OCR_START.search(lines[index + 1])):
             emit("ocr_hyphenation", index)
         if 3 <= len(collapsed) <= 80 and ASCII_LETTER.search(collapsed):
             if collapsed not in running:
                 budget.charge("running-head keys")
             running[collapsed].append(index)
-        if (_ascii_lower(trimmed) in TRUNCATION or
-                _ascii_lower(trimmed).endswith("[truncated]")):
+        if lower_trimmed in TRUNCATION or lower_trimmed.endswith("[truncated]"):
             emit("truncation_marker", index)
         fence_match = FENCE.match(line)
         if fence_match:
@@ -385,14 +406,9 @@ def census(manifest: Manifest, policy: ArtifactPolicy) -> CensusResult:
     return CensusResult(detail, receipt)
 
 
-def load_artifact_labels(path: Path, policy: ArtifactPolicy,
-                         manifest_ids: set[str], *,
-                         expected_sha256: str | None = None) -> tuple[dict[str, dict], str]:
-    snapshot = read_bounded(path.parent, path.name, LABEL_LIMIT)
-    if expected_sha256 is not None:
-        require_hex(expected_sha256, "calibration_binding")
-        if snapshot.sha256 != expected_sha256:
-            raise Refusal("calibration_binding")
+def parse_artifact_labels(snapshot: Snapshot, policy: ArtifactPolicy,
+                          manifest_ids: set[str]) -> tuple[dict[str, dict], str]:
+    """Validate label bytes already read under ``LABEL_LIMIT``."""
     code = "labels_contract"
     value = exact_keys(parse_json(snapshot.data, code),
                        {"schema", "register_cells", "labels"}, code)

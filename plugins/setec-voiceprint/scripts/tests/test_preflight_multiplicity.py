@@ -9,6 +9,7 @@ import random
 import pytest
 
 from setec.preflight.common import Refusal, canonical_json, plain_hash
+from setec.preflight import multiplicity, overlap_core
 from setec.preflight.overlap import run as run_overlap
 from setec.preflight.multiplicity import run as run_multiplicity
 from setec.preflight.multiplicity_core import (
@@ -373,3 +374,151 @@ def test_receipt_reloader_derives_cluster_limit_from_counts(tmp_path, rule, cap)
     path.write_bytes(data)
     with pytest.raises(Refusal, match="receipt_contract"):
         load_multiplicity_receipt(path, plain_hash(data))
+
+
+def _main_args(root: Path, manifest: Path, detail: Path, detail_hash: str, out: Path) -> list[str]:
+    policy = root / "multiplicity-policy.json"
+    policy.write_bytes(canonical_json({"schema": "setec-preflight-multiplicity-policy/1",
+                                       "purpose": "conditioning_target",
+                                       "rule": "cap_per_cluster", "cap": 1}))
+    return ["--manifest", str(manifest), "--policy", str(policy),
+            "--overlap-detail", str(detail), "--overlap-detail-sha256", detail_hash,
+            "--out-bundle", str(out)]
+
+
+def test_empty_admission_map_argument_refuses_instead_of_not_supplied(tmp_path, capsysbinary):
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    out = tmp_path / "out"
+    args = _main_args(root, manifest, detail, detail_hash, out)
+    assert multiplicity.main([*args, "--admission-map", ""]) == 2
+    streams = capsysbinary.readouterr()
+    assert streams.out == b"" and streams.err == b"admission_contract\n"
+    assert not out.exists()
+
+
+def test_injected_exception_is_internal_refusal_only(tmp_path, monkeypatch, capsysbinary):
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["CANARY prose text"])
+
+    def explode(*_args):
+        raise RuntimeError("CANARY-EXCEPTION r0")
+
+    monkeypatch.setattr(multiplicity, "evaluate_multiplicity", explode)
+    out = tmp_path / "out"
+    assert multiplicity.main(_main_args(root, manifest, detail, detail_hash, out)) == 2
+    streams = capsysbinary.readouterr()
+    assert streams.out == b"" and streams.err == b"internal_refusal\n"
+    assert not out.exists()
+
+
+def test_overlap_detail_over_its_ceiling_refuses_detail_contract(tmp_path, monkeypatch):
+    """Slice 1 §7.1 owns the overlap detail's reloader and its refusal code."""
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    policy = root / "multiplicity-policy.json"
+    policy.write_bytes(canonical_json({"schema": "setec-preflight-multiplicity-policy/1",
+                                       "purpose": "conditioning_target",
+                                       "rule": "cap_per_cluster", "cap": 1}))
+    size = len(detail.read_bytes())
+    monkeypatch.setattr(overlap_core, "OVERLAP_DETAIL_LIMIT", size)
+    run_multiplicity(manifest, policy, detail, detail_hash, tmp_path / "at-limit")
+    monkeypatch.setattr(overlap_core, "OVERLAP_DETAIL_LIMIT", size - 1)
+    with pytest.raises(Refusal, match="detail_contract"):
+        run_multiplicity(manifest, policy, detail, detail_hash, tmp_path / "over-limit")
+
+
+@pytest.mark.parametrize("rule,weights,reason,forged", [
+    ("cluster_weighting", [999_999], "cluster_weight_sum", 2),
+    ("one_representative_per_cluster", [999_999], "representative_weight", 2),
+])
+def test_receipt_reloader_bounds_violation_counts(tmp_path, rule, weights, reason, forged):
+    _, receipt, statuses, _ = _run(tmp_path, ["one text"], weights, rule=rule)
+    assert statuses["multiplicity"] == "failed"
+    assert receipt["reason_counts"][reason] == 1
+    assert receipt["counts"]["clusters"] == receipt["counts"]["admitted"] == 1
+    receipt["reason_counts"][reason] = forged
+    path = tmp_path / "forged-bound-receipt.json"
+    data = canonical_json(receipt)
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="receipt_contract"):
+        load_multiplicity_receipt(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("changes", [
+    {"withheld_cluster_not_admitted": 0, "withheld_exact_copy": 1},
+    {"clusters_with_admitted": 2},
+], ids=["unadmitted_cluster_without_withheld_row", "more_admitted_clusters_than_records"])
+def test_receipt_reloader_refuses_impossible_cluster_counts(tmp_path, changes):
+    _, receipt, statuses, _ = _run(tmp_path, ["first unrelated prose", "second other words"],
+                                   [1_000_000, 0])
+    assert statuses["multiplicity"] == "passed"
+    assert receipt["counts"]["clusters"] == 2 and receipt["counts"]["admitted"] == 1
+    receipt["counts"].update(changes)
+    path = tmp_path / "forged-cluster-receipt.json"
+    data = canonical_json(receipt)
+    path.write_bytes(data)
+    with pytest.raises(Refusal, match="receipt_contract"):
+        load_multiplicity_receipt(path, plain_hash(data))
+
+
+@pytest.mark.parametrize("case, expected", [
+    ("output_inside_manifest_dir+policy_contract", "path_confinement"),
+    ("admission_map_directory+detail_contract", "path_confinement"),
+    ("manifest_contract+policy_oversize", "size_limit"),
+    ("manifest_contract+admission_oversize", "size_limit"),
+    ("manifest_contract+output_collision", "input_contract"),
+])
+def test_combined_violations_report_the_earliest_master_order_code(
+        tmp_path, capsysbinary, case, expected):
+    # Slice 1 section 4.6, first match wins: confinement of every input and
+    # the output, then every size ceiling, then contracts, then the output.
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    out = tmp_path / "out"
+    if "output_inside" in case:
+        out = root / "out"
+    args = _main_args(root, manifest, detail, detail_hash, out)
+    policy = root / "multiplicity-policy.json"
+    admission = root / "admission.json"
+    admission.write_bytes(canonical_json({
+        "schema": "setec-preflight-admission/1", "overlap_detail_sha256": detail_hash,
+        "assignments": {"r0": {"admitted": True, "micro_weight": 1}}}))
+    if "policy_contract" in case:
+        policy.write_bytes(b"{}")
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (64 * 1024 + 1))
+    if "admission_map_directory" in case:
+        admission = root / "admission-dir"
+        admission.mkdir()
+    if "admission_oversize" in case:
+        admission.write_bytes(b" " * (8 * 1024 * 1024 + 1))
+    if "detail_contract" in case:
+        args[args.index("--overlap-detail-sha256") + 1] = "0" * 64
+    if "manifest_contract" in case:
+        row = json.loads(manifest.read_bytes())
+        row["unknown"] = True
+        manifest.write_bytes(canonical_json(row))
+    if "output_collision" in case:
+        out.mkdir()
+    assert multiplicity.main([*args, "--admission-map", str(admission)]) == 2
+    assert capsysbinary.readouterr() == (b"", expected.encode() + b"\n")
+    assert not (out / "receipt.json").exists()
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: exit 0 means the bundle is published, and a stream
+    # that fails afterwards cannot un-publish it.
+    root, manifest, detail, detail_hash = _fixture(tmp_path, ["one text"])
+    out = tmp_path / "out"
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    assert multiplicity.main(_main_args(root, manifest, detail, detail_hash, out)) == 0
+    assert (out / "receipt.json").is_file()
