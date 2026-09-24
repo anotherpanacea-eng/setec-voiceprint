@@ -470,11 +470,24 @@ def _claude_violations(text: str) -> list[str]:
     if job.get("permissions") != CLAUDE_PERMISSIONS:
         problems.append("job permissions")
     steps = job.get("steps") or []
-    if [step.get("uses") for step in steps] != ["actions/checkout@v4", CLAUDE_ACTION]:
+    if [step.get("id") or step.get("uses") for step in steps] != [
+        "fork_guard", "actions/checkout@v4", CLAUDE_ACTION,
+    ]:
         problems.append("steps")
     for step in steps:
-        if "run" in step or "continue-on-error" in step:
-            problems.append(f"{step.get('uses')}: run or continue-on-error")
+        if "continue-on-error" in step:
+            problems.append(f"{step.get('id') or step.get('uses')}: continue-on-error")
+        if "run" in step and step.get("id") != "fork_guard":
+            problems.append(f"{step.get('uses')}: run")
+    guard = steps[0] if steps else {}
+    # The guard must run for every PR-bound event and fail on a fork.
+    if (
+        guard.get("if") != "github.event.issue.pull_request || github.event.pull_request"
+        or "isCrossRepository" not in guard.get("run", "")
+        or 'if [ "$cross" != "false" ]' not in guard.get("run", "")
+        or "exit 1" not in guard.get("run", "")
+    ):
+        problems.append("fork guard")
     inputs = (steps[-1].get("with") or {}) if steps else {}
     if set(inputs) - {"claude_code_oauth_token", "additional_permissions"}:
         problems.append(f"action inputs: {sorted(inputs)}")
@@ -558,6 +571,10 @@ def test_policy_mutations_fail_closed(old: str, new: str):
         ("contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.issue.author_association)", "true"),
         ("(github.event_name == 'pull_request_review' &&", "(github.event_name == 'pull_request_review' || github.event_name == 'issues' &&"),
         ("claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c", "claude-code-action@v1"),
+        ("        if: github.event.issue.pull_request || github.event.pull_request", "        if: github.event.pull_request"),
+        ('          if [ "$cross" != "false" ]; then', '          if [ "$cross" = "true" ]; then'),
+        ("            exit 1\n", "            exit 0\n"),
+        ("      - name: Refuse pull requests from forks\n        id: fork_guard", "      - name: Refuse pull requests from forks\n        id: fork_guard\n        continue-on-error: true"),
         ("    timeout-minutes: 30", "    timeout-minutes: 300"),
         ("    runs-on: ubuntu-latest", "    strategy:\n      matrix:\n        copy: [1, 2]\n    runs-on: ubuntu-latest"),
         ("      contents: write", "      contents: write\n      packages: write"),

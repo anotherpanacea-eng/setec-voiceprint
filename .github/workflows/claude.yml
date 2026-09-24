@@ -49,6 +49,22 @@ jobs:
       id-token: write
       actions: read
     steps:
+      # A fork's code and instructions must never share a workspace with the
+      # OAuth token and the write-scoped GITHUB_TOKEN, so pull requests from
+      # forks are refused before anything is checked out. Fails closed if
+      # the lookup fails.
+      - name: Refuse pull requests from forks
+        id: fork_guard
+        if: github.event.issue.pull_request || github.event.pull_request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          cross=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json isCrossRepository -q .isCrossRepository)
+          if [ "$cross" != "false" ]; then
+            echo "Refusing @claude on a pull request from a fork." >&2
+            exit 1
+          fi
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
