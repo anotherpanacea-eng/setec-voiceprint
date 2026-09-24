@@ -352,6 +352,89 @@ CLAUDE_PERMISSIONS = {
 CLAUDE_ACTION = "anthropics/claude-code-action@v1"
 
 
+# Per event: the payload object whose author is checked, and the text fields
+# that may carry the mention.
+CLAUDE_GATE_FIELDS = {
+    "issue_comment": ("comment", {"body"}),
+    "pull_request_review_comment": ("comment", {"body"}),
+    "pull_request_review": ("review", {"body"}),
+    "issues": ("issue", {"body", "title"}),
+}
+
+
+def _split_top(expr: str, op: str) -> list[str]:
+    """Split on `op` outside parentheses and quotes, peeling redundant outer parens."""
+    expr = expr.strip()
+    while expr.startswith("(") and _closing_paren(expr, 0) == len(expr) - 1:
+        expr = expr[1:-1].strip()
+    parts, depth, quote, start, i = [], 0, None, 0, 0
+    while i < len(expr):
+        ch = expr[i]
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif depth == 0 and expr.startswith(op, i):
+            parts.append(expr[start:i].strip())
+            start = i + len(op)
+            i = start
+            continue
+        i += 1
+    parts.append(expr[start:].strip())
+    return parts
+
+
+def _closing_paren(expr: str, open_at: int) -> int:
+    depth, quote = 0, None
+    for i in range(open_at, len(expr)):
+        ch = expr[i]
+        if quote:
+            quote = None if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return i
+    return -1
+
+
+def _claude_gate_violations(condition: str) -> list[str]:
+    """Each `||` branch must be one event, a trusted author, and a mention."""
+    problems: list[str] = []
+    seen: list[str] = []
+    for branch in _split_top(" ".join(condition.split()), "||"):
+        terms = _split_top(branch, "&&")
+        events = [
+            event for event in CLAUDE_GATE_FIELDS
+            if f"github.event_name == '{event}'" in terms
+        ]
+        if len(events) != 1 or len(terms) != 3:
+            problems.append(f"job gate branch not event-trusted-mention: {branch!r}")
+            continue
+        event = events[0]
+        obj, fields = CLAUDE_GATE_FIELDS[event]
+        trusted = f"contains({CLAUDE_TRUSTED}, github.event.{obj}.author_association)"
+        mention = [term for term in terms if term not in {f"github.event_name == '{event}'", trusted}]
+        allowed = {f"contains(github.event.{obj}.{field}, '@claude')" for field in fields}
+        if trusted not in terms or len(mention) != 1:
+            problems.append(f"{event}: gate lacks the trusted-author check")
+            continue
+        mentions = set(_split_top(mention[0], "||"))
+        if not mentions or not mentions <= allowed:
+            problems.append(f"{event}: gate lacks an @claude mention on its own payload")
+        seen.append(event)
+    if sorted(seen) != sorted(CLAUDE_GATE_FIELDS):
+        problems.append(f"job gate events: {sorted(seen)}")
+    return problems
+
+
 def _claude_violations(text: str) -> list[str]:
     """Policy for the on-demand @claude workflow (public repo, billed runner).
 
@@ -377,9 +460,7 @@ def _claude_violations(text: str) -> list[str]:
     job = jobs["claude"]
     if set(job) != {"if", "runs-on", "timeout-minutes", "permissions", "steps"}:
         problems.append(f"job keys: {sorted(job)}")
-    condition = job.get("if", "")
-    if condition.count("'@claude'") != 5 or condition.count(CLAUDE_TRUSTED) != 4:
-        problems.append("job gate: every event must require a trusted @claude mention")
+    problems.extend(_claude_gate_violations(job.get("if", "")))
     if job.get("runs-on") != "ubuntu-latest":
         problems.append("runner")
     timeout = job.get("timeout-minutes", "")
@@ -473,6 +554,8 @@ def test_policy_mutations_fail_closed(old: str, new: str):
         ("    types: [opened]", "    types: [opened, assigned]"),
         ("contains(github.event.comment.body, '@claude') &&", "("),
         ('["OWNER","MEMBER","COLLABORATOR"]\'), github.event.review', '["OWNER","MEMBER","COLLABORATOR","NONE"]\'), github.event.review'),
+        ("contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), github.event.issue.author_association)", "true"),
+        ("(github.event_name == 'pull_request_review' &&", "(github.event_name == 'pull_request_review' || github.event_name == 'issues' &&"),
         ("    timeout-minutes: 30", "    timeout-minutes: 300"),
         ("    runs-on: ubuntu-latest", "    strategy:\n      matrix:\n        copy: [1, 2]\n    runs-on: ubuntu-latest"),
         ("      contents: write", "      contents: write\n      packages: write"),
@@ -491,3 +574,20 @@ def test_claude_workflow_comment_edits_stay_green():
     text = CLAUDE.read_text(encoding="utf-8")
     edited = "# reworded header\n" + text.replace("# On-demand", "# On demand", 1)
     assert _claude_violations(edited) == []
+
+
+def test_claude_gate_rejects_count_preserving_unguarded_branch():
+    # Codex round 2: drop the issues branch's trust check but repeat one in
+    # issue_comment, so substring counts stay the same.
+    text = CLAUDE.read_text(encoding="utf-8")
+    trusted_issue = (
+        "contains(fromJSON('[\"OWNER\",\"MEMBER\",\"COLLABORATOR\"]'), "
+        "github.event.issue.author_association)"
+    )
+    trusted_comment = trusted_issue.replace(".issue.", ".comment.")
+    assert trusted_issue in text
+    mutated = text.replace(trusted_issue, "true", 1).replace(
+        trusted_comment, f"{trusted_comment} && {trusted_issue}", 1,
+    )
+    assert mutated.count(CLAUDE_TRUSTED) == text.count(CLAUDE_TRUSTED)
+    assert _claude_violations(mutated)
