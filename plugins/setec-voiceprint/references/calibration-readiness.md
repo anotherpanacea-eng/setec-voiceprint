@@ -147,6 +147,7 @@ _Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readi
 | `structural_shuffle_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch, spacy; opt: en_core_web_sm | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `style_vectorizer` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 500 |
 | `tocsin_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: transformers, torch, numpy | CPU / stdlib (+ optional spaCy model) | 200 |
+| `verbatim_mosaic_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 | `voice_profile` | Empirical (provisional) | No | register-matched personal baseline corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 2000 |
 | `voice_verifier` | Literature-anchored | No | labeled corpus (required); --query (required); --reference (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | — |

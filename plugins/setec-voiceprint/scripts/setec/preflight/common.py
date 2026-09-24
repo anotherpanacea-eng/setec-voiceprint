@@ -9,6 +9,7 @@ from pathlib import Path, PureWindowsPath
 import re
 import secrets
 import shutil
+import sys
 import tempfile
 import unicodedata
 from collections import defaultdict
@@ -121,7 +122,9 @@ def parse_json(data: bytes, code: str) -> object:
         return json.loads(data.decode("utf-8", errors="strict"),
                           object_pairs_hook=_no_duplicates,
                           parse_constant=_nonfinite, parse_float=_reject_float)
-    except (UnicodeError, ValueError, TypeError):
+    except (UnicodeError, ValueError, TypeError, RecursionError):
+        # RecursionError: deeply nested arrays or objects exhaust the decoder
+        # stack; that is a malformed input, not an internal failure.
         raise Refusal(code) from None
 
 
@@ -154,6 +157,22 @@ def _relative_name(value: str) -> tuple[str, ...]:
     return tuple(parts)
 
 
+def _anchor(directory: Path) -> Path:
+    """Anchor at the directory's real parent chain; the directory stays literal.
+
+    Symlinks above the directory (for example macOS ``/tmp`` or a symlinked
+    home) are resolved once here. The directory itself and everything below it
+    is still opened component by component without following any symlink.
+    """
+    directory = Path(os.path.abspath(directory))
+    if directory.parent == directory:
+        return directory
+    try:
+        return Path(os.path.realpath(directory.parent)) / directory.name
+    except (OSError, ValueError):
+        raise Refusal("path_confinement") from None
+
+
 def _bind(root: Path, rel: str) -> tuple[Path, tuple[int, ...]]:
     parts = _relative_name(rel)
     target = root.joinpath(*parts)
@@ -178,11 +197,38 @@ def _read_bound(target: Path, root: Path, limit: int,
     return Snapshot(data, plain_hash(data), (fingerprint[0], fingerprint[1]))
 
 
+@dataclass(frozen=True)
+class BoundInput:
+    """A control file bound for confinement but not yet size-checked or read.
+
+    Commands bind every input first so a confinement refusal outranks a size
+    or contract refusal on another input (§4.6, first match wins).
+    """
+    root: Path
+    target: Path
+    fingerprint: tuple[int, ...]
+
+    def check_size(self, limit: int) -> None:
+        if self.fingerprint[2] > limit:
+            raise Refusal("size_limit")
+
+    def read(self, limit: int) -> Snapshot:
+        return _read_bound(self.target, self.root, limit, self.fingerprint)
+
+
+def bind_input(path: Path) -> BoundInput:
+    """Bind one named file beneath its own directory (``path_confinement`` only)."""
+    path = Path(os.path.abspath(path))
+    root = _anchor(path.parent)
+    target, fingerprint = _bind(root, path.name)
+    return BoundInput(root, target, fingerprint)
+
+
 def read_bounded(root: Path, rel: str, limit: int) -> Snapshot:
     """Read an exact regular-file snapshot beneath an anchored directory."""
     if type(limit) is not int or limit < 0:
         raise ValueError("invalid bound")
-    root = Path(os.path.abspath(root))
+    root = _anchor(root)
     target, fingerprint = _bind(root, rel)
     return _read_bound(target, root, limit, fingerprint)
 
@@ -198,9 +244,10 @@ def load_strict_json(path: Path, limit: int, schema: str,
 
 
 def _label(value: object) -> str:
+    # C0 is U+0000..U+001F and C1 is U+0080..U+009F; U+007F (DEL) is neither.
     if type(value) is not str or not 1 <= len(value) <= 128:
         raise Refusal("input_contract")
-    if any(ord(ch) < 32 or 127 <= ord(ch) <= 159 or
+    if any(ord(ch) < 32 or 128 <= ord(ch) <= 159 or
            ord(ch) in {0x2028, 0x2029} or 0xD800 <= ord(ch) <= 0xDFFF
            for ch in value):
         raise Refusal("input_contract")
@@ -218,7 +265,7 @@ def text_rule_violation(data: bytes) -> str | None:
         return "invalid_utf8"
     if any(ord(ch) < 32 and ch not in "\t\n\r" for ch in text):
         return "c0_control"
-    if any(127 <= ord(ch) <= 159 for ch in text):
+    if any(128 <= ord(ch) <= 159 for ch in text):
         return "c1_control"
     if not text.strip():
         return "empty"
@@ -238,73 +285,128 @@ def record_set_sha256(records: Sequence[Record]) -> str:
     return domain_hash("setec-preflight-record-set-v1", canonical_json(pairs))
 
 
-def _load_manifest(path: Path, *, combined_limit: int | None = None,
-                   calibration: bool = False,
-                   expected_sha256: str | None = None) -> tuple[Manifest, dict[str, str], str]:
-    path = Path(os.path.abspath(path))
-    root = path.parent
-    snapshot = read_bounded(root, path.name, MANIFEST_LIMIT)
-    if expected_sha256 is not None:
-        require_hex(expected_sha256, "calibration_binding")
-        if snapshot.sha256 != expected_sha256:
-            raise Refusal("calibration_binding")
-    rows = snapshot.data.split(b"\n")
-    if rows and rows[-1] == b"":
-        rows.pop()
-    if not 1 <= len(rows) <= MAX_RECORDS:
-        raise Refusal("input_contract")
+_ROW_KEYS = frozenset({"id", "group_id", "stratum", "path", "span"})
+_SPAN_KEYS = frozenset({"source_path", "source_bytes_sha256", "start_byte", "end_byte"})
+_JSON_WHITESPACE = b" \t\r"
+
+
+@dataclass(frozen=True)
+class ManifestPlan:
+    """A read manifest whose named paths are bound, before any contract check.
+
+    ``contract_ok`` records whether every row met §4.2; the refusal is raised
+    only after confinement, aliasing, and sizes, which rank earlier in §4.6.
+    """
+    snapshot: Snapshot
+    root: Path
+    rows: tuple[dict, ...]
+    contract_ok: bool
+    bound: Mapping[str, tuple[Path, tuple[int, ...]]]
+    candidates: frozenset[str]
+
+
+def _row_contract(line: bytes, value: object, terminated: bool) -> bool:
+    if (not line or len(line) + int(terminated) > 32 * 1024
+            or line[:1] in (b" ", b"\t", b"\r") or line[-1:] in (b" ", b"\t", b"\r")):
+        return False
+    try:
+        row = exact_keys(value, _ROW_KEYS, "input_contract")
+        for key in ("id", "group_id", "stratum"):
+            _label(row[key])
+        span = exact_keys(row["span"], _SPAN_KEYS, "input_contract")
+        require_hex(span["source_bytes_sha256"], "input_contract")
+    except Refusal:
+        return False
+    return (type(span["start_byte"]) is int and type(span["end_byte"]) is int
+            and 0 <= span["start_byte"] < span["end_byte"])
+
+
+def plan_manifest(source: BoundInput) -> ManifestPlan:
+    """Read the manifest and bind every path it names (§4.2, §4.3).
+
+    Raises ``size_limit`` for the manifest file itself, then
+    ``path_confinement`` for any named path, then ``path_alias``. Row contract
+    failures are recorded, not raised, so they cannot outrank those codes.
+    """
+    source.check_size(MANIFEST_LIMIT)
+    snapshot = source.read(MANIFEST_LIMIT)
+    lines = snapshot.data.split(b"\n")
+    if lines and lines[-1] == b"":
+        lines.pop()
+    contract_ok = 1 <= len(lines) <= MAX_RECORDS
+    names: set[str] = set()
+    candidates: set[str] = set()
+    rows: list[dict] = []
+    ids: set[str] = set()
+    for index, line in enumerate(lines):
+        try:
+            value = parse_json(line, "input_contract")
+        except Refusal:
+            contract_ok = False
+            continue
+        if type(value) is dict:
+            span = value.get("span")
+            named = [value["path"]] if "path" in value else []
+            if type(span) is dict and "source_path" in span:
+                named.append(span["source_path"])
+            for name in named:
+                _relative_name(name)
+                names.add(name)
+            if "path" in value:
+                candidates.add(value["path"])
+        terminated = index < len(lines) - 1 or snapshot.data.endswith(b"\n")
+        if not _row_contract(line, value, terminated) or value["id"] in ids:
+            contract_ok = False
+            continue
+        ids.add(value["id"])
+        rows.append(value)
+    bound: dict[str, tuple[Path, tuple[int, ...]]] = {}
+    for name in sorted(names):
+        bound[name] = _bind(source.root, name)
+    owners: dict[tuple[int, int], str] = {}
+    for name, (_, fingerprint) in bound.items():
+        identity = (fingerprint[0], fingerprint[1])
+        if identity in owners and owners[identity] != name:
+            raise Refusal("path_alias")
+        owners[identity] = name
+    return ManifestPlan(snapshot, source.root, tuple(rows), contract_ok, bound,
+                        frozenset(candidates))
+
+
+def check_candidate_sizes(plan: ManifestPlan, *, combined_limit: int | None = None) -> None:
+    """Refuse ``size_limit`` for any candidate or the combined candidate bytes."""
     ceiling = COMBINED_CANDIDATE_LIMIT
     if combined_limit is not None:
         if type(combined_limit) is not int or combined_limit < 0:
             raise Refusal("size_limit")
         ceiling = min(ceiling, combined_limit)
-    parsed: list[dict] = []
-    ids: set[str] = set()
-    names: set[str] = set()
-    for index, line in enumerate(rows):
-        terminator = int(index < len(rows) - 1 or snapshot.data.endswith(b"\n"))
-        if not line or len(line) + terminator > 32 * 1024:
-            raise Refusal("input_contract")
-        row = exact_keys(parse_json(line, "input_contract"),
-                         {"id", "group_id", "stratum", "path", "span"}, "input_contract")
-        for key in ("id", "group_id", "stratum"):
-            _label(row[key])
-        if row["id"] in ids:
-            raise Refusal("input_contract")
-        ids.add(row["id"])
-        span = exact_keys(row["span"],
-                          {"source_path", "source_bytes_sha256", "start_byte", "end_byte"},
-                          "input_contract")
-        for key in ("path", "source_path"):
-            name = row[key] if key == "path" else span[key]
-            _relative_name(name)
-            names.add(name)
-        require_hex(span["source_bytes_sha256"], "input_contract")
-        if (type(span["start_byte"]) is not int or type(span["end_byte"]) is not int
-                or not 0 <= span["start_byte"] < span["end_byte"]):
-            raise Refusal("input_contract")
-        parsed.append(row)
-    bound: dict[str, tuple[Path, tuple[int, ...]]] = {}
-    owners: dict[tuple[int, int], str] = {}
-    for name in sorted(names):
-        target, fingerprint = _bind(root, name)
-        identity = (fingerprint[0], fingerprint[1])
-        if identity in owners and owners[identity] != name:
-            raise Refusal("path_alias")
-        owners[identity] = name
-        bound[name] = (target, fingerprint)
-    cache: dict[str, Snapshot] = {}
     total = 0
-    for name in sorted({row["path"] for row in parsed}):
-        target, fingerprint = bound[name]
-        if fingerprint[2] > CANDIDATE_LIMIT or total + fingerprint[2] > ceiling:
+    for name in sorted(plan.candidates):
+        size = plan.bound[name][1][2]
+        total += size
+        if size > CANDIDATE_LIMIT or total > ceiling:
             raise Refusal("size_limit")
+
+
+def finish_manifest(plan: ManifestPlan, *, calibration: bool = False,
+                    expected_sha256: str | None = None) -> tuple[Manifest, dict[str, str], str]:
+    """Read candidates and apply the §4.2 contract, text rules, and self-spans."""
+    if not plan.contract_ok:
+        raise Refusal("input_contract")
+    root = plan.root
+    cache: dict[str, Snapshot] = {}
+    analyses: dict[str, tuple[str, str] | str] = {}
+    for name in sorted({row["path"] for row in plan.rows}):
+        target, fingerprint = plan.bound[name]
         cache[name] = _read_bound(target, root, CANDIDATE_LIMIT, fingerprint)
-        total += len(cache[name].data)
+        # Text rules and the analysis view run once per distinct candidate
+        # file, however many rows share it.
+        violation = text_rule_violation(cache[name].data)
+        analyses[name] = violation if violation is not None else _analysis(cache[name].data)
     records: list[Record] = []
     violations: dict[str, str] = {}
     content_pairs: list[list[str]] = []
-    for row in parsed:
+    for row in plan.rows:
         span = row["span"]
         candidate = cache[row["path"]]
         self_span = span["source_path"] == row["path"]
@@ -317,23 +419,35 @@ def _load_manifest(path: Path, *, combined_limit: int | None = None,
             "start_byte": span["start_byte"], "end_byte": span["end_byte"],
         }))
         content_pairs.append([row["id"], content_sha])
-        violation = text_rule_violation(candidate.data)
-        if violation is not None:
+        analysis = analyses[row["path"]]
+        if type(analysis) is str:
             if not calibration:
                 raise Refusal("input_contract")
-            violations[row["id"]] = violation
+            violations[row["id"]] = analysis
             continue
-        view, analysis_sha = _analysis(candidate.data)
+        view, analysis_sha = analysis
         records.append(Record(row["id"], row["group_id"], row["stratum"], row["path"],
                               span["source_path"], span["source_bytes_sha256"],
                               span["start_byte"], span["end_byte"], candidate,
                               view, analysis_sha, content_sha, self_span))
-    manifest = Manifest(snapshot.sha256, root,
+    if expected_sha256 is not None:
+        require_hex(expected_sha256, "calibration_binding")
+        if plan.snapshot.sha256 != expected_sha256:
+            raise Refusal("calibration_binding")
+    manifest = Manifest(plan.snapshot.sha256, root,
                         {name: (fingerprint[0], fingerprint[1])
-                         for name, (_, fingerprint) in bound.items()}, tuple(records))
+                         for name, (_, fingerprint) in plan.bound.items()}, tuple(records))
     record_set = domain_hash("setec-preflight-record-set-v1", canonical_json(
         sorted(content_pairs, key=lambda pair: pair[0])))
     return manifest, violations, record_set
+
+
+def _load_manifest(path: Path, *, combined_limit: int | None = None,
+                   calibration: bool = False,
+                   expected_sha256: str | None = None) -> tuple[Manifest, dict[str, str], str]:
+    plan = plan_manifest(bind_input(path))
+    check_candidate_sizes(plan, combined_limit=combined_limit)
+    return finish_manifest(plan, calibration=calibration, expected_sha256=expected_sha256)
 
 
 def load_manifest(path: Path, *, combined_limit: int | None = None) -> Manifest:
@@ -370,17 +484,68 @@ class WorkBudget:
         self.used[name] += n
 
 
-def validate_output_path(manifest_root: Path, dest: Path) -> Path:
+def _real_chain(path: Path) -> list[tuple[int, int]]:
+    """``(st_dev, st_ino)`` of ``path``'s real location and every real ancestor."""
+    real = Path(os.path.realpath(path))
+    chain = []
+    for item in (real, *real.parents):
+        info = os.stat(item)
+        chain.append((info.st_dev, info.st_ino))
+    return chain
+
+
+def _location(path: Path) -> tuple[list[tuple[int, int]], tuple[str, ...]]:
+    """The identity chain of ``path``'s deepest existing self-or-ancestor, and
+    the names below it that do not exist yet."""
+    path = Path(os.path.abspath(path))
+    tail: list[str] = []
+    while not os.path.exists(path) and path.parent != path:
+        tail.append(path.name)
+        path = path.parent
+    return _real_chain(path), tuple(reversed(tail))
+
+
+def paths_nest(first: Path, second: Path) -> bool:
+    """True when either path equals or lies beneath the other.
+
+    Existing components compare by file identity, so a case-folding or
+    symlinked spelling cannot slip past. Names that do not exist yet can only
+    compare by spelling; they compare case-folded, refusing rather than
+    trusting that the file system is case-sensitive. A symlink loop counts as
+    a missing name, so it is left to the availability check.
+    """
+    first_chain, first_tail = _location(first)
+    second_chain, second_tail = _location(second)
+    if not second_tail and second_chain[0] in first_chain:
+        return True
+    if not first_tail and first_chain[0] in second_chain:
+        return True
+    if first_chain[0] != second_chain[0]:
+        return False
+    common = min(len(first_tail), len(second_tail))
+    return ([name.casefold() for name in first_tail[:common]] ==
+            [name.casefold() for name in second_tail[:common]])
+
+
+def confine_output_path(manifest_root: Path, dest: Path) -> Path:
+    """Refuse ``path_confinement`` when the bundle and manifest directory nest (§4.2).
+
+    Missing tail components of ``dest`` are fine here; availability is checked
+    later, after every input check.
+    """
     dest = Path(os.path.abspath(dest))
     try:
-        root = manifest_root.resolve(strict=True)
-        parent = dest.parent.resolve(strict=True)
+        nested = paths_nest(manifest_root, dest)
     except OSError:
         raise Refusal("output_unavailable") from None
-    resolved_dest = parent / dest.name
-    if parent == root or root in parent.parents or resolved_dest == root or resolved_dest in root.parents:
+    if nested:
         raise Refusal("path_confinement")
-    if dest.exists() or dest.is_symlink():
+    return dest
+
+
+def validate_output_path(manifest_root: Path, dest: Path) -> Path:
+    dest = confine_output_path(manifest_root, dest)
+    if os.path.lexists(dest):
         raise Refusal("output_collision")
     if not dest.parent.is_dir() or dest.parent.is_symlink():
         raise Refusal("output_unavailable")
@@ -460,6 +625,26 @@ def publish_bundle(dest: Path, files: dict[str, bytes]) -> None:
             winio.close(stage_handle)
         if staging is not None:
             shutil.rmtree(staging, ignore_errors=True)
+
+
+def emit_committed(stdout: bytes, lines: Sequence[str]) -> None:
+    """Write a published command's streams (§4.7), never failing the run.
+
+    The bundle is committed before this runs, so exit 0 already holds; a
+    closed or broken stream cannot un-publish it and is not a refusal.
+    """
+    try:
+        if stdout:
+            sys.stdout.buffer.write(stdout)
+            sys.stdout.buffer.flush()
+    except Exception:
+        pass
+    try:
+        for line in lines:
+            sys.stderr.write(line + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def validate_coordination_strata(value: object) -> tuple[str, ...]:

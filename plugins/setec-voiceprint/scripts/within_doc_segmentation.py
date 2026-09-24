@@ -234,83 +234,19 @@ def _build_windows(
 # FEATURE_NAMES is computed once from an empty/representative call to the three
 # families. We use the same families as stylometry_core-based surfaces.
 
-def _window_features(window_text: str) -> dict[str, float]:
-    """Build a flat feature dict for one window text."""
-    # Function-word features (stylometry_core.py:243)
-    words = _WORD_RE.findall(window_text.lower())
-    fw = function_word_features(words)
-
-    # Char-n-gram features (stylometry_core.py:249, families ns=(3,4,5))
-    cng_families = char_ngram_features(window_text, ns=CHAR_NGRAM_NS)
-    cng_flat: dict[str, float] = {}
-    for fam_dict in cng_families.values():
-        cng_flat.update(fam_dict)
-
-    # Sentence-shape stats from variance_audit.sentence_length_stats (variance_audit.py:202)
-    # Use the window's own sentence split for the shape stats.
-    window_sents = [s for s in re.split(r"(?<=[.!?])\s+(?=[A-Z\"'])|\n{2,}", window_text) if s.strip()]
-    if not window_sents:
-        window_sents = [window_text] if window_text.strip() else ["a"]
-    shape = sentence_length_stats(window_sents)
-
-    combined: dict[str, float] = {}
-    combined.update(fw)
-    combined.update(cng_flat)
-    # Include the shape stats that are floats
-    for k, v in shape.items():
-        if isinstance(v, (int, float)):
-            combined[f"sent_shape_{k}"] = float(v)
-
-    return combined
+from segmentation_feature_lens import (
+    window_features as _window_features,
+    z_score_features as _z_score_features,
+    cosine_similarity as _cosine_similarity,
+    EPSILON,
+)
 
 
 def _get_feature_names(sample_text: str = "Hello world. This is a test sentence.") -> list[str]:
-    """Compute the fixed, ordered feature name list from a sample text."""
-    feats = _window_features(sample_text)
-    return sorted(feats.keys())
+    return sorted(_window_features(sample_text).keys())
 
 
 # ---------- Distance computation (spec § Method steps 3-5b) ----------------
-
-EPSILON = 1e-9  # explicit zero-variance guard (spec §5(a))
-
-
-def _z_score_features(
-    raw: list[dict[str, float]],
-    feature_names: list[str],
-) -> list[dict[str, float]]:
-    """Within-document z-score: standardize each feature across all windows."""
-    z: list[dict[str, float]] = [{} for _ in raw]
-    for name in feature_names:
-        vals = [r.get(name, 0.0) for r in raw]
-        mu = safe_mean(vals)
-        sd = safe_sd(vals)
-        for i, r in enumerate(raw):
-            z[i][name] = (r.get(name, 0.0) - mu) / (sd + EPSILON)
-    return z
-
-
-def _cosine_similarity(
-    a: dict[str, float],
-    b: dict[str, float],
-    feature_names: list[str],
-) -> float:
-    """Cosine similarity clamped to [-1, 1]. Returns 0.0 on zero-norm vector."""
-    dot = 0.0
-    norm_a = 0.0
-    norm_b = 0.0
-    for name in feature_names:
-        av = a.get(name, 0.0)
-        bv = b.get(name, 0.0)
-        dot += av * bv
-        norm_a += av * av
-        norm_b += bv * bv
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    sim = dot / (math.sqrt(norm_a) * math.sqrt(norm_b))
-    return max(-1.0, min(1.0, sim))  # explicit clamp
-
-
 def _is_zero_norm(vec: dict[str, float], feature_names: list[str]) -> bool:
     """Return True if all feature values in vec are 0.0 (zero-norm vector)."""
     return all(vec.get(name, 0.0) == 0.0 for name in feature_names)

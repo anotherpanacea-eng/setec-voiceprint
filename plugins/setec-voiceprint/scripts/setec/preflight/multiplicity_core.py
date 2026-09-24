@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .common import (
-    Manifest, Refusal, canonical_json, exact_keys, parse_json, plain_hash,
-    read_bounded, require_hex, OVERLAP_DETAIL_LIMIT,
+    Manifest, Refusal, Snapshot, canonical_json, exact_keys, parse_json, plain_hash,
+    read_bounded, require_hex, OVERLAP_DETAIL_LIMIT, POLICY_LIMIT,
 )
 
 TOOL = "setec.preflight.multiplicity"
@@ -16,6 +16,7 @@ POLICY_SCHEMA = "setec-preflight-multiplicity-policy/1"
 ADMISSION_SCHEMA = "setec-preflight-admission/1"
 DETAIL_SCHEMA = "setec-preflight-multiplicity-detail/1"
 RECEIPT_SCHEMA = "setec-preflight-multiplicity-receipt/1"
+ADMISSION_LIMIT = 8 * 1024 * 1024
 PURPOSES = ("rewrite_mirror", "conditioning_target", "pretraining_corpus",
             "set_level_diversity", "evaluation_fixture")
 TRAINING_PURPOSES = PURPOSES[:3]
@@ -53,8 +54,7 @@ class MultiplicityResult:
     withheld: tuple[dict, ...] | None
 
 
-def _control(path: Path, limit: int, schema: str, keys: set[str], code: str) -> tuple[dict, str]:
-    snapshot = read_bounded(path.parent, path.name, limit)
+def _control(snapshot: Snapshot, schema: str, keys: set[str], code: str) -> tuple[dict, str]:
     value = exact_keys(parse_json(snapshot.data, code), keys, code)
     if value["schema"] != schema:
         raise Refusal(code)
@@ -62,7 +62,12 @@ def _control(path: Path, limit: int, schema: str, keys: set[str], code: str) -> 
 
 
 def load_multiplicity_policy(path: Path) -> tuple[MultiplicityPolicy, str]:
-    value, sha = _control(path, 64 * 1024, POLICY_SCHEMA,
+    return parse_multiplicity_policy(read_bounded(path.parent, path.name, POLICY_LIMIT))
+
+
+def parse_multiplicity_policy(snapshot: Snapshot) -> tuple[MultiplicityPolicy, str]:
+    """Validate policy bytes already read under ``POLICY_LIMIT``."""
+    value, sha = _control(snapshot, POLICY_SCHEMA,
                           {"schema", "purpose", "rule", "cap"}, "policy_contract")
     purpose, rule, cap = value["purpose"], value["rule"], value["cap"]
     if (type(purpose) is not str or purpose not in PURPOSES or
@@ -77,9 +82,21 @@ def load_multiplicity_policy(path: Path) -> tuple[MultiplicityPolicy, str]:
 
 def load_admission_map(path: Path, manifest: Manifest, overlap_detail_sha256: str,
                        policy: MultiplicityPolicy) -> tuple[dict[str, Admission], str]:
-    if policy.rule == "no_training_consumption":
+    snapshot = read_bounded(path.parent, path.name, ADMISSION_LIMIT) if path.name else None
+    return parse_admission_map(snapshot, manifest, overlap_detail_sha256, policy)
+
+
+def parse_admission_map(snapshot: Snapshot | None, manifest: Manifest,
+                        overlap_detail_sha256: str,
+                        policy: MultiplicityPolicy) -> tuple[dict[str, Admission], str]:
+    """Validate admission-map bytes already read under ``ADMISSION_LIMIT``.
+
+    ``None`` is an empty ``--admission-map`` argument: it names no map and is
+    refused, never read as "not supplied".
+    """
+    if policy.rule == "no_training_consumption" or snapshot is None:
         raise Refusal("admission_contract")
-    value, sha = _control(path, 8 * 1024 * 1024, ADMISSION_SCHEMA,
+    value, sha = _control(snapshot, ADMISSION_SCHEMA,
                           {"schema", "overlap_detail_sha256", "assignments"},
                           "admission_contract")
     if value["overlap_detail_sha256"] != overlap_detail_sha256:
@@ -312,6 +329,19 @@ def _validate_common(value: dict, code: str) -> str:
                 (counts["max_admitted_per_cluster"] >= 2) !=
                 (counts["clusters_multi_admitted"] > 0) or
                 reasons["admitted_exact_duplicate"] > counts["admitted"] // 2):
+            raise Refusal(code)
+        # A violating cluster has an admitted member (a zero-sum cluster admits
+        # nothing), each counted record is admitted, and every cluster without
+        # an admitted member withholds at least one record as not admitted.
+        if (reasons["cluster_over_limit"] > counts["clusters_with_admitted"] or
+                reasons["cluster_weight_sum"] > counts["clusters_with_admitted"] or
+                reasons["representative_weight"] > counts["admitted"] or
+                counts["clusters_with_admitted"] + counts["clusters_multi_admitted"] >
+                counts["admitted"] or
+                counts["withheld_cluster_not_admitted"] <
+                counts["clusters"] - counts["clusters_with_admitted"] or
+                (counts["withheld_cluster_not_admitted"] == 0) !=
+                (counts["clusters_with_admitted"] == counts["clusters"])):
             raise Refusal(code)
         if value["rule"] == "one_representative_per_cluster" or (
                 value["rule"] == "cap_per_cluster" and value["cap"] == 1):

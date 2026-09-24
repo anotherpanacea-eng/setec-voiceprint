@@ -7,10 +7,14 @@ import os
 from pathlib import Path
 import sys
 
-from .common import Refusal, WorkBudget, load_manifest, publish_bundle
+from .common import (
+    COMBINED_CANDIDATE_LIMIT, Refusal, WorkBudget, bind_input, check_candidate_sizes,
+    confine_output_path, emit_committed, finish_manifest, paths_nest, plan_manifest,
+    publish_bundle,
+)
 from .holdout_core import (
-    CEILINGS, LABEL, SealedSet, build_outputs, holdout_firewall,
-    load_holdout_policy,
+    CEILINGS, LABEL, POLICY_LIMIT, SealedSet, build_outputs, holdout_firewall,
+    parse_holdout_policy,
 )
 
 
@@ -19,62 +23,86 @@ class _Parser(argparse.ArgumentParser):
         raise Refusal("input_contract")
 
 
-def _paths(candidate_manifest: Path, sealed: list[tuple[str, Path]],
-           private_out: Path, conflicts_out: Path) -> None:
+def _confine(candidate_root: Path, sealed_roots: list[Path],
+             private_out: Path, conflicts_out: Path) -> None:
+    """Refuse `path_confinement` before any file is opened (spec 04 section 5).
+
+    Every comparison is by file identity (common's `paths_nest`), so a
+    case-folding or symlinked spelling of a root cannot slip past. A missing or
+    looping output parent is not a confinement fault: it is left to the output
+    phase's `output_unavailable`, after every input check.
+    """
     try:
-        candidate_root = candidate_manifest.parent.resolve(strict=True)
-        sealed_roots = [path.parent.resolve(strict=True) for _, path in sealed]
-        private_parent = private_out.parent.resolve(strict=True)
-        conflicts_parent = conflicts_out.parent.resolve(strict=True)
+        if any(paths_nest(candidate_root, root) for root in sealed_roots):
+            raise Refusal("path_confinement")
+        if paths_nest(private_out, conflicts_out):
+            raise Refusal("path_confinement")
     except OSError:
         raise Refusal("path_confinement") from None
-    for root in sealed_roots:
-        if root == candidate_root or root in candidate_root.parents or candidate_root in root.parents:
-            raise Refusal("path_confinement")
-    roots = [candidate_root, *sealed_roots]
-    outputs = [private_parent / private_out.name, conflicts_parent / conflicts_out.name]
-    if outputs[0] == outputs[1] or outputs[0] in outputs[1].parents or outputs[1] in outputs[0].parents:
-        raise Refusal("path_confinement")
-    for output in outputs:
-        for root in roots:
-            if output == root or output in root.parents or root in output.parents:
-                raise Refusal("path_confinement")
+    for output in (private_out, conflicts_out):
+        for root in (candidate_root, *sealed_roots):
+            confine_output_path(root, output)
+
+
+def _check_outputs(private_out: Path, conflicts_out: Path) -> None:
     for raw in (private_out, conflicts_out):
         if raw.exists() or raw.is_symlink():
             raise Refusal("output_collision")
+    for raw in (private_out, conflicts_out):
         if not raw.parent.is_dir() or raw.parent.is_symlink():
             raise Refusal("output_unavailable")
 
 
 def run(candidate_manifest_path: Path, sealed_paths: list[tuple[str, Path]],
         policy_path: Path, private_out: Path, conflicts_out: Path) -> tuple[dict[str, str], bool]:
+    """Run in phases so the first refusal matches slice 1 section 4.6's master
+    order: confinement (roots and outputs, then every file and every path each
+    manifest names), every size ceiling, the manifest and policy contracts,
+    enumeration (`work_limit`), `holdout_contract`, then the two output checks."""
     candidate_manifest_path = Path(os.path.abspath(candidate_manifest_path))
     sealed_paths = [(label, Path(os.path.abspath(path))) for label, path in sealed_paths]
     private_out = Path(os.path.abspath(private_out))
     conflicts_out = Path(os.path.abspath(conflicts_out))
-    if (not 1 <= len(sealed_paths) <= 8 or len({label for label, _ in sealed_paths}) != len(sealed_paths)
-            or any(type(label) is not str or LABEL.fullmatch(label) is None
-                   for label, _ in sealed_paths)):
-        raise Refusal("holdout_contract")
-    _paths(candidate_manifest_path, sealed_paths, private_out, conflicts_out)
-    candidates = load_manifest(candidate_manifest_path)
-    total = sum(len(record.candidate.data) for record in
-                {record.path: record for record in candidates.records}.values())
-    sealed = []
-    hashes: set[str] = set()
-    for label, path in sealed_paths:
-        manifest = load_manifest(path, combined_limit=128 * 1024 * 1024 - total)
-        if manifest.manifest_sha256 in hashes:
-            raise Refusal("holdout_contract")
-        hashes.add(manifest.manifest_sha256)
-        total += sum(len(record.candidate.data) for record in
-                     {record.path: record for record in manifest.records}.values())
-        sealed.append(SealedSet(label, manifest))
-    policy, policy_sha256 = load_holdout_policy(policy_path)
+    _confine(candidate_manifest_path.parent, [path.parent for _, path in sealed_paths],
+             private_out, conflicts_out)
+    candidate_input = bind_input(candidate_manifest_path)
+    sealed_inputs = [(label, bind_input(path)) for label, path in sealed_paths]
+    policy_input = bind_input(policy_path)
+    # Each manifest plan can refuse before the next manifest is inspected.
+    # Collect this phase's refusals across the whole packet, so an alias (or
+    # oversized manifest) cannot hide confinement failure in a later manifest.
+    plans = []
+    plan_refusals = []
+    for source in (candidate_input, *(source for _, source in sealed_inputs)):
+        try:
+            plans.append(plan_manifest(source))
+        except Refusal as exc:
+            plan_refusals.append(exc)
+    if plan_refusals:
+        priority = {code: index for index, code in enumerate(
+            ("input_changed", "path_confinement", "path_alias", "size_limit"))}
+        raise min(plan_refusals, key=lambda exc: priority[exc.code])
+    candidate_plan = plans[0]
+    sealed_plans = [(label, plan) for (label, _), plan in zip(sealed_inputs, plans[1:])]
+    # Sizes: the policy, then every manifest's candidates under one combined ceiling.
+    policy_input.check_size(POLICY_LIMIT)
+    remaining = COMBINED_CANDIDATE_LIMIT
+    for plan in (candidate_plan, *(plan for _, plan in sealed_plans)):
+        check_candidate_sizes(plan, combined_limit=remaining)
+        remaining -= sum(plan.bound[name][1][2] for name in plan.candidates)
+    candidates = finish_manifest(candidate_plan)[0]
+    sealed = [SealedSet(label, finish_manifest(plan)[0]) for label, plan in sealed_plans]
+    policy, policy_sha256 = parse_holdout_policy(policy_input.read(POLICY_LIMIT))
     budget = WorkBudget(CEILINGS)
     result = holdout_firewall(candidates, tuple(sealed), policy, budget)
+    if (not 1 <= len(sealed) <= 8 or len({item.label for item in sealed}) != len(sealed)
+            or any(type(item.label) is not str or LABEL.fullmatch(item.label) is None
+                   for item in sealed)
+            or len({item.manifest.manifest_sha256 for item in sealed}) != len(sealed)):
+        raise Refusal("holdout_contract")
     detail, receipt, conflicts = build_outputs(result, candidates, tuple(sealed),
                                                policy_sha256)
+    _check_outputs(private_out, conflicts_out)
     publish_bundle(private_out, {"detail.json": detail, "receipt.json": receipt})
     if conflicts is not None:
         try:
@@ -97,15 +125,15 @@ def main(argv: list[str] | None = None) -> int:
                           [(label, Path(path)) for label, path in args.sealed],
                           Path(args.policy), Path(args.private_out),
                           Path(args.conflicts_out))
-        for name in statuses:
-            sys.stderr.write(name + "\n")
-        return 0
     except Refusal as exc:
         sys.stderr.write(exc.code + "\n")
         return 4 if exc.code == "output_unavailable" else 2
     except Exception:
         sys.stderr.write("internal_refusal\n")
         return 2
+    # Stdout stays empty (spec 04 section 7): the receipt is private.
+    emit_committed(b"", list(statuses))
+    return 0
 
 
 if __name__ == "__main__":

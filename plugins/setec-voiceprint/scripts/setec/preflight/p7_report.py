@@ -8,7 +8,8 @@ import sys
 
 from .artifacts_core import load_artifact_receipt, load_calibration_receipt
 from .common import (
-    Refusal, canonical_json, exact_keys, load_manifest, parse_json, publish_bundle,
+    Refusal, bind_input, canonical_json, check_candidate_sizes, confine_output_path,
+    emit_committed, exact_keys, finish_manifest, parse_json, plan_manifest, publish_bundle,
     read_bounded, record_set_sha256, require_hex, validate_output_path,
 )
 from .final_core import load_final_receipt
@@ -57,21 +58,28 @@ def _register(path: Path) -> list[str]:
 
 def run(manifest_path: Path, purpose: str, receipt_paths: dict[str, Path | None],
         sealed_register: Path | None, out_bundle: Path) -> tuple[bytes, tuple]:
+    # Phases follow slice 1 section 4.6's order, first match wins: the manifest
+    # (input_contract and above), then purpose (policy_contract), then every
+    # receipt and register contract (receipt_contract), then binding
+    # (receipt_binding), then output. Output confinement is checked with the
+    # manifest's own confinement, ahead of everything else.
+    manifest_input = bind_input(manifest_path)
+    confine_output_path(manifest_input.root, out_bundle)
+    plan = plan_manifest(manifest_input)
+    check_candidate_sizes(plan)
+    manifest = finish_manifest(plan)[0]
     if purpose not in PURPOSES:
         raise Refusal("policy_contract")
-    if ((receipt_paths.get("holdout") is None) != (sealed_register is None) or
+    if (receipt_paths.get("final") is None or receipt_paths.get("intake") is None or
+            (receipt_paths.get("holdout") is None) != (sealed_register is None) or
             (receipt_paths.get("calibration") is not None and
              receipt_paths.get("artifact") is None)):
         raise Refusal("receipt_contract")
-    manifest = load_manifest(manifest_path)
     receipts = {name: (_receipt(path, name) if path is not None else None)
                 for name, path in receipt_paths.items()}
-    final = receipts["final"]
-    intake = receipts["intake"]
-    if final is None or intake is None:
-        raise Refusal("receipt_contract")
-    final_receipt, final_sha = final
-    intake_receipt, intake_sha = intake
+    register = _register(sealed_register) if sealed_register is not None else None
+    final_receipt, final_sha = receipts["final"]
+    intake_receipt, intake_sha = receipts["intake"]
     record_set = record_set_sha256(manifest.records)
     if (final_receipt["manifest_sha256"] != manifest.manifest_sha256 or
             final_receipt["record_set_sha256"] != record_set or
@@ -96,10 +104,9 @@ def run(manifest_path: Path, purpose: str, receipt_paths: dict[str, Path | None]
             final_receipt["overlap_detail_sha256"]):
         raise Refusal("receipt_binding")
     holdout = receipts.get("holdout")
-    if holdout is not None:
-        actual = sorted(item["manifest_sha256"] for item in holdout[0]["sealed"])
-        if actual != _register(sealed_register):
-            raise Refusal("receipt_binding")
+    if holdout is not None and (
+            {item["manifest_sha256"] for item in holdout[0]["sealed"]} != set(register)):
+        raise Refusal("receipt_binding")
     calibration = receipts.get("calibration")
     artifact = receipts.get("artifact")
     if calibration is not None and artifact is not None and any(
@@ -142,16 +149,14 @@ def main(argv: list[str] | None = None) -> int:
         receipt, rows = run(Path(args.manifest), args.purpose, paths,
                             Path(args.sealed_register) if args.sealed_register else None,
                             Path(args.out_bundle))
-        sys.stdout.buffer.write(receipt)
-        for row in rows:
-            sys.stderr.write(f"{row.obligation} {row.status}\n")
-        return 3 if any(row.status in {"not_run", "unavailable"} for row in rows) else 0
     except Refusal as exc:
         sys.stderr.write(exc.code + "\n")
         return 4 if exc.code == "output_unavailable" else 2
     except Exception:
         sys.stderr.write("internal_refusal\n")
         return 2
+    emit_committed(receipt, [f"{row.obligation} {row.status}" for row in rows])
+    return 3 if any(row.status in {"not_run", "unavailable"} for row in rows) else 0
 
 
 if __name__ == "__main__":

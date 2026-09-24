@@ -79,10 +79,11 @@ def test_census_private_detail_and_coordination_receipt(tmp_path):
     manifest = _manifest(tmp_path / "packet", [b"<p>secret canary</p>", b"plain prose"])
     policy = _policy(tmp_path)
     out = tmp_path / "out"
-    statuses = run_census(manifest, policy, out)
+    committed, statuses = run_census(manifest, policy, out)
     assert statuses == {"intake": "passed", "artifact_census": "needs_human_review"}
     detail_raw = (out / "detail.json").read_bytes()
     receipt_raw = (out / "receipt.json").read_bytes()
+    assert committed == receipt_raw
     detail = load_artifact_detail(out / "detail.json", plain_hash(detail_raw))
     receipt = load_artifact_receipt(out / "receipt.json", plain_hash(receipt_raw))
     assert receipt["detail_sha256"] == plain_hash(detail_raw)
@@ -117,10 +118,11 @@ def test_calibration_pass_and_intake_refusal(tmp_path):
                                 _label(5, "legitimate_variation", "unusual_valid_syntax")])
     policy = _policy(tmp_path)
     out = tmp_path / "calibrated"
-    statuses = run_calibrate(manifest, plain_hash(manifest.read_bytes()), labels,
-                             plain_hash(labels.read_bytes()), policy, out)
+    committed, statuses = run_calibrate(manifest, plain_hash(manifest.read_bytes()), labels,
+                                        plain_hash(labels.read_bytes()), policy, out)
     assert statuses == {"calibration": "passed"}
     raw = (out / "receipt.json").read_bytes()
+    assert committed == raw
     receipt = load_calibration_receipt(out / "receipt.json", plain_hash(raw))
     assert receipt["reason_counts"]["ok"] == 1
     assert receipt["cell_counts"]["cell"]["artifact"]["intake_refusal"] == 1
@@ -484,12 +486,15 @@ def test_census_collision_idempotence_and_stream_canary(tmp_path, capsys, monkey
     assert command.main(["census", "--manifest", str(manifest), "--policy", str(policy),
                          "--out-bundle", str(out1)]) == 0
     streams = capsys.readouterr()
-    assert streams.out == ""
-    assert streams.err.splitlines() == ["intake", "artifact_census"]
+    # Slice 5 inherits slice 1 section 4.7: stdout is the committed receipt.
+    assert streams.out.encode() == (out1 / "receipt.json").read_bytes()
+    assert streams.err.splitlines() == ["intake passed", "artifact_census needs_human_review"]
+    assert canary not in streams.out and canary not in streams.err
     assert canary not in (out1 / "receipt.json").read_text()
     assert command.main(["census", "--manifest", str(manifest), "--policy", str(policy),
                          "--out-bundle", str(out2)]) == 0
     assert (out1 / "receipt.json").read_bytes() == (out2 / "receipt.json").read_bytes()
+    assert capsys.readouterr().out.encode() == (out2 / "receipt.json").read_bytes()
     assert command.main(["census", "--manifest", str(manifest), "--policy", str(policy),
                          "--out-bundle", str(out1)]) == 2
     streams = capsys.readouterr()
@@ -586,3 +591,112 @@ def test_each_detector_at_boundary_and_one_outside(name, inside, outside):
         return {item.artifact_type for item in detect_artifacts(text, WorkBudget(CEILINGS))}
     assert name in names(inside)
     assert name not in names(outside)
+
+
+def test_calibrate_streams_committed_receipt(tmp_path, capsys):
+    import setec.preflight.artifacts as command
+    manifest = _manifest(tmp_path / "packet", [b"<p>artifact</p>", b"dialect prose"])
+    labels = _labels(tmp_path, [_label(0, "artifact"),
+                                _label(1, "legitimate_variation", "dialect")])
+    out = tmp_path / "out"
+    assert command.main(["calibrate", "--manifest", str(manifest), "--policy",
+                         str(_policy(tmp_path)), "--out-bundle", str(out),
+                         "--expect-manifest-sha256", plain_hash(manifest.read_bytes()),
+                         "--labels", str(labels),
+                         "--expect-labels-sha256", plain_hash(labels.read_bytes())]) == 0
+    streams = capsys.readouterr()
+    assert streams.out.encode() == (out / "receipt.json").read_bytes()
+    assert streams.err == "calibration failed\n"
+
+
+def test_refusal_order_follows_master_order(tmp_path, capsys):
+    # Slice 1 section 4.6, first match wins. A missing manifest directory is
+    # path_confinement (exit 2), not output_unavailable, even when the output
+    # parent is missing too.
+    import setec.preflight.artifacts as command
+    policy = _policy(tmp_path)
+    missing = tmp_path / "absent" / "packet.jsonl"
+    assert command.main(["census", "--manifest", str(missing), "--policy", str(policy),
+                         "--out-bundle", str(tmp_path / "absent-out" / "out")]) == 2
+    assert capsys.readouterr().err == "path_confinement\n"
+    # Input and policy contracts outrank an existing output directory.
+    manifest = _manifest(tmp_path / "packet", [b"plain prose"])
+    taken = tmp_path / "taken"
+    taken.mkdir()
+    bad_policy = tmp_path / "bad"
+    bad_policy.mkdir()
+    (bad_policy / "policy.json").write_bytes(b"{}")
+    with pytest.raises(Refusal, match="policy_contract"):
+        run_census(manifest, bad_policy / "policy.json", taken)
+    # labels_contract outranks calibration_binding.
+    labels = _labels(tmp_path, [_label(0, "artifact"), _label(9, "artifact")])
+    with pytest.raises(Refusal, match="labels_contract"):
+        run_calibrate(manifest, "0" * 64, labels, "0" * 64, policy, tmp_path / "cal")
+
+
+def _break_manifest(manifest: Path) -> None:
+    row = json.loads(manifest.read_bytes().splitlines()[0])
+    row["unknown"] = True
+    manifest.write_bytes(canonical_json(row))
+
+
+@pytest.mark.parametrize("mode, case, expected", [
+    (mode, case, expected) for mode in ("census", "calibrate")
+    for case, expected in (("output_inside_manifest_dir+policy_contract", "path_confinement"),
+                           ("manifest_contract+policy_oversize", "size_limit"),
+                           ("manifest_contract+output_collision", "input_contract"))
+] + [("calibrate", "manifest_contract+labels_oversize", "size_limit")])
+def test_combined_violations_report_the_earliest_master_order_code(
+        tmp_path, capsys, mode, case, expected):
+    # Slice 1 section 4.6, first match wins: confinement of every input and
+    # the output, then every size ceiling, then contracts, then the output.
+    import setec.preflight.artifacts as command
+    manifest = _manifest(tmp_path / "packet", [b"<p>artifact</p>", b"dialect prose"])
+    policy = _policy(tmp_path)
+    labels = _labels(tmp_path, [_label(0, "artifact"),
+                                _label(1, "legitimate_variation", "dialect")])
+    out = tmp_path / "out"
+    if "output_inside" in case:
+        out = manifest.parent / "out"
+    if "policy_contract" in case:
+        policy.write_bytes(b"{}")
+    if "policy_oversize" in case:
+        policy.write_bytes(b" " * (64 * 1024 + 1))
+    if "labels_oversize" in case:
+        labels.write_bytes(b" " * (1024 * 1024 + 1))
+    if "manifest_contract" in case:
+        _break_manifest(manifest)
+    if "output_collision" in case:
+        out.mkdir()
+    args = [mode, "--manifest", str(manifest), "--policy", str(policy),
+            "--out-bundle", str(out)]
+    if mode == "calibrate":
+        args += ["--expect-manifest-sha256", "0" * 64, "--labels", str(labels),
+                 "--expect-labels-sha256", "0" * 64]
+    assert command.main(args) == 2
+    assert capsys.readouterr() == ("", expected + "\n")
+    assert not (out / "receipt.json").exists()
+
+
+class _BrokenStream:
+    def write(self, data):
+        raise BrokenPipeError()
+
+    def flush(self):
+        raise BrokenPipeError()
+
+
+class _BrokenStdout:
+    buffer = _BrokenStream()
+
+
+def test_stdout_failure_after_publication_is_not_a_refusal(tmp_path, monkeypatch):
+    # Slice 1 section 4.7: exit 0 means the bundle is published, and a stream
+    # that fails afterwards cannot un-publish it.
+    import setec.preflight.artifacts as command
+    manifest = _manifest(tmp_path / "packet", [b"<p>artifact</p>"])
+    monkeypatch.setattr("sys.stdout", _BrokenStdout())
+    out = tmp_path / "out"
+    assert command.main(["census", "--manifest", str(manifest), "--policy",
+                         str(_policy(tmp_path)), "--out-bundle", str(out)]) == 0
+    assert (out / "receipt.json").is_file()

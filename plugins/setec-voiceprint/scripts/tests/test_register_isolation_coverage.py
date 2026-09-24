@@ -297,10 +297,34 @@ CLASSIFICATION: dict[str, dict] = {
         ),
     },
     "originality_audit": {
+        "sweeps": ("E",),
+        "guard": EXEMPT,
+        "via": None,
+        "rationale": _TUPLE_LOADER_RATIONALE,
+    },
+    "verbatim_cover": {
         "sweeps": ("D",),
         "guard": EXEMPT,
         "via": None,
         "rationale": _TUPLE_LOADER_RATIONALE,
+    },
+    "verbatim_mosaic_audit": {
+        "sweeps": ("E",),
+        "guard": EXEMPT,
+        "via": None,
+        "rationale": _TUPLE_LOADER_RATIONALE,
+    },
+    "generate_verbatim_mosaic_fixture": {
+        "sweeps": ("E",),
+        "guard": EXEMPT,
+        "via": None,
+        "rationale": (
+            "fixture generator, not a reference builder: it stitches labelled "
+            "synthetic targets from a --reference-dir pool, builds no stylometric "
+            "centroid and emits no voiceprint. A directory input carries no row "
+            "metadata, so there is no register to isolate, and its tuple-shaped "
+            "loader comes from verbatim_cover, whose shape check (g) pins"
+        ),
     },
     "homogeneity_audit": {
         "sweeps": ("D",),
@@ -348,7 +372,7 @@ CLASSIFICATION: dict[str, dict] = {
 
 # (g) The metadata-discarding loaders whose tuple return shape IS the exemption.
 TUPLE_SHAPED_LOADERS = {
-    "originality_audit": ("_load_reference_manifest", "_load_reference_dir"),
+    "verbatim_cover": ("_load_reference_manifest", "_load_reference_dir"),
     "cross_doc_novelty_profile": ("_load_reference_manifest", "_load_reference_dir"),
     "homogeneity_audit": ("_load_manifest",),
     "distinct_diversity_audit": ("_load_manifest",),

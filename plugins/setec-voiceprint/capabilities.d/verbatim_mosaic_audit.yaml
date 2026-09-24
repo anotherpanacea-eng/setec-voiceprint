@@ -1,0 +1,38 @@
+entries:
+- id: verbatim_mosaic_audit
+  script_path: plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py
+  surface: set_level_diversity
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: set-level-diversity
+  purpose: Descriptive coverage, source multiplicity, and junction style distances for a target against a named reference pool; no provenance or plagiarism inference.
+  use_when:
+  - You hold a legitimate source pool and want to describe a target's verbatim mosaic structure.
+  do_not_use_when:
+  - You need an AI/human, authorship, copyright, intent, or plagiarism determination.
+  - The likely sources are absent from the pool; low coverage cannot rule out reuse.
+  inputs:
+    target: UTF-8 prose text file
+    reference: --reference-dir or --manifest with id and text/text_path
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; deterministic greedy span cover and bounded feature vocabulary. Hard limits of 60000 target tokens, 100000 reference tokens, and 5000 reference documents.
+    length_floor_words: 24
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Profile a target against an operator-held text directory
+    cmd: python3 plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py --target target.txt --reference-dir sources --json
+  references:
+  - specs/82-verbatim-mosaic-audit.md
+  - specs/22-set-level-diversity.md
