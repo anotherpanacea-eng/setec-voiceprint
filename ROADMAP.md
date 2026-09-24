@@ -2,6 +2,14 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-09-23)
+
+- **Spec 82 M1 verbatim mosaic profile built.** `verbatim_mosaic_audit` adds an
+  operator-pool-dependent description of greedy verbatim coverage, source
+  multiplicity, and style distances at joins. A deterministic public-domain
+  fixture generator supports CI checks. The profile is provisional, has no
+  verdict or bands, and M2 model replay remains operator-gated.
+
 ## Status reconciliation (2026-09-19)
 
 - **Explicit author-language status for EveryCRS and Mirrulations.** Ordinary

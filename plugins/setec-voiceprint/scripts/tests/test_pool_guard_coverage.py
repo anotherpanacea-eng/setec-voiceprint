@@ -113,12 +113,47 @@ CLASSIFICATION: dict[str, dict[str, str]] = {
     },
     "originality_audit": {
         "surface": DIVERSITY_SURFACE,
-        "loader": "definer",
+        "loader": "importer",
         "guard": EXEMPT,
         "rationale": (
             "pinned negative control: duplicate pool members are IDEMPOTENT for "
             "longest-match coverage — copy count provably cannot change the result, so "
             "the measurement is not duplicate-dependent despite the surface tag"
+        ),
+    },
+    "verbatim_cover": {
+        "surface": "none (L1 library)",
+        "loader": "definer",
+        "guard": EXEMPT,
+        "rationale": (
+            "L1 library that single-sources the DJ-Search matcher and the shared "
+            "_load_reference_* loaders for originality_audit, verbatim_mosaic_audit and "
+            "the mosaic fixture generator. It measures nothing and never receives a "
+            "manifest path from an operator, so the guard obligation belongs to each "
+            "consuming surface, and each is classified here on its own measurement"
+        ),
+    },
+    "verbatim_mosaic_audit": {
+        "surface": DIVERSITY_SURFACE,
+        "loader": "importer",
+        "guard": EXEMPT,
+        "rationale": (
+            "target-vs-pool comparison on originality_audit's matcher: the measured "
+            "object is the TARGET's verbatim-span composition, not the pool's own "
+            "repetition. Coverage is idempotent to duplicate members, and a copy that "
+            "follows the first containing document cannot change first-containing "
+            "attribution, so retained duplicates are not the signal"
+        ),
+    },
+    "generate_verbatim_mosaic_fixture": {
+        "surface": "none (fixture generator)",
+        "loader": "importer",
+        "guard": EXEMPT,
+        "rationale": (
+            "synthetic-fixture generator, not a diversity measurement: it stitches "
+            "one paragraph per distinct source into a labelled target and refuses any "
+            "pool whose duplicated excerpts would make the labels ambiguous. It reads "
+            "--reference-dir only, so there are no manifest rows to carry a dedup stamp"
         ),
     },
     "cross_doc_argument_consistency": {
