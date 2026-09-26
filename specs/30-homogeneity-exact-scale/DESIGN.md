@@ -1,6 +1,7 @@
 # Exact pool homogeneity at bounded memory
 
-Status: design review; production blocked on the representative contract below.
+Status: owner choices recorded; precise numerical proposal independently reviewed,
+with policy adoption and production authorization still pending.
 Tier: COMPLEX. Author: Codex (runtime family GPT-6; no inferred submodel name).
 Scope: ROADMAP, "Corpus-scale and registry-contract gaps", homogeneity only.
 Base: `780cab5650309b21fe999b5d5ea4d51a80c4f199`.
@@ -34,28 +35,39 @@ fleet inventory script was unavailable at the local fleet-root location; direct
 current capability/source inventory is the fallback. ROADMAP has a foreign live
 claim and is intentionally unchanged.
 
-## Owner decision: what does a representative represent?
+## Approved owner decisions (2026-09-26)
+
+The owner explicitly approved (1) choice A positional pair witnesses and (2) a
+separately versioned, explicitly opt-in scalable arithmetic method while retaining
+the legacy method for reproducibility. Approval did not select any numerical
+cutoff or license unreliable scalars. The explanation accompanying approval named
+the all-pairs memory problem and the substantial rounding-order effect for almost
+identical inputs. This is a decision-record update, not production authorization.
+See [NUMERICAL-CONTRACT.md](NUMERICAL-CONTRACT.md) for the proposed reliability,
+degenerate-input and method-version contract; its unapproved mechanics are explicit.
+
+## What the approved representatives represent
 
 The roadmap and this work order require "distribution + representatives";
 the existing executable contract has only the distribution and participation ratio.
-Preserving representatives is impossible until their meaning is defined. In
-particular participation ratio is **not a cluster count**, and supplies neither
+The approved additive meaning resolves this gap. In particular participation
+ratio is **not a cluster count**, and supplies neither
 cluster membership nor one representative per mode.
 
-Proposed choice A: positional **pair witnesses** for the exact order statistics
+Approved choice A: positional **pair witnesses** for the exact order statistics
 used by min/p10/p50/p90. Emit both bracketing pairs for interpolated quantiles,
 their values, interpolation weight and original admitted row ordinals; sort ties
 by `(cosine, i, j)`. They illustrate the pair distribution, not latent modes or
 text quality. They contain no excerpts, paths or user IDs. They remain private
 run diagnostics; ordinal linkage is not anonymization. No "best" text is selected.
 
-Alternative B: representatives of clusters or source/register strata. This needs
+Excluded alternative B: representatives of clusters or source/register strata need
 an additional partition/metadata contract and cannot be inferred from Spec30.
 It is a separate scientific/product scope, not an implementation choice here.
 
-Owner must accept A or supply B's contract before production work. Do not silently
-omit the required representatives, invent clusters, or turn this into scalar-only
-output. This draft recommends A but does not approve it on the owner's behalf.
+Do not omit the approved witnesses, invent clusters, or turn this into scalar-only
+output. Their appearance is restricted to the explicit new method; legacy results
+remain unchanged. Private ordinal linkage is not public/anonymized diagnostics.
 
 ## Exact arithmetic design
 
@@ -76,8 +88,11 @@ near identical rows can destroy the spread. Width D is at most the fixed
 function-word family plus 600 selected n-grams. Memory O(D^2 + BD); time O(ND^2).
 Alternatively compute centered Gram tiles with O(BD+B^2) memory and O(N^2 D)
 time; this avoids D^2 storage at the cost of quadratic work. Neither requires
-eigenvalues. Zero spread gives 1, retain [1,N] clamp and numpy-absent null/warning
-behavior. Mathematically nonzero spread has rank at most min(D,N-1), not N;
+eigenvalues. This algebra motivated the initial floating-point feasibility probe;
+it is not the reliability contract for a production implementation. Legacy keeps
+its zero-spread 1, [1,N] clamp and numpy-absent null/warning behavior. The proposed
+new certified method is defined in NUMERICAL-CONTRACT and can withhold a scalar.
+Mathematically nonzero spread has rank at most min(D,N-1), not N;
 an orthonormal N-row pool centers to N-1 modes.
 
 Clipping negative *computed* eigenvalues is not a real-arithmetic definition.
@@ -89,12 +104,13 @@ matrix itself; this can dominate eigenvalue clipping. The probe records a
 well-conditioned agreement. Its fixed-mean cases test a narrower identity.
 No universal relative-error promise is made near zero spread; do not invent a
 noise threshold or claim that six-decimal rounding guarantees equality. Synthetic
-evidence must show the discrepancy explicitly. A production contract must state
-the numerical compatibility domain and degenerate policy before replacing it.
+evidence must show the discrepancy explicitly. The approved new method will not
+replace legacy arithmetic. Its numerical target, enclosure rule and proposed
+degenerate policy are specified separately for review before implementation.
 
 For distribution fidelity, compute each pair with the existing `_cosine` operation
 order (including clamping and zero semantics). Write sorted bounded runs of
-binary64 values, optionally paired with i/j for approved witness choice A. Use
+binary64 values paired with i/j for approved witness choice A in the new method. Use
 fixed-fan-in external merge passes, never one open file per run without a cap.
 All pairs remain present; exact rank retrieval reproduces the existing linear
 quantile expression. Accumulate exact rational sums of the binary64 observations
@@ -107,10 +123,13 @@ with sum-of-squares subtraction in ordinary float arithmetic.
 Proposed operational bounds (not detector thresholds): 4096 pair records per
 sort run, merge fan-in 16, 64 rows per vector block, 8 MiB input record/text cap.
 These are design defaults, not owner-selected settings. Refuse oversize inputs
-explicitly before allocation; no truncation. Resource exhaustion produces an
-unavailable resource result, never a sampled result or partial success envelope.
-Select the existing envelope category only after verifying the schema in the
-implementation increment; do not add a reason enum opportunistically.
+explicitly before allocation; no truncation. Input/pair-storage failures produce
+an unavailable result, never a sampled or falsely completed pair distribution.
+The new numeric contract has one explicit partial-metric exception: after all
+pairs/witnesses complete, declared numeric budget exhaustion withholds modes
+with a warning and state, without withholding the complete pair distribution.
+The verified existing-category mapping is now specified in NUMERICAL-CONTRACT;
+do not add a resource enum or bypass the bounds gate.
 
 1. Stream inputs in the existing order, snapshot admitted text to operator-owned
    local scratch, retaining original ordinals and duplicate occurrences. Apply
@@ -166,13 +185,18 @@ The scale experiment must process millions of actual synthetic pairs without
 holding their values or Gram matrix in RAM, and report peak memory and disk use.
 It must not call any embedding model, private corpus or provider.
 
-Before a production PR: owner representative decision; numerical edge policy;
+Before a production PR: adopt the reviewed numerical mechanics (owner choices A
+and method separation are already approved); explicit production authorization;
 fresh path claim; independent spec review; small fixtures for ties, duplicates,
 zero vectors, orthonormal, rank-deficient and almost-identical rows; full CLI
-synthetic equality/refusal checks; numpy-missing behavior; adversarial resume
+synthetic equality/refusal checks; legacy numpy-missing behavior; adversarial resume
 identity/corruption/interruption tests at each phase; and a process-memory scale
 test covering input/vocabulary/vector phases as well as pair reduction.
-Require unchanged distribution fields and claim license, no verdict/band/
+Require unchanged distribution fields and legacy claim license; qualify the new
+method's arithmetic target in its claim license while preserving no-verdict
+posture. No verdict/band/
 selection key, explicit duplicate accounting, and paired representative evidence.
 Do not promote heuristic status or detector thresholds. Proximity mode and M2
-lenses are outside this work. No merge, release or real proposal run is authorized.
+lenses are outside this work. Claude counter-review is pending and required before
+new builds proceed to integration; Codex-only reviews do not satisfy it. No merge,
+release or real proposal run is authorized.

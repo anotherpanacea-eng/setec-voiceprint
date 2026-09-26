@@ -5,17 +5,19 @@ This is a reviewed design/feasibility delivery, not a shipped scalable audit.
 
 ## Outcome
 
-Exact external pair reduction is feasible with small memory. Production work is
-blocked on two concrete choices:
+Exact external pair reduction is feasible with small memory. The initial draft
+isolated two owner choices; on 2026-09-26 the owner approved positional pair
+witnesses (DESIGN choice A) and a separately versioned, explicitly opt-in scalable
+method, retaining legacy for reproducibility. These are now resolved directions.
 
-1. Accept positional pair witnesses (DESIGN choice A), or define the partition
-   and semantics for another kind of representative. Existing Spec30 has none.
-2. Define numerical compatibility for `effective_modes` near zero spread. The
-   real-arithmetic identity is exact, but a different reduction order changes
-   the represented centered matrix enough to change the result dramatically.
-   One possible follow-up is a separately versioned opt-in arithmetic contract;
-   another is retaining the legacy numerical path and its resource limits.
-   Neither is silently selected by this draft. No noise floor is introduced.
+The added [numerical contract proposal](NUMERICAL-CONTRACT.md) defines a different
+precise arithmetic target, rigorous interval certification and explicit null
+outcomes. The owner did not select those detailed mechanics or a noise cutoff.
+Independent numerical and scope/fleet-posture reviews cleared the proposal for
+publication; policy adoption is still pending, and no existing receipt validates
+an implementation of these mechanics.
+Claude counter-review remains pending before new builds proceed to integration.
+No production claim or implementation begins from this decision-record update.
 
 No production files changed; no implicit sampling, deduplication, threshold,
 verdict, selector, private corpus, model execution, API spend, merge or release.
@@ -101,7 +103,8 @@ bounded passage-dedup pre-scan and preprocessing checkpoints. Independent generi
 review cleared the probe after adding multipass oracle coverage and the corrected
 allocation gate. Fleet-posture review is recorded in the delivery PR/claim.
 
-The production acceptance matrix in DESIGN remains future work: bounded loading,
+The production acceptance matrices in DESIGN and NUMERICAL-CONTRACT remain future
+work: certified numeric primitives and enclosure/reliability rules, bounded loading,
 vocabulary and vector storage, private witness projection, checkpoint identity,
 interruption/corruption tests, numpy-absent behavior and full CLI refusal equality
 have **not** been implemented or accepted by this experiment.
