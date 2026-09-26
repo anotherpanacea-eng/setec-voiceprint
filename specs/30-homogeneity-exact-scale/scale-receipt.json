@@ -1,0 +1,123 @@
+{
+  "python": "3.12.0",
+  "numpy": "2.4.4",
+  "run_values": 4096,
+  "fan_in": 16,
+  "small_cases": [
+    {
+      "case": "varied",
+      "distribution_exact": true,
+      "legacy_modes": 1.741310557966035,
+      "moment_modes": 1.7413105579660344,
+      "absolute_difference": 6.661338147750939e-16
+    },
+    {
+      "case": "identical",
+      "distribution_exact": true,
+      "legacy_modes": 1.0000000000000004,
+      "moment_modes": 1.0,
+      "absolute_difference": 4.440892098500626e-16
+    },
+    {
+      "case": "zero",
+      "distribution_exact": true,
+      "legacy_modes": 1.0,
+      "moment_modes": 1.0,
+      "absolute_difference": 0.0
+    },
+    {
+      "case": "mixed_zero",
+      "distribution_exact": true,
+      "legacy_modes": 1.6000000000000003,
+      "moment_modes": 1.5999999999999999,
+      "absolute_difference": 4.440892098500626e-16
+    },
+    {
+      "case": "orthonormal",
+      "distribution_exact": true,
+      "legacy_modes": 11.0,
+      "moment_modes": 10.999999999999996,
+      "absolute_difference": 3.552713678800501e-15
+    },
+    {
+      "case": "rank_one",
+      "distribution_exact": true,
+      "legacy_modes": 1.0,
+      "moment_modes": 1.0,
+      "absolute_difference": 0.0
+    },
+    {
+      "case": "near_identical",
+      "distribution_exact": true,
+      "legacy_modes": 1.000016824534661,
+      "moment_modes": 1.000016824534661,
+      "absolute_difference": 0.0
+    }
+  ],
+  "scale": [
+    {
+      "n": 512,
+      "distribution": {
+        "n": 130816,
+        "mean": 0.8122989546425375,
+        "sd": 0.22032956807541698,
+        "min": 0.0028324520664209565,
+        "p10": 0.48327427008730045,
+        "p50": 0.9001466678474909,
+        "p90": 0.9950596007051489
+      },
+      "peak_working_set_bytes": 735055872,
+      "pre_reduction_peak_bytes": 733360128,
+      "reduction_traced_peak_bytes": 1439398,
+      "peak_live_pair_file_bytes": 2093056,
+      "elapsed_seconds": 3.682299599982798
+    },
+    {
+      "n": 2048,
+      "distribution": {
+        "n": 2096128,
+        "mean": 0.814459847352774,
+        "sd": 0.21765604852132897,
+        "min": 0.0028324520664209565,
+        "p10": 0.48935018292891963,
+        "p50": 0.9012958545930584,
+        "p90": 0.9951526617137967
+      },
+      "peak_working_set_bytes": 734109696,
+      "pre_reduction_peak_bytes": 732516352,
+      "reduction_traced_peak_bytes": 1445478,
+      "peak_live_pair_file_bytes": 33538048,
+      "elapsed_seconds": 58.63981849999982
+    }
+  ],
+  "blocked_mean_sensitivity": [
+    {
+      "perturbation": 1e-08,
+      "legacy_modes": 9.050424495132468,
+      "blocked_mean_modes": 9.050424495132457
+    },
+    {
+      "perturbation": 1e-12,
+      "legacy_modes": 9.057761445770224,
+      "blocked_mean_modes": 9.057761445815366
+    },
+    {
+      "perturbation": 1e-15,
+      "legacy_modes": 9.04657159577848,
+      "blocked_mean_modes": 9.027800784766
+    },
+    {
+      "perturbation": 1e-16,
+      "legacy_modes": 1.085293597991339,
+      "blocked_mean_modes": 9.360408119618224
+    },
+    {
+      "perturbation": 0.0,
+      "legacy_modes": 1.0000000000000058,
+      "blocked_mean_modes": 1.0
+    }
+  ],
+  "pair_allocation_gate_pass": true,
+  "dense_control_traced_peak_bytes": 67432968,
+  "limits": "Pair-reduction experiment only; no parser/vocabulary/resume/representatives acceptance."
+}
