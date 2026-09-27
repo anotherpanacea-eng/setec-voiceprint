@@ -339,8 +339,10 @@ def _violations(text: str) -> list[str]:
 
 def test_current_workflow_holds_closed_train_policy():
     workflow_paths = _workflow_names(ROOT / ".github" / "workflows")
+    # claude.yml runs only on @claude mentions (no pull_request trigger);
+    # test_claude_workflow.py holds its safety boundaries.
     assert workflow_paths == {
-        "release.yml", "tests.yml",
+        "claude.yml", "release.yml", "tests.yml",
     }
     assert _violations(WORKFLOW.read_text(encoding="utf-8")) == []
     release_text = RELEASE.read_text(encoding="utf-8").replace("\r\n", "\n")
