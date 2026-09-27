@@ -40,9 +40,16 @@ sentence traces to an envelope field — no fabrication.
 - **Output:** plain-text/Markdown paragraph(s). Deterministic.
 - **Guard:** if the input isn't a SETEC envelope → clear error, exit 2 (mirrors `evidence_pack`).
 
-## Test contract (`tests/test_explain.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_explain.py`)
 
 - `test_renders_surface_label`; `test_reports_licenses_and_refusals` (both lines present, verbatim from the envelope); `test_unavailable_explained` (uses warnings, no fabricated results); `test_next_step_rule_table` (surface → suggestion mapping); `test_non_envelope_errors`; `test_no_fabricated_verdict` (output contains no claim absent from the envelope); `test_deterministic`.
+
+As shipped, the suite's 8 tests are `test_renders_surface_label`,
+`test_reports_licenses_and_refusals_verbatim`,
+`test_unavailable_uses_warnings_no_fabricated_results`, `test_next_step_rule_table`,
+`test_deterministic`, `test_non_envelope_errors`, `test_cli_writes_out` and
+`test_reads_stdin`. The planned `test_no_fabricated_verdict` was not shipped as a
+separate test; the list above is the original plan.
 
 ## Non-goals
 
