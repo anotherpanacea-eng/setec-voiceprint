@@ -4,7 +4,10 @@
 > prints, for a non-technical reader, what the audit measured, what its claim-license
 > does and does **not** license, and a suggested next step — no jargon, no new numbers.
 
-- **Status:** Spec (stdlib — buildable in-sandbox; a natural next QoL round).
+- **Status:** Shipped in v1.111.0 as [`explain.py`](../plugins/setec-voiceprint/scripts/explain.py),
+  with [`test_explain.py`](../plugins/setec-voiceprint/scripts/tests/test_explain.py) (8 tests);
+  see the [release entry](../CHANGELOG.md#11110---2026-06-07). This status records the
+  implementation and listed tests, not behavior beyond them.
 - **Tier:** QoL (ROADMAP/QoL list → "`--explain` plain-language mode").
 - **GPU required:** no — stdlib only.
 - **License:** N/A (local).
@@ -37,9 +40,16 @@ sentence traces to an envelope field — no fabrication.
 - **Output:** plain-text/Markdown paragraph(s). Deterministic.
 - **Guard:** if the input isn't a SETEC envelope → clear error, exit 2 (mirrors `evidence_pack`).
 
-## Test contract (`tests/test_explain.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_explain.py`)
 
 - `test_renders_surface_label`; `test_reports_licenses_and_refusals` (both lines present, verbatim from the envelope); `test_unavailable_explained` (uses warnings, no fabricated results); `test_next_step_rule_table` (surface → suggestion mapping); `test_non_envelope_errors`; `test_no_fabricated_verdict` (output contains no claim absent from the envelope); `test_deterministic`.
+
+As shipped, the suite's 8 tests are `test_renders_surface_label`,
+`test_reports_licenses_and_refusals_verbatim`,
+`test_unavailable_uses_warnings_no_fabricated_results`, `test_next_step_rule_table`,
+`test_deterministic`, `test_non_envelope_errors`, `test_cli_writes_out` and
+`test_reads_stdin`. The planned `test_no_fabricated_verdict` was not shipped as a
+separate test; the list above is the original plan.
 
 ## Non-goals
 
@@ -48,5 +58,6 @@ sentence traces to an envelope field — no fabrication.
 
 ## Note
 
-Stdlib + self-contained, so this is buildable in the constrained sandbox (unlike the
-spaCy/torch items above) — a good candidate for the next in-session build round.
+This records the original stdlib and constrained-sandbox rationale. Spec 16 later
+shipped as [`explain.py`](../plugins/setec-voiceprint/scripts/explain.py); see the
+status and release entry above.

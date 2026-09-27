@@ -32,7 +32,7 @@ truth for each contract.
 | [`13-editlens-edit-magnitude.md`](13-editlens-edit-magnitude.md) | **Shipped** (`edit_magnitude_audit`). Clean-room edit-magnitude regressor; same-corpus calibrated estimate, never absolute "% AI." torch + corpus → local tier. |
 | [`14-intrinsic-dimension-phd.md`](14-intrinsic-dimension-phd.md) | **Shipped** (`intrinsic_dimension_audit`). PHD intrinsic-dimension discrimination signal — orthogonal topological axis. embeddings + TDA → local tier. |
 | [`15-raidar-rewriting-invariance.md`](15-raidar-rewriting-invariance.md) | **Shipped** (`rewriting_invariance_audit`). Rewriting-invariance discrimination signal; reuses the LLM-judge plumbing (judge/API → local). |
-| [`16-explain-mode.md`](16-explain-mode.md) | **Spec — OPEN** (stdlib, ✅ cloud-buildable; no branch yet). Plain-language renderer over a single envelope; invents nothing. |
+| [`16-explain-mode.md`](16-explain-mode.md) | **Shipped** in v1.111.0 (`explain.py`; see the [release entry](../CHANGELOG.md#11110---2026-06-07)). Plain-language renderer over a single envelope; invents nothing. |
 | [`17-sound-texture-audit.md`](17-sound-texture-audit.md) | **Built** (capability-whitespace group W2). Descriptive sound-texture profile (alliteration/assonance/consonance + consonant-class) via an orthographic-onset proxy; new `sound_texture` surface; non-verdict. stdlib. |
 | [`18-triage-agreement.md`](18-triage-agreement.md) | **Built** (group W3). Framework-vs-human triage agreement (confusion, percent agreement, Cohen's κ, PABAK, bootstrap CI) on `validation`; measures concordance, not ground truth. stdlib. |
 | [`19-crosslingual-voice-distance.md`](19-crosslingual-voice-distance.md) | **Built** (group W5). Language-agnostic, parser-free voice distance (char n-grams, punctuation, length distributions, script stats) on `voice_coherence`; language-agnostic not language-aware. stdlib. |
@@ -88,7 +88,6 @@ local branches, as the open-signal):
 
 | Item | State | Cloud verdict |
 |---|---|---|
-| 16 explain-mode | unbuilt, no branch | ✅ cloud (stdlib) |
 | 21 attribution-refusal-lab | build-gated on the strong-foil decision | ✅ M1 cloud (Tier 2), gated |
 | **Spec 25 tail coordinate** *(open thread)* | spec reconciled to the shipped `curvature_t` (PR #294); `p_value_t` removed as unsupported — **do not re-add**. Still open: `curvature_t` is a constant rescale of `curvature_score` (discrimination-inert), so whether to expose T-Detect's tail comparison as a renamed non-probability heuristic coordinate | maintainer design call |
 
