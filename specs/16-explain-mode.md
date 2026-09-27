@@ -4,7 +4,10 @@
 > prints, for a non-technical reader, what the audit measured, what its claim-license
 > does and does **not** license, and a suggested next step — no jargon, no new numbers.
 
-- **Status:** Spec (stdlib — buildable in-sandbox; a natural next QoL round).
+- **Status:** Shipped in v1.111.0 as [`explain.py`](../plugins/setec-voiceprint/scripts/explain.py),
+  with [`test_explain.py`](../plugins/setec-voiceprint/scripts/tests/test_explain.py) (8 tests);
+  see the [release entry](../CHANGELOG.md#1110---2026-06-07). This status records the
+  implementation and listed tests, not behavior beyond them.
 - **Tier:** QoL (ROADMAP/QoL list → "`--explain` plain-language mode").
 - **GPU required:** no — stdlib only.
 - **License:** N/A (local).
@@ -48,5 +51,6 @@ sentence traces to an envelope field — no fabrication.
 
 ## Note
 
-Stdlib + self-contained, so this is buildable in the constrained sandbox (unlike the
-spaCy/torch items above) — a good candidate for the next in-session build round.
+This records the original stdlib and constrained-sandbox rationale. Spec 16 later
+shipped as [`explain.py`](../plugins/setec-voiceprint/scripts/explain.py); see the
+status and release entry above.

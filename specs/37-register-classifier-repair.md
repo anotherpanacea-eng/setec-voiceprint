@@ -27,6 +27,17 @@
   `plugins/setec-voiceprint/scripts/voice_distance.py`.
 - **License decision:** N/A — no weights, no external method.
 
+> **H2 status (2026-09-27):** The separate H2 register-composition sweep was
+> re-scoped as [Spec 73](73-register-composition-sweep.md) and landed via PR #361
+> (merge `48f1a13`) as the aggregate hygiene screen in
+> [`register_sweep.py`](../plugins/setec-voiceprint/scripts/register_sweep.py).
+> It remains a confounded heuristic prompt for a hand-check, not accuracy
+> calibration or source-family analysis; private corpus execution remains a
+> separate operator decision. See the [ROADMAP status](../ROADMAP.md).
+
+The deferred-H2 passages below preserve this H1 specification's original scope
+and historical sequencing; the status note above records the later H2 disposition.
+
 ## Motivation
 
 `register_classifier.py`'s entire stated value is **honest claim-licensing**: "when target and

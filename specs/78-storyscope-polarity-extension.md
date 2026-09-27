@@ -47,9 +47,14 @@
 > and (b) below the 2,000-word floor. The polarity half of the Dickens umbrella's
 > StoryScope acceptance item, commissioned as a successor arm to spec 79.
 
-- **Status:** Draft v6 — **unparked for M1 build by issue #368** (round-5
-  prioritized fixes folded in one pass on 2026-07-27; owner rulings R1–R8
-  remain binding; see the v5 → v6 surgery record).
+- **Status:** M1 implementation is present in
+  [`narrative_polarity_extension.py`](../plugins/setec-voiceprint/scripts/calibration/narrative_polarity_extension.py)
+  and exercised by
+  [`test_narrative_polarity_extension.py`](../plugins/setec-voiceprint/scripts/tests/test_narrative_polarity_extension.py).
+  This records source presence, not complete M1 acceptance or real-corpus/judged
+  results. Sign stability and multiplicity remain M2; judged Arms A and B remain
+  separately authorized. The round-5 fixes and owner rulings R1–R8 remain binding
+  (see the v5 → v6 surgery record).
 - **Tier:** near-term — jointly with [spec 79](79-storyscope-long-form-extension.md)
   discharges umbrella acceptance item 16
 - **GPU required:** no (judge-cost-external; every judged run under this child —
