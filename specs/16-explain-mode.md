@@ -6,7 +6,7 @@
 
 - **Status:** Shipped in v1.111.0 as [`explain.py`](../plugins/setec-voiceprint/scripts/explain.py),
   with [`test_explain.py`](../plugins/setec-voiceprint/scripts/tests/test_explain.py) (8 tests);
-  see the [release entry](../CHANGELOG.md#1110---2026-06-07). This status records the
+  see the [release entry](../CHANGELOG.md#11110---2026-06-07). This status records the
   implementation and listed tests, not behavior beyond them.
 - **Tier:** QoL (ROADMAP/QoL list → "`--explain` plain-language mode").
 - **GPU required:** no — stdlib only.
