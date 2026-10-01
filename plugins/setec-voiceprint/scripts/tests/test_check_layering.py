@@ -76,16 +76,16 @@ def test_real_repo_layering_passes():
     ]
 
 
-def test_real_repo_l0_stems_are_exactly_the_contract_trio():
-    modules = [cl.Module(p) for p in cl.find_runtime_scripts()]
-    cap_paths = cl._load_capability_script_paths()
-    tiers = cl.classify_tiers(modules, cap_paths)
-    l0 = {path for path, tier in tiers.items() if tier == "L0"}
-    assert l0 == {
-        "plugins/setec-voiceprint/scripts/output_schema.py",
-        "plugins/setec-voiceprint/scripts/claim_license.py",
-        "plugins/setec-voiceprint/scripts/capabilities.py",
-    }
+@pytest.mark.parametrize("location", ["", "setec/contract/"])
+@pytest.mark.parametrize("stem", ["output_schema", "claim_license", "capabilities"])
+def test_contract_outbound_prohibition_survives_relocation(tmp_path, monkeypatch, location, stem):
+    _, _, _, violations = _synthetic_check(
+        tmp_path, monkeypatch,
+        files={location + stem + ".py": "import a_surface\n",
+               "a_surface.py": "if __name__ == '__main__':\n    pass\n"},
+        cap_paths=set(),
+    )
+    assert any(v.edge_kind == "l0_outbound" for v in violations)
 
 
 def test_real_repo_cycles_are_reported_and_known_count():
@@ -316,6 +316,43 @@ def test_check_ratchet_flags_a_new_row_beyond_a_committed_baseline(tmp_path, mon
     )
     problems = cl.check_ratchet(sha)
     assert problems  # committed baseline had zero rows; this adds one
+
+
+@pytest.mark.parametrize("target", ["s5_distance.py", "setec/consumer_client.py"])
+def test_ratchet_preserves_only_existing_p2_dependencies(tmp_path, monkeypatch, target):
+    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
+    exemptions_path = tmp_path / "exemptions.yaml"
+    monkeypatch.setattr(cl, "EXEMPTIONS_PATH", exemptions_path)
+    prefix = "plugins/setec-voiceprint/scripts/"
+    row = {"from_path": prefix + "capabilities.py", "to_path": prefix + target,
+           "edge_kind": "l0_outbound", "reason": "existing dependency", "owner": "packaging",
+           "introduced_sha": "base", "removal_phase": "not-applicable"}
+    exemptions_path.write_text(json.dumps({"layer_exemptions": [row]}), encoding="utf-8")
+    sha = _init_git_repo(tmp_path)
+    row["from_path"] = prefix + "setec/contract/capabilities.py"
+    exemptions_path.write_text(json.dumps({"layer_exemptions": [row]}), encoding="utf-8")
+    assert cl.check_ratchet(sha) == []
+    # Ghost matching uses the new real path, not a normalization of the graph.
+    assert cl.check_ghost_rows([row], [cl.Violation(row["from_path"], row["to_path"], row["edge_kind"])]) == []
+    assert cl.check_ghost_rows([row], [])
+    for field, value in [("to_path", prefix + "new_dependency.py"),
+                         ("from_path", prefix + "setec/other/capabilities.py"),
+                         ("edge_kind", "l2_to_l2")]:
+        changed = dict(row, **{field: value})
+        exemptions_path.write_text(json.dumps({"layer_exemptions": [changed]}), encoding="utf-8")
+        assert cl.check_ratchet(sha)
+
+
+def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():
+    contract = "plugins/setec-voiceprint/scripts/setec/contract/claim_license.py"
+    paths = "plugins/setec-voiceprint/scripts/setec/paths.py"
+    other = "plugins/setec-voiceprint/scripts/setec/core/helper.py"
+    tiers = {contract: "L0", paths: "L1", other: "L1"}
+    violations = cl.find_violations({(contract, paths), (contract, other)}, tiers)
+    assert [(v.from_path, v.to_path, v.edge_kind) for v in violations] == [(contract, other, "l0_outbound")]
+    # The resolver remains visible: its own downward coupling is still a violation.
+    surface = "plugins/setec-voiceprint/scripts/surface.py"
+    assert cl.find_violations({(paths, surface)}, {paths: "L1", surface: "L2"})
 
 
 def test_check_ratchet_allows_only_the_generator_hub_addition(tmp_path, monkeypatch):
