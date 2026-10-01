@@ -227,8 +227,9 @@ history downloads.
 A narrow workflow-policy regression suite is justified as a stable negative-
 property gate. It parses a closed active workflow topology and rejects:
 
-- any `.yml` or `.yaml` workflow other than the one PR-only test workflow and
-  the separately specified tag-only release workflow; the unchanged release
+- any `.yml` or `.yaml` workflow other than the one PR-only test workflow,
+  the separately specified tag-only release workflow, and the bounded
+  trusted-mention `claude.yml` workflow; the unchanged release
   workflow's normalized content is itself pinned so matrix, permission, runner,
   step, or command growth cannot hide there;
 - a `push`/schedule/dispatch test trigger or missing PR activity type;
@@ -256,6 +257,16 @@ property gate. It parses a closed active workflow topology and rejects:
   active step-header order and each action/run body has a closed normalized
   allowed command sequence; no additional action or command may hide inside one
   of the seven allowed lanes.
+
+The on-demand `claude.yml` exception is separately bounded: only newly created
+trusted-owner/member/collaborator mentions in issues, comments, or submitted
+reviews may start one Ubuntu job, with a 30-minute cap and explicit write
+permissions. A fail-closed API lookup refuses fork PRs before checkout or the
+privileged action. Pinned checkout/action commits, the complete guard control
+flow and environment, default-success post-guard steps, and closed step/input
+sets prevent extra work or untrusted checkout overrides. There is no push,
+schedule, dispatch, matrix, or widened actor allowlist. This exception does not
+arm or replace any of the seven train-clearance lanes.
 
 The verifier normalizes active YAML rather than snapshotting incidental comments
 or whitespace. This maintenance cost protects the one full run on which every
