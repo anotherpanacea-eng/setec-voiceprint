@@ -4,6 +4,27 @@
 # Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. l2_to_l2 rows are a SHRINK-ONLY baseline: a row may be deleted (the edge was removed) but never added for an edge that didn't already exist at the last seed.
 schema_version: 1
 exemptions:
+- path: plugins/setec-voiceprint/scripts/capabilities.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/claim_license.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/output_schema.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_blog.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 83 not yet converted

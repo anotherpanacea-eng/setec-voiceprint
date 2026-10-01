@@ -2,6 +2,12 @@
 """Compatibility launcher for setec.contract.output_schema."""
 
 import sys
+from pathlib import Path
+
+# runpy does not add the launcher's directory as direct execution does.
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
 
 from setec.contract import output_schema as _mod
 

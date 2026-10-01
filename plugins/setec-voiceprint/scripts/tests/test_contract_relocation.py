@@ -96,7 +96,6 @@ def test_no_main_launchers_execute_silently_and_runpy_does_not_replace_main(bare
     assert (direct.returncode, direct.stdout, direct.stderr) == (0, "", "")
     code = f"""
 import runpy, sys
-sys.path.insert(0, {str(bare_plugin / 'scripts')!r})
 main = sys.modules['__main__']
 runpy.run_path({str(launcher)!r}, run_name='__main__')
 assert sys.modules['__main__'] is main
@@ -112,7 +111,6 @@ def test_capabilities_direct_execution_and_runpy_match_package_api(bare_plugin, 
     assert direct.returncode == 0, direct.stderr
     code = f"""
 import runpy, sys
-sys.path.insert(0, {str(bare_plugin / 'scripts')!r})
 main = sys.modules['__main__']
 sys.argv = [{str(launcher)!r}, *{command!r}]
 try:

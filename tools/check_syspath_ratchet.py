@@ -68,7 +68,11 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # this number IN THE SAME COMMIT that removes call sites; never raise it
 # to make a new bootstrap pass -- add the bootstrap without growing the
 # count, or get a real review for why the ceiling must move.
-PINNED_CEILING = 156
+# P2 adds exactly three required schema-1.x launcher bootstraps. Foreign-cwd
+# runpy does not add scripts/ itself; independent review reproduced the failure.
+# Reviewed GX-A2 claim refresh retains counting (no exclusions) and all planted
+# over-ceiling tests. Later cleanup must lower the ceiling as usual.
+PINNED_CEILING = 159
 
 
 def find_runtime_scripts() -> list[Path]:

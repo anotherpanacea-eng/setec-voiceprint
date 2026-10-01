@@ -495,3 +495,25 @@ def test_check_ratchet_missing_file_at_merge_base_is_a_no_op(tmp_path, monkeypat
     )
     problems = cpm.check_ratchet(sha)
     assert problems == []  # nothing to ratchet against — this PR's own situation
+
+
+@pytest.mark.parametrize("name", ["claim_license", "output_schema", "capabilities"])
+def test_ratchet_accepts_only_required_p2_launcher_bootstrap(name, monkeypatch):
+    path = f"plugins/setec-voiceprint/scripts/{name}.py"
+    monkeypatch.setattr(cpm, "_exemptions_file_at", lambda base: [])
+    monkeypatch.setattr(cpm, "load_exemptions", lambda: [{"path": path, "symbol": "_SCRIPT_DIR"}])
+    assert cpm.check_ratchet("base") == []
+    # An exemption never pre-authorizes a missing anchor.
+    assert cpm.check_ghost_rows(cpm.load_exemptions(), [])
+
+
+@pytest.mark.parametrize("path,symbol", [
+    ("plugins/setec-voiceprint/scripts/capabilities.py", "OTHER_ANCHOR"),
+    ("plugins/setec-voiceprint/scripts/setec/contract/capabilities.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/other/capabilities.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/not_capabilities.py", "_SCRIPT_DIR"),
+])
+def test_ratchet_still_rejects_other_new_anchors(path, symbol, monkeypatch):
+    monkeypatch.setattr(cpm, "_exemptions_file_at", lambda base: [])
+    monkeypatch.setattr(cpm, "load_exemptions", lambda: [{"path": path, "symbol": symbol}])
+    assert cpm.check_ratchet("base")
