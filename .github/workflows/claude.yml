@@ -14,6 +14,11 @@ name: claude
 # Only repository owners, members, and collaborators can start a run. Bot
 # accounts are refused by the action unless listed in `allowed_bots`.
 #
+# This workflow has no pull_request trigger, so it never spends minutes on
+# the draft-first train path that tests.yml governs; the closed workflow
+# inventory in test_ci_train_policy.py lists it, and test_claude_workflow.py
+# holds its safety boundaries.
+#
 # Requires the CLAUDE_CODE_OAUTH_TOKEN repository secret (from
 # `claude setup-token`, billed to the Claude subscription) and the Claude
 # GitHub App installed on this repository.
@@ -42,15 +47,19 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The workflow's own GITHUB_TOKEN stays read-only. Claude's pushes,
+    # comments, and PR edits use the Claude GitHub App token the action
+    # mints through OIDC (id-token: write), so nothing on this runner holds
+    # a write-scoped GITHUB_TOKEN it does not need.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+      issues: read
       id-token: write
       actions: read
     steps:
       # A fork's code and instructions must never share a workspace with the
-      # OAuth token and the write-scoped GITHUB_TOKEN, so pull requests from
+      # OAuth token and the write-scoped App token, so pull requests from
       # forks are refused before anything is checked out. Fails closed if
       # the lookup fails.
       - name: Refuse pull requests from forks

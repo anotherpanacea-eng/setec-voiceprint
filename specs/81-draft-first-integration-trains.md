@@ -261,7 +261,8 @@ property gate. It parses a closed active workflow topology and rejects:
 The on-demand `claude.yml` exception is separately bounded: only newly created
 trusted-owner/member/collaborator mentions in issues, comments, or submitted
 reviews may start one Ubuntu job, with a 30-minute cap and explicit write
-permissions. A fail-closed API lookup refuses fork PRs before checkout or the
+App credentials and a read-only workflow token apart from OIDC. A fail-closed
+API lookup refuses fork PRs before checkout or the
 privileged action. Pinned checkout/action commits, the complete guard control
 flow and environment, default-success post-guard steps, and closed step/input
 sets prevent extra work or untrusted checkout overrides. There is no push,

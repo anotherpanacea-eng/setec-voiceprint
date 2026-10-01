@@ -65,10 +65,15 @@ M emit     --run RUN
 
 Each `headless` call pins the step's model, effort and system prompt, turns every tool and
 local customization off, and runs four calls at a time (`--parallel`). It is resumable:
-rerunning the same command only redoes rows that did not succeed. If it stops on a usage
-or rate limit, wait for the limit to reset and rerun the same command. Don't lower the
-model or skip a step to get around a limit. Exit code 3 means some rows failed without a
-limit; rerun once, and if they fail again, report the errors from the results file.
+rerunning the same command only redoes rows that are not usable (errored, or answered
+with JSON that does not parse or a card missing fields). If it stops on a usage or rate
+limit, wait for the limit to reset and rerun the same command. Don't lower the model or
+skip a step to get around a limit. Exit code 3 means some rows are not usable; rerun once,
+and if they fail again, report the errors from the results file. A request is re-sent
+until it has returned three answers (`--max-attempts`); after that an unusable row is
+logged and left alone; report it rather than raising the cap on your own. A
+replaced answer's token usage and list price stay in its row under `superseded` and are
+counted in `out/cost.json`.
 
 ## Check and hand back
 
