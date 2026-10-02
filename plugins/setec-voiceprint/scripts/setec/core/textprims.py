@@ -8,6 +8,8 @@ separate R2 cohorts.
 
 from __future__ import annotations
 
+import re
+
 
 # Top function words (Mosteller-Wallace + extensions).
 FUNCTION_WORDS = {
@@ -42,3 +44,16 @@ DIALOGUE_FUNCTION_WORDS = {
     "very", "was", "we", "were", "what", "when", "where", "which",
     "who", "why", "will", "with", "would", "yes", "you", "your",
 }
+
+
+_SENT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'])|\n{2,}")
+
+
+def split_sentences_punkt(text: str) -> list[str]:
+    from nltk.tokenize import sent_tokenize  # type: ignore
+    return [s.strip() for s in sent_tokenize(text) if s.strip()]
+
+
+def split_sentences_regex(text: str) -> list[str]:
+    parts = _SENT_RE.split(text)
+    return [p.strip() for p in parts if p.strip()]
