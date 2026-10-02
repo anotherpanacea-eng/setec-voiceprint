@@ -19,8 +19,9 @@ relocation tail (P2-P4) ever lands:
 
 Enforced (errors, exit 1 unless exempted):
 
-    * An L0 module may not import an internal module in another layer
-      (L0 -> L0 is fine; L0 -> L1 or L0 -> L2 is a violation).
+    * An L0 module may not import an internal module in another layer,
+      except the existing stdlib-only setec.paths resolver needed by
+      relocation (L0 -> L0 is fine; other L0 -> L1/L2 is a violation).
     * An L1 module may import only L0/L1 (L1 -> L2 is a violation).
     * An L2 -> L2 edge is a violation UNLESS it is in the committed,
       SHRINK-ONLY baseline (the count may only decrease; a NEW L2->L2
@@ -90,6 +91,14 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # L0 predicate: contract modules, by identity (basename), not directory --
 # per specs/svp-packaging-conversion.md §4 and this PR's build contract.
 _L0_STEMS = {"output_schema", "claim_license", "capabilities"}
+
+_SCRIPTS_PREFIX = "plugins/setec-voiceprint/scripts/"
+_PATHS_MODULE = _SCRIPTS_PREFIX + "setec/paths.py"
+# Only the three concrete P2 moves, not a general package-path exemption.
+_P2_LEGACY_PATHS = {
+    _SCRIPTS_PREFIX + f"setec/contract/{stem}.py": _SCRIPTS_PREFIX + f"{stem}.py"
+    for stem in _L0_STEMS
+}
 
 # The one from_path allowed to ADD l2_to_l2 baseline rows (see header):
 # the R5 golden generator, whose job is importing every golden surface.
@@ -377,7 +386,7 @@ def find_violations(
     out = []
     for a, b in sorted(edges):
         ta, tb = tiers.get(a), tiers.get(b)
-        if ta == "L0" and tb != "L0":
+        if ta == "L0" and tb != "L0" and b != _PATHS_MODULE:
             out.append(Violation(a, b, "l0_outbound"))
         elif ta == "L1" and tb == "L2":
             out.append(Violation(a, b, "l1_to_l2"))
@@ -478,6 +487,17 @@ def load_layer_exemptions(path: Path | None = None) -> list[dict[str, Any]]:
 
 def _exemption_key(row: dict[str, Any]) -> tuple[Any, Any, Any]:
     return (row.get("from_path"), row.get("to_path"), row.get("edge_kind"))
+
+
+def _ratchet_key(row: dict[str, Any]) -> tuple[Any, Any, Any]:
+    """Compare the same dependency across the three P2 module moves.
+
+    Live exemption matching and ghost checks still use actual paths. Only
+    the merge-base comparison translates these exact old/new identities;
+    changing the other endpoint or edge kind remains a new dependency.
+    """
+    fp, tp, kind = _exemption_key(row)
+    return (_P2_LEGACY_PATHS.get(fp, fp), _P2_LEGACY_PATHS.get(tp, tp), kind)
 
 
 def validate_layer_exemption_rows(rows: list[dict[str, Any]]) -> list[str]:
@@ -728,12 +748,12 @@ def check_ratchet(base_sha: str) -> list[str]:
     old_rows = _layer_exemptions_at(base_sha)
     if old_rows is None:
         return []
-    old_keys = {_exemption_key(r) for r in old_rows if isinstance(r, dict)}
+    old_keys = {_ratchet_key(r) for r in old_rows if isinstance(r, dict)}
     try:
         new_rows = load_layer_exemptions()
     except (ValueError, ImportError):
         return []
-    new_keys = {_exemption_key(r) for r in new_rows if isinstance(r, dict)}
+    new_keys = {_ratchet_key(r) for r in new_rows if isinstance(r, dict)}
     added = sorted(new_keys - old_keys, key=lambda k: (k[2] or "", k[0] or "", k[1] or ""))
     added = [
         (fp, tp, kind) for fp, tp, kind in added
