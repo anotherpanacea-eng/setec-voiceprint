@@ -11,7 +11,35 @@ exemptions:
   owner: packaging
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/argument_feature_schema.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/paragraph_parser.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/narrative_feature_schema.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/cross_doc_consistency_schema.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/argument_certainty_calibration_schema.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
     put scripts/ on sys.path, and setec.paths cannot be imported before setec.

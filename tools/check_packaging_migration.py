@@ -92,6 +92,10 @@ _P2_BOOTSTRAP_ANCHORS = {
 _P3_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/stylometry_distance.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/paragraph_parser.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_feature_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_feature_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_consistency_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_certainty_calibration_schema.py", "_SCRIPT_DIR"),
 }
 _L1_MODULES = {"stylometry_distance.py"}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
