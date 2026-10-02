@@ -4,6 +4,27 @@
 # Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. l2_to_l2 rows are a SHRINK-ONLY baseline: a row may be deleted (the edge was removed) but never added for an edge that didn't already exist at the last seed.
 schema_version: 1
 exemptions:
+- path: plugins/setec-voiceprint/scripts/argument_judge.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/judge_backends.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/narrative_judge.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/capabilities.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
@@ -173,12 +194,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/agd_move_scan_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 58 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 53 not yet converted
@@ -208,12 +229,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/argquality_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 63 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argument_certainty_calibration.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 64 not yet converted
@@ -222,12 +243,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/argument_certainty_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 49 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argument_register_baselines.py
   symbol: _DEFAULT_YAML_PATH
   reason: "Derived from _REPO_ROOT (repo-root baselines/ path) \u2014 same disposition:\
@@ -949,12 +970,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/cross_doc_consistency_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 41 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 38 not yet converted
@@ -1110,12 +1131,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/fallacy_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 47 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/fallacy_scan.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 39 not yet converted
@@ -1633,12 +1654,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/position_pair_register_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 61 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
   symbol: ROOT
   reason: pending relocation (P4); anchor `ROOT` at line 57 not yet converted to setec.paths
@@ -2109,12 +2130,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/warrant_judge.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 42 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/warrant_probe.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 37 not yet converted

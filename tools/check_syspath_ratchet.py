@@ -72,7 +72,11 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # runpy does not add scripts/ itself; independent review reproduced the failure.
 # Reviewed GX-A2 claim refresh retains counting (no exclusions) and all planted
 # over-ceiling tests. Later cleanup must lower the ceiling as usual.
-PINNED_CEILING = 159
+# P3 judge-family relocation (Fleet claim #127, merge abf7a1a): seven
+# implementation bootstraps are replaced by ten permanent legacy aliases.
+# AST-measured 162 on 2026-10-02, up from 159 at base 7537b9; all production
+# call sites remain counted without exclusions.
+PINNED_CEILING = 162
 
 
 def find_runtime_scripts() -> list[Path]:

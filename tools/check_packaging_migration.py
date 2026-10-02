@@ -89,6 +89,20 @@ _P2_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/" + name, "_SCRIPT_DIR")
     for name in _L0_MODULES
 }
+# Fleet claim #127 (merge abf7a1a): permanent P3 judge-library aliases.
+# Exact bootstrap keys only; the ghost-row check still requires each anchor.
+_P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/agd_move_scan_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argquality_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_certainty_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_consistency_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fallacy_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/judge_backends.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/position_pair_register_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/warrant_judge.py", "_SCRIPT_DIR"),
+}
 _L1_MODULES = {"stylometry_distance.py"}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
@@ -857,8 +871,9 @@ def check_ratchet(base_sha: str) -> list[str]:
     brand-new file (this file didn't exist there at all — nothing to
     ratchet against, matching THIS spec's own P1 commit). Once the file
     exists at a merge base, its row set at HEAD must be a SUBSET of the
-    merge-base row set, apart from the three required P2 launcher bootstrap
-    anchors. Their actual existence is still checked by the ghost-row gate."""
+    merge-base row set, apart from the exact required P2 launcher and P3
+    judge-library alias bootstraps. Their actual existence is still checked
+    by the ghost-row gate."""
     old_rows = _exemptions_file_at(base_sha)
     if old_rows is None:
         return []
@@ -872,7 +887,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS)
     if not added:
         return []
     return [
