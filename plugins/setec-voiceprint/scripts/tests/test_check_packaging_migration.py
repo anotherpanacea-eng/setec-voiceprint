@@ -425,7 +425,7 @@ def test_manual_dispositions_are_present_in_regenerated_exemptions():
     rows = cpm.load_exemptions()
     by_key = {(r["path"], r["symbol"]): r for r in rows}
     baselines_row = by_key[(
-        "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
+        "plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py",
         "_REPO_ROOT",
     )]
     assert baselines_row["removal_phase"] == "not-applicable"

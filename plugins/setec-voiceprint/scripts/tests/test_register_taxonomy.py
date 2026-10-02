@@ -114,7 +114,8 @@ def test_pin_is_enforced_on_the_bare_import_path(tmp_path: Path):
     consumers never import. Importing ``register_taxonomy`` alone, against a
     short registry, has to fail on its own.
     """
-    scripts = Path(rt.__file__).resolve().parent
+    plugin = rt.REGISTRY_PATH.parent
+    scripts = plugin / "scripts"
     registry = tmp_path / "register_tiers.d"
     for register, tier in EXPECTED.items():
         if register == "message.imessage":
@@ -122,6 +123,11 @@ def test_pin_is_enforced_on_the_bare_import_path(tmp_path: Path):
         _fragment(registry, register, tier)
     (tmp_path / "scripts").mkdir()
     shutil.copy(scripts / "register_taxonomy.py", tmp_path / "scripts")
+    shutil.copytree(scripts / "setec", tmp_path / "scripts" / "setec",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    (tmp_path / ".claude-plugin").mkdir()
+    shutil.copy(plugin / ".claude-plugin" / "plugin.json",
+                tmp_path / ".claude-plugin" / "plugin.json")
 
     probe = tmp_path / "probe.py"
     probe.write_text(
