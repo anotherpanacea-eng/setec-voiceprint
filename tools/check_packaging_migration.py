@@ -98,6 +98,9 @@ _P3_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/argument_certainty_calibration_schema.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/narrative_longform_segment.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/storyscope_polarity_contract.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/preprocessing.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/verbatim_cover.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/segmentation_feature_lens.py", "_SCRIPT_DIR"),
 }
 _L1_MODULES = {"stylometry_distance.py"}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
@@ -224,6 +227,16 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         "reason": "Downstream of 'commitment_bytes'/'receipt' — same self-referential chain, see 'revision'.",
     },
 }
+
+
+for _bootstrap_key in _P3_BOOTSTRAP_ANCHORS:
+    _MANUAL_DISPOSITIONS[_bootstrap_key] = {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility alias bootstrap; runpy does not "
+            "put scripts/ on sys.path, and setec.paths cannot be imported before setec."
+        ),
+    }
 
 
 # ---------- anchor discovery ----------------------------------------

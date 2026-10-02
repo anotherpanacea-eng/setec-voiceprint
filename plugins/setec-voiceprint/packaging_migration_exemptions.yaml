@@ -60,6 +60,27 @@ exemptions:
   owner: packaging
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/preprocessing.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/verbatim_cover.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/segmentation_feature_lens.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/capabilities.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not

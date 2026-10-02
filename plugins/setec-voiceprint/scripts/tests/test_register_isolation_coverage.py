@@ -382,15 +382,27 @@ TUPLE_SHAPED_LOADERS = {
 # ---------------- structural helpers (scope-parameterized) ----------------
 
 
+def _source_path(scope: Path, module: str) -> Path:
+    """Read relocated implementations only for the actual scripts scope."""
+    if scope == SCRIPTS and module in {
+        "preprocessing", "verbatim_cover", "segmentation_feature_lens",
+    }:
+        return scope / "setec" / "core" / f"{module}.py"
+    return scope / f"{module}.py"
+
+
 def _module_sources(scope: Path) -> dict[str, str]:
     """``{module_stem: source}`` for the non-recursive ``*.py`` glob of ``scope``.
 
     No name filter: an underscore-prefixed module (``_mirror_gate.py``) is still
     a module that could grow a pooled reference, and narrowing the glob is
     exactly how a closure sweep quietly stops closing.
+
+    Keep the flat module keys, but read the three relocated implementations
+    instead of their identity alias launchers when scanning SCRIPTS.
     """
     return {
-        p.stem: p.read_text(encoding="utf-8")
+        p.stem: _source_path(scope, p.stem).read_text(encoding="utf-8")
         for p in sorted(scope.glob("*.py"))
     }
 
@@ -613,7 +625,7 @@ def test_exempt_surfaces_do_not_call_the_guard():
     for module, row in CLASSIFICATION.items():
         if row["guard"] != EXEMPT:
             continue
-        src = (SCRIPTS / f"{module}.py").read_text(encoding="utf-8")
+        src = _source_path(SCRIPTS, module).read_text(encoding="utf-8")
         assert not _calls_guard(src), (
             f"{module} is classified EXEMPT but calls {GUARD_NAME}; either the "
             "rationale is wrong or the classification is"
@@ -630,7 +642,7 @@ def test_tuple_shaped_loaders_still_discard_row_metadata():
     returning row dicts has acquired register metadata and must be reclassified
     rather than inherit the old rationale."""
     for module, loaders in TUPLE_SHAPED_LOADERS.items():
-        src = (SCRIPTS / f"{module}.py").read_text(encoding="utf-8")
+        src = _source_path(SCRIPTS, module).read_text(encoding="utf-8")
         for loader in loaders:
             annotation = _return_annotation(src, loader)
             assert annotation is not None, f"{module}.{loader} lost its annotation"
