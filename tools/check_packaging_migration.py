@@ -89,6 +89,9 @@ _P2_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/" + name, "_SCRIPT_DIR")
     for name in _L0_MODULES
 }
+_P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"),
+}
 _L1_MODULES = {"stylometry_distance.py"}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
@@ -116,6 +119,14 @@ def _phase_for(rel_path: str) -> str:
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; detached "
+            "runpy does not put scripts/ on sys.path, and setec.paths cannot "
+            "be imported before setec."
+        ),
+    },
     (
         "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
         "_REPO_ROOT",
@@ -872,7 +883,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS)
     if not added:
         return []
     return [
