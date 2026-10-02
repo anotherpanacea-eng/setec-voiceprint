@@ -129,7 +129,7 @@ def _selected_names(entries: list[dict[str, Any]], family: str) -> list[str]:
 
 def _implementation_sha256() -> str:
     digest = hashlib.sha256()
-    for path in (Path(__file__), SCRIPT_DIR / "stylometry_distance.py"):
+    for path in (Path(__file__), SCRIPT_DIR / "setec/core/stylometry_distance.py"):
         digest.update(path.name.encode("utf-8"))
         digest.update(b"\0")
         digest.update(path.read_bytes().replace(b"\r\n", b"\n"))

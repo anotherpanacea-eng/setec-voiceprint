@@ -83,11 +83,14 @@ _KNOWN_DUPLICATE_ANCHORS = {
 # generators). This is a documented default, not a narrative count: the
 # `--seed` regeneration always re-derives it from the live tree.
 _L0_MODULES = {"output_schema.py", "claim_license.py", "capabilities.py"}
-# Required P2 launcher bootstraps: runpy does not supply scripts/ on sys.path.
-# This exact three-key exception is not a general license for new anchors.
+# Required P2/P3 launcher bootstraps: runpy does not supply scripts/ on sys.path.
+# These concrete moves are not a general license for new anchors.
 _P2_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/" + name, "_SCRIPT_DIR")
     for name in _L0_MODULES
+}
+_P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/stylometry_distance.py", "_SCRIPT_DIR"),
 }
 _L1_MODULES = {"stylometry_distance.py"}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
@@ -857,7 +860,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     brand-new file (this file didn't exist there at all — nothing to
     ratchet against, matching THIS spec's own P1 commit). Once the file
     exists at a merge base, its row set at HEAD must be a SUBSET of the
-    merge-base row set, apart from the three required P2 launcher bootstrap
+    merge-base row set, apart from the concrete required P2/P3 launcher bootstrap
     anchors. Their actual existence is still checked by the ghost-row gate."""
     old_rows = _exemptions_file_at(base_sha)
     if old_rows is None:
@@ -872,7 +875,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS)
     if not added:
         return []
     return [
