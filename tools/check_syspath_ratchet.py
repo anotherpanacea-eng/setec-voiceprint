@@ -72,7 +72,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # runpy does not add scripts/ itself; independent review reproduced the failure.
 # Reviewed GX-A2 claim refresh retains counting (no exclusions) and all planted
 # over-ceiling tests. Later cleanup must lower the ceiling as usual.
-PINNED_CEILING = 159
+# P3 adds three permanent library aliases with the same foreign-cwd bootstrap.
+# All sites remain counted; no scan exclusions are introduced.
+PINNED_CEILING = 162
 
 
 def find_runtime_scripts() -> list[Path]:
