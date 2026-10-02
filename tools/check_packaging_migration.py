@@ -89,6 +89,22 @@ _P2_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/" + name, "_SCRIPT_DIR")
     for name in _L0_MODULES
 }
+# Fleet claim #125 (merge 8bfe5ba): four permanent P3 aliases and seven
+# existing repo-baseline anchors relocated into core. Exact keys only;
+# the ghost-row check still requires every listed anchor to exist.
+_P3_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/argument_register_baselines.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/concreteness.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/register_taxonomy.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/register_typical_baselines.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py", "_REPO_ROOT"),
+    ("plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py", "_DEFAULT_YAML_PATH"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "_REPO_ROOT"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "_DEFAULT_YAML_PATH"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "path"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "data"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "baselines"),
+}
 _L1_MODULES = {"stylometry_distance.py"}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
@@ -111,18 +127,18 @@ def _phase_for(rel_path: str) -> str:
 # setec.paths" disposition would be DISHONEST — the anchor cannot become
 # a setec.paths call, ever, for a structural reason named in `reason`.
 # `removal_phase: "not-applicable"` says so explicitly instead of
-# promising a conversion that will never happen. Both entries below were
+# promising a conversion that will never happen. The argument-baseline pair was
 # named directly in build-review P1 finding #5 ("hand-review the two rows
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
     (
-        "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
+        "plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py",
         "_REPO_ROOT",
     ): {
         "removal_phase": "not-applicable",
         "reason": (
-            "_REPO_ROOT = Path(__file__).resolve().parents[3] reaches the "
+            "_REPO_ROOT = Path(__file__).resolve().parents[5] reaches the "
             "REPOSITORY root specifically to find the shared top-level "
             "baselines/ directory (baselines/argument_register_baselines.yaml), "
             "which lives OUTSIDE plugins/setec-voiceprint/ entirely. "
@@ -136,7 +152,7 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         ),
     },
     (
-        "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
+        "plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py",
         "_DEFAULT_YAML_PATH",
     ): {
         "removal_phase": "not-applicable",
@@ -144,6 +160,62 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
             "Derived from _REPO_ROOT (repo-root baselines/ path) — same "
             "disposition: not convertible to setec.paths, see _REPO_ROOT's "
             "row."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "_REPO_ROOT",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "_REPO_ROOT = Path(__file__).resolve().parents[5] reaches the "
+            "repository root to find baselines/register_typical.yaml, outside "
+            "plugins/setec-voiceprint/. setec.paths resolves plugin data and "
+            "cannot resolve this repo-root sibling without changing data "
+            "ownership. The existing yaml_path override remains available. "
+            "Standing repo-YAML exception, not migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "_DEFAULT_YAML_PATH",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Derived from _REPO_ROOT for baselines/register_typical.yaml; "
+            "same standing repo-YAML disposition as _REPO_ROOT."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "path",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Selects the caller's yaml_path or _DEFAULT_YAML_PATH; retains "
+            "the standing repo-YAML default described by _REPO_ROOT."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "data",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Parsed YAML loaded through path, retained by the existing anchor "
+            "scanner's dependency closure; same standing repo-YAML disposition, "
+            "not a separate plugin data location."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "baselines",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Extracts register_typical_baselines from data, retained by the "
+            "existing anchor scanner's dependency closure; same standing "
+            "repo-YAML disposition, not a separate plugin data location."
         ),
     },
     (
@@ -857,8 +929,8 @@ def check_ratchet(base_sha: str) -> list[str]:
     brand-new file (this file didn't exist there at all — nothing to
     ratchet against, matching THIS spec's own P1 commit). Once the file
     exists at a merge base, its row set at HEAD must be a SUBSET of the
-    merge-base row set, apart from the three required P2 launcher bootstrap
-    anchors. Their actual existence is still checked by the ghost-row gate."""
+    merge-base row set, apart from the exact P2 launcher and P3 baseline-family
+    relocation anchors. Their existence is still checked by the ghost-row gate."""
     old_rows = _exemptions_file_at(base_sha)
     if old_rows is None:
         return []
@@ -872,7 +944,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_RELOCATION_ANCHORS)
     if not added:
         return []
     return [

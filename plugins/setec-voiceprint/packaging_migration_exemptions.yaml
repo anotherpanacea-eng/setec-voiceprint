@@ -4,6 +4,34 @@
 # Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. l2_to_l2 rows are a SHRINK-ONLY baseline: a row may be deleted (the edge was removed) but never added for an edge that didn't already exist at the last seed.
 schema_version: 1
 exemptions:
+- path: plugins/setec-voiceprint/scripts/argument_register_baselines.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/concreteness.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/register_taxonomy.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
+    sys.path before importing setec.core, so setec.paths cannot supply it.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/capabilities.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
@@ -228,16 +256,16 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/argument_register_baselines.py
+- path: plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py
   symbol: _DEFAULT_YAML_PATH
   reason: "Derived from _REPO_ROOT (repo-root baselines/ path) \u2014 same disposition:\
     \ not convertible to setec.paths, see _REPO_ROOT's row."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/argument_register_baselines.py
+- path: plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py
   symbol: _REPO_ROOT
-  reason: "_REPO_ROOT = Path(__file__).resolve().parents[3] reaches the REPOSITORY\
+  reason: "_REPO_ROOT = Path(__file__).resolve().parents[5] reaches the REPOSITORY\
     \ root specifically to find the shared top-level baselines/ directory (baselines/argument_register_baselines.yaml),\
     \ which lives OUTSIDE plugins/setec-voiceprint/ entirely. setec.paths.find_plugin_root()\
     \ resolves only the PLUGIN root by design and cannot reach a repo-root sibling\
@@ -881,20 +909,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 113 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/concreteness.py
-  symbol: _DEFAULT_DATA_PATH
-  reason: pending relocation (P4); anchor `_DEFAULT_DATA_PATH` at line 56 not yet
-    converted to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/concreteness.py
-  symbol: csv_path
-  reason: pending relocation (P4); anchor `csv_path` at line 71 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1730,48 +1744,47 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_taxonomy.py
-  symbol: REGISTRY_PATH
-  reason: pending relocation (P4); anchor `REGISTRY_PATH` at line 62 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
+- path: plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py
   symbol: _DEFAULT_YAML_PATH
-  reason: pending relocation (P4); anchor `_DEFAULT_YAML_PATH` at line 53 not yet
-    converted to setec.paths (P1 lands no production moves)
+  reason: Derived from _REPO_ROOT for baselines/register_typical.yaml;
+    same standing repo-YAML disposition as _REPO_ROOT.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py
   symbol: _REPO_ROOT
-  reason: pending relocation (P4); anchor `_REPO_ROOT` at line 52 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: _REPO_ROOT = Path(__file__).resolve().parents[5] reaches the
+    repository root to find baselines/register_typical.yaml, outside
+    plugins/setec-voiceprint/. setec.paths resolves plugin data and
+    cannot resolve this repo-root sibling without changing data
+    ownership. The existing yaml_path override remains available.
+    Standing repo-YAML exception, not migration debt.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py
   symbol: baselines
-  reason: pending relocation (P4); anchor `baselines` at line 101 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: Extracts register_typical_baselines from data, retained by the
+    existing anchor scanner's dependency closure; same standing
+    repo-YAML disposition, not a separate plugin data location.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py
   symbol: data
-  reason: pending relocation (P4); anchor `data` at line 91 not yet converted to setec.paths
-    (P1 lands no production moves)
+  reason: Parsed YAML loaded through path, retained by the existing anchor
+    scanner's dependency closure; same standing repo-YAML disposition,
+    not a separate plugin data location.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_typical_baselines.py
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py
   symbol: path
-  reason: pending relocation (P4); anchor `path` at line 74 not yet converted to setec.paths
-    (P1 lands no production moves)
+  reason: Selects the caller's yaml_path or _DEFAULT_YAML_PATH; retains
+    the standing repo-YAML default described by _REPO_ROOT.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/repetition_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 28 not yet converted
