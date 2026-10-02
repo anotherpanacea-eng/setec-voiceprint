@@ -113,9 +113,7 @@ EXPECTED_COMMANDS = {
     "pytest": {
         "Install core dependencies": (
             "python -m pip install --upgrade pip",
-            "pip install -r plugins/setec-voiceprint/requirements.txt",
-            "pip install -r plugins/setec-voiceprint/requirements-acquisition.txt",
-            "pip install pypdf pytest pytest-xdist click",
+            "python -m pip install -r plugins/setec-voiceprint/requirements.txt -r plugins/setec-voiceprint/requirements-acquisition.txt pytest pytest-xdist click",
             "python -m spacy download en_core_web_sm",
         ),
         "Run test suite": ("pytest plugins/setec-voiceprint/scripts/tests -n auto -q -rs",),
