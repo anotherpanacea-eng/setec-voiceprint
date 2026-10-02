@@ -90,6 +90,20 @@ _P2_BOOTSTRAP_ANCHORS = {
     for name in _L0_MODULES
 }
 _L1_MODULES = {"stylometry_distance.py"}
+# Required P3 support-library aliases use the same scripts-root bootstrap.
+# Only these exact path/symbol pairs are authorized; all anchors stay scanned.
+_P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/atomic_publish.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/embedding_backend.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/embeddings.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_remediation_projection.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/pool_guard.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_checkpoint.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_io.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_validate.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/surprisal_backend.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/windows_descriptor_io.py", "_SCRIPT_DIR"),
+}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
 # generator. Its own anchors are grouped with the P2 L0 batch as the nearest
@@ -116,6 +130,116 @@ def _phase_for(rel_path: str) -> str:
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    (
+        "plugins/setec-voiceprint/scripts/atomic_publish.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/embedding_backend.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/embeddings.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/passage_remediation_projection.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/pool_guard.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_checkpoint.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_io.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_validate.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/surprisal_backend.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/windows_descriptor_io.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
     (
         "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
         "_REPO_ROOT",
@@ -857,8 +981,8 @@ def check_ratchet(base_sha: str) -> list[str]:
     brand-new file (this file didn't exist there at all — nothing to
     ratchet against, matching THIS spec's own P1 commit). Once the file
     exists at a merge base, its row set at HEAD must be a SUBSET of the
-    merge-base row set, apart from the three required P2 launcher bootstrap
-    anchors. Their actual existence is still checked by the ghost-row gate."""
+    merge-base row set, apart from the required P2 and exact P3 support-alias
+    bootstrap anchors. Their actual existence is still checked by the ghost-row gate."""
     old_rows = _exemptions_file_at(base_sha)
     if old_rows is None:
         return []
@@ -872,7 +996,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS)
     if not added:
         return []
     return [

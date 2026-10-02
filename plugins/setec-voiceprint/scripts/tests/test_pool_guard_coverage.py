@@ -481,7 +481,7 @@ def test_refusal_reason_truncates_a_long_list():
 
 def test_pool_guard_is_pure_stdlib():
     """It is imported by five audit surfaces; a heavy dep here would tax them all."""
-    src = (SCRIPTS / "pool_guard.py").read_text(encoding="utf-8")
+    src = Path(pool_guard.__file__).read_text(encoding="utf-8")
     third_party = {
         "numpy", "scipy", "torch", "datasketch", "spacy", "nltk", "transformers",
         "sklearn", "yaml", "pandas",
