@@ -66,10 +66,13 @@ def test_implementation_sha256_is_stable_across_lf_and_crlf(tmp_path, monkeypatc
     crlf_root = tmp_path / "crlf"
     lf_root.mkdir()
     crlf_root.mkdir()
-    for source in (Path(s5.__file__), s5.SCRIPT_DIR / "stylometry_distance.py"):
+    for source in (Path(s5.__file__), s5.SCRIPT_DIR / "setec/core/stylometry_distance.py"):
         lf_bytes = source.read_bytes().replace(b"\r\n", b"\n")
-        (lf_root / source.name).write_bytes(lf_bytes)
-        (crlf_root / source.name).write_bytes(lf_bytes.replace(b"\n", b"\r\n"))
+        relative = source.relative_to(s5.SCRIPT_DIR)
+        for root, data in ((lf_root, lf_bytes), (crlf_root, lf_bytes.replace(b"\n", b"\r\n"))):
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
 
     monkeypatch.setattr(s5, "__file__", lf_root / "s5_distance.py")
     monkeypatch.setattr(s5, "SCRIPT_DIR", lf_root)
@@ -78,6 +81,23 @@ def test_implementation_sha256_is_stable_across_lf_and_crlf(tmp_path, monkeypatc
     monkeypatch.setattr(s5, "SCRIPT_DIR", crlf_root)
 
     assert s5._implementation_sha256() == lf_hash
+
+
+def test_implementation_digest_follows_distance_code_not_legacy_launcher(tmp_path, monkeypatch):
+    surface = tmp_path / "s5_distance.py"
+    implementation = tmp_path / "setec/core/stylometry_distance.py"
+    launcher = tmp_path / "stylometry_distance.py"
+    implementation.parent.mkdir(parents=True)
+    surface.write_bytes(b"surface source\n")
+    implementation.write_bytes(b"distance implementation\n")
+    launcher.write_bytes(b"compatibility launcher\n")
+    monkeypatch.setattr(s5, "__file__", surface)
+    monkeypatch.setattr(s5, "SCRIPT_DIR", tmp_path)
+    initial = s5._implementation_sha256()
+    launcher.write_bytes(b"changed launcher\n")
+    assert s5._implementation_sha256() == initial
+    implementation.write_bytes(b"changed distance implementation\n")
+    assert s5._implementation_sha256() != initial
 
 
 def test_feature_inventory_digest_binds_the_values_that_determine_s5():
