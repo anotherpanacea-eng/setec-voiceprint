@@ -111,6 +111,16 @@ _P3_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/narrative_judge.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/position_pair_register_judge.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/warrant_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/atomic_publish.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/embedding_backend.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/embeddings.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_remediation_projection.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/pool_guard.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_checkpoint.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_io.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_validate.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/surprisal_backend.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/windows_descriptor_io.py", "_SCRIPT_DIR"),
 }
 # Fleet claim #125 (merge 8bfe5ba): four permanent P3 aliases and seven
 # existing repo-baseline anchors relocated into core. Exact keys only;
@@ -155,6 +165,116 @@ def _phase_for(rel_path: str) -> str:
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    (
+        "plugins/setec-voiceprint/scripts/atomic_publish.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/embedding_backend.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/embeddings.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/passage_remediation_projection.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/pool_guard.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_checkpoint.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_io.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_validate.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/surprisal_backend.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/windows_descriptor_io.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
     (
         "plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py",
         "_REPO_ROOT",
@@ -312,13 +432,13 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
 
 
 for _bootstrap_key in _P3_BOOTSTRAP_ANCHORS:
-    _MANUAL_DISPOSITIONS[_bootstrap_key] = {
+    _MANUAL_DISPOSITIONS.setdefault(_bootstrap_key, {
         "removal_phase": "not-applicable",
         "reason": (
             "Permanent schema-1.x compatibility alias bootstrap; runpy does not "
             "put scripts/ on sys.path, and setec.paths cannot be imported before setec."
         ),
-    }
+    })
 
 
 # ---------- anchor discovery ----------------------------------------
