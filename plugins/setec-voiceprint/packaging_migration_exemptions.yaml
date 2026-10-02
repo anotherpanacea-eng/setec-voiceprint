@@ -4,6 +4,27 @@
 # Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. l2_to_l2 rows are a SHRINK-ONLY baseline: a row may be deleted (the edge was removed) but never added for an edge that didn't already exist at the last seed.
 schema_version: 1
 exemptions:
+- path: plugins/setec-voiceprint/scripts/capabilities.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/claim_license.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/output_schema.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_blog.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 83 not yet converted
@@ -850,27 +871,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/capabilities.py
-  symbol: MANIFEST_PATH
-  reason: pending relocation (P2); anchor `MANIFEST_PATH` at line 73 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P2
-- path: plugins/setec-voiceprint/scripts/capabilities.py
-  symbol: PLUGIN_JSON_PATH
-  reason: pending relocation (P2); anchor `PLUGIN_JSON_PATH` at line 77 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P2
-- path: plugins/setec-voiceprint/scripts/capabilities.py
-  symbol: PLUGIN_ROOT
-  reason: pending relocation (P2); anchor `PLUGIN_ROOT` at line 69 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P2
 - path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 40 not yet converted
@@ -878,13 +878,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/claim_license.py
-  symbol: _SURFACE_LABEL_DIR
-  reason: pending relocation (P2); anchor `_SURFACE_LABEL_DIR` at line 53 not yet
-    converted to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P2
 - path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 113 not yet converted
@@ -2144,7 +2137,7 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 layer_exemptions:
-- from_path: plugins/setec-voiceprint/scripts/capabilities.py
+- from_path: plugins/setec-voiceprint/scripts/setec/contract/capabilities.py
   to_path: plugins/setec-voiceprint/scripts/s5_distance.py
   edge_kind: l0_outbound
   reason: 'capabilities.py''s `emit` R1-query-envelope command deliberately introspects
@@ -2156,7 +2149,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/capabilities.py
+- from_path: plugins/setec-voiceprint/scripts/setec/contract/capabilities.py
   to_path: plugins/setec-voiceprint/scripts/setec/consumer_client.py
   edge_kind: l0_outbound
   reason: capabilities.py's _manifest_schema_meets_contract_floor imports setec.consumer_client

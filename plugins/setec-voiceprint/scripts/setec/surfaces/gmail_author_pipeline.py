@@ -66,7 +66,8 @@ def _load_contract(name: str) -> Any:
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)
-    return module
+    # Since P2 the file is a launcher that swaps in setec.contract.<name>.
+    return sys.modules[name]
 
 
 REQUEST_SCHEMA = "setec-gmail-author-pipeline-request/1"

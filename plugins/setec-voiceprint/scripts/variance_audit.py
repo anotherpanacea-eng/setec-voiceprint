@@ -123,21 +123,23 @@ CONNECTIVES = {
 
 # ---------- Tokenization ----------
 
-_SENT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'])|\n{2,}")
+from setec.core.textprims import (
+    _SENT_RE,
+    split_sentences_punkt,
+    split_sentences_regex,
+)
 _WORD_RE = re.compile(r"[A-Za-z']+")
 
 
 def split_sentences(text: str) -> list[str]:
     if HAS_NLTK:
         try:
-            from nltk.tokenize import sent_tokenize  # type: ignore
-            sents = [s.strip() for s in sent_tokenize(text) if s.strip()]
+            sents = split_sentences_punkt(text)
             if sents:
                 return sents
         except Exception:
             pass
-    parts = _SENT_RE.split(text)
-    return [p.strip() for p in parts if p.strip()]
+    return split_sentences_regex(text)
 
 
 def split_words(text: str) -> list[str]:
