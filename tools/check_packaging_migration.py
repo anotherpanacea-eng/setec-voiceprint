@@ -101,6 +101,16 @@ _P3_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/preprocessing.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/verbatim_cover.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/segmentation_feature_lens.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/agd_move_scan_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argquality_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_certainty_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_consistency_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fallacy_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/judge_backends.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/position_pair_register_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/warrant_judge.py", "_SCRIPT_DIR"),
 }
 # Fleet claim #125 (merge 8bfe5ba): four permanent P3 aliases and seven
 # existing repo-baseline anchors relocated into core. Exact keys only;
