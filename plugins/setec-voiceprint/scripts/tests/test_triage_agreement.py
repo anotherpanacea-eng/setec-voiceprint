@@ -7,12 +7,77 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 import triage_agreement as ta  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
 
 def _pairs(framework, human):
     return list(zip(framework, human))
+
+
+@pytest.mark.parametrize("fmt", ["jsonl", "csv"])
+@pytest.mark.parametrize("keys", [("framework", "framework"), ("", "human"),
+                                  ("framework", ""), (" \t", "human"),
+                                  ("framework", " \t"), (None, "human")])
+def test_invalid_pair_selectors_refuse_before_read(fmt, keys):
+    class UnreadableInput:
+        def open(self, *args, **kwargs):
+            raise AssertionError("Invalid selectors must not read input")
+
+        def read_text(self, *args, **kwargs):
+            raise AssertionError("Invalid selectors must not read input")
+
+    with pytest.raises(ValueError):
+        ta.load_pairs(UnreadableInput(), framework_key=keys[0], human_key=keys[1], fmt=fmt)
+
+
+@pytest.mark.parametrize("keys", [("framework", "framework"), ("", "human"),
+                                  ("framework", " \t")])
+@pytest.mark.parametrize("existing_output", [False, True])
+def test_cli_invalid_selectors_preserve_output_before_input_probe(
+        tmp_path, monkeypatch, capsys, keys, existing_output):
+    output = tmp_path / "report.json"
+    if existing_output:
+        output.write_bytes(b"existing report\n")
+
+    def forbidden_probe(*args, **kwargs):
+        raise AssertionError("Invalid selectors must refuse before input probing")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "is_file", forbidden_probe)
+        assert ta.main([str(tmp_path / "unread-input.jsonl"), "--framework-key", keys[0],
+                        "--human-key", keys[1], "--json", "--out", str(output)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Select two distinct nonblank label columns.\n"
+    if existing_output:
+        assert output.read_bytes() == b"existing report\n"
+    else:
+        assert not output.exists()
+
+
+@pytest.mark.parametrize("fmt", ["jsonl", "csv"])
+@pytest.mark.parametrize("opposite", [False, True])
+def test_distinct_literal_columns_preserve_agreement(tmp_path, fmt, opposite):
+    # Whitespace is part of a valid key; do not normalize distinct column names.
+    path = tmp_path / f"labels.{fmt}"
+    rows = [("a" if i % 2 else "b", "b" if i % 2 else "a") for i in range(12)]
+    if not opposite:
+        rows = [(framework, framework) for framework, _ in rows]
+    if fmt == "jsonl":
+        path.write_text("\n".join(json.dumps({"framework": f, " framework ": h})
+                                  for f, h in rows), encoding="utf-8")
+    else:
+        path.write_text("framework, framework \n" + "\n".join(f"{f},{h}" for f, h in rows),
+                        encoding="utf-8")
+    output = tmp_path / "result.json"
+    assert ta.main([str(path), "--human-key", " framework ", "--format", fmt,
+                    "--bootstrap", "0", "--json", "--out", str(output)]) == 0
+    result = json.loads(output.read_text(encoding="utf-8"))["results"]
+    assert result["percent_agreement"] == (0.0 if opposite else 1.0)
+    assert result["cohens_kappa"] == (-1.0 if opposite else 1.0)
 
 
 def test_task_surface_is_validation():
