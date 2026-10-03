@@ -84,7 +84,12 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # prior bootstrap. At 8a42a0d, detached foreign-cwd -S runpy/help fails without
 # scripts/ and passes with it. Counted normally: 191 -> 192; no exclusions or
 # unrelated removals. This relocation-only increase requires build review.
-PINNED_CEILING = 192
+# P4 set-level diversity replaces six implementation bootstraps with seven
+# permanent aliases. Mosaic had none: detached foreign-cwd -S runpy/help fails
+# on claim_license at 15f2d7e without scripts/ and passes when supplied.
+# Counted normally: 192 -> 193, with no exclusions or unrelated removals.
+# This required relocation-only increase remains subject to build review.
+PINNED_CEILING = 193
 
 
 def find_runtime_scripts() -> list[Path]:
