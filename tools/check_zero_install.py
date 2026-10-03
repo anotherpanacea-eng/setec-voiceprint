@@ -728,6 +728,111 @@ def check_argument_quality_conformance(bare_root: Path, outside_cwd: Path, repor
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
+def check_argument_consistency_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Mock pair routes; isolate optional NLP imports, not the dispatcher contract."""
+    scripts = bare_root / "scripts"
+    focal = outside_cwd / "consistency-focal.txt"
+    reference = outside_cwd / "consistency-pool.jsonl"
+    focal.write_text("[[topic=tax type=claim stance=for]] The policy should proceed. " * 15, encoding="utf-8")
+    reference.write_text(json.dumps({"id": "pool", "text":
+        "[[topic=tax type=claim stance=against]] The policy should not proceed. " * 15}) + "\n", encoding="utf-8")
+    work = outside_cwd / "position-input.txt"
+    work.write_text(
+        "[[pair=p1 side=a q=What policy should apply?]] The council should act. "
+        "[[pair=p1 side=b q=What policy should apply?]] The council should wait. "
+        + "Because evidence matters, consider the available trials. " * 45, encoding="utf-8",
+    )
+    runpy_code = (
+        "import runpy,sys; path=sys.argv.pop(1); old=sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path,run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    # The dispatcher needs PyYAML, but its surface child must not load optional
+    # NLP models or trigger variance_audit's NLTK download. Only interpreter
+    # flags change at its existing subprocess seam; discovery/output stay real.
+    dispatch_code = (
+        "import runpy,sys; from pathlib import Path; path=sys.argv.pop(1); "
+        "sys.path.insert(0,str(Path(path).parent)); "
+        "sys.modules.update(dict.fromkeys(('torch','transformers','spacy','nltk','sentence_transformers','anthropic','openai'))); "
+        "ns=runpy.run_path(path); main=ns['main']; g=main.__globals__; original=g['_run_subprocess']; "
+        "g['_run_subprocess']=lambda cmd: original([cmd[0],'-B','-S',*cmd[1:]]); "
+        "sys.exit(main())"
+    )
+    for stem, surface in (("cross_doc_argument_consistency", "argument_consistency"),
+                          ("position_pair_register", "position_pair_register")):
+        position = stem == "position_pair_register"
+        launcher = scripts / (stem + ".py")
+        identity = (
+            "import importlib,sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+            "a=importlib.import_module(sys.argv[2]); b=importlib.import_module('setec.surfaces.'+sys.argv[2]); "
+            "assert a is b and a.SCRIPT_DIR==Path(sys.argv[1]); "
+        )
+        identity += ("a.render_markdown=lambda env:'shared'; assert b.render_markdown({})=='shared'" if position else
+                     "a.classify_legitimate_variation=lambda text:('genuine','shared'); "
+                     "assert b.classify_legitimate_variation('ignored')==('genuine','shared')")
+        identity += "; assert not any(n in sys.modules for n in ('torch','spacy','nltk','transformers','anthropic','openai'))"
+        for mode in ("identity", "direct", "runpy", "module", "dispatch", "missing_input"):
+            output = outside_cwd / (stem + "-" + mode + ".json")
+            markdown = output.with_suffix(".md")
+            input_path = outside_cwd / "absent-consistency.txt" if mode == "missing_input" else work if position else focal
+            args = ([str(input_path)] if position else
+                    ["--focal", str(input_path), "--reference-manifest", str(reference)]) + ["--judge", "mock", "--json"]
+            if mode != "dispatch":
+                args += ["--out", str(output)]
+                if position:
+                    args += ["--out-md", str(markdown)]
+            cwd = outside_cwd
+            if mode == "identity":
+                argv = ["-S", "-c", identity, str(scripts), stem]
+            elif mode == "runpy":
+                argv = ["-S", "-c", runpy_code, str(launcher), *args]
+            elif mode == "module":
+                argv, cwd = ["-S", "-m", "setec.surfaces." + stem, *args], scripts
+            elif mode == "dispatch":
+                argv = ["-c", dispatch_code, str(scripts / "setec_run.py"), stem, *args]
+            else:
+                argv = ["-S", str(launcher), *args]
+            try:
+                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                      capture_output=True, text=True, timeout=30)
+                ok = "Traceback" not in proc.stderr
+                if mode == "identity":
+                    ok = ok and proc.returncode == 0
+                else:
+                    unknown = mode == "dispatch" and not position
+                    missing = mode == "missing_input"
+                    envelope = json.loads(proc.stdout if position or unknown else output.read_text(encoding="utf-8"))
+                    expected = {"schema_version": "1.0", "tool": "setec_run" if unknown else stem,
+                                "task_surface": None if unknown else surface, "available": not (unknown or missing)}
+                    expected_exit = 2 if unknown else (3 if position else 1) if missing else 0
+                    ok = ok and proc.returncode == expected_exit and isinstance(envelope, dict)
+                    ok = ok and all(envelope.get(k) == v for k, v in expected.items())
+                    if unknown:
+                        ok = ok and envelope.get("surface") == stem and envelope.get("reason_category") == "bad_input"
+                        ok = ok and f"unknown surface '{stem}'" in envelope.get("reason", "")
+                    else:
+                        if mode != "dispatch":
+                            ok = ok and json.loads(output.read_text(encoding="utf-8")) == envelope
+                        if not position:
+                            ok = ok and not proc.stdout.strip()
+                        if missing:
+                            message = "target file not found" if position else "cannot read focal document"
+                            ok = ok and envelope.get("reason_category") == "bad_input" and message in envelope.get("reason", "")
+                        else:
+                            results = envelope.get("results", {})
+                            ok = ok and isinstance(envelope.get("claim_license"), dict)
+                            if position:
+                                ok = ok and bool(results.get("pairs")) and results.get("judge", {}).get("judge_identity", {}).get("kind") == "mock"
+                                if mode != "dispatch":
+                                    ok = ok and markdown.read_text(encoding="utf-8").startswith("# Position-Pair Register")
+                            else:
+                                ok = ok and results.get("n_docs") == 2 and results.get("judge", {}).get("kind") == "mock"
+                report.add(f"{stem}:{mode}", ok,
+                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
+                report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -744,6 +849,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_argument_conformance(bare_root, outside_cwd, report)
         check_argument_pattern_conformance(bare_root, outside_cwd, report)
         check_argument_quality_conformance(bare_root, outside_cwd, report)
+        check_argument_consistency_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

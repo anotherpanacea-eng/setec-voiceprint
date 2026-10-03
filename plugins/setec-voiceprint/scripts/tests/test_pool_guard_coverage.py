@@ -195,6 +195,10 @@ CLASSIFICATION: dict[str, dict[str, str]] = {
 def _source_path(scope: Path, module: str) -> Path:
     """Read relocated implementations only for the actual scripts scope."""
     if scope == SCRIPTS and module in {
+        "cross_doc_argument_consistency", "position_pair_register",
+    }:
+        return scope / "setec" / "surfaces" / f"{module}.py"
+    if scope == SCRIPTS and module in {
         "preprocessing", "verbatim_cover", "segmentation_feature_lens",
     }:
         return scope / "setec" / "core" / f"{module}.py"
@@ -208,7 +212,7 @@ def _module_sources(scope: Path) -> dict[str, str]:
     module that could grow a pool loader, and narrowing the glob is exactly how a
     closure sweep quietly stops closing.
 
-    Keep the flat module keys, but read the three relocated implementations
+    Keep the flat module keys, but read relocated implementations
     instead of their identity alias launchers when scanning SCRIPTS.
     """
     return {
@@ -356,7 +360,7 @@ def test_importer_sweep_keys_on_names_not_source_module():
     """The predicate that catches cross_doc_argument_consistency: it imports the
     loaders from cross_doc_novelty_profile, so a source-module-keyed sweep misses
     it entirely."""
-    src = (SCRIPTS / "cross_doc_argument_consistency.py").read_text(encoding="utf-8")
+    src = _source_path(SCRIPTS, "cross_doc_argument_consistency").read_text(encoding="utf-8")
     assert _imports_pool_loader(src)
     assert "from cross_doc_novelty_profile import" in src
     assert "from originality_audit import" not in src
