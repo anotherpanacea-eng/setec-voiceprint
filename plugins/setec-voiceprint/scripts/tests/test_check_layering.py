@@ -457,6 +457,7 @@ def test_ratchet_preserves_only_existing_p2_dependencies(tmp_path, monkeypatch, 
 @pytest.mark.parametrize("case", [
     "both_endpoints", "source_only", "target_only", "new_target", "new_source",
     "changed_kind", "malformed_launcher", "wrong_target", "extra_dependency",
+    "already_relocated", "already_relocated_new_target",
 ])
 def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case):
     prefix = "plugins/setec-voiceprint/scripts/"
@@ -500,10 +501,18 @@ def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monk
         new["from_path"] = prefix + "setec/surfaces/other.py"
     elif case == "changed_kind":
         new["edge_kind"] = "l1_to_l2"
-    monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: [old])
-    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: [new])
+    old_rows, new_rows = [old], [new]
+    if case in {"already_relocated", "already_relocated_new_target"}:
+        old_rows = [dict(new)]
+        alias = dict(old, to_path=prefix + "setec/surfaces/audit.py")
+        old_rows.append(alias)
+        new_rows.append(alias)
+        if case == "already_relocated_new_target":
+            new["to_path"] = prefix + "setec/surfaces/other.py"
+    monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: old_rows)
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: new_rows)
     problems = cl.check_ratchet("base")
-    assert bool(problems) is (case not in {"both_endpoints", "source_only", "target_only"})
+    assert bool(problems) is (case not in {"both_endpoints", "source_only", "target_only", "already_relocated"})
     # Matching and ghost checks retain the actual new endpoints.
     assert not cl.check_ghost_rows([new], [cl.Violation(new["from_path"], new["to_path"], new["edge_kind"])])
     assert cl.check_ghost_rows([new], [])

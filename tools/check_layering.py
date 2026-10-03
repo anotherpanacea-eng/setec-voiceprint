@@ -835,6 +835,7 @@ def check_ratchet(base_sha: str) -> list[str]:
             surface_moves[target] = legacy
     added = sorted({
         _exemption_key(r) for r in new_rows if isinstance(r, dict)
+        and _ratchet_key(r) not in old_keys
         and _ratchet_key(r, surface_moves) not in old_keys
     }, key=lambda k: (k[2] or "", k[0] or "", k[1] or ""))
     added = [
