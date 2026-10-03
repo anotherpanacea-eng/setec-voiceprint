@@ -131,14 +131,20 @@ def resolve_implementation(path: Path, scripts_root: Path | None = None) -> Path
             raise ValueError(f"ambiguous TASK_SURFACE alias: {path}")
         node = imports[0]
         # A renamed import is an ordinary module, not an exporting alias.
-        # For an actual alias, refuse the concrete deletion/rebinding forms
-        # that would invalidate the imported module-level surface.
-        for statement in tree.body[tree.body.index(node) + 1:]:
-            if isinstance(statement, (ast.Assign, ast.Delete)) and any(
-                isinstance(target, ast.Name) and target.id == "TASK_SURFACE"
-                for target in statement.targets
-            ):
+        # For an actual alias, refuse writes/deletions even inside module-level
+        # control flow. Local scopes and value-free annotations do not rebind
+        # the export. This is a bounded static check, not branch evaluation.
+        pending = list(tree.body[tree.body.index(node) + 1:])
+        while pending:
+            binding = pending.pop()
+            if isinstance(binding, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            if isinstance(binding, ast.AnnAssign) and binding.value is None:
+                continue
+            if (isinstance(binding, ast.Name) and binding.id == "TASK_SURFACE"
+                    and isinstance(binding.ctx, (ast.Store, ast.Del))):
                 raise ValueError(f"invalidated TASK_SURFACE alias: {path}")
+            pending.extend(ast.iter_child_nodes(binding))
         parts = (node.module or "").split(".")
         if not node.module or any(not part.isidentifier() for part in parts):
             raise ValueError(f"invalid TASK_SURFACE alias: {path}")

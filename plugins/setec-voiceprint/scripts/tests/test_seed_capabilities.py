@@ -231,6 +231,13 @@ def test_ordinary_surface_with_static_import_keeps_own_metadata(tmp_path):
     ("renamed", "from impl import TASK_SURFACE as OTHER\n"),
     ("deleted", "from impl import TASK_SURFACE\ndel TASK_SURFACE\n"),
     ("rebound", "from impl import TASK_SURFACE\nTASK_SURFACE = None\n"),
+    ("annotated", "from impl import TASK_SURFACE\nTASK_SURFACE: str | None = None\n"),
+    ("unpacked", "from impl import TASK_SURFACE\nTASK_SURFACE, other = None, 1\n"),
+    ("augmented", "from impl import TASK_SURFACE\nTASK_SURFACE += '_wrong'\n"),
+    ("conditional", "from impl import TASK_SURFACE\nif True:\n    del TASK_SURFACE\n"),
+    ("type_only", "from impl import TASK_SURFACE\nTASK_SURFACE: str | None\n"),
+    ("function_local", "from impl import TASK_SURFACE\ndef helper():\n    TASK_SURFACE = None\n    del TASK_SURFACE\n"),
+    ("class_local", "from impl import TASK_SURFACE\nclass Helper:\n    TASK_SURFACE = None\n    del TASK_SURFACE\n"),
     ("valid", "from impl import TASK_SURFACE\n"),
 ])
 def test_alias_must_export_surface_for_resolution_and_discovery(tmp_path, case, source):
@@ -238,7 +245,7 @@ def test_alias_must_export_surface_for_resolution_and_discovery(tmp_path, case, 
     implementation.write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
     launcher = tmp_path / "old.py"
     launcher.write_text(source, encoding="utf-8")
-    if case in {"deleted", "rebound"}:
+    if case in {"deleted", "rebound", "annotated", "unpacked", "augmented", "conditional"}:
         with pytest.raises(ValueError, match="invalidated TASK_SURFACE alias"):
             sc.resolve_implementation(launcher, tmp_path)
         with pytest.raises(ValueError, match="invalidated TASK_SURFACE alias"):
