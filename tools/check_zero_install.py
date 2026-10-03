@@ -60,6 +60,7 @@ PLUGIN_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint"
 
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 from _console import enable_utf8_stdio  # noqa: E402
+from seed_capabilities import parse_module  # noqa: E402
 
 
 class GateError(RuntimeError):
@@ -135,11 +136,13 @@ def check_structural_reachability(bare_root: Path, report: Report) -> None:
     problems = []
     checked = 0
     prefix = "plugins/setec-voiceprint/"
+    manifest_entries = []
     for frag in sorted(manifest_dir.glob("*.yaml")):
         if frag.name == "_meta.yaml":
             continue
         doc = yaml.safe_load(frag.read_text(encoding="utf-8"))
-        entry = (doc or {}).get("entries", [{}])[0]
+        manifest_entries.extend((doc or {}).get("entries", []))
+    for entry in manifest_entries:
         script_path = entry.get("script_path")
         if not script_path:
             continue
@@ -170,6 +173,13 @@ def check_structural_reachability(bare_root: Path, report: Report) -> None:
             problems.append(f"{entry.get('id')}: {target} does not exist in the bare copy")
         elif target.is_symlink():
             problems.append(f"{entry.get('id')}: {target} is a symlink in the bare copy (unexpected)")
+        else:
+            try:
+                seed = parse_module(target, bare_root / "scripts", bare_root)
+                if seed is None or seed.surface != entry.get("surface"):
+                    problems.append(f"{entry.get('id')}: implementation TASK_SURFACE does not match manifest")
+            except ValueError as exc:
+                problems.append(f"{entry.get('id')}: {exc}")
     report.add(
         "structural_reachability",
         not problems,
@@ -184,6 +194,7 @@ LAUNCHER_CLASSES: list[tuple[str, str, list[str]]] = [
     ("calibration", "scripts/calibration/paraphrase_ladder.py", ["--help"]),
     ("external_mirror", "scripts/external_mirror/compose_evidence_pack.py", ["--help"]),
     ("replication", "scripts/replication/train_xgboost.py", ["--help"]),
+    ("punctuation", "scripts/punctuation_cadence_audit.py", ["--help"]),
 ]
 
 
@@ -265,6 +276,57 @@ def check_setec_run_bare_dispatch(bare_root: Path, outside_cwd: Path, report: Re
 # ---------- CLI ----------------------------------------------------
 
 
+def check_punctuation_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Exercise the first relocated family through its public launch routes."""
+    scripts = bare_root / "scripts"
+    launcher = scripts / "punctuation_cadence_audit.py"
+    target = outside_cwd / "punctuation-input.txt"
+    target.write_text("One clause; another (an aside). Why? A pause -- then, yes!\n", encoding="utf-8")
+    # runpy does not add the script's directory. Ordinary import must return
+    # the package object, with monkeypatches visible from both names.
+    identity = (
+        "import sys, importlib; "
+        "sys.path.insert(0, sys.argv[1]); "
+        "old = importlib.import_module('punctuation_cadence_audit'); "
+        "new = importlib.import_module('setec.surfaces.punctuation_cadence_audit'); "
+        "assert old is new; "
+        "assert str(new.SCRIPT_DIR) == sys.argv[1]; "
+        "new._word_count = lambda text: 17; "
+        "assert old.audit_punctuation_cadence('words')['n_words'] == 17; "
+        "old._word_count = lambda text: 23; "
+        "assert new.audit_punctuation_cadence('words')['n_words'] == 23"
+    )
+    runpy_code = (
+        "import runpy, sys; path = sys.argv.pop(1); "
+        "runpy.run_path(path, run_name='__main__')"
+    )
+    # -m needs scripts/ as the module search root; its cwd is in the bare
+    # plugin, never the repository. Other launch routes use a foreign cwd.
+    commands = [
+        ("identity", ["-c", identity, str(scripts)], outside_cwd),
+        ("direct", [str(launcher), str(target), "--json"], outside_cwd),
+        ("runpy", ["-c", runpy_code, str(launcher), str(target), "--json"], outside_cwd),
+        ("module", ["-m", "setec.surfaces.punctuation_cadence_audit", str(target), "--json"], scripts),
+        ("dispatch", [str(scripts / "setec_run.py"), "punctuation_cadence_audit", str(target), "--json"], outside_cwd),
+    ]
+    expected = {"schema_version": "1.0", "tool": "punctuation_cadence_audit",
+                "task_surface": "voice_coherence", "available": True}
+    for name, argv, cwd in commands:
+        try:
+            proc = subprocess.run([sys.executable, *argv], cwd=cwd, env=_clean_env(),
+                                  capture_output=True, text=True, timeout=30)
+            ok = proc.returncode == 0 and "Traceback" not in proc.stderr
+            if name != "identity":
+                envelope = json.loads(proc.stdout)
+                ok = ok and isinstance(envelope, dict) and all(
+                    envelope.get(key) == value for key, value in expected.items()
+                )
+            report.add(f"punctuation:{name}", ok,
+                       "" if ok else f"exit={proc.returncode} stderr={proc.stderr[-300:]!r}")
+        except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            report.add(f"punctuation:{name}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -274,6 +336,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_structural_reachability(bare_root, report)
         check_launcher_classes(bare_root, outside_cwd, report)
         check_setec_run_bare_dispatch(bare_root, outside_cwd, report)
+        check_punctuation_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

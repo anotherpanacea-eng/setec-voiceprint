@@ -26,6 +26,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 
 import check_capabilities_drift as ccd  # type: ignore  # noqa: E402
+import pytest
 
 try:
     import yaml  # type: ignore
@@ -40,6 +41,48 @@ def test_repo_manifest_passes_drift_check():
         f"committed manifest has drift: "
         f"{[v.kind + ':' + v.where for v in report.violations]}"
     )
+
+
+@pytest.mark.parametrize("failure", ["missing", "cyclic", "escape"])
+def test_drift_reports_broken_launcher_alias(tmp_path, monkeypatch, failure):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    source = {"missing": "from absent import TASK_SURFACE\n",
+              "cyclic": "from old import TASK_SURFACE\n",
+              "escape": "from ..outside import TASK_SURFACE\n"}[failure]
+    (scripts / "old.py").write_text(source, encoding="utf-8")
+    monkeypatch.setattr(ccd, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(ccd, "SCRIPTS_ROOT", scripts)
+    report = ccd.check_drift(tmp_path / "unused.yaml")
+    assert not report.passed
+    assert any(v.kind == "launcher_alias" for v in report.violations)
+
+
+def test_drift_follows_implementation_surface(tmp_path, monkeypatch):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "old.py").write_text("from moved import TASK_SURFACE\n", encoding="utf-8")
+    implementation = scripts / "moved.py"
+    implementation.write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    monkeypatch.setattr(ccd, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(ccd, "SCRIPTS_ROOT", scripts)
+    assert ccd.find_scripts() == [scripts / "old.py"]
+    assert ccd.parse_task_surface(scripts / "old.py") == "setup"
+    implementation.write_text('TASK_SURFACE = "validation"\n', encoding="utf-8")
+    assert ccd.parse_task_surface(scripts / "old.py") == "validation"
+
+
+def test_drift_reports_alias_without_implementation_surface(tmp_path, monkeypatch):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "old.py").write_text("from moved import TASK_SURFACE\n", encoding="utf-8")
+    (scripts / "moved.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setattr(ccd, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(ccd, "SCRIPTS_ROOT", scripts)
+    monkeypatch.setattr(ccd, "load_manifest", lambda path: {"schema_version": "0.3.0", "entries": []})
+    report = ccd.check_drift(tmp_path / "unused.yaml")
+    assert not report.passed
+    assert any(v.kind == "launcher_alias" for v in report.violations)
 
 
 def _write_yaml(path: Path, data: dict) -> None:

@@ -90,22 +90,97 @@ class Seed:
     has_main: bool = False
 
 
-def find_scripts() -> list[Path]:
+def resolve_implementation(path: Path, scripts_root: Path | None = None) -> Path:
+    """Follow only static TASK_SURFACE imports, inside the scripts tree.
+
+    Ordinary modules are terminals, retaining the parser's historical tolerance
+    for bad encoding/syntax. A broken followed alias is an error.
+    """
+    root = (scripts_root or SCRIPTS_ROOT).resolve()
+    seen: set[Path] = set()
+    while True:
+        path = path.resolve()
+        if not path.is_relative_to(root):
+            raise ValueError(f"launcher implementation escapes scripts tree: {path}")
+        if path in seen:
+            raise ValueError(f"cyclic TASK_SURFACE alias: {path}")
+        seen.add(path)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (UnicodeDecodeError, SyntaxError) as exc:
+            if len(seen) == 1:
+                return path  # parse_module retains its original None behavior
+            raise ValueError(f"cannot read launcher implementation {path}: {exc}") from exc
+        except OSError as exc:
+            if len(seen) == 1:
+                raise  # retain ordinary-file I/O errors too
+            raise ValueError(f"cannot read launcher implementation {path}: {exc}") from exc
+        # A locally declared surface retains ordinary-module parsing even if
+        # the module also imports TASK_SURFACE for some other purpose.
+        if any(isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)
+               and isinstance(node.value.value, str)
+               and any(isinstance(t, ast.Name) and t.id == "TASK_SURFACE" for t in node.targets)
+               for node in tree.body):
+            return path
+        imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)
+                   and any(a.name == "TASK_SURFACE" and a.asname in {None, "TASK_SURFACE"}
+                           for a in node.names)]
+        if not imports:
+            return path
+        if len(imports) != 1:
+            raise ValueError(f"ambiguous TASK_SURFACE alias: {path}")
+        node = imports[0]
+        # A renamed import is an ordinary module, not an exporting alias.
+        # For an actual alias, refuse writes/deletions even inside module-level
+        # control flow. Local scopes and value-free annotations do not rebind
+        # the export. This is a bounded static check, not branch evaluation.
+        pending = list(tree.body[tree.body.index(node) + 1:])
+        while pending:
+            binding = pending.pop()
+            if isinstance(binding, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                continue
+            if isinstance(binding, ast.AnnAssign) and binding.value is None:
+                continue
+            if (isinstance(binding, ast.Name) and binding.id == "TASK_SURFACE"
+                    and isinstance(binding.ctx, (ast.Store, ast.Del))):
+                raise ValueError(f"invalidated TASK_SURFACE alias: {path}")
+            pending.extend(ast.iter_child_nodes(binding))
+        parts = (node.module or "").split(".")
+        if not node.module or any(not part.isidentifier() for part in parts):
+            raise ValueError(f"invalid TASK_SURFACE alias: {path}")
+        base = path.parent if node.level else root
+        for _ in range(max(0, node.level - 1)):
+            base = base.parent
+        path = base.joinpath(*parts).with_suffix(".py")
+
+
+def find_scripts(scripts_root: Path | None = None) -> list[Path]:
+    root = scripts_root or SCRIPTS_ROOT
     out: list[Path] = []
-    for path in SCRIPTS_ROOT.rglob("*.py"):
+    for path in root.rglob("*.py"):
         name = path.name
         if any(p.search(name) for p in SKIP_FILE_PATTERNS):
             continue
-        if "/tests/" in str(path) or "/__pycache__/" in str(path):
+        if any(part in {"tests", "__pycache__"} for part in path.relative_to(root).parts):
             continue
         out.append(path)
-    return sorted(out)
+    # Only followed implementations disappear from discovery. Stay-put package
+    # surfaces (for example gmail_author_pipeline) still need registration.
+    implementations = set()
+    for path in out:
+        implementation = resolve_implementation(path, root)
+        if implementation != path.resolve():
+            implementations.add(implementation)
+    return sorted(path for path in out if path.resolve() not in implementations)
 
 
-def parse_module(path: Path) -> Seed | None:
+def parse_module(
+    path: Path, scripts_root: Path | None = None, repo_root: Path | None = None,
+) -> Seed | None:
     """Return None if the file has no TASK_SURFACE constant."""
     try:
-        source = path.read_text(encoding="utf-8")
+        implementation = resolve_implementation(path, scripts_root)
+        source = implementation.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return None
     try:
@@ -155,6 +230,8 @@ def parse_module(path: Path) -> Seed | None:
                         imports.add("google.genai")
 
     if surface is None:
+        if implementation != path.resolve():
+            raise ValueError(f"launcher implementation declares no TASK_SURFACE: {implementation}")
         return None
 
     purpose = _extract_purpose(tree, source)
@@ -169,7 +246,7 @@ def parse_module(path: Path) -> Seed | None:
         tool_name = Path(tool_name).stem
     return Seed(
         id=tool_name or path.stem,
-        script_path=str(path.relative_to(REPO_ROOT)),
+        script_path=path.relative_to(repo_root or REPO_ROOT).as_posix(),
         surface=surface,
         purpose=purpose,
         tier=tier,
@@ -230,7 +307,7 @@ def _is_repo_local(name: str) -> bool:
         SCRIPTS_ROOT / "replication" / "stages" / f"{name}.py",
         SCRIPTS_ROOT / "external_mirror" / f"{name}.py",
     ]
-    return any(p.exists() for p in candidates)
+    return any(p.exists() for p in candidates) or (SCRIPTS_ROOT / name / "__init__.py").is_file()
 
 
 def _external_deps(imports: set[str]) -> set[str]:
@@ -381,12 +458,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    scripts = find_scripts()
     seeds: list[Seed] = []
-    for path in scripts:
-        s = parse_module(path)
-        if s is not None:
-            seeds.append(s)
+    try:
+        scripts = find_scripts()
+        for path in scripts:
+            s = parse_module(path)
+            if s is not None:
+                seeds.append(s)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     print(
         f"Scanned {len(scripts)} files; {len(seeds)} carry "
