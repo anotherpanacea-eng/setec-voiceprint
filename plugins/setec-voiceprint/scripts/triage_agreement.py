@@ -46,9 +46,17 @@ SCRIPT_VERSION = "1.0"
 MIN_ITEMS = 10
 
 
+def _validate_pair_keys(framework_key: str, human_key: str) -> None:
+    if (type(framework_key) is not str or not framework_key.strip()
+            or type(human_key) is not str or not human_key.strip()
+            or framework_key == human_key):
+        raise ValueError("Select two distinct nonblank label columns.")
+
+
 def load_pairs(path: Path, *, framework_key: str, human_key: str,
                fmt: str) -> tuple[list[tuple[str, str]], int]:
     """Return (pairs, n_dropped). Rows missing either key are dropped + counted."""
+    _validate_pair_keys(framework_key, human_key)
     rows: list[Any] = []
     dropped = 0
     if fmt == "csv":
@@ -264,6 +272,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+    try:
+        _validate_pair_keys(args.framework_key, args.human_key)
+    except ValueError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
     target_path = Path(args.input).expanduser()
     if not target_path.is_file():
         sys.stderr.write(f"Input not found: {target_path}\n")
