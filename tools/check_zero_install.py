@@ -645,6 +645,89 @@ def check_argument_pattern_conformance(bare_root: Path, outside_cwd: Path, repor
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
+def check_argument_quality_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Offline quality/calibration CLI artifacts, without promoting either consumer."""
+    scripts = bare_root / "scripts"
+    target = outside_cwd / "quality-input.txt"
+    target.write_text(
+        "Because evidence matters, the council should consider the available trials. " * 20
+        + "\n\n[[claim support=none topic=t_x]] Zoning reform clearly works, without question.",
+        encoding="utf-8",
+    )
+    runpy_code = (
+        "import runpy,sys; path=sys.argv.pop(1); old=sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path,run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    for stem, surface in (("argquality_dimension_profile", "argquality_dimension_profile"),
+                          ("argument_certainty_calibration", "argument_calibration")):
+        quality = stem == "argquality_dimension_profile"
+        launcher = scripts / (stem + ".py")
+        identity = (
+            "import importlib,sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+            "a=importlib.import_module(sys.argv[2]); b=importlib.import_module('setec.surfaces.'+sys.argv[2]); "
+            "assert a is b and a.SCRIPT_DIR==Path(sys.argv[1]); "
+            "b.count_words=lambda text:17; assert a.count_words('ignored')==17; "
+            "a.count_words=lambda text:23; assert b.count_words('ignored')==23; "
+            "assert not any(n in sys.modules for n in ('torch','spacy','transformers','anthropic','openai'))"
+        )
+        for mode in ("identity", "direct", "runpy", "module", "dispatch", "missing_input"):
+            output = outside_cwd / (stem + "-" + mode + ".json")
+            markdown = output.with_suffix(".md")
+            input_path = outside_cwd / "absent-quality.txt" if mode == "missing_input" else target
+            args = [str(input_path), "--judge", "mock", "--json", "--out", str(output)]
+            if quality:
+                args += ["--out-md", str(markdown)]
+            cwd = outside_cwd
+            if mode == "identity":
+                argv = ["-S", "-c", identity, str(scripts), stem]
+            elif mode == "module":
+                argv, cwd = ["-S", "-m", "setec.surfaces." + stem, *args], scripts
+            elif mode == "runpy":
+                argv = ["-S", "-c", runpy_code, str(launcher), *args]
+            elif mode == "dispatch":
+                argv = [str(scripts / "setec_run.py"), stem, *args]
+            else:
+                argv = ["-S", str(launcher), *args]
+            try:
+                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                      capture_output=True, text=True, timeout=30)
+                ok = "Traceback" not in proc.stderr
+                if mode == "identity":
+                    ok = ok and proc.returncode == 0
+                else:
+                    dispatch = mode == "dispatch"
+                    missing = mode == "missing_input"
+                    envelope = json.loads(proc.stdout if dispatch or quality else output.read_text(encoding="utf-8"))
+                    expected = {"schema_version": "1.0", "tool": "setec_run" if dispatch else stem,
+                                "task_surface": None if dispatch else surface, "available": not (dispatch or missing)}
+                    expected_exit = 2 if dispatch else 1 if missing and not quality else 0
+                    ok = ok and proc.returncode == expected_exit and isinstance(envelope, dict)
+                    ok = ok and all(envelope.get(k) == v for k, v in expected.items())
+                    if dispatch:
+                        ok = ok and envelope.get("surface") == stem and envelope.get("reason_category") == "bad_input"
+                        ok = ok and f"unknown surface '{stem}'" in envelope.get("reason", "") and not output.exists()
+                    else:
+                        ok = ok and json.loads(output.read_text(encoding="utf-8")) == envelope
+                        if not quality:
+                            ok = ok and not proc.stdout.strip()
+                        if missing:
+                            ok = ok and envelope.get("reason_category") == "bad_input" and "cannot read" in envelope.get("reason", "")
+                        else:
+                            results = envelope.get("results", {})
+                            ok = ok and isinstance(envelope.get("claim_license"), dict)
+                            if quality:
+                                ok = ok and set(results.get("dimensions", {})) == {"logic", "rhetoric", "dialectic"}
+                                ok = ok and results.get("judge", {}).get("judge_identity", {}).get("kind") == "mock"
+                                ok = ok and markdown.read_text(encoding="utf-8").startswith("# ")
+                            else:
+                                ok = ok and bool(results.get("claims")) and results.get("judge", {}).get("kind") == "mock"
+                report.add(f"{stem}:{mode}", ok,
+                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
+                report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -660,6 +743,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_narrative_conformance(bare_root, outside_cwd, report)
         check_argument_conformance(bare_root, outside_cwd, report)
         check_argument_pattern_conformance(bare_root, outside_cwd, report)
+        check_argument_quality_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

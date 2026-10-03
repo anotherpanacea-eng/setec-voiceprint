@@ -442,12 +442,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/argquality_dimension_profile.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 51 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 62f268b2331172b21e003291147b763a4ca8b2dc
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argquality_judge.py
   symbol: _SCRIPT_DIR
   reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
@@ -456,12 +456,12 @@ exemptions:
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argument_certainty_calibration.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 64 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 62f268b2331172b21e003291147b763a4ca8b2dc
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argument_certainty_judge.py
   symbol: _SCRIPT_DIR
   reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
@@ -2339,6 +2339,20 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 layer_exemptions:
+- from_path: plugins/setec-voiceprint/scripts/argquality_dimension_profile.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/argquality_dimension_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 62f268b2331172b21e003291147b763a4ca8b2dc
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/argument_certainty_calibration.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/argument_certainty_calibration.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 62f268b2331172b21e003291147b763a4ca8b2dc
+  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/agd_move_scan.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/agd_move_scan.py
   edge_kind: l2_to_l2
