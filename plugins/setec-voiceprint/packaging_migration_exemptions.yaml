@@ -1776,12 +1776,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/paragraph_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 73 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/passage_consumer_authority.py
   symbol: <inline>
   reason: pending relocation (P4); anchor `<inline>` at line 1230 not yet converted
@@ -4325,6 +4325,15 @@ layer_exemptions:
     The edge remains visible to metadata validation and strict ghost checks.
   owner: packaging
   introduced_sha: efaf0347a83668332e9ff9bdf61077270b6ca4d8
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/paragraph_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/paragraph_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: b03f58e4eb29abd6aec8028727ef5ccd42eef13a
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py

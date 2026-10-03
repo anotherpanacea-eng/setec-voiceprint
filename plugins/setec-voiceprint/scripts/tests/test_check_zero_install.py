@@ -61,6 +61,7 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     assert (bare_root / ".claude-plugin" / "plugin.json").is_file()
     report = zi.Report()
     zi.check_punctuation_conformance(bare_root, tmp_path, report)
+    zi.check_paragraph_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -186,6 +187,48 @@ def test_punctuation_success_with_wrong_surface_is_refused(tmp_path):
         zi.check_punctuation_conformance(tmp_path, tmp_path, report)
     assert not report.passed
     assert all(not r.passed for r in report.results if r.name != "punctuation:identity")
+
+
+def test_paragraph_success_with_wrong_surface_is_refused(tmp_path):
+    wrong = {"schema_version": "1.0", "tool": "paragraph_audit",
+             "task_surface": "setup", "available": True, "results": {"n_paragraphs": 2}}
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(0, json.dumps(wrong))):
+        report = zi.Report()
+        zi.check_paragraph_conformance(tmp_path, tmp_path, report)
+    assert all(not r.passed for r in report.results if r.name in {
+        "paragraph:direct", "paragraph:runpy", "paragraph:module",
+    })
+
+
+@pytest.mark.parametrize("returncode,changes", [
+    (0, {}),  # refusal must keep the native exit code, not merely unavailable JSON
+    (2, {"available": True}),
+    (2, {"reason_category": "internal_error"}),
+    (2, {"reason": "could not open a launcher"}),
+    (2, {"surface": "punctuation_cadence_audit"}),
+])
+def test_paragraph_dispatch_cannot_mask_a_changed_refusal(tmp_path, returncode, changes):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "surface": "paragraph_audit", "available": False, "reason_category": "bad_input",
+                "reason": "unknown surface 'paragraph_audit'; known consumer surfaces: variance_audit"}
+    envelope.update(changes)
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(returncode, json.dumps(envelope))):
+        report = zi.Report()
+        zi.check_paragraph_conformance(tmp_path, tmp_path, report)
+    result = next(r for r in report.results if r.name == "paragraph:dispatch_refusal")
+    assert not result.passed
+
+
+def test_paragraph_input_refusals_cannot_pass_as_json_success(tmp_path):
+    success = {"schema_version": "1.0", "tool": "paragraph_audit",
+               "task_surface": "smoothing_diagnosis", "available": True,
+               "results": {"n_paragraphs": 2}}
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(0, json.dumps(success))):
+        report = zi.Report()
+        zi.check_paragraph_conformance(tmp_path, tmp_path, report)
+    assert all(not r.passed for r in report.results if r.name in {
+        "paragraph:missing_input", "paragraph:missing_baseline",
+    })
 
 
 @pytest.mark.parametrize("case,source", [
