@@ -67,6 +67,7 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     zi.check_argument_conformance(bare_root, tmp_path, report)
     zi.check_argument_pattern_conformance(bare_root, tmp_path, report)
     zi.check_argument_quality_conformance(bare_root, tmp_path, report)
+    zi.check_argument_consistency_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -480,6 +481,48 @@ def test_argument_quality_nonconsumer_refusals_stay_truthful(tmp_path, stem, cha
     report = zi.Report()
     with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
         zi.check_argument_quality_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_position_dispatch_requires_real_success(tmp_path, change):
+    envelope = {"schema_version": "1.0", "tool": "position_pair_register", "task_surface": "position_pair_register",
+                "available": True, "claim_license": {},
+                "results": {"pairs": [{}], "judge": {"judge_identity": {"kind": "mock"}}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 3
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_consistency_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == "position_pair_register:dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_cross_doc_dispatch_remains_unknown(tmp_path, change):
+    stem = "cross_doc_argument_consistency"
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope["available"] = True
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 3
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_consistency_conformance(tmp_path, tmp_path, report)
     assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
 
 
