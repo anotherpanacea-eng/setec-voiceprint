@@ -142,6 +142,13 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/corpus_novelty_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/distinct_diversity_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/homogeneity_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/originality_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),
