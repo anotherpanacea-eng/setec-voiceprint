@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from tools.check_zero_install import make_bare_copy
+_TOOLS = Path(__file__).resolve().parents[4] / "tools"
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+
+from check_zero_install import make_bare_copy  # type: ignore  # noqa: E402
 from test_narrative_decision_long_form import _make_text, _keyed_manifest
 from setec.core.narrative_longform_segment import segment_text
 
