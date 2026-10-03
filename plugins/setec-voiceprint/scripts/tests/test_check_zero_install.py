@@ -63,6 +63,7 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     zi.check_punctuation_conformance(bare_root, tmp_path, report)
     zi.check_paragraph_conformance(bare_root, tmp_path, report)
     zi.check_repetition_conformance(bare_root, tmp_path, report)
+    zi.check_narrative_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -294,6 +295,51 @@ def test_repetition_todo_dispatch_refusals_stay_truthful(tmp_path, stem, change)
         zi.check_repetition_conformance(tmp_path, tmp_path, report)
     result = next(r for r in report.results if r.name == stem + ":dispatch")
     assert result.passed is False
+
+
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_narrative_experimental_dispatch_refusal_stays_truthful(tmp_path, change):
+    stem = "narrative_decision_long_form"
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface=stem)
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "could not open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_narrative_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_narrative_base_dispatch_requires_its_real_success(tmp_path, change):
+    stem = "narrative_decision_audit"
+    envelope = {"schema_version": "1.0", "tool": stem, "task_surface": stem,
+                "available": True, "claim_license": {},
+                "results": {"judge": {"judge_identity": {"kind": "mock"}}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 1
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    for suffix in ("json", "md"):
+        (tmp_path / ("narrative-input.txt.narrative." + suffix)).write_text("synthetic", encoding="utf-8")
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_narrative_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
 
 
 def test_reachability_checks_every_entry_in_fragment(tmp_path):

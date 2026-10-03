@@ -4,6 +4,20 @@
 # Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. Ordinary dependencies remain SHRINK-ONLY; only the existing fixture-generator exception and a verified pinned permanent launcher to its own implementation may add l2_to_l2 rows.
 schema_version: 1
 exemptions:
+- path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: fb0c4840ccf753831c5a654d073b471ba3702ac2
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/narrative_decision_long_form.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: fb0c4840ccf753831c5a654d073b471ba3702ac2
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/stylometry_distance.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
@@ -2318,6 +2332,24 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 layer_exemptions:
+- from_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/narrative_decision_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: fb0c4840ccf753831c5a654d073b471ba3702ac2
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/narrative_decision_long_form.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/narrative_decision_long_form.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: fb0c4840ccf753831c5a654d073b471ba3702ac2
+  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/repetition_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/repetition_audit.py
   edge_kind: l2_to_l2
@@ -3919,8 +3951,8 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/narrative_decision_long_form.py
-  to_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/narrative_decision_long_form.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/narrative_decision_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/narrative_decision_long_form.py\
