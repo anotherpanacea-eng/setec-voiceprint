@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from tools.check_zero_install import make_bare_copy
+_TOOLS = Path(__file__).resolve().parents[4] / "tools"
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+
+from check_zero_install import make_bare_copy  # type: ignore  # noqa: E402
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 FAMILY = ("repetition_audit", "manuscript_repetition_audit", "chapter_distinctiveness_audit")
