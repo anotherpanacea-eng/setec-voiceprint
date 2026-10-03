@@ -492,6 +492,23 @@ def _run_file_surface(
         ]
         proc = _run_subprocess(cmd)
         if proc.returncode != 0:
+            # File-mode producers may emit a metadata-only R3 refusal on
+            # stdout while retaining their direct CLI failure exit code.
+            # Never salvage mixed output or accept success from a failed child.
+            try:
+                refusal = json.loads(proc.stdout or "")
+            except (ValueError, TypeError):
+                refusal = None
+            if (
+                _is_envelope(refusal)
+                and refusal.get("available") is False
+                and refusal.get("tool") == surface
+                and isinstance(refusal.get("reason"), str)
+                and refusal["reason"].strip()
+                and isinstance(refusal.get("reason_category"), str)
+                and refusal["reason_category"] in _CATEGORY_DEFAULT_EXIT
+            ):
+                return _emit_surface_envelope(surface, refusal)
             return _wrap_script_failure(surface, proc)
         if not artifact.exists():
             return _error(
