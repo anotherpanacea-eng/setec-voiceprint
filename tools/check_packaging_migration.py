@@ -147,6 +147,8 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/repetition_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_decision_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_decision_long_form.py", "_SCRIPT_DIR"),
 }
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template

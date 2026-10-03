@@ -75,7 +75,12 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # P3 integrates 37 required permanent aliases and removes seven judge
 # implementation bootstraps: AST-measured 159 -> 189 at base 7537b9.
 # Every production call site remains counted, with no new exclusions.
-PINNED_CEILING = 189
+# P4 narrative moves two whole modules that had no scripts-root bootstrap.
+# Detached foreign-cwd -S runpy/help fails on both at fb0c484 without that
+# root, and succeeds when it is supplied. The two permanent ordinary aliases
+# require two counted sites: measured 189 -> 191, with no exclusions/removals.
+# This relocation-only ceiling adjustment remains subject to build review.
+PINNED_CEILING = 191
 
 
 def find_runtime_scripts() -> list[Path]:
