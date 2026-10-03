@@ -66,6 +66,7 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     zi.check_narrative_conformance(bare_root, tmp_path, report)
     zi.check_argument_conformance(bare_root, tmp_path, report)
     zi.check_argument_pattern_conformance(bare_root, tmp_path, report)
+    zi.check_argument_quality_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -458,6 +459,28 @@ def test_agd_setup_refusals_preserve_actual_envelopes(tmp_path, mode, change):
     with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
         zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
     assert not next(r for r in report.results if r.name == "agd_move_scan:" + mode).passed
+
+
+@pytest.mark.parametrize("stem", ["argquality_dimension_profile", "argument_certainty_calibration"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_argument_quality_nonconsumer_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope["available"] = True
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_quality_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
 
 
 def test_reachability_checks_every_entry_in_fragment(tmp_path):
