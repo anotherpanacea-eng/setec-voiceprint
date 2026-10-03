@@ -59,6 +59,60 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     assert not (tmp_path / "plugins").exists()
     assert (bare_root / "scripts" / "setec_run.py").is_file()
     assert (bare_root / ".claude-plugin" / "plugin.json").is_file()
+    report = zi.Report()
+    zi.check_punctuation_conformance(bare_root, tmp_path, report)
+    zi.check_paragraph_conformance(bare_root, tmp_path, report)
+    zi.check_repetition_conformance(bare_root, tmp_path, report)
+    zi.check_narrative_conformance(bare_root, tmp_path, report)
+    zi.check_argument_conformance(bare_root, tmp_path, report)
+    zi.check_argument_pattern_conformance(bare_root, tmp_path, report)
+    zi.check_argument_quality_conformance(bare_root, tmp_path, report)
+    zi.check_argument_consistency_conformance(bare_root, tmp_path, report)
+    zi.check_non_voice_structure_conformance(bare_root, tmp_path, report)
+    assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
+
+
+@pytest.mark.parametrize("stem", ["document_layout_audit", "formulaicity_audit", "reference_ecology_audit"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_non_voice_normalized_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope["available"] = True
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_non_voice_structure_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("stem,surface", [("document_layout_audit", "document_layout"),
+                                         ("formulaicity_audit", "formulaicity"),
+                                         ("reference_ecology_audit", "reference_ecology")])
+@pytest.mark.parametrize("change", ["promoted", "licensed", "wrong_exit"])
+def test_non_voice_short_input_is_unavailable_not_an_error(tmp_path, stem, surface, change):
+    envelope = {"schema_version": "1.0", "tool": stem, "task_surface": surface,
+                "available": False, "results": {}, "claim_license": None,
+                "warnings": ["below the 300-word floor"]}
+    code = 0
+    if change == "promoted":
+        envelope["available"] = True
+    elif change == "licensed":
+        envelope["claim_license"] = {"licenses": "fabricated"}
+    else:
+        code = 2
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_non_voice_structure_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":short").passed
 
 
 def test_make_bare_copy_refuses_source_symlinks(tmp_path, monkeypatch):
@@ -152,6 +206,385 @@ def test_structural_reachability_rejects_parent_escape(tmp_path):
     report = zi.Report()
     zi.check_structural_reachability(bare, report)
     assert not report.results[0].passed
+
+
+@pytest.mark.parametrize("failure", ["missing", "cyclic", "escape", "mismatch"])
+def test_structural_reachability_checks_implementation(tmp_path, failure):
+    bare = tmp_path / "setec-voiceprint"
+    manifest_dir = bare / "capabilities.d"
+    scripts = bare / "scripts"
+    manifest_dir.mkdir(parents=True)
+    scripts.mkdir()
+    source = {"missing": "from absent import TASK_SURFACE\n",
+              "cyclic": "from old import TASK_SURFACE\n",
+              "escape": "from ..outside import TASK_SURFACE\n",
+              "mismatch": 'TASK_SURFACE = "wrong"\n'}[failure]
+    (scripts / "old.py").write_text(source, encoding="utf-8")
+    (manifest_dir / "old.yaml").write_text(
+        "entries:\n  - id: old\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/old.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(bare, report)
+    assert not report.passed
+
+
+def test_punctuation_success_with_wrong_surface_is_refused(tmp_path):
+    wrong = {"schema_version": "1.0", "tool": "punctuation_cadence_audit",
+             "task_surface": "setup", "available": True}
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(0, json.dumps(wrong))):
+        report = zi.Report()
+        zi.check_punctuation_conformance(tmp_path, tmp_path, report)
+    assert not report.passed
+    assert all(not r.passed for r in report.results if r.name != "punctuation:identity")
+
+
+def test_paragraph_success_with_wrong_surface_is_refused(tmp_path):
+    wrong = {"schema_version": "1.0", "tool": "paragraph_audit",
+             "task_surface": "setup", "available": True, "results": {"n_paragraphs": 2}}
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(0, json.dumps(wrong))):
+        report = zi.Report()
+        zi.check_paragraph_conformance(tmp_path, tmp_path, report)
+    assert all(not r.passed for r in report.results if r.name in {
+        "paragraph:direct", "paragraph:runpy", "paragraph:module",
+    })
+
+
+@pytest.mark.parametrize("returncode,changes", [
+    (0, {}),  # refusal must keep the native exit code, not merely unavailable JSON
+    (2, {"available": True}),
+    (2, {"reason_category": "internal_error"}),
+    (2, {"reason": "could not open a launcher"}),
+    (2, {"surface": "punctuation_cadence_audit"}),
+])
+def test_paragraph_dispatch_cannot_mask_a_changed_refusal(tmp_path, returncode, changes):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "surface": "paragraph_audit", "available": False, "reason_category": "bad_input",
+                "reason": "unknown surface 'paragraph_audit'; known consumer surfaces: variance_audit"}
+    envelope.update(changes)
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(returncode, json.dumps(envelope))):
+        report = zi.Report()
+        zi.check_paragraph_conformance(tmp_path, tmp_path, report)
+    result = next(r for r in report.results if r.name == "paragraph:dispatch_refusal")
+    assert not result.passed
+
+
+def test_paragraph_input_refusals_cannot_pass_as_json_success(tmp_path):
+    success = {"schema_version": "1.0", "tool": "paragraph_audit",
+               "task_surface": "smoothing_diagnosis", "available": True,
+               "results": {"n_paragraphs": 2}}
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(0, json.dumps(success))):
+        report = zi.Report()
+        zi.check_paragraph_conformance(tmp_path, tmp_path, report)
+    assert all(not r.passed for r in report.results if r.name in {
+        "paragraph:missing_input", "paragraph:missing_baseline",
+    })
+
+
+@pytest.mark.parametrize("case,source", [
+    ("renamed", "from impl import TASK_SURFACE as OTHER\n"),
+    ("deleted", "from impl import TASK_SURFACE\ndel TASK_SURFACE\n"),
+    ("rebound", "from impl import TASK_SURFACE\nTASK_SURFACE = None\n"),
+    ("annotated", "from impl import TASK_SURFACE\nTASK_SURFACE: str | None = None\n"),
+    ("unpacked", "from impl import TASK_SURFACE\nTASK_SURFACE, other = None, 1\n"),
+    ("augmented", "from impl import TASK_SURFACE\nTASK_SURFACE += '_wrong'\n"),
+    ("conditional", "from impl import TASK_SURFACE\nif True:\n    del TASK_SURFACE\n"),
+    ("type_only", "from impl import TASK_SURFACE\nTASK_SURFACE: str | None\n"),
+    ("function_local", "from impl import TASK_SURFACE\ndef helper():\n    TASK_SURFACE = None\n    del TASK_SURFACE\n"),
+    ("class_local", "from impl import TASK_SURFACE\nclass Helper:\n    TASK_SURFACE = None\n    del TASK_SURFACE\n"),
+    ("valid", "from impl import TASK_SURFACE\n"),
+])
+def test_reachability_requires_exported_alias_surface(tmp_path, case, source):
+    scripts = tmp_path / "scripts"
+    manifests = tmp_path / "capabilities.d"
+    scripts.mkdir()
+    manifests.mkdir()
+    (scripts / "impl.py").write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    (scripts / "old.py").write_text(source, encoding="utf-8")
+    (manifests / "old.yaml").write_text(
+        "entries:\n  - id: old\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/old.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(tmp_path, report)
+    assert report.passed is (case in {"valid", "type_only", "function_local", "class_local"})
+
+
+@pytest.mark.parametrize("stem", [
+    "repetition_audit", "manuscript_repetition_audit", "chapter_distinctiveness_audit",
+])
+def test_repetition_conformance_rejects_wrong_surface(tmp_path, stem):
+    wrong = {"schema_version": "1.0", "tool": stem, "task_surface": "setup",
+             "available": True, "results": {"n_chapters": 2, "candidates": [{"word": "copper", "count": 3}]}}
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(wrong), "")):
+        zi.check_repetition_conformance(tmp_path, tmp_path, report)
+    assert not any(r.passed for r in report.results if r.name.startswith(stem + ":"))
+
+
+@pytest.mark.parametrize("stem", ["manuscript_repetition_audit", "chapter_distinctiveness_audit"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_repetition_todo_dispatch_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface="smoothing_diagnosis")
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "could not open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=subprocess.CompletedProcess([], code, json.dumps(envelope), "")):
+        zi.check_repetition_conformance(tmp_path, tmp_path, report)
+    result = next(r for r in report.results if r.name == stem + ":dispatch")
+    assert result.passed is False
+
+
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_narrative_experimental_dispatch_refusal_stays_truthful(tmp_path, change):
+    stem = "narrative_decision_long_form"
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface=stem)
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "could not open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_narrative_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_narrative_base_dispatch_requires_its_real_success(tmp_path, change):
+    stem = "narrative_decision_audit"
+    envelope = {"schema_version": "1.0", "tool": stem, "task_surface": stem,
+                "available": True, "claim_license": {},
+                "results": {"judge": {"judge_identity": {"kind": "mock"}}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 1
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    for suffix in ("json", "md"):
+        (tmp_path / ("narrative-input.txt.narrative." + suffix)).write_text("synthetic", encoding="utf-8")
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_narrative_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_argument_dispatch_requires_real_success(tmp_path, change):
+    stem = "argument_decision_audit"
+    envelope = {"schema_version": "1.0", "tool": stem, "task_surface": stem,
+                "available": True, "claim_license": {},
+                "results": {"judge": {"judge_identity": {"kind": "mock"}},
+                            "aggregate": {"verdict_band": "uncalibrated"}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 1
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    for suffix in ("json", "md"):
+        (tmp_path / ("argument-input.txt.argument." + suffix)).write_text("synthetic", encoding="utf-8")
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("mode,message", [
+    ("missing_manifest", "judge construction failed"),
+    ("baseline_without_register", "--baseline-dir requires --register"),
+])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_argument_setup_refusals_stay_truthful(tmp_path, mode, message, change):
+    stem = "argument_decision_audit"
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input", "reason": message}
+    code = 3
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface=stem)
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "could not open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":" + mode).passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_agd_dispatch_requires_real_success(tmp_path, change):
+    envelope = {"schema_version": "1.0", "tool": "agd_move_scan", "task_surface": "agd_move_scan",
+                "available": True, "claim_license": {},
+                "results": {"observations": [], "judge": {"judge_identity": {"kind": "mock"}}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 1
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == "agd_move_scan:dispatch").passed
+
+
+@pytest.mark.parametrize("stem", ["enthymeme_gapflag", "fallacy_scan", "warrant_probe"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_argument_pattern_nonconsumer_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface="argument_pattern_scan")
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("mode", ["missing_judge", "missing_manifest"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_agd_setup_refusals_preserve_actual_envelopes(tmp_path, mode, change):
+    wrapped = mode == "missing_judge"
+    envelope = {"schema_version": "1.0", "tool": "setec_run" if wrapped else "agd_move_scan",
+                "task_surface": None if wrapped else "agd_move_scan", "available": False,
+                "reason_category": "bad_input",
+                "reason": "--judge required" if wrapped else "judge construction failed: manifest_path"}
+    if wrapped:
+        envelope["surface"] = "agd_move_scan"
+    code = 3
+    if change == "promoted":
+        envelope["available"] = True
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    else:
+        code = 2
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == "agd_move_scan:" + mode).passed
+
+
+@pytest.mark.parametrize("stem", ["argquality_dimension_profile", "argument_certainty_calibration"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_argument_quality_nonconsumer_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope["available"] = True
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_quality_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_position_dispatch_requires_real_success(tmp_path, change):
+    envelope = {"schema_version": "1.0", "tool": "position_pair_register", "task_surface": "position_pair_register",
+                "available": True, "claim_license": {},
+                "results": {"pairs": [{}], "judge": {"judge_identity": {"kind": "mock"}}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 3
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_consistency_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == "position_pair_register:dispatch").passed
+
+
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_cross_doc_dispatch_remains_unknown(tmp_path, change):
+    stem = "cross_doc_argument_consistency"
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope["available"] = True
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 3
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_consistency_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+def test_reachability_checks_every_entry_in_fragment(tmp_path):
+    manifest_dir = tmp_path / "capabilities.d"
+    scripts = tmp_path / "scripts"
+    manifest_dir.mkdir()
+    scripts.mkdir()
+    (scripts / "ordinary.py").write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    (manifest_dir / "two.yaml").write_text(
+        "entries:\n  - id: first\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/ordinary.py\n"
+        "  - id: second\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/missing.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(tmp_path, report)
+    assert not report.passed and "second" in report.results[0].detail
 
 
 @pytest.mark.parametrize("envelope,stdout_override", [

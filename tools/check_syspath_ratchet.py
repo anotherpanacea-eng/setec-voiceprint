@@ -72,7 +72,19 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # runpy does not add scripts/ itself; independent review reproduced the failure.
 # Reviewed GX-A2 claim refresh retains counting (no exclusions) and all planted
 # over-ceiling tests. Later cleanup must lower the ceiling as usual.
-PINNED_CEILING = 159
+# P3 integrates 37 required permanent aliases and removes seven judge
+# implementation bootstraps: AST-measured 159 -> 189 at base 7537b9.
+# Every production call site remains counted, with no new exclusions.
+# P4 narrative moves two whole modules that had no scripts-root bootstrap.
+# Detached foreign-cwd -S runpy/help fails on both at fb0c484 without that
+# root, and succeeds when it is supplied. The two permanent ordinary aliases
+# require two counted sites: measured 189 -> 191, with no exclusions/removals.
+# This relocation-only ceiling adjustment remains subject to build review.
+# P4 argument adds one required permanent alias for a whole module with no
+# prior bootstrap. At 8a42a0d, detached foreign-cwd -S runpy/help fails without
+# scripts/ and passes with it. Counted normally: 191 -> 192; no exclusions or
+# unrelated removals. This relocation-only increase requires build review.
+PINNED_CEILING = 192
 
 
 def find_runtime_scripts() -> list[Path]:

@@ -83,13 +83,85 @@ _KNOWN_DUPLICATE_ANCHORS = {
 # generators). This is a documented default, not a narrative count: the
 # `--seed` regeneration always re-derives it from the live tree.
 _L0_MODULES = {"output_schema.py", "claim_license.py", "capabilities.py"}
-# Required P2 launcher bootstraps: runpy does not supply scripts/ on sys.path.
-# This exact three-key exception is not a general license for new anchors.
+# Required P2/P3 launcher bootstraps: runpy does not supply scripts/ on sys.path.
+# These concrete moves are not a general license for new anchors.
 _P2_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/" + name, "_SCRIPT_DIR")
     for name in _L0_MODULES
 }
+_P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/stylometry_distance.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/paragraph_parser.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_feature_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_feature_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_consistency_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_certainty_calibration_schema.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_longform_segment.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/storyscope_polarity_contract.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/preprocessing.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/verbatim_cover.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/segmentation_feature_lens.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/agd_move_scan_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argquality_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_certainty_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_consistency_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fallacy_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/judge_backends.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/position_pair_register_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/warrant_judge.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/atomic_publish.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/embedding_backend.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/embeddings.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_remediation_projection.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/pool_guard.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_checkpoint.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_io.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/shingle_dedup_validate.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/surprisal_backend.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/windows_descriptor_io.py", "_SCRIPT_DIR"),
+}
+# Fleet claim #125 (merge 8bfe5ba): four permanent P3 aliases and seven
+# existing repo-baseline anchors relocated into core. Exact keys only;
+# the ghost-row check still requires every listed anchor to exist.
+_P3_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/argument_register_baselines.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/concreteness.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/register_taxonomy.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/register_typical_baselines.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py", "_REPO_ROOT"),
+    ("plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py", "_DEFAULT_YAML_PATH"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "_REPO_ROOT"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "_DEFAULT_YAML_PATH"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "path"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "data"),
+    ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "baselines"),
+}
 _L1_MODULES = {"stylometry_distance.py"}
+_P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/cross_doc_argument_consistency.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/position_pair_register.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argquality_dimension_profile.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_certainty_calibration.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/agd_move_scan.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/enthymeme_gapflag.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fallacy_scan.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/warrant_probe.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/paragraph_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/repetition_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_decision_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narrative_decision_long_form.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/argument_decision_audit.py", "_SCRIPT_DIR"),
+}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
 # generator. Its own anchors are grouped with the P2 L0 batch as the nearest
@@ -111,18 +183,136 @@ def _phase_for(rel_path: str) -> str:
 # setec.paths" disposition would be DISHONEST — the anchor cannot become
 # a setec.paths call, ever, for a structural reason named in `reason`.
 # `removal_phase: "not-applicable"` says so explicitly instead of
-# promising a conversion that will never happen. Both entries below were
+# promising a conversion that will never happen. The argument-baseline pair was
 # named directly in build-review P1 finding #5 ("hand-review the two rows
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; detached "
+            "runpy does not put scripts/ on sys.path, and setec.paths cannot "
+            "be imported before setec."
+        ),
+    },
     (
-        "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
+        "plugins/setec-voiceprint/scripts/atomic_publish.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/embedding_backend.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/embeddings.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/passage_remediation_projection.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/pool_guard.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_checkpoint.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_io.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/shingle_dedup_validate.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/surprisal_backend.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/windows_descriptor_io.py",
+        "_SCRIPT_DIR",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; runpy does "
+            "not put scripts/ on sys.path, and setec.paths cannot be imported "
+            "before setec. Standing exception, not data-path migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py",
         "_REPO_ROOT",
     ): {
         "removal_phase": "not-applicable",
         "reason": (
-            "_REPO_ROOT = Path(__file__).resolve().parents[3] reaches the "
+            "_REPO_ROOT = Path(__file__).resolve().parents[5] reaches the "
             "REPOSITORY root specifically to find the shared top-level "
             "baselines/ directory (baselines/argument_register_baselines.yaml), "
             "which lives OUTSIDE plugins/setec-voiceprint/ entirely. "
@@ -136,7 +326,7 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         ),
     },
     (
-        "plugins/setec-voiceprint/scripts/argument_register_baselines.py",
+        "plugins/setec-voiceprint/scripts/setec/core/argument_register_baselines.py",
         "_DEFAULT_YAML_PATH",
     ): {
         "removal_phase": "not-applicable",
@@ -144,6 +334,62 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
             "Derived from _REPO_ROOT (repo-root baselines/ path) — same "
             "disposition: not convertible to setec.paths, see _REPO_ROOT's "
             "row."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "_REPO_ROOT",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "_REPO_ROOT = Path(__file__).resolve().parents[5] reaches the "
+            "repository root to find baselines/register_typical.yaml, outside "
+            "plugins/setec-voiceprint/. setec.paths resolves plugin data and "
+            "cannot resolve this repo-root sibling without changing data "
+            "ownership. The existing yaml_path override remains available. "
+            "Standing repo-YAML exception, not migration debt."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "_DEFAULT_YAML_PATH",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Derived from _REPO_ROOT for baselines/register_typical.yaml; "
+            "same standing repo-YAML disposition as _REPO_ROOT."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "path",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Selects the caller's yaml_path or _DEFAULT_YAML_PATH; retains "
+            "the standing repo-YAML default described by _REPO_ROOT."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "data",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Parsed YAML loaded through path, retained by the existing anchor "
+            "scanner's dependency closure; same standing repo-YAML disposition, "
+            "not a separate plugin data location."
+        ),
+    },
+    (
+        "plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py",
+        "baselines",
+    ): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Extracts register_typical_baselines from data, retained by the "
+            "existing anchor scanner's dependency closure; same standing "
+            "repo-YAML disposition, not a separate plugin data location."
         ),
     },
     (
@@ -214,6 +460,16 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         "reason": "Downstream of 'commitment_bytes'/'receipt' — same self-referential chain, see 'revision'.",
     },
 }
+
+
+for _bootstrap_key in _P3_BOOTSTRAP_ANCHORS | _P4_BOOTSTRAP_ANCHORS:
+    _MANUAL_DISPOSITIONS.setdefault(_bootstrap_key, {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility alias bootstrap; runpy does not "
+            "put scripts/ on sys.path, and setec.paths cannot be imported before setec."
+        ),
+    })
 
 
 # ---------- anchor discovery ----------------------------------------
@@ -857,8 +1113,8 @@ def check_ratchet(base_sha: str) -> list[str]:
     brand-new file (this file didn't exist there at all — nothing to
     ratchet against, matching THIS spec's own P1 commit). Once the file
     exists at a merge base, its row set at HEAD must be a SUBSET of the
-    merge-base row set, apart from the three required P2 launcher bootstrap
-    anchors. Their actual existence is still checked by the ghost-row gate."""
+    merge-base row set, apart from the exact P2/P3/P4 launcher and baseline-family
+    relocation anchors. Their existence is still checked by the ghost-row gate."""
     old_rows = _exemptions_file_at(base_sha)
     if old_rows is None:
         return []
@@ -872,7 +1128,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS - _P3_RELOCATION_ANCHORS - _P4_BOOTSTRAP_ANCHORS)
     if not added:
         return []
     return [

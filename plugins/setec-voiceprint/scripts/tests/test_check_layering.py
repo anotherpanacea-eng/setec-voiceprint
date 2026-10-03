@@ -76,6 +76,117 @@ def test_real_repo_layering_passes():
     ]
 
 
+def test_paragraph_alias_requires_its_metadata_row(monkeypatch, capsys):
+    """A permanent launcher stays a visible edge, never an implicit bypass."""
+    source = "plugins/setec-voiceprint/scripts/paragraph_audit.py"
+    target = "plugins/setec-voiceprint/scripts/setec/surfaces/paragraph_audit.py"
+    rows = cl.load_layer_exemptions()
+    paragraph_rows = [r for r in rows if r["from_path"] == source and r["to_path"] == target]
+    assert len(paragraph_rows) == 1
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: rows)
+    assert cl.main(["--strict", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: [r for r in rows if r not in paragraph_rows])
+    assert cl.main(["--strict", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert any(v["from_path"] == source and v["to_path"] == target
+               and v["edge_kind"] == "l2_to_l2" for v in report["unexempted"])
+
+
+@pytest.mark.parametrize("case", [
+    "proper_row", "missing_row", "missing_owner", "ghost_row",
+    "arbitrary_import", "dynamic_alias", "wrong_main", "renamed_surface",
+    "wrong_target", "unrelated_source", "extra_dependency", "side_effect",
+])
+def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case):
+    scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
+    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
+    exemptions = tmp_path / "plugins" / "setec-voiceprint" / "packaging_migration_exemptions.yaml"
+    monkeypatch.setattr(cl, "EXEMPTIONS_PATH", exemptions)
+    # Isolate candidate admission against an existing, empty baseline.
+    monkeypatch.setattr(cl, "_merge_base", lambda ref: "baseline")
+    monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: [])
+    for package in ("setec", "setec/surfaces"):
+        _write(scripts, package + "/__init__.py", "")
+    implementation = (
+        'TASK_SURFACE = "voice_coherence"\n'
+        "def main():\n    return 0\n"
+        "if __name__ == '__main__':\n    main()\n"
+    )
+    _write(scripts, "setec/surfaces/audit.py", implementation)
+    _write(scripts, "setec/surfaces/other.py", implementation)
+    launcher = (
+        '"""Permanent ordinary launcher."""\n'
+        "import sys\nfrom pathlib import Path\n"
+        "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
+        "if str(_SCRIPT_DIR) not in sys.path:\n"
+        "    sys.path.insert(0, str(_SCRIPT_DIR))\n"
+        "from setec.surfaces import audit as _mod\n"
+        "from setec.surfaces.audit import TASK_SURFACE\n"
+        "if __name__ == '__main__':\n"
+        "    sys.exit(_mod.main())\n"
+        "else:\n    sys.modules[__name__] = _mod\n"
+    )
+    prefix = "plugins/setec-voiceprint/scripts/"
+    source = "audit.py"
+    target = "setec/surfaces/audit.py"
+    if case == "arbitrary_import":
+        launcher = "from setec.surfaces.audit import TASK_SURFACE\n"
+    elif case == "dynamic_alias":
+        launcher = launcher.replace("sys.modules[__name__] = _mod", "globals().update(vars(_mod))")
+    elif case == "wrong_main":
+        launcher = launcher.replace("sys.exit(_mod.main())", "sys.modules['__main__'] = _mod")
+    elif case == "renamed_surface":
+        launcher = launcher.replace("import TASK_SURFACE", "import TASK_SURFACE as OTHER")
+    elif case == "wrong_target":
+        launcher = launcher.replace("import audit as _mod", "import other as _mod")
+        launcher = launcher.replace("surfaces.audit import", "surfaces.other import")
+        target = "setec/surfaces/other.py"
+    elif case == "unrelated_source":
+        source = "another.py"
+    elif case == "extra_dependency":
+        launcher += "from setec.surfaces import other\n"
+    elif case == "side_effect":
+        launcher += "_mod.main()\n"
+    elif case == "ghost_row":
+        launcher = implementation
+    _write(scripts, source, launcher)
+    monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source})
+    row = {
+        "from_path": prefix + source, "to_path": prefix + target,
+        "edge_kind": "l2_to_l2", "reason": "Permanent ordinary launcher to its own implementation",
+        "owner": "packaging", "introduced_sha": "baseline", "removal_phase": "not-applicable",
+    }
+    rows = [row]
+    if case == "missing_row":
+        rows = []
+    elif case == "missing_owner":
+        del row["owner"]
+    elif case == "extra_dependency":
+        rows.append(dict(row, to_path=prefix + "setec/surfaces/other.py"))
+    exemptions.write_text(json.dumps({"layer_exemptions": rows}), encoding="utf-8")
+    assert cl.main(["--strict", "--json"]) == (0 if case == "proper_row" else 1)
+    report = json.loads(capsys.readouterr().out)
+    assert report["passed"] is (case == "proper_row")
+    if case == "proper_row":
+        assert report["counts"]["l2_to_l2"] == 1
+        assert report["strict_problems"] == []
+    elif case == "missing_row":
+        assert report["unexempted"]
+    elif case == "missing_owner":
+        assert report["exemption_shape_problems"]
+    elif case == "ghost_row":
+        assert any("ghost/expired" in problem for problem in report["strict_problems"])
+    else:
+        assert any(
+            problem.startswith(f"{row['from_path']} -> {row['to_path']} ")
+            and "NEW layer_exemptions row" in problem
+            for problem in report["strict_problems"]
+        )
+
+
 @pytest.mark.parametrize("location", ["", "setec/contract/"])
 @pytest.mark.parametrize("stem", ["output_schema", "claim_license", "capabilities"])
 def test_contract_outbound_prohibition_survives_relocation(tmp_path, monkeypatch, location, stem):
@@ -341,6 +452,102 @@ def test_ratchet_preserves_only_existing_p2_dependencies(tmp_path, monkeypatch, 
         changed = dict(row, **{field: value})
         exemptions_path.write_text(json.dumps({"layer_exemptions": [changed]}), encoding="utf-8")
         assert cl.check_ratchet(sha)
+
+
+@pytest.mark.parametrize("case", [
+    "both_endpoints", "source_only", "target_only", "new_target", "new_source",
+    "changed_kind", "malformed_launcher", "wrong_target", "extra_dependency",
+    "already_relocated", "already_relocated_new_target",
+])
+def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case):
+    prefix = "plugins/setec-voiceprint/scripts/"
+    scripts = tmp_path / prefix
+    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
+    for package in ("setec", "setec/surfaces"):
+        _write(scripts, package + "/__init__.py", "")
+    implementation = 'TASK_SURFACE = "smoothing_diagnosis"\ndef main():\n    return 0\n'
+    for stem in ("audit", "baseline", "other"):
+        _write(scripts, "setec/surfaces/" + stem + ".py", implementation)
+        launcher = (
+            "import sys\nfrom pathlib import Path\n"
+            "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
+            "if str(_SCRIPT_DIR) not in sys.path:\n    sys.path.insert(0, str(_SCRIPT_DIR))\n"
+            f"from setec.surfaces import {stem} as _mod\n"
+            f"from setec.surfaces.{stem} import TASK_SURFACE\n"
+            "if __name__ == '__main__':\n    sys.exit(_mod.main())\n"
+            "else:\n    sys.modules[__name__] = _mod\n"
+        )
+        if stem == "audit":
+            if case == "malformed_launcher":
+                launcher = launcher.replace("sys.modules[__name__] = _mod", "globals().update(vars(_mod))")
+            elif case == "wrong_target":
+                launcher = launcher.replace("import audit as", "import other as").replace("surfaces.audit import", "surfaces.other import")
+            elif case == "extra_dependency":
+                launcher += "from setec.surfaces import other\n"
+        _write(scripts, stem + ".py", launcher)
+    old = {"from_path": prefix + "audit.py", "to_path": prefix + "baseline.py",
+           "edge_kind": "l2_to_l2", "reason": "existing edge", "owner": "packaging",
+           "introduced_sha": "base", "removal_phase": "not-applicable"}
+    new = dict(old, from_path=prefix + "setec/surfaces/audit.py",
+               to_path=prefix + "setec/surfaces/baseline.py")
+    if case == "source_only":
+        new["to_path"] = old["to_path"]
+    elif case == "target_only":
+        new["from_path"] = old["from_path"]
+    elif case == "new_target":
+        new["to_path"] = prefix + "setec/surfaces/other.py"
+    elif case == "new_source":
+        new["from_path"] = prefix + "setec/surfaces/other.py"
+    elif case == "changed_kind":
+        new["edge_kind"] = "l1_to_l2"
+    old_rows, new_rows = [old], [new]
+    if case in {"already_relocated", "already_relocated_new_target"}:
+        old_rows = [dict(new)]
+        alias = dict(old, to_path=prefix + "setec/surfaces/audit.py")
+        old_rows.append(alias)
+        new_rows.append(alias)
+        if case == "already_relocated_new_target":
+            new["to_path"] = prefix + "setec/surfaces/other.py"
+    monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: old_rows)
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: new_rows)
+    problems = cl.check_ratchet("base")
+    assert bool(problems) is (case not in {"both_endpoints", "source_only", "target_only", "already_relocated"})
+    # Matching and ghost checks retain the actual new endpoints.
+    assert not cl.check_ghost_rows([new], [cl.Violation(new["from_path"], new["to_path"], new["edge_kind"])])
+    assert cl.check_ghost_rows([new], [])
+
+
+@pytest.mark.parametrize("stem", [
+    "repetition_audit", "manuscript_repetition_audit", "chapter_distinctiveness_audit",
+])
+def test_repetition_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
+    source = "plugins/setec-voiceprint/scripts/" + stem + ".py"
+    target = "plugins/setec-voiceprint/scripts/setec/surfaces/" + stem + ".py"
+    rows = cl.load_layer_exemptions()
+    missing = [r for r in rows if (r["from_path"], r["to_path"]) != (source, target)]
+    assert len(rows) - len(missing) == 1
+    assert cl.main(["--strict", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: missing)
+    assert cl.main(["--strict", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert any(v["from_path"] == source and v["to_path"] == target for v in report["unexempted"])
+
+
+@pytest.mark.parametrize("stem", ["narrative_decision_audit", "narrative_decision_long_form"])
+def test_narrative_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
+    source = "plugins/setec-voiceprint/scripts/" + stem + ".py"
+    target = "plugins/setec-voiceprint/scripts/setec/surfaces/" + stem + ".py"
+    rows = cl.load_layer_exemptions()
+    missing = [r for r in rows if (r["from_path"], r["to_path"]) != (source, target)]
+    assert len(rows) - len(missing) == 1
+    assert cl.main(["--strict", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: missing)
+    assert cl.main(["--strict", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert any(v["from_path"] == source and v["to_path"] == target for v in report["unexempted"])
 
 
 def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():

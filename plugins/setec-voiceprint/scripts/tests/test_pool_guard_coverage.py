@@ -192,15 +192,31 @@ CLASSIFICATION: dict[str, dict[str, str]] = {
 # ---------------- structural sweeps (scope-parameterized) ----------------
 
 
+def _source_path(scope: Path, module: str) -> Path:
+    """Read relocated implementations only for the actual scripts scope."""
+    if scope == SCRIPTS and module in {
+        "cross_doc_argument_consistency", "position_pair_register",
+    }:
+        return scope / "setec" / "surfaces" / f"{module}.py"
+    if scope == SCRIPTS and module in {
+        "preprocessing", "verbatim_cover", "segmentation_feature_lens",
+    }:
+        return scope / "setec" / "core" / f"{module}.py"
+    return scope / f"{module}.py"
+
+
 def _module_sources(scope: Path) -> dict[str, str]:
     """``{module_stem: source}`` for the non-recursive ``*.py`` glob of ``scope``.
 
     No name filter: an underscore-prefixed module (``_mirror_gate.py``) is still a
     module that could grow a pool loader, and narrowing the glob is exactly how a
     closure sweep quietly stops closing.
+
+    Keep the flat module keys, but read relocated implementations
+    instead of their identity alias launchers when scanning SCRIPTS.
     """
     return {
-        p.stem: p.read_text(encoding="utf-8")
+        p.stem: _source_path(scope, p.stem).read_text(encoding="utf-8")
         for p in sorted(scope.glob("*.py"))
     }
 
@@ -344,7 +360,7 @@ def test_importer_sweep_keys_on_names_not_source_module():
     """The predicate that catches cross_doc_argument_consistency: it imports the
     loaders from cross_doc_novelty_profile, so a source-module-keyed sweep misses
     it entirely."""
-    src = (SCRIPTS / "cross_doc_argument_consistency.py").read_text(encoding="utf-8")
+    src = _source_path(SCRIPTS, "cross_doc_argument_consistency").read_text(encoding="utf-8")
     assert _imports_pool_loader(src)
     assert "from cross_doc_novelty_profile import" in src
     assert "from originality_audit import" not in src
@@ -369,7 +385,7 @@ def test_exempt_surfaces_do_not_call_the_guard():
     for module, row in CLASSIFICATION.items():
         if row["guard"] != EXEMPT:
             continue
-        src = (SCRIPTS / f"{module}.py").read_text(encoding="utf-8")
+        src = _source_path(SCRIPTS, module).read_text(encoding="utf-8")
         assert not _calls_pool_guard(src), (
             f"{module} is classified EXEMPT but calls pool_guard; deduping a "
             "comparison/calibration pool is legitimate and must not be refused"
@@ -481,7 +497,7 @@ def test_refusal_reason_truncates_a_long_list():
 
 def test_pool_guard_is_pure_stdlib():
     """It is imported by five audit surfaces; a heavy dep here would tax them all."""
-    src = (SCRIPTS / "pool_guard.py").read_text(encoding="utf-8")
+    src = Path(pool_guard.__file__).read_text(encoding="utf-8")
     third_party = {
         "numpy", "scipy", "torch", "datasketch", "spacy", "nltk", "transformers",
         "sklearn", "yaml", "pandas",

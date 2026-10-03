@@ -61,7 +61,7 @@ def test_commitment_mutation_refuses(tmp_path):
         tokenizer.load_data(path)
 
 
-@pytest.mark.parametrize("variant", ["pretty", "extra_lf", "duplicate_key"])
+@pytest.mark.parametrize("variant", ["pretty", "extra_lf", "duplicate_key", "crlf"])
 def test_noncanonical_serializations_refuse(tmp_path, variant):
     raw = tokenizer.DATA_FILE.read_bytes()
     data = json.loads(raw)
@@ -71,6 +71,8 @@ def test_noncanonical_serializations_refuse(tmp_path, variant):
         ).encode("utf-8")
     elif variant == "extra_lf":
         mutated = raw + b"\n"
+    elif variant == "crlf":
+        mutated = raw.replace(b"\n", b"\r\n")
     else:
         mutated = raw.replace(
             b"{",
