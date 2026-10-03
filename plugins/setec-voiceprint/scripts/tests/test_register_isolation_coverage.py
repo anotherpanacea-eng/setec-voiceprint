@@ -385,6 +385,10 @@ TUPLE_SHAPED_LOADERS = {
 def _source_path(scope: Path, module: str) -> Path:
     """Read relocated implementations only for the actual scripts scope."""
     if scope == SCRIPTS and module in {
+        "cross_doc_argument_consistency", "position_pair_register",
+    }:
+        return scope / "setec" / "surfaces" / f"{module}.py"
+    if scope == SCRIPTS and module in {
         "preprocessing", "verbatim_cover", "segmentation_feature_lens",
     }:
         return scope / "setec" / "core" / f"{module}.py"
@@ -398,7 +402,7 @@ def _module_sources(scope: Path) -> dict[str, str]:
     a module that could grow a pooled reference, and narrowing the glob is
     exactly how a closure sweep quietly stops closing.
 
-    Keep the flat module keys, but read the three relocated implementations
+    Keep the flat module keys, but read relocated implementations
     instead of their identity alias launchers when scanning SCRIPTS.
     """
     return {
