@@ -535,6 +535,21 @@ def test_repetition_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
     assert any(v["from_path"] == source and v["to_path"] == target for v in report["unexempted"])
 
 
+@pytest.mark.parametrize("stem", ["narrative_decision_audit", "narrative_decision_long_form"])
+def test_narrative_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
+    source = "plugins/setec-voiceprint/scripts/" + stem + ".py"
+    target = "plugins/setec-voiceprint/scripts/setec/surfaces/" + stem + ".py"
+    rows = cl.load_layer_exemptions()
+    missing = [r for r in rows if (r["from_path"], r["to_path"]) != (source, target)]
+    assert len(rows) - len(missing) == 1
+    assert cl.main(["--strict", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: missing)
+    assert cl.main(["--strict", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert any(v["from_path"] == source and v["to_path"] == target for v in report["unexempted"])
+
+
 def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():
     contract = "plugins/setec-voiceprint/scripts/setec/contract/claim_license.py"
     paths = "plugins/setec-voiceprint/scripts/setec/paths.py"

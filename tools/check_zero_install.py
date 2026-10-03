@@ -451,6 +451,64 @@ def check_repetition_conformance(bare_root: Path, outside_cwd: Path, report: Rep
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
+def check_narrative_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Keep the base consumer live and long-form experimental, with mock judging only."""
+    scripts = bare_root / "scripts"
+    target = outside_cwd / "narrative-input.txt"
+    target.write_text("The lantern crossed the river. " * 400, encoding="utf-8")
+    runpy_code = (
+        "import runpy, sys; path = sys.argv.pop(1); old = sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path, run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    for stem in ("narrative_decision_audit", "narrative_decision_long_form"):
+        launcher = scripts / (stem + ".py")
+        base = stem == "narrative_decision_audit"
+        args = [str(target), "--judge", "mock", "--json"] if base else ["--help"]
+        commands = [
+            ("direct", ["-S", str(launcher), *args], outside_cwd),
+            ("runpy", ["-S", "-c", runpy_code, str(launcher), *args], outside_cwd),
+            ("module", ["-S", "-m", "setec.surfaces." + stem, *args], scripts),
+            ("dispatch", [str(scripts / "setec_run.py"), stem, str(target), "--judge", "mock", "--json"], outside_cwd),
+            ("missing_input", ["-S", str(launcher), str(outside_cwd / "absent-narrative.txt"), "--json"], outside_cwd),
+        ]
+        for mode, argv, cwd in commands:
+            try:
+                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                      capture_output=True, text=True, timeout=30)
+                ok = "Traceback" not in proc.stderr
+                if not base and mode in {"direct", "runpy", "module"}:
+                    ok = ok and proc.returncode == 0 and "--calibration-emit-segments" in proc.stdout
+                elif base and mode == "missing_input":
+                    ok = ok and proc.returncode == 1 and not proc.stdout.strip() and "target file not found" in proc.stderr
+                else:
+                    envelope = json.loads(proc.stdout)
+                    refusal = not base
+                    expected = {"schema_version": "1.0", "tool": "setec_run" if mode == "dispatch" and refusal else stem,
+                                "task_surface": None if mode == "dispatch" and refusal else stem,
+                                "available": not refusal}
+                    expected_exit = (2 if mode == "dispatch" else 1) if refusal else 0
+                    ok = ok and proc.returncode == expected_exit
+                    ok = ok and isinstance(envelope, dict) and all(
+                        envelope.get(key) == value for key, value in expected.items()
+                    )
+                    if refusal:
+                        ok = ok and envelope.get("reason_category") == "bad_input"
+                        if mode == "dispatch":
+                            ok = ok and envelope.get("surface") == stem and f"unknown surface '{stem}'" in envelope.get("reason", "")
+                        else:
+                            ok = ok and "target file not found" in envelope.get("reason", "")
+                    else:
+                        results = envelope.get("results")
+                        ok = ok and isinstance(results, dict) and results.get("judge", {}).get("judge_identity", {}).get("kind") == "mock"
+                        ok = ok and isinstance(envelope.get("claim_license"), dict)
+                        ok = ok and target.with_suffix(".txt.narrative.json").is_file() and target.with_suffix(".txt.narrative.md").is_file()
+                report.add(f"{stem}:{mode}", ok,
+                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+            except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+                report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -463,6 +521,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_punctuation_conformance(bare_root, outside_cwd, report)
         check_paragraph_conformance(bare_root, outside_cwd, report)
         check_repetition_conformance(bare_root, outside_cwd, report)
+        check_narrative_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)
