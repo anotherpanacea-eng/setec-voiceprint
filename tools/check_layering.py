@@ -23,16 +23,19 @@ Enforced (errors, exit 1 unless exempted):
       except the existing stdlib-only setec.paths resolver needed by
       relocation (L0 -> L0 is fine; other L0 -> L1/L2 is a violation).
     * An L1 module may import only L0/L1 (L1 -> L2 is a violation).
-    * An L2 -> L2 edge is a violation UNLESS it is in the committed,
-      SHRINK-ONLY baseline (the count may only decrease; a NEW L2->L2
-      edge not in the baseline always fails, `--strict` or not).
-      ONE sanctioned exception: edges FROM the R5 contract-fixture
+    * Every L2 -> L2 edge is visible as a violation and requires a matching
+      committed exemption row. Ordinary dependency rows are SHRINK-ONLY;
+      a new sharing dependency cannot be licensed by adding a row.
+      Sanctioned additions: a pinned ordinary permanent surface launcher
+      to its own implementation (spec §2), and edges FROM the R5 contract-fixture
       generator (gen_contract_fixtures.py). Its faithfulness contract
       requires importing each golden surface's real envelope-assembly
       path, so a surface joining the golden regime necessarily adds
       one generator edge; refusing it would close the golden regime
       to new surfaces permanently. Such a row may be ADDED to the
-      baseline; every other from_path stays shrink-only.
+      baseline. Launcher edges still require a fully fielded exemption row;
+      recognizing their shape only admits a new row, never hides an edge.
+      Every other dependency stays shrink-only.
 
 Reported, never gated: cycles (SCCs of size > 1) in the internal
 import graph. Five are known to exist at the P5 baseline; this
@@ -100,14 +103,7 @@ _P2_LEGACY_PATHS = {
     for stem in _L0_STEMS
 }
 
-# This one permanent surface alias is plumbing, not surface-to-surface sharing.
-# All other edges, including edges into the legacy surface, remain shrink-only.
-_P4_PUNCTUATION_ALIAS = (
-    _SCRIPTS_PREFIX + "punctuation_cadence_audit.py",
-    _SCRIPTS_PREFIX + "setec/surfaces/punctuation_cadence_audit.py",
-)
-
-# The one from_path allowed to ADD l2_to_l2 baseline rows (see header):
+# The existing generator exception to the new-row ratchet (see header):
 # the R5 golden generator, whose job is importing every golden surface.
 _GENERATOR_FROM_PATH = "plugins/setec-voiceprint/scripts/gen_contract_fixtures.py"
 
@@ -397,7 +393,7 @@ def find_violations(
             out.append(Violation(a, b, "l0_outbound"))
         elif ta == "L1" and tb == "L2":
             out.append(Violation(a, b, "l1_to_l2"))
-        elif ta == "L2" and tb == "L2" and (a, b) != _P4_PUNCTUATION_ALIAS:
+        elif ta == "L2" and tb == "L2":
             out.append(Violation(a, b, "l2_to_l2"))
     return out
 
@@ -747,11 +743,70 @@ def check_ghost_rows(
     return problems
 
 
+def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
+    """Recognize only the existing main+surface ordinary launcher contract.
+
+    This bounded AST check licenses a new exemption row, not other imports
+    or arbitrary Python behavior. No implementation is executed here.
+    """
+    if not isinstance(from_path, str) or not isinstance(to_path, str):
+        return False
+    source = REPO_ROOT / from_path
+    target = REPO_ROOT / to_path
+    try:
+        old_rel = source.relative_to(SCRIPTS_ROOT)
+        new_rel = target.relative_to(SCRIPTS_ROOT)
+    except ValueError:
+        return False
+    if (len(old_rel.parts) != 1 or old_rel.suffix != ".py"
+            or not old_rel.stem.isidentifier()
+            or new_rel != Path("setec/surfaces") / old_rel.name):
+        return False
+    if (not source.is_file() or not target.is_file()
+            or source.resolve() != source or target.resolve() != target):
+        return False
+    launcher, implementation = Module(source), Module(target)
+    body = launcher.tree.body
+    if (body and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)):
+        body = body[1:]  # documentation is not executable launcher plumbing
+    stem = old_rel.stem
+    expected = ast.parse(f"""
+import sys
+from pathlib import Path
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+from setec.surfaces import {stem} as _mod
+from setec.surfaces.{stem} import TASK_SURFACE
+if __name__ == "__main__":
+    sys.exit(_mod.main())
+else:
+    sys.modules[__name__] = _mod
+""")
+    if ast.dump(ast.Module(body=body, type_ignores=[])) != ast.dump(expected):
+        return False
+    # The implementation must supply the two exports used by this template.
+    if not any(isinstance(n, ast.FunctionDef) and n.name == "main"
+               for n in implementation.tree.body):
+        return False
+    if not any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
+               and isinstance(n.value.value, str)
+               and any(isinstance(t, ast.Name) and t.id == "TASK_SURFACE" for t in n.targets)
+               for n in implementation.tree.body):
+        return False
+    return (from_path, to_path) in build_internal_graph([launcher, implementation])
+
+
 def check_ratchet(base_sha: str) -> list[str]:
     """`--strict` only: layer_exemptions rows may only SHRINK once
     committed. A row present in the CANDIDATE file but absent from the
     file as committed at the merge base is a new addition -- legitimate
-    only when the file didn't carry `layer_exemptions` at all there yet."""
+    only for the original bootstrap, the existing fixture-generator exception,
+    or a pinned ordinary launcher to its own implementation. All edges remain
+    visible to exemption matching and ghost checks.
+    """
     old_rows = _layer_exemptions_at(base_sha)
     if old_rows is None:
         return []
@@ -764,7 +819,9 @@ def check_ratchet(base_sha: str) -> list[str]:
     added = sorted(new_keys - old_keys, key=lambda k: (k[2] or "", k[0] or "", k[1] or ""))
     added = [
         (fp, tp, kind) for fp, tp, kind in added
-        if not (kind == "l2_to_l2" and fp == _GENERATOR_FROM_PATH)
+        if not (kind == "l2_to_l2" and (
+            fp == _GENERATOR_FROM_PATH or _is_permanent_surface_launcher(fp, tp)
+        ))
     ]
     if not added:
         return []
