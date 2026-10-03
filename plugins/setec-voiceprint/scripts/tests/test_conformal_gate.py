@@ -14,6 +14,34 @@ import conformal_gate as cg  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
 
+@pytest.mark.parametrize("alpha", [float("nan"), float("inf"), float("-inf"),
+                                   0.0, 1.0, -0.1, 1.1])
+@pytest.mark.parametrize("calibration", [[], [1.0, 2.0, 3.0]])
+@pytest.mark.parametrize("two_class", [False, True])
+def test_direct_class_gates_refuse_invalid_alpha(alpha, calibration, two_class):
+    kwargs = dict(alpha=alpha, direction="higher_is_nonconforming", reference_label="ref")
+    with pytest.raises(ValueError, match="alpha"):
+        if two_class:
+            cg.gate_two_class(calibration, calibration, 2.0, positive_label="pos", **kwargs)
+        else:
+            cg.gate_one_class(calibration, 2.0, **kwargs)
+
+
+@pytest.mark.parametrize("alpha", [1e-12, 0.5, 0.999999])
+def test_direct_class_gates_preserve_valid_probability_results(alpha):
+    # Independent rank oracle: (1 + two scores >= 2) / (three scores + 1).
+    one = cg.gate_one_class([1.0, 2.0, 3.0], 2.0, alpha=alpha,
+                            direction="higher_is_nonconforming", reference_label="ref")
+    two = cg.gate_two_class([1.0, 2.0, 3.0], [1.0, 2.0, 3.0], 2.0, alpha=alpha,
+                            direction="higher_is_nonconforming", reference_label="ref",
+                            positive_label="pos")
+    assert one["p_value"] == 0.75
+    assert two["p_values"] == {"ref": 0.75, "pos": 0.75}
+    assert one["prediction_set"] == (["ref"] if 0.75 > alpha else [])
+    assert two["prediction_set"] == (["ref", "pos"] if 0.75 > alpha else [])
+    assert one["coverage"] == two["coverage"] == round(1 - alpha, 6)
+
+
 def test_task_surface_is_validation():
     assert cg.TASK_SURFACE == "validation"
     assert cg.TASK_SURFACE in VALID_TASK_SURFACES
