@@ -59,6 +59,9 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     assert not (tmp_path / "plugins").exists()
     assert (bare_root / "scripts" / "setec_run.py").is_file()
     assert (bare_root / ".claude-plugin" / "plugin.json").is_file()
+    report = zi.Report()
+    zi.check_punctuation_conformance(bare_root, tmp_path, report)
+    assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
 def test_make_bare_copy_refuses_source_symlinks(tmp_path, monkeypatch):
@@ -152,6 +155,83 @@ def test_structural_reachability_rejects_parent_escape(tmp_path):
     report = zi.Report()
     zi.check_structural_reachability(bare, report)
     assert not report.results[0].passed
+
+
+@pytest.mark.parametrize("failure", ["missing", "cyclic", "escape", "mismatch"])
+def test_structural_reachability_checks_implementation(tmp_path, failure):
+    bare = tmp_path / "setec-voiceprint"
+    manifest_dir = bare / "capabilities.d"
+    scripts = bare / "scripts"
+    manifest_dir.mkdir(parents=True)
+    scripts.mkdir()
+    source = {"missing": "from absent import TASK_SURFACE\n",
+              "cyclic": "from old import TASK_SURFACE\n",
+              "escape": "from ..outside import TASK_SURFACE\n",
+              "mismatch": 'TASK_SURFACE = "wrong"\n'}[failure]
+    (scripts / "old.py").write_text(source, encoding="utf-8")
+    (manifest_dir / "old.yaml").write_text(
+        "entries:\n  - id: old\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/old.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(bare, report)
+    assert not report.passed
+
+
+def test_punctuation_success_with_wrong_surface_is_refused(tmp_path):
+    wrong = {"schema_version": "1.0", "tool": "punctuation_cadence_audit",
+             "task_surface": "setup", "available": True}
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(0, json.dumps(wrong))):
+        report = zi.Report()
+        zi.check_punctuation_conformance(tmp_path, tmp_path, report)
+    assert not report.passed
+    assert all(not r.passed for r in report.results if r.name != "punctuation:identity")
+
+
+@pytest.mark.parametrize("case,source", [
+    ("renamed", "from impl import TASK_SURFACE as OTHER\n"),
+    ("deleted", "from impl import TASK_SURFACE\ndel TASK_SURFACE\n"),
+    ("rebound", "from impl import TASK_SURFACE\nTASK_SURFACE = None\n"),
+    ("annotated", "from impl import TASK_SURFACE\nTASK_SURFACE: str | None = None\n"),
+    ("unpacked", "from impl import TASK_SURFACE\nTASK_SURFACE, other = None, 1\n"),
+    ("augmented", "from impl import TASK_SURFACE\nTASK_SURFACE += '_wrong'\n"),
+    ("conditional", "from impl import TASK_SURFACE\nif True:\n    del TASK_SURFACE\n"),
+    ("type_only", "from impl import TASK_SURFACE\nTASK_SURFACE: str | None\n"),
+    ("function_local", "from impl import TASK_SURFACE\ndef helper():\n    TASK_SURFACE = None\n    del TASK_SURFACE\n"),
+    ("class_local", "from impl import TASK_SURFACE\nclass Helper:\n    TASK_SURFACE = None\n    del TASK_SURFACE\n"),
+    ("valid", "from impl import TASK_SURFACE\n"),
+])
+def test_reachability_requires_exported_alias_surface(tmp_path, case, source):
+    scripts = tmp_path / "scripts"
+    manifests = tmp_path / "capabilities.d"
+    scripts.mkdir()
+    manifests.mkdir()
+    (scripts / "impl.py").write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    (scripts / "old.py").write_text(source, encoding="utf-8")
+    (manifests / "old.yaml").write_text(
+        "entries:\n  - id: old\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/old.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(tmp_path, report)
+    assert report.passed is (case in {"valid", "type_only", "function_local", "class_local"})
+
+
+def test_reachability_checks_every_entry_in_fragment(tmp_path):
+    manifest_dir = tmp_path / "capabilities.d"
+    scripts = tmp_path / "scripts"
+    manifest_dir.mkdir()
+    scripts.mkdir()
+    (scripts / "ordinary.py").write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    (manifest_dir / "two.yaml").write_text(
+        "entries:\n  - id: first\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/ordinary.py\n"
+        "  - id: second\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/missing.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(tmp_path, report)
+    assert not report.passed and "second" in report.results[0].detail
 
 
 @pytest.mark.parametrize("envelope,stdout_override", [

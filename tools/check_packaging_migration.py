@@ -141,6 +141,9 @@ _P3_RELOCATION_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py", "baselines"),
 }
 _L1_MODULES = {"stylometry_distance.py"}
+_P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py", "_SCRIPT_DIR"),
+}
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
 # generator. Its own anchors are grouped with the P2 L0 batch as the nearest
@@ -441,7 +444,7 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
 }
 
 
-for _bootstrap_key in _P3_BOOTSTRAP_ANCHORS:
+for _bootstrap_key in _P3_BOOTSTRAP_ANCHORS | _P4_BOOTSTRAP_ANCHORS:
     _MANUAL_DISPOSITIONS.setdefault(_bootstrap_key, {
         "removal_phase": "not-applicable",
         "reason": (
@@ -1092,7 +1095,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     brand-new file (this file didn't exist there at all — nothing to
     ratchet against, matching THIS spec's own P1 commit). Once the file
     exists at a merge base, its row set at HEAD must be a SUBSET of the
-    merge-base row set, apart from the exact P2/P3 launcher and baseline-family
+    merge-base row set, apart from the exact P2/P3/P4 launcher and baseline-family
     relocation anchors. Their existence is still checked by the ghost-row gate."""
     old_rows = _exemptions_file_at(base_sha)
     if old_rows is None:
@@ -1107,7 +1110,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS - _P3_RELOCATION_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS - _P3_RELOCATION_ANCHORS - _P4_BOOTSTRAP_ANCHORS)
     if not added:
         return []
     return [

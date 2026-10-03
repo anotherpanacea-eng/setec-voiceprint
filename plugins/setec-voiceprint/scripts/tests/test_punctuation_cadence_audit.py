@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import sys
+import json
+import os
+import subprocess
 from pathlib import Path
 
 try:
@@ -155,6 +158,59 @@ class TestCli:
         out_path = tmp_path / "out.json"
         rc = pa.main(["--json", "--out", str(out_path), str(in_path)])
         assert rc == 0
+
+
+def test_legacy_and_package_share_function_globals(monkeypatch):
+    from setec.surfaces import punctuation_cadence_audit as packaged
+
+    assert pa is packaged
+    assert pa.SCRIPT_DIR == Path(__file__).resolve().parents[1]
+    monkeypatch.setattr(packaged, "_word_count", lambda text: 17)
+    assert pa.audit_punctuation_cadence("some words")["n_words"] == 17
+    monkeypatch.setattr(pa, "_word_count", lambda text: 23)
+    assert packaged.audit_punctuation_cadence("some words")["n_words"] == 23
+
+
+@pytest.mark.parametrize("first", ["punctuation_cadence_audit", "setec.surfaces.punctuation_cadence_audit"])
+def test_fresh_import_order_and_runpy_main_identity(tmp_path, first):
+    scripts = Path(__file__).resolve().parents[1]
+    code = """
+import importlib, runpy, sys
+sys.path.insert(0, sys.argv[1])
+first = importlib.import_module(sys.argv[2])
+old = importlib.import_module('punctuation_cadence_audit')
+new = importlib.import_module('setec.surfaces.punctuation_cadence_audit')
+assert first is old is new
+main_module = sys.modules['__main__']
+new.main = lambda: 9
+try:
+    runpy.run_path(sys.argv[3], run_name='__main__')
+except SystemExit as exc:
+    assert exc.code == 9
+else:
+    raise AssertionError('main was not called')
+assert sys.modules['__main__'] is main_module
+"""
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.run([sys.executable, "-c", code, str(scripts), first,
+                           str(scripts / "punctuation_cadence_audit.py")],
+                          cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_cli_refusals_and_empty_envelope(tmp_path, capsys):
+    missing = tmp_path / "missing.txt"
+    assert pa.main([str(missing), "--json"]) == 2
+    assert "Input not found" in capsys.readouterr().err
+    target = tmp_path / "target.txt"
+    target.write_text(_VARIED, encoding="utf-8")
+    assert pa.main([str(target), "--baseline-dir", str(missing), "--json"]) == 2
+    assert "baseline error" in capsys.readouterr().err
+    target.write_text("", encoding="utf-8")
+    assert pa.main([str(target), "--json"]) == 0
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["available"] is False and envelope["results"] == {}
 
 
 if __name__ == "__main__":
