@@ -19,7 +19,8 @@ def _probe(code, cwd, *args):
     env.pop("PYTHONPATH", None)
     env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
     return subprocess.run([sys.executable, "-B", "-S", "-c", code, *map(str, args)],
-                          cwd=cwd, env=env, capture_output=True, text=True, timeout=30)
+                          cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8",
+                          timeout=30)
 
 
 @pytest.mark.parametrize("stem", STEMS)
