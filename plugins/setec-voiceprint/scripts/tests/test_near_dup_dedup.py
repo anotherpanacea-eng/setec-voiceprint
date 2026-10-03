@@ -444,6 +444,51 @@ def test_spec80_strict_refuses_dirty_producer_identity(tmp_path, monkeypatch):
         ndd.source_commitment.committed_producer_identity(repository=repo, script=producer)
 
 
+def test_spec80_bindings_use_executing_tokenizer_bytes(tmp_path, monkeypatch):
+    """The strict report and population commitment bind code, not the alias."""
+    if not _datasketch_available:
+        pytest.skip("strict producer requires Stage A's optional dependency")
+    root = tmp_path / "root"
+    root.mkdir()
+    payload = b"ALPHA beta gamma delta epsilon."
+    record = _write_strict_source(root, payload)
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_bytes(
+        (json.dumps(record, separators=(",", ":")) + "\n").encode("utf-8")
+    )
+    # Isolate digest plumbing from the POSIX directory-descriptor admission
+    # exercised by the existing source-population behavior tests.
+    monkeypatch.setattr(
+        ndd.source_commitment, "load_strict_sources",
+        lambda _manifest, _root: [(1, manifest.read_bytes().rstrip(b"\n"), record, payload)],
+    )
+    report, _passages, _rows = ndd.analyze_passages(
+        manifest, strict_spec80=True, source_root=root, stages=["a", "b"],
+    )
+    inventory = (json.dumps(report, sort_keys=True, separators=(",", ":"),
+                            ensure_ascii=False) + "\n").encode("utf-8")
+    args = type("Args", (), {
+        "threshold": 0.8, "num_perm": 128, "shingle_size": 5,
+        "min_passage_words": 10, "span_shingle_k": 8, "min_span_words": 20,
+    })()
+    commitment = ndd.source_commitment.build_commitment(
+        manifest=manifest, inventory_bytes=inventory,
+        producer_revision="a" * 40, producer_blob_oid="b" * 40,
+        producer_script_bytes=b"# synthetic producer\n",
+        algorithm_parameters=ndd._strict_algorithm_parameters(args),
+        source_kind_by_id={}, root=root,
+    )
+    executing = "sha256:" + hashlib.sha256(
+        Path(ndd.passage_tokenizer_v1.__file__).read_bytes()
+    ).hexdigest()
+    alias = "sha256:" + hashlib.sha256(
+        (Path(ndd.__file__).parent / "passage_tokenizer_v1.py").read_bytes()
+    ).hexdigest()
+    assert executing != alias
+    assert report["spec80_tokenizer"]["implementation_sha256"] == executing
+    assert commitment["algorithm_parameters"]["tokenizer"] == report["spec80_tokenizer"]
+
+
 def test_spec80_refuses_invalid_author_row_before_source_open(tmp_path, monkeypatch):
     root = tmp_path / "root"; root.mkdir()
     row = _strict_record(b"private source")

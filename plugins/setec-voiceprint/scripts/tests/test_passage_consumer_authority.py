@@ -7,6 +7,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from conftest import _digest  # noqa: E402
@@ -40,7 +41,7 @@ def _adjacent(tmp_path: Path) -> tuple[Path, consumer.CompileTimeBindings]:
     adjacent.mkdir()
     builder_raw = b"# synthetic builder fixture\n"
     verifier_raw = b"# synthetic verifier fixture\n"
-    tokenizer_source = SCRIPT_DIR / consumer.TOKENIZER_IMPLEMENTATION_NAME
+    tokenizer_source = Path(consumer.passage_tokenizer_v1.__file__)
     tokenizer_data_source = SCRIPT_DIR / consumer.TOKENIZER_DATA_NAME
     tokenizer_raw = tokenizer_source.read_bytes()
     tokenizer_data_raw = tokenizer_data_source.read_bytes()
@@ -477,6 +478,90 @@ def test_profile_byte_drift_refuses_before_private_root(tmp_path: Path):
             adjacent_dir=adjacent,
             bindings=bindings,
             platform="darwin",
+        )
+
+
+def test_adjacent_profile_binds_executing_tokenizer_not_legacy_copy(tmp_path: Path):
+    adjacent, bindings = _adjacent(tmp_path)
+    # This adjacent legacy path is no longer the executing implementation.
+    legacy = adjacent / consumer.TOKENIZER_IMPLEMENTATION_NAME
+    legacy.write_bytes(b"# decoy legacy alias\n")
+    admitted = consumer.admit_adjacent_authority(adjacent, bindings)
+    assert admitted.profile["tokenizer_implementation_sha256"] == consumer._sha(
+        Path(consumer.passage_tokenizer_v1.__file__).read_bytes()
+    )
+
+    # A self-consistent synthetic profile over those stale bytes still refuses.
+    profile = dict(admitted.profile)
+    profile["tokenizer_implementation_sha256"] = consumer._sha(legacy.read_bytes())
+    profile["tokenizer_implementation_git_blob_oid"] = consumer._blob(legacy.read_bytes())
+    core = dict(profile)
+    del core["profile_commitment_sha256"]
+    profile["profile_commitment_sha256"] = consumer._sha(
+        b"setec-passage-authority-profile-v1\n" + consumer.canonical_frame_v1(core)
+    )
+    raw = consumer._canonical(profile)
+    (adjacent / consumer.PROFILE_NAME).write_bytes(raw)
+    stale = consumer.CompileTimeBindings(
+        policy_status=bindings.policy_status,
+        profile_artifact_sha256=consumer._sha(raw),
+        profile_commitment_sha256=profile["profile_commitment_sha256"],
+        spec_sha256=bindings.spec_sha256, review_sha256=bindings.review_sha256,
+    )
+    with pytest.raises(consumer.AuthorityError, match="^authority_profile_refused$"):
+        consumer.admit_adjacent_authority(adjacent, stale)
+
+
+@pytest.mark.parametrize("unsafe", ["missing", "hardlink", "oversize"])
+def test_executing_tokenizer_keeps_stable_file_refusals(tmp_path, monkeypatch, unsafe):
+    implementation = tmp_path / "implementation.py"
+    implementation.write_bytes(Path(consumer.passage_tokenizer_v1.__file__).read_bytes())
+    monkeypatch.setattr(consumer.passage_tokenizer_v1, "__file__", str(implementation))
+    adjacent, bindings = _adjacent(tmp_path)
+    code = "authority_profile_refused"
+    if unsafe == "missing":
+        implementation.unlink()
+    elif unsafe == "hardlink":
+        (tmp_path / "second-link.py").hardlink_to(implementation)
+    else:
+        monkeypatch.setattr(consumer, "MAX_TOKENIZER_IMPLEMENTATION_BYTES", 1)
+        code = "resource_limit_refused"
+    with pytest.raises(consumer.AuthorityError, match=f"^{code}$"):
+        consumer.admit_adjacent_authority(adjacent, bindings)
+
+
+def test_secondary_executing_tokenizer_read_keeps_resource_limit(tmp_path, monkeypatch):
+    implementation = tmp_path / "implementation.py"
+    implementation.write_bytes(Path(consumer.passage_tokenizer_v1.__file__).read_bytes())
+    monkeypatch.setattr(consumer.passage_tokenizer_v1, "__file__", str(implementation))
+    adjacent, bindings = _adjacent(tmp_path)
+    root, _members, _descriptor = _private_inputs(tmp_path)
+    monkeypatch.setattr(consumer, "MAX_TOKENIZER_IMPLEMENTATION_BYTES", implementation.stat().st_size)
+
+    class SyntheticRoot:
+        def __init__(self, _path):
+            pass
+
+        def __enter__(self):
+            # Profile admission has passed. The secondary stable read must
+            # recheck the executing file's cap before reading private members.
+            implementation.write_bytes(implementation.read_bytes() + b"# drift\n")
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def read_private_member(self, name, _maximum):
+            assert name == ("descriptor.json",)
+            return root.joinpath(*name).read_bytes()
+
+    # Exercise location plumbing without invoking the POSIX private-I/O layer
+    # on Windows; production platform policy stays unchanged.
+    monkeypatch.setattr(consumer, "os", SimpleNamespace(name="posix"))
+    monkeypatch.setattr(consumer, "PinnedPrivateRoot", SyntheticRoot)
+    with pytest.raises(consumer.AuthorityError, match="^resource_limit_refused$"):
+        consumer.admit_validate_inputs(
+            _args(root), adjacent_dir=adjacent, bindings=bindings, platform="darwin",
         )
 
 

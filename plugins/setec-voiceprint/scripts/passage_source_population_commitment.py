@@ -19,7 +19,8 @@ from pathlib import Path
 from typing import Any
 
 import author_corpus_export as author_export
-from passage_tokenizer_v1 import DATA_FILE, load_data
+from setec.core import passage_tokenizer_v1
+from setec.core.passage_tokenizer_v1 import DATA_FILE, load_data
 
 SCHEMA = "setec-passage-source-population-commitment/1"
 RECEIPT_SCHEMA = "setec-passage-source-population-receipt/1"
@@ -331,7 +332,7 @@ def build_commitment(*, manifest: Path, inventory_bytes: bytes, producer_revisio
     for line, raw, row, payload in loaded:
         sources.append({"manifest_line":line,"manifest_row_sha256":_sha(raw),"source_doc_id":row["id"],"text_path":row["text_path"],"source_entry_fingerprint":row["source_entry_fingerprint"],"content_sha256":_sha(payload),"register":row["register"],"source_kind":row["source_kind"]})
     parameters=_validate_algorithm_parameters(algorithm_parameters)
-    parameters["tokenizer"]={"schema":"setec-frozen-unicode-word-lower/1","implementation_sha256":_sha(Path(__file__).with_name("passage_tokenizer_v1.py").read_bytes()),"data_sha256":_sha(DATA_FILE.read_bytes()),"data_commitment_sha256":data["data_commitment_sha256"]}
+    parameters["tokenizer"]={"schema":"setec-frozen-unicode-word-lower/1","implementation_sha256":_sha(Path(passage_tokenizer_v1.__file__).read_bytes()),"data_sha256":_sha(DATA_FILE.read_bytes()),"data_commitment_sha256":data["data_commitment_sha256"]}
     core={"schema":SCHEMA,"producer_revision":producer_revision,"producer_script_git_blob_oid":"sha1:"+producer_blob_oid,"producer_script_sha256":_sha(producer_script_bytes),"algorithm_parameters":parameters,"inventory_semantics":"complete_canonical_passage_report_v1","inventory_sha256":_sha(inventory_bytes),"original_manifest_sha256":_sha(manifest.read_bytes()),"manifest_entry_count":len(sources),"sources":sources,"manifest_source_bijection":{"relation":"one_manifest_row_to_one_source","manifest_rows":len(sources),"admitted_sources":len(sources),"skipped_rows":0,"duplicate_source_ids":0,"duplicate_source_paths":0},"destructive_export_lineage":{"input_population":"original_source_manifest","passage_dedup_applied":False,"parent_passage_export_receipt_sha256":None}}
     core["algorithm_commitment_sha256"]=_digest(b"setec-passage-algorithm-commitment-v1\n", {key:core[key] for key in ("producer_revision","producer_script_git_blob_oid","producer_script_sha256","algorithm_parameters")})
     core["commitment_sha256"]=_digest(b"setec-passage-source-population-commitment-v1\n",core)
