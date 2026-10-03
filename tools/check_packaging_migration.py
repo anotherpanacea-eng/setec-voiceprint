@@ -90,6 +90,7 @@ _P2_BOOTSTRAP_ANCHORS = {
     for name in _L0_MODULES
 }
 _P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/stylometry_distance.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/paragraph_parser.py", "_SCRIPT_DIR"),

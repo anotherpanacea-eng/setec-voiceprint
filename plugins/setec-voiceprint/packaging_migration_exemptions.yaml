@@ -217,6 +217,13 @@ exemptions:
   owner: packaging
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/capabilities.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; runpy does not
@@ -1526,13 +1533,6 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
-  symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at line 1762 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 94 not yet converted
     to setec.paths (P1 lands no production moves)
@@ -1785,20 +1785,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/passage_consumer_authority.py
   symbol: <inline>
   reason: pending relocation (P4); anchor `<inline>` at line 1230 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/passage_source_population_commitment.py
-  symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at line 334 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py
-  symbol: DATA_FILE
-  reason: pending relocation (P4); anchor `DATA_FILE` at line 16 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
