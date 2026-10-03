@@ -65,7 +65,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from setec.core.script_console import enable_utf8_stdio  # noqa: E402
 from claim_license import ClaimLicense  # noqa: E402
-from output_schema import build_output  # noqa: E402
+from output_schema import build_error_output, build_output  # noqa: E402
 
 TASK_SURFACE = "smoothing_diagnosis"
 TOOL_NAME = "sliding_window_heatmap"
@@ -845,6 +845,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _emit_refusal(args, category: str, reason: str) -> None:
+    """Report metadata-only R3 failure when JSON delivery was requested."""
+    if args.json_output_path:
+        print(json.dumps(build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            reason=reason, reason_category=category,
+        ), indent=2))
+
+
 def main(argv: list[str] | None = None) -> int:
     enable_utf8_stdio()
     args = build_arg_parser().parse_args(argv)
@@ -852,7 +861,21 @@ def main(argv: list[str] | None = None) -> int:
         windows_block = load_input(args.input_path)
     except (OSError, json.JSONDecodeError, ValueError) as e:
         sys.stderr.write(f"  failed to load input: {e}\n")
+        _emit_refusal(args, "bad_input", "Could not load sliding-window JSON input.")
         return 2
+
+    # Check both destinations before any rendering or partial publication.
+    for destination, label in ((args.output_path, "heatmap"),
+                               (args.json_output_path, "heatmap JSON")):
+        if destination and not args.allow_public_output and not _is_under_private_root(Path(destination)):
+            sys.stderr.write(
+                f"  refusing to write {label} to non-private path "
+                f"{destination}; either move under "
+                "ai-prose-baselines-private/ or pass "
+                "--allow-public-output explicitly\n"
+            )
+            _emit_refusal(args, "policy_refused", "Refused heatmap output outside the required private directory.")
+            return 3
 
     source_label = (
         args.input_path
@@ -863,14 +886,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.output_path:
         out_path = Path(args.output_path)
-        if not args.allow_public_output and not _is_under_private_root(out_path):
-            sys.stderr.write(
-                "  refusing to write heatmap to non-private path "
-                f"{out_path}; either move under "
-                "ai-prose-baselines-private/ or pass "
-                "--allow-public-output explicitly\n"
-            )
-            return 3
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(report, encoding="utf-8")
         sys.stderr.write(f"  wrote heatmap report → {out_path}\n")
@@ -879,14 +894,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json_output_path:
         jpath = Path(args.json_output_path)
-        if not args.allow_public_output and not _is_under_private_root(jpath):
-            sys.stderr.write(
-                "  refusing to write heatmap JSON to non-private "
-                f"path {jpath}; either move under "
-                "ai-prose-baselines-private/ or pass "
-                "--allow-public-output explicitly\n"
-            )
-            return 3
         jpath.parent.mkdir(parents=True, exist_ok=True)
         jpath.write_text(
             json.dumps(
