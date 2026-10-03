@@ -29,7 +29,8 @@ from passage_remediation import (
     _OversizePrivateIOError,
 )
 from passage_source_population_commitment import canonical_frame_v1
-from passage_tokenizer_v1 import TokenizerDataError, load_data
+from setec.core import passage_tokenizer_v1
+from setec.core.passage_tokenizer_v1 import TokenizerDataError, load_data
 from reconstructibility_probe_set import (
     ProbeSetError,
     portable_collision_key,
@@ -980,7 +981,7 @@ def admit_adjacent_authority(
         adjacent_dir / PROFILE_NAME, MAX_PROFILE_BYTES,
     )
     tokenizer_raw = _stable_adjacent(
-        adjacent_dir / TOKENIZER_IMPLEMENTATION_NAME,
+        Path(passage_tokenizer_v1.__file__),
         MAX_TOKENIZER_IMPLEMENTATION_BYTES,
     )
     tokenizer_data_raw = _stable_adjacent(
@@ -1160,7 +1161,7 @@ def admit_validate_inputs(
             total = (
                 len(authority.profile_bytes)
                 + len(_stable_adjacent(
-                    adjacent_dir / TOKENIZER_IMPLEMENTATION_NAME,
+                    Path(passage_tokenizer_v1.__file__),
                     MAX_TOKENIZER_IMPLEMENTATION_BYTES,
                 ))
                 + len(_stable_adjacent(

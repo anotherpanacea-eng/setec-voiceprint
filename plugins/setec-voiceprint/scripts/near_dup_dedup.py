@@ -100,7 +100,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import pool_guard  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
 import passage_source_population_commitment as source_commitment  # noqa: E402
-import passage_tokenizer_v1  # noqa: E402
+from setec.core import passage_tokenizer_v1  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 
@@ -1846,7 +1846,7 @@ def analyze_passages(
         report["spec80_tokenizer"] = {
             "schema": "setec-frozen-unicode-word-lower/1",
             "implementation_sha256": "sha256:" + hashlib.sha256(
-                Path(__file__).with_name("passage_tokenizer_v1.py").read_bytes()
+                Path(passage_tokenizer_v1.__file__).read_bytes()
             ).hexdigest(),
             "data_sha256": "sha256:" + hashlib.sha256(
                 passage_tokenizer_v1.DATA_FILE.read_bytes()

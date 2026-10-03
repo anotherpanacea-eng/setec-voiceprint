@@ -125,6 +125,53 @@ The migration checker derives module shapes and anchors directly from the candid
 
 `tools/check_layering.py` derives the live graph itself. The initial exceptional edge file is generated once from the merge-base graph, committed, and exact-diff reviewed; nobody types an approximate seed. New edges are errors. Existing exceptional edges may only disappear. L2 cycles are errors. Layer exemptions use the same migration-exemptions file; `--strict` treats expired or unmatched rows as errors.
 
+### Frozen tokenizer relocation amendment
+
+The frozen tokenizer is eligible for a separately scoped P3 relocation from
+`scripts/passage_tokenizer_v1.py` to `scripts/setec/core/passage_tokenizer_v1.py`.
+This amendment changes location plumbing, not tokenizer or authority policy.
+It supplies a contract, not an implemented relocation or profile ratification.
+
+Required behavior remains unchanged: token values and offsets, frozen range and
+lowercase lookup, no host Unicode normalization, errors, public/private APIs,
+ordinary package/legacy module identity, and legacy `TokenizerDataError` identity
+including its historical serialization module name. Keep the old path as the
+ordinary permanent alias; it is not the implementation whose bytes are bound.
+
+Leave `scripts/passage_tokenizer_data_v1.json` at its existing location with its
+committed canonical bytes unchanged. Retarget data lookup through the existing
+`setec.paths.scripts_dir()` accessor. Preserve the loader's closed schema, canonical
+JSON with exactly one LF, commitment validation and refusals. Do not accept CRLF,
+normalize malformed data or substitute host Unicode tables to pass qualification.
+
+Necessary location edits may change implementation bytes. Behavioral equivalence
+does not promise unchanged implementation digests or byte-identical derived
+commitments. Preserve existing digest algorithms, fields and schemas, but bind
+actual executing package implementation bytes rather than the alias in these
+existing consumers:
+
+- `near_dup_dedup.py`: strict Spec80 `spec80_tokenizer.implementation_sha256`.
+- `passage_source_population_commitment.py`: `parameters.tokenizer.implementation_sha256`.
+- `passage_consumer_authority.py`: the stable implementation read in
+  `admit_adjacent_authority()` and the secondary implementation read used for its
+  existing total byte-count check.
+
+Keep existing stable-file, type, identity, size, link and profile checks. Do not
+automatically mint, rebind, replace or ratify profiles: stale implementation
+bindings continue to refuse. Preserve compile-time policy and unresolved/ratified
+distinctions. No new profile format, resolver framework, cache, identity registry,
+approval mechanism, or new/restored guard is required or authorized here.
+
+Qualification must compare the actual baseline and candidate on canonical
+checkouts containing committed table bytes; a checkout-conversion defect is not
+a relocation regression or permission to weaken the loader. Proportionate checks
+should reuse tokenizer vectors/refusals, strict/legacy deduplication, source
+population bindings and synthetic authority fixtures. Cover alias/exception
+identity, copied-plugin data lookup, actual implementation digest inputs and
+stale-profile refusal. These are verification suggestions, not a requirement for
+another permanent checking system. Acquire implementation/test paths separately;
+no model load, real authority activation or private prose is needed for this move.
+
 ## 5. Drift, reachability, and truthful degradation
 
 `check_capabilities_drift.py` and `seed_capabilities.py` share package-aware discovery. The drift parser follows the pinned static `TASK_SURFACE` import in a launcher to the implementation. Package implementations are not double-counted as new flat surfaces. For every manifest entry, CI proves: the recorded path exists in a scratch plugin copy, resolves without following repo-root symlinks, has a matching implementation, and retains its declared `TASK_SURFACE`.
