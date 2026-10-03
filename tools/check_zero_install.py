@@ -392,6 +392,65 @@ def check_paragraph_conformance(bare_root: Path, outside_cwd: Path, report: Repo
             report.add(f"paragraph:{name}", False, str(exc))
 
 
+def check_repetition_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Exercise the whole family without promoting its two TODO entries."""
+    scripts = bare_root / "scripts"
+    target = outside_cwd / "repetition-input.txt"
+    target.write_text(
+        "# Chapter 1\nCopper copper copper lantern.\n"
+        "# Chapter 2\nSilver silver silver lantern.\n", encoding="utf-8",
+    )
+    baseline = outside_cwd / "repetition-baseline"
+    baseline.mkdir(exist_ok=True)
+    (baseline / "reference.txt").write_text("Lantern river stone.\n", encoding="utf-8")
+    runpy_code = (
+        "import runpy, sys; path = sys.argv.pop(1); old = sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path, run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    # The manuscript helper has optional model imports. -S deliberately keeps
+    # these stdlib-only family routes model-free in a bare plugin.
+    for stem in ("repetition_audit", "manuscript_repetition_audit", "chapter_distinctiveness_audit"):
+        launcher = scripts / (stem + ".py")
+        args = [str(target), "--json"]
+        if stem != "chapter_distinctiveness_audit":
+            args += ["--baseline-dir", str(baseline)]
+        commands = [
+            ("direct", ["-S", str(launcher), *args], outside_cwd),
+            ("runpy", ["-S", "-c", runpy_code, str(launcher), *args], outside_cwd),
+            ("module", ["-S", "-m", "setec.surfaces." + stem, *args], scripts),
+            ("dispatch", [str(scripts / "setec_run.py"), stem, *args], outside_cwd),
+        ]
+        for mode, argv, cwd in commands:
+            todo = mode == "dispatch" and stem != "repetition_audit"
+            expected = {"schema_version": "1.0", "tool": "setec_run" if todo else stem,
+                        "task_surface": None if todo else "smoothing_diagnosis",
+                        "available": not todo}
+            try:
+                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                      capture_output=True, text=True, timeout=30)
+                envelope = json.loads(proc.stdout)
+                ok = proc.returncode == (2 if todo else 0) and "Traceback" not in proc.stderr
+                ok = ok and isinstance(envelope, dict) and all(
+                    envelope.get(key) == value for key, value in expected.items()
+                )
+                if todo:
+                    ok = ok and envelope.get("surface") == stem and envelope.get("reason_category") == "bad_input"
+                    ok = ok and f"unknown surface '{stem}'" in envelope.get("reason", "")
+                else:
+                    results = envelope.get("results")
+                    ok = ok and isinstance(results, dict)
+                    if stem == "repetition_audit":
+                        ok = ok and any(c.get("word") == "copper" and c.get("count") == 3
+                                        for c in results.get("candidates", []))
+                    else:
+                        ok = ok and results.get("n_chapters") == 2
+                report.add(f"{stem}:{mode}", ok,
+                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+            except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+                report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -403,6 +462,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_setec_run_bare_dispatch(bare_root, outside_cwd, report)
         check_punctuation_conformance(bare_root, outside_cwd, report)
         check_paragraph_conformance(bare_root, outside_cwd, report)
+        check_repetition_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)
