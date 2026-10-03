@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "Standard-library rendering with in-repo helpers, no model, API or fresh scoring. No optional runtime dependencies are required. Reads the complete JSON and constructs window/signal grids in memory. Upstream measurement costs and heuristic caveats remain separate; Explicit files need a resolved ai-prose-baselines-private path component unless opted out. This path convention does not check permissions; stdout is not guarded. Paths and localization output can be sensitive without prose.",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -10,31 +10,55 @@
     "python": []
   },
   "do_not_use_when": [
-    "TODO"
+    "Input is raw manuscript prose or a non-windowed audit; this renderer requires a windows block.",
+    "You need a fresh score, baseline comparison or full upstream schema/provenance validation.",
+    "You want calibrated per-zone certainty, an authorship or AI verdict, or automatic scene-defect decisions.",
+    "Upstream register or baseline caveats make the window measurements inappropriate; rendering does not resolve those caveats."
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/sliding_window_heatmap.py --in windows.json --out ai-prose-baselines-private/heatmap.md --json-out ai-prose-baselines-private/heatmap.json",
+      "description": "Render existing window measurements to explicitly private Markdown and JSON paths; routing registers inherit upstream applicability, not new calibration."
+    }
+  ],
+  "family": "variance-localization",
   "handoff": "none",
   "id": "sliding_window_heatmap",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--in JSON path or '-' (default stdin).",
+      "--out caller-named Markdown path (otherwise Markdown stdout).",
+      "--json-out caller-named schema 1.0 sidecar path; there is no --json flag.",
+      "--allow-public-output explicitly bypasses the private-root output-path convention for already-public material; it is not required for ordinary private output."
+    ],
+    "required": [
+      "Existing sliding-window measurements as a raw windows block, legacy top-level windows, or current results.windows envelope; this is not full upstream schema/provenance validation."
+    ],
+    "target": "variance_audit sliding-window JSON via stdin or --in (not manuscript prose)."
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Optional caller-named Markdown file (for example heatmap.md); Markdown stdout is the default.",
+      "Optional caller-named JSON sidecar (for example heatmap.json); target.path identifies the input JSON path ('-' for stdin) and target.words is zero, not the manuscript count."
     ],
     "schema_version": "1.0"
   },
-  "purpose": "render variance_audit sliding-window output as a heatmap.",
-  "references": [],
+  "purpose": "Render already-measured variance_audit window bands and flagged signals as a Markdown localization heatmap with an optional JSON sidecar. Heuristic operator cues for further investigation, not calibrated per-zone judgments.",
+  "references": [
+    "plugins/setec-voiceprint/scripts/sliding_window_heatmap.py",
+    "plugins/setec-voiceprint/capabilities.d/variance_audit.yaml"
+  ],
   "registers": [
-    "TODO"
+    "literary_fiction",
+    "blog_essay",
+    "academic_philosophy",
+    "long_form_journalism"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/sliding_window_heatmap.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "You have sliding-window variance diagnostics and want to inspect word-coordinate hot zones, dominant signals and phenomenon cues.",
+    "You want to visualize existing measurements without running fresh scoring or loading a model."
   ]
 }
