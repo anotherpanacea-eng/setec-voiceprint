@@ -492,14 +492,19 @@ def _exemption_key(row: dict[str, Any]) -> tuple[Any, Any, Any]:
     return (row.get("from_path"), row.get("to_path"), row.get("edge_kind"))
 
 
-def _ratchet_key(row: dict[str, Any]) -> tuple[Any, Any, Any]:
-    """Compare the same dependency across the three P2 module moves.
+def _ratchet_key(
+    row: dict[str, Any], surface_moves: dict[str, str] | None = None,
+) -> tuple[Any, Any, Any]:
+    """Compare the same dependency across P2 and verified surface moves.
 
     Live exemption matching and ghost checks still use actual paths. Only
     the merge-base comparison translates these exact old/new identities;
     changing the other endpoint or edge kind remains a new dependency.
     """
     fp, tp, kind = _exemption_key(row)
+    moves = surface_moves or {}
+    if kind == "l2_to_l2":
+        fp, tp = moves.get(fp, fp), moves.get(tp, tp)
     return (_P2_LEGACY_PATHS.get(fp, fp), _P2_LEGACY_PATHS.get(tp, tp), kind)
 
 
@@ -815,8 +820,23 @@ def check_ratchet(base_sha: str) -> list[str]:
         new_rows = load_layer_exemptions()
     except (ValueError, ImportError):
         return []
-    new_keys = {_ratchet_key(r) for r in new_rows if isinstance(r, dict)}
-    added = sorted(new_keys - old_keys, key=lambda k: (k[2] or "", k[0] or "", k[1] or ""))
+    # Only old dependency endpoints with an actual pinned ordinary launcher
+    # can retain their identity at the package location. This translates
+    # locations, not edge kinds or the opposite endpoint of a dependency.
+    surface_moves = {}
+    old_endpoints = {
+        path for row in old_rows if isinstance(row, dict)
+        for path in (row.get("from_path"), row.get("to_path"))
+        if isinstance(path, str)
+    }
+    for legacy in old_endpoints:
+        target = (Path(legacy).parent / "setec/surfaces" / Path(legacy).name).as_posix()
+        if _is_permanent_surface_launcher(legacy, target):
+            surface_moves[target] = legacy
+    added = sorted({
+        _exemption_key(r) for r in new_rows if isinstance(r, dict)
+        and _ratchet_key(r, surface_moves) not in old_keys
+    }, key=lambda k: (k[2] or "", k[0] or "", k[1] or ""))
     added = [
         (fp, tp, kind) for fp, tp, kind in added
         if not (kind == "l2_to_l2" and (
