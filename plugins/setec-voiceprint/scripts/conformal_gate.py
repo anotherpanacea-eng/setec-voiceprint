@@ -129,6 +129,15 @@ def _nonconformity(values: list[float], direction: str,
     return list(values)  # higher_is_nonconforming
 
 
+def _require_probability(value: float, *, name: str) -> None:
+    try:
+        valid = math.isfinite(value) and 0 < value < 1
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be finite and strictly between 0 and 1") from exc
+    if not valid:
+        raise ValueError(f"{name} must be finite and strictly between 0 and 1")
+
+
 def conformal_p(calibration: list[float], score: float, *,
                 direction: str) -> float:
     """Split-conformal p-value: (1 + #{cal_nc >= score_nc}) / (n + 1).
@@ -180,6 +189,7 @@ def threshold_at_fpr_bound(
     tail and is rejected. Pure stdlib; no model. Returns a dict; an empty
     calibration set yields ``available=False``."""
     _require_finite_scores(calibration, name="calibration")
+    _require_probability(fpr_bound, name="fpr_bound")
     if direction not in FPR_BOUND_DIRECTIONS:
         return {
             "available": False,
@@ -317,6 +327,7 @@ def gate_fpr_bound(
 
 def gate_one_class(calibration: list[float], score: float, *, alpha: float,
                    direction: str, reference_label: str) -> dict[str, Any]:
+    _require_probability(alpha, name="alpha")
     p = conformal_p(calibration, score, direction=direction)
     in_set = p > alpha
     return {
@@ -335,6 +346,7 @@ def gate_one_class(calibration: list[float], score: float, *, alpha: float,
 def gate_two_class(cal_ref: list[float], cal_pos: list[float], score: float, *,
                    alpha: float, direction: str, reference_label: str,
                    positive_label: str) -> dict[str, Any]:
+    _require_probability(alpha, name="alpha")
     p_ref = conformal_p(cal_ref, score, direction=direction)
     p_pos = conformal_p(cal_pos, score, direction=direction)
     pred = []
