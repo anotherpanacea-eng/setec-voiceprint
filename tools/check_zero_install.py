@@ -833,6 +833,88 @@ def check_argument_consistency_conformance(bare_root: Path, outside_cwd: Path, r
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
+def check_non_voice_structure_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Whole stdlib descriptive surfaces; normalized dispatch remains unsupported."""
+    scripts = bare_root / "scripts"
+    target = outside_cwd / "structure-input.md"
+    target.write_text("# Heading\n\n" + "word " * 320 +
+                      "\n- at the end of the day\n> according to Smith (Smith, 2019)\n"
+                      "[source](https://example.com/p)\n", encoding="utf-8")
+    short = outside_cwd / "structure-short.md"
+    short.write_text("A short document.", encoding="utf-8")
+    runpy_code = (
+        "import runpy,sys; path=sys.argv.pop(1); old=sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path,run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    for stem, surface in (("document_layout_audit", "document_layout"),
+                          ("formulaicity_audit", "formulaicity"),
+                          ("reference_ecology_audit", "reference_ecology")):
+        launcher = scripts / (stem + ".py")
+        identity = (
+            "import importlib,sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+            "a=importlib.import_module(sys.argv[2]); b=importlib.import_module('setec.surfaces.'+sys.argv[2]); "
+            "assert a is b and a.SCRIPT_DIR==Path(sys.argv[1]); "
+            "a.count_words=lambda text:17; assert b.count_words('ignored')==17; "
+            "b.count_words=lambda text:23; assert a.count_words('ignored')==23; "
+            "assert not any(n in sys.modules for n in ('torch','spacy','transformers','anthropic','openai'))"
+        )
+        for mode in ("identity", "direct", "runpy", "module", "output_file", "short", "missing_input", "dispatch"):
+            output = outside_cwd / (stem + "-structure.json")
+            input_path = short if mode == "short" else outside_cwd / "absent-structure.md" if mode == "missing_input" else target
+            args = [str(input_path), "--json"]
+            if mode == "output_file":
+                args += ["--out", str(output)]
+            cwd = outside_cwd
+            if mode == "identity":
+                argv = ["-S", "-c", identity, str(scripts), stem]
+            elif mode == "module":
+                argv, cwd = ["-S", "-m", "setec.surfaces." + stem, *args], scripts
+            elif mode == "runpy":
+                argv = ["-S", "-c", runpy_code, str(launcher), *args]
+            elif mode == "dispatch":
+                argv = [str(scripts / "setec_run.py"), stem, *args]
+            else:
+                argv = ["-S", str(launcher), *args]
+            try:
+                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                      capture_output=True, text=True, timeout=30)
+                ok = "Traceback" not in proc.stderr
+                if mode == "identity":
+                    ok = ok and proc.returncode == 0
+                elif mode == "missing_input":
+                    ok = ok and proc.returncode == 2 and not proc.stdout.strip() and "Input not found:" in proc.stderr
+                else:
+                    envelope = json.loads(output.read_text(encoding="utf-8") if mode == "output_file" else proc.stdout)
+                    dispatch = mode == "dispatch"
+                    unavailable = dispatch or mode == "short"
+                    expected = {"schema_version": "1.0", "tool": "setec_run" if dispatch else stem,
+                                "task_surface": None if dispatch else surface, "available": not unavailable}
+                    ok = ok and proc.returncode == (2 if dispatch else 0) and isinstance(envelope, dict)
+                    ok = ok and all(envelope.get(k) == v for k, v in expected.items())
+                    if dispatch:
+                        ok = ok and envelope.get("surface") == stem and envelope.get("reason_category") == "bad_input"
+                        ok = ok and f"unknown surface '{stem}'" in envelope.get("reason", "")
+                    elif mode == "short":
+                        ok = ok and envelope.get("results") == {} and envelope.get("claim_license") is None
+                        ok = ok and any("300-word" in w for w in envelope.get("warnings", []))
+                    else:
+                        results = envelope.get("results", {})
+                        ok = ok and isinstance(envelope.get("claim_license"), dict)
+                        if surface == "document_layout":
+                            ok = ok and results.get("headings", {}).get("count") == 1
+                        elif surface == "formulaicity":
+                            ok = ok and results.get("total_hits") == 1
+                        else:
+                            ok = ok and results.get("citations", {}).get("parenthetical") == 1
+                    if mode == "output_file":
+                        ok = ok and not proc.stdout.strip() and "Wrote report to" in proc.stderr
+                report.add(f"{stem}:{mode}", ok,
+                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
+                report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -850,6 +932,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_argument_pattern_conformance(bare_root, outside_cwd, report)
         check_argument_quality_conformance(bare_root, outside_cwd, report)
         check_argument_consistency_conformance(bare_root, outside_cwd, report)
+        check_non_voice_structure_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

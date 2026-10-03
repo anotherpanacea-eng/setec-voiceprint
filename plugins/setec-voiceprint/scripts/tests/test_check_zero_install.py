@@ -68,7 +68,51 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     zi.check_argument_pattern_conformance(bare_root, tmp_path, report)
     zi.check_argument_quality_conformance(bare_root, tmp_path, report)
     zi.check_argument_consistency_conformance(bare_root, tmp_path, report)
+    zi.check_non_voice_structure_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
+
+
+@pytest.mark.parametrize("stem", ["document_layout_audit", "formulaicity_audit", "reference_ecology_audit"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_non_voice_normalized_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope["available"] = True
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_non_voice_structure_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("stem,surface", [("document_layout_audit", "document_layout"),
+                                         ("formulaicity_audit", "formulaicity"),
+                                         ("reference_ecology_audit", "reference_ecology")])
+@pytest.mark.parametrize("change", ["promoted", "licensed", "wrong_exit"])
+def test_non_voice_short_input_is_unavailable_not_an_error(tmp_path, stem, surface, change):
+    envelope = {"schema_version": "1.0", "tool": stem, "task_surface": surface,
+                "available": False, "results": {}, "claim_license": None,
+                "warnings": ["below the 300-word floor"]}
+    code = 0
+    if change == "promoted":
+        envelope["available"] = True
+    elif change == "licensed":
+        envelope["claim_license"] = {"licenses": "fabricated"}
+    else:
+        code = 2
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_non_voice_structure_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":short").passed
 
 
 def test_make_bare_copy_refuses_source_symlinks(tmp_path, monkeypatch):

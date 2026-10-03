@@ -1245,12 +1245,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/document_layout_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 49 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section 2).
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 81 not yet converted
@@ -1364,12 +1364,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/formulaicity_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 36 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section 2).
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 49 not yet converted
@@ -1907,12 +1907,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 43 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section 2).
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/register_sweep.py
   symbol: classifier
   reason: pending relocation (P4); anchor `classifier` at line 1604 not yet converted
@@ -2339,6 +2339,27 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 layer_exemptions:
+- from_path: plugins/setec-voiceprint/scripts/document_layout_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/document_layout_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/formulaicity_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/formulaicity_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/reference_ecology_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
+  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/cross_doc_argument_consistency.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/cross_doc_argument_consistency.py
   edge_kind: l2_to_l2
