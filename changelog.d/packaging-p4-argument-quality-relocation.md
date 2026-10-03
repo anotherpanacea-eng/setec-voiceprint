@@ -1,4 +1,6 @@
-### PATCH — whole argument-quality/calibration relocation
+### Changed
+
+PATCH — whole argument-quality/calibration relocation.
 
 Move `argquality_dimension_profile` and `argument_certainty_calibration` into
 `setec.surfaces`, retaining permanent legacy module aliases and scripts-root
