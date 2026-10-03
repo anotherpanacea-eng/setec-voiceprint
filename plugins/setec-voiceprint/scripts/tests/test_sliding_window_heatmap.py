@@ -81,7 +81,32 @@ def _make_windows_block(windows: list[dict]) -> dict:
 # ------------------- Loading -----------------------------------
 
 
+def _current_envelope(windows, monkeypatch):
+    # The producer's optional tokenizer initialization must not fetch data.
+    try:
+        import nltk
+    except ImportError:
+        pass
+    else:
+        monkeypatch.setattr(nltk, "download", lambda *args, **kwargs: False)
+    import variance_audit as va
+    return va.build_audit_payload({"windows": windows}, target_path="synthetic.txt")
+
+
 class TestLoading:
+    def test_load_current_variance_envelope(self, monkeypatch):
+        windows = _make_windows_block([
+            _make_window(start_word=0, end_word=500,
+                         band="Lightly smoothed", fraction=0.10),
+        ])
+        envelope = _current_envelope(windows, monkeypatch)
+        assert swh.load_windows_block(envelope) == windows
+
+    @pytest.mark.parametrize("results", [None, [], "invalid", {}, {"windows": None}, {"windows": []}])
+    def test_reject_nonwindowed_or_malformed_envelope(self, results):
+        with pytest.raises(ValueError):
+            swh.load_windows_block({"schema_version": "1.0", "results": results})
+
     def test_load_windows_block_accepts_full_audit_output(self):
         full = {
             "audit": {},
@@ -434,6 +459,30 @@ class TestPrivacyGuard:
 
 
 class TestCli:
+    @pytest.mark.parametrize("stdin", [False, True])
+    def test_cli_current_variance_envelope(self, tmp_path, monkeypatch, stdin):
+        from io import StringIO
+
+        windows = _make_windows_block([
+            _make_window(start_word=0, end_word=500,
+                         band="Heavily smoothed", fraction=0.55,
+                         flagged=["burstiness_B"]),
+        ])
+        envelope = _current_envelope(windows, monkeypatch)
+        raw = json.dumps(envelope)
+        in_path = tmp_path / "audit.json"
+        in_path.write_text(raw, encoding="utf-8")
+        monkeypatch.setattr(sys, "stdin", StringIO(raw))
+        out_dir = tmp_path / "ai-prose-baselines-private"
+        markdown = out_dir / "heatmap.md"
+        sidecar = out_dir / "heatmap.json"
+        assert swh.main(["--in", "-" if stdin else str(in_path),
+                         "--out", str(markdown), "--json-out", str(sidecar)]) == 0
+        assert "# Sliding-window compression heatmap" in markdown.read_text(encoding="utf-8")
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        assert payload["results"]["n_windows"] == 1
+        assert payload["schema_version"] == "1.0"
+
     def test_cli_round_trip_to_files(self, tmp_path, monkeypatch, capsys):
         windows = [
             _make_window(start_word=0, end_word=500,
