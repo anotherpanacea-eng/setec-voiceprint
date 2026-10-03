@@ -561,6 +561,90 @@ def check_argument_conformance(bare_root: Path, outside_cwd: Path, report: Repor
             report.add(f"{stem}:{mode}", False, str(exc))
 
 
+def check_argument_pattern_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Offline whole-family launch routes; only AGD retains normalized delivery."""
+    scripts = bare_root / "scripts"
+    target = outside_cwd / "pattern-input.txt"
+    target.write_text("Because evidence matters, we should act. Therefore the council may want to reconsider. " * 20,
+                      encoding="utf-8")
+    runpy_code = (
+        "import runpy, sys; path = sys.argv.pop(1); old = sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path, run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    for stem in ("agd_move_scan", "enthymeme_gapflag", "fallacy_scan", "warrant_probe"):
+        launcher = scripts / (stem + ".py")
+        structural = stem == "enthymeme_gapflag"
+        consumer = stem == "agd_move_scan"
+        surface = stem if consumer else "argument_pattern_scan"
+        args = (["--target", str(target)] if structural else [str(target), "--judge", "mock"]) + ["--json"]
+        missing = outside_cwd / "absent-pattern.txt"
+        missing_args = (["--target", str(missing)] if structural else [str(missing), "--judge", "mock"]) + ["--json"]
+        identity = (
+            "import importlib,sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
+            "a=importlib.import_module(sys.argv[2]); b=importlib.import_module('setec.surfaces.'+sys.argv[2]); "
+            "assert a is b; assert a.SCRIPT_DIR == Path(sys.argv[1]); "
+            "b.count_words=lambda text:17; assert a.count_words('ignored')==17; "
+            "a.count_words=lambda text:23; assert b.count_words('ignored')==23; "
+            "assert not any(n in sys.modules for n in ('torch','spacy','transformers','anthropic','openai'))"
+        )
+        commands = [
+            ("identity", ["-S", "-c", identity, str(scripts), stem], outside_cwd),
+            ("direct", ["-S", str(launcher), *args], outside_cwd),
+            ("runpy", ["-S", "-c", runpy_code, str(launcher), *args], outside_cwd),
+            ("module", ["-S", "-m", "setec.surfaces." + stem, *args], scripts),
+            ("dispatch", [str(scripts / "setec_run.py"), stem, *args], outside_cwd),
+            ("missing_input", ["-S", str(launcher), *missing_args], outside_cwd),
+        ]
+        if consumer:
+            commands.extend([
+                ("missing_judge", [str(scripts / "setec_run.py"), stem, str(target), "--json"], outside_cwd),
+                ("missing_manifest", [str(scripts / "setec_run.py"), stem, str(target),
+                                      "--judge", "manifest", "--json"], outside_cwd),
+            ])
+        for mode, argv, cwd in commands:
+            try:
+                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                      capture_output=True, text=True, timeout=30)
+                ok = "Traceback" not in proc.stderr
+                if mode == "identity":
+                    ok = ok and proc.returncode == 0
+                else:
+                    envelope = json.loads(proc.stdout)
+                    unknown = mode == "dispatch" and not consumer
+                    setup = mode in {"missing_judge", "missing_manifest"}
+                    missing_input = mode == "missing_input"
+                    refusal = unknown or setup or missing_input
+                    dispatcher_error = unknown or mode == "missing_judge"
+                    expected = {"schema_version": "1.0", "tool": "setec_run" if dispatcher_error else stem,
+                                "task_surface": None if dispatcher_error else surface, "available": not refusal}
+                    expected_exit = 2 if unknown else 3 if setup or (missing_input and structural) else 0
+                    ok = ok and proc.returncode == expected_exit and isinstance(envelope, dict)
+                    ok = ok and all(envelope.get(k) == v for k, v in expected.items())
+                    if refusal:
+                        ok = ok and envelope.get("reason_category") == "bad_input"
+                        if unknown or setup:
+                            message = (f"unknown surface '{stem}'" if unknown else
+                                       "judge construction failed" if mode == "missing_manifest" else "--judge")
+                            ok = ok and message in envelope.get("reason", "")
+                            if dispatcher_error:
+                                ok = ok and envelope.get("surface") == stem
+                        else:
+                            ok = ok and "cannot read" in envelope.get("reason", "")
+                    else:
+                        results = envelope.get("results")
+                        key = {"agd_move_scan": "observations", "enthymeme_gapflag": "enthymeme_gap_flags",
+                               "fallacy_scan": "rhetorical_move_flags", "warrant_probe": "warrant_coverage"}[stem]
+                        ok = ok and isinstance(results, dict) and isinstance(results.get(key), list)
+                        ok = ok and isinstance(envelope.get("claim_license"), dict)
+                        if not structural:
+                            ok = ok and results.get("judge", {}).get("judge_identity", {}).get("kind") == "mock"
+                report.add(f"{stem}:{mode}", ok,
+                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+            except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+                report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -575,6 +659,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_repetition_conformance(bare_root, outside_cwd, report)
         check_narrative_conformance(bare_root, outside_cwd, report)
         check_argument_conformance(bare_root, outside_cwd, report)
+        check_argument_pattern_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

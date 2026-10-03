@@ -65,6 +65,7 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     zi.check_repetition_conformance(bare_root, tmp_path, report)
     zi.check_narrative_conformance(bare_root, tmp_path, report)
     zi.check_argument_conformance(bare_root, tmp_path, report)
+    zi.check_argument_pattern_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -390,6 +391,73 @@ def test_argument_setup_refusals_stay_truthful(tmp_path, mode, message, change):
     with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
         zi.check_argument_conformance(tmp_path, tmp_path, report)
     assert not next(r for r in report.results if r.name == stem + ":" + mode).passed
+
+
+@pytest.mark.parametrize("change", ["wrong_surface", "wrong_exit", "unavailable", "missing_license"])
+def test_agd_dispatch_requires_real_success(tmp_path, change):
+    envelope = {"schema_version": "1.0", "tool": "agd_move_scan", "task_surface": "agd_move_scan",
+                "available": True, "claim_license": {},
+                "results": {"observations": [], "judge": {"judge_identity": {"kind": "mock"}}}}
+    code = 0
+    if change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    elif change == "wrong_exit":
+        code = 1
+    elif change == "unavailable":
+        envelope["available"] = False
+    else:
+        del envelope["claim_license"]
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == "agd_move_scan:dispatch").passed
+
+
+@pytest.mark.parametrize("stem", ["enthymeme_gapflag", "fallacy_scan", "warrant_probe"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_argument_pattern_nonconsumer_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface="argument_pattern_scan")
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
+
+
+@pytest.mark.parametrize("mode", ["missing_judge", "missing_manifest"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_agd_setup_refusals_preserve_actual_envelopes(tmp_path, mode, change):
+    wrapped = mode == "missing_judge"
+    envelope = {"schema_version": "1.0", "tool": "setec_run" if wrapped else "agd_move_scan",
+                "task_surface": None if wrapped else "agd_move_scan", "available": False,
+                "reason_category": "bad_input",
+                "reason": "--judge required" if wrapped else "judge construction failed: manifest_path"}
+    if wrapped:
+        envelope["surface"] = "agd_move_scan"
+    code = 3
+    if change == "promoted":
+        envelope["available"] = True
+    elif change == "wrong_reason":
+        envelope["reason"] = "cannot open launcher"
+    elif change == "wrong_surface":
+        envelope["task_surface"] = "other"
+    else:
+        code = 2
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
+        zi.check_argument_pattern_conformance(tmp_path, tmp_path, report)
+    assert not next(r for r in report.results if r.name == "agd_move_scan:" + mode).passed
 
 
 def test_reachability_checks_every_entry_in_fragment(tmp_path):
