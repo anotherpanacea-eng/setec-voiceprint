@@ -1092,12 +1092,11 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 40 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x ordinary launcher bootstrap; implementation uses setec.paths.scripts_dir().
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 113 not yet converted
@@ -1505,12 +1504,11 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 40 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x ordinary launcher bootstrap; implementation uses setec.paths.scripts_dir().
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 95 not yet converted
@@ -1957,12 +1955,11 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/repetition_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 28 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x ordinary launcher bootstrap; implementation uses setec.paths.scripts_dir().
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/replication/feature_dedup.py
   symbol: PARENT_DIR
   reason: pending relocation (P4); anchor `PARENT_DIR` at line 55 not yet converted
@@ -2321,6 +2318,27 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 layer_exemptions:
+- from_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/repetition_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: bb39aae1ffdb75cc53996b0d6772d0eebb7161a7
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/manuscript_repetition_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: bb39aae1ffdb75cc53996b0d6772d0eebb7161a7
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/chapter_distinctiveness_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: bb39aae1ffdb75cc53996b0d6772d0eebb7161a7
+  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/setec/contract/capabilities.py
   to_path: plugins/setec-voiceprint/scripts/s5_distance.py
   edge_kind: l0_outbound
@@ -3266,7 +3284,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/chapter_distinctiveness_audit.py
   to_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3279,8 +3297,8 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
-  to_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/chapter_distinctiveness_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/repetition_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py\
@@ -3862,7 +3880,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/manuscript_repetition_audit.py
   to_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3875,8 +3893,8 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
-  to_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/manuscript_repetition_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/repetition_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py\

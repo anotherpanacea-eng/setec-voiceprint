@@ -62,6 +62,7 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     report = zi.Report()
     zi.check_punctuation_conformance(bare_root, tmp_path, report)
     zi.check_paragraph_conformance(bare_root, tmp_path, report)
+    zi.check_repetition_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -258,6 +259,41 @@ def test_reachability_requires_exported_alias_surface(tmp_path, case, source):
     report = zi.Report()
     zi.check_structural_reachability(tmp_path, report)
     assert report.passed is (case in {"valid", "type_only", "function_local", "class_local"})
+
+
+@pytest.mark.parametrize("stem", [
+    "repetition_audit", "manuscript_repetition_audit", "chapter_distinctiveness_audit",
+])
+def test_repetition_conformance_rejects_wrong_surface(tmp_path, stem):
+    wrong = {"schema_version": "1.0", "tool": stem, "task_surface": "setup",
+             "available": True, "results": {"n_chapters": 2, "candidates": [{"word": "copper", "count": 3}]}}
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(wrong), "")):
+        zi.check_repetition_conformance(tmp_path, tmp_path, report)
+    assert not any(r.passed for r in report.results if r.name.startswith(stem + ":"))
+
+
+@pytest.mark.parametrize("stem", ["manuscript_repetition_audit", "chapter_distinctiveness_audit"])
+@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
+def test_repetition_todo_dispatch_refusals_stay_truthful(tmp_path, stem, change):
+    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+                "available": False, "surface": stem, "reason_category": "bad_input",
+                "reason": f"unknown surface '{stem}'"}
+    code = 2
+    if change == "promoted":
+        envelope.update(available=True, tool=stem, task_surface="smoothing_diagnosis")
+        code = 0
+    elif change == "wrong_reason":
+        envelope["reason"] = "could not open launcher"
+    elif change == "wrong_surface":
+        envelope["surface"] = "other"
+    else:
+        code = 0
+    report = zi.Report()
+    with mock.patch.object(zi.subprocess, "run", return_value=subprocess.CompletedProcess([], code, json.dumps(envelope), "")):
+        zi.check_repetition_conformance(tmp_path, tmp_path, report)
+    result = next(r for r in report.results if r.name == stem + ":dispatch")
+    assert result.passed is False
 
 
 def test_reachability_checks_every_entry_in_fragment(tmp_path):
