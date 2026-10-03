@@ -114,6 +114,9 @@ def load_windows_block(source: Any) -> dict[str, Any]:
         return source
     if "windows" in source and isinstance(source["windows"], dict):
         return source["windows"]
+    results = source.get("results")
+    if isinstance(results, dict) and isinstance(results.get("windows"), dict):
+        return results["windows"]
     raise ValueError(
         "input does not contain a 'windows' block or 'results' list; "
         "expected variance_audit.py --json output"
