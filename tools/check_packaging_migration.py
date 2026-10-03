@@ -90,6 +90,7 @@ _P2_BOOTSTRAP_ANCHORS = {
     for name in _L0_MODULES
 }
 _P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/stylometry_distance.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/paragraph_parser.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/argument_feature_schema.py", "_SCRIPT_DIR"),
@@ -165,6 +166,14 @@ def _phase_for(rel_path: str) -> str:
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"): {
+        "removal_phase": "not-applicable",
+        "reason": (
+            "Permanent schema-1.x compatibility-launcher bootstrap; detached "
+            "runpy does not put scripts/ on sys.path, and setec.paths cannot "
+            "be imported before setec."
+        ),
+    },
     (
         "plugins/setec-voiceprint/scripts/atomic_publish.py",
         "_SCRIPT_DIR",
