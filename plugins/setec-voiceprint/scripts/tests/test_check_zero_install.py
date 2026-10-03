@@ -188,6 +188,28 @@ def test_punctuation_success_with_wrong_surface_is_refused(tmp_path):
     assert all(not r.passed for r in report.results if r.name != "punctuation:identity")
 
 
+@pytest.mark.parametrize("case,source", [
+    ("renamed", "from impl import TASK_SURFACE as OTHER\n"),
+    ("deleted", "from impl import TASK_SURFACE\ndel TASK_SURFACE\n"),
+    ("rebound", "from impl import TASK_SURFACE\nTASK_SURFACE = None\n"),
+    ("valid", "from impl import TASK_SURFACE\n"),
+])
+def test_reachability_requires_exported_alias_surface(tmp_path, case, source):
+    scripts = tmp_path / "scripts"
+    manifests = tmp_path / "capabilities.d"
+    scripts.mkdir()
+    manifests.mkdir()
+    (scripts / "impl.py").write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    (scripts / "old.py").write_text(source, encoding="utf-8")
+    (manifests / "old.yaml").write_text(
+        "entries:\n  - id: old\n    surface: setup\n"
+        "    script_path: plugins/setec-voiceprint/scripts/old.py\n", encoding="utf-8",
+    )
+    report = zi.Report()
+    zi.check_structural_reachability(tmp_path, report)
+    assert report.passed is (case == "valid")
+
+
 def test_reachability_checks_every_entry_in_fragment(tmp_path):
     manifest_dir = tmp_path / "capabilities.d"
     scripts = tmp_path / "scripts"

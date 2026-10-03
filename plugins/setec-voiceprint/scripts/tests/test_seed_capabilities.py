@@ -227,6 +227,36 @@ def test_ordinary_surface_with_static_import_keeps_own_metadata(tmp_path):
     assert sc.parse_module(ordinary, tmp_path, tmp_path).surface == "setup"
 
 
+@pytest.mark.parametrize("case,source", [
+    ("renamed", "from impl import TASK_SURFACE as OTHER\n"),
+    ("deleted", "from impl import TASK_SURFACE\ndel TASK_SURFACE\n"),
+    ("rebound", "from impl import TASK_SURFACE\nTASK_SURFACE = None\n"),
+    ("valid", "from impl import TASK_SURFACE\n"),
+])
+def test_alias_must_export_surface_for_resolution_and_discovery(tmp_path, case, source):
+    implementation = tmp_path / "impl.py"
+    implementation.write_text('TASK_SURFACE = "setup"\n', encoding="utf-8")
+    launcher = tmp_path / "old.py"
+    launcher.write_text(source, encoding="utf-8")
+    if case in {"deleted", "rebound"}:
+        with pytest.raises(ValueError, match="invalidated TASK_SURFACE alias"):
+            sc.resolve_implementation(launcher, tmp_path)
+        with pytest.raises(ValueError, match="invalidated TASK_SURFACE alias"):
+            sc.find_scripts(tmp_path)
+        with pytest.raises(ValueError, match="invalidated TASK_SURFACE alias"):
+            sc.parse_module(launcher, tmp_path, tmp_path)
+    elif case == "renamed":
+        assert sc.resolve_implementation(launcher, tmp_path) == launcher
+        assert sc.find_scripts(tmp_path) == sorted([launcher, implementation])
+        assert sc.parse_module(launcher, tmp_path, tmp_path) is None
+        assert sc.parse_module(implementation, tmp_path, tmp_path).surface == "setup"
+    else:
+        assert sc.resolve_implementation(launcher, tmp_path) == implementation
+        assert sc.find_scripts(tmp_path) == [launcher]
+        seed = sc.parse_module(launcher, tmp_path, tmp_path)
+        assert seed.surface == "setup" and seed.script_path == "old.py"
+
+
 @pytest.mark.parametrize("content", [b"def broken(:\n", b"\xff\xfe\n"])
 def test_ordinary_bad_source_retains_none_but_followed_alias_refuses(tmp_path, content):
     scripts = tmp_path / "scripts"

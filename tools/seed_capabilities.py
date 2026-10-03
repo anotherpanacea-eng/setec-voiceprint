@@ -123,12 +123,22 @@ def resolve_implementation(path: Path, scripts_root: Path | None = None) -> Path
                for node in tree.body):
             return path
         imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)
-                   and any(a.name == "TASK_SURFACE" for a in node.names)]
+                   and any(a.name == "TASK_SURFACE" and a.asname in {None, "TASK_SURFACE"}
+                           for a in node.names)]
         if not imports:
             return path
         if len(imports) != 1:
             raise ValueError(f"ambiguous TASK_SURFACE alias: {path}")
         node = imports[0]
+        # A renamed import is an ordinary module, not an exporting alias.
+        # For an actual alias, refuse the concrete deletion/rebinding forms
+        # that would invalidate the imported module-level surface.
+        for statement in tree.body[tree.body.index(node) + 1:]:
+            if isinstance(statement, (ast.Assign, ast.Delete)) and any(
+                isinstance(target, ast.Name) and target.id == "TASK_SURFACE"
+                for target in statement.targets
+            ):
+                raise ValueError(f"invalidated TASK_SURFACE alias: {path}")
         parts = (node.module or "").split(".")
         if not node.module or any(not part.isidentifier() for part in parts):
             raise ValueError(f"invalid TASK_SURFACE alias: {path}")
