@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from tools.check_zero_install import make_bare_copy
+_TOOLS = Path(__file__).resolve().parents[4] / "tools"
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+
+from check_zero_install import make_bare_copy  # type: ignore  # noqa: E402
 
 STEMS = ("agd_move_scan", "enthymeme_gapflag", "fallacy_scan", "warrant_probe")
 SCRIPTS = Path(__file__).resolve().parents[1]
