@@ -509,6 +509,58 @@ def check_narrative_conformance(bare_root: Path, outside_cwd: Path, report: Repo
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
+def check_argument_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Exercise argument JSON delivery and setup/input refusals with no provider."""
+    scripts = bare_root / "scripts"
+    stem = "argument_decision_audit"
+    launcher = scripts / (stem + ".py")
+    target = outside_cwd / "argument-input.txt"
+    target.write_text("\n\n".join("Because evidence matters, we should act. " * 20 for _ in range(3)), encoding="utf-8")
+    runpy_code = (
+        "import runpy, sys; path = sys.argv.pop(1); old = sys.modules['__main__']\n"
+        "try:\n    runpy.run_path(path, run_name='__main__')\n"
+        "finally:\n    assert sys.modules['__main__'] is old"
+    )
+    args = [str(target), "--judge", "mock", "--json"]
+    commands = [
+        ("direct", ["-S", str(launcher), *args], outside_cwd),
+        ("runpy", ["-S", "-c", runpy_code, str(launcher), *args], outside_cwd),
+        ("module", ["-S", "-m", "setec.surfaces." + stem, *args], scripts),
+        ("dispatch", [str(scripts / "setec_run.py"), stem, *args], outside_cwd),
+        ("missing_input", ["-S", str(launcher), str(outside_cwd / "absent-argument.txt"), "--json"], outside_cwd),
+        ("missing_manifest", [str(scripts / "setec_run.py"), stem, str(target), "--judge", "manifest", "--json"], outside_cwd),
+        ("baseline_without_register", [str(scripts / "setec_run.py"), stem, *args, "--baseline-dir", str(outside_cwd)], outside_cwd),
+    ]
+    for mode, argv, cwd in commands:
+        try:
+            proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
+                                  capture_output=True, text=True, timeout=30)
+            ok = "Traceback" not in proc.stderr
+            if mode == "missing_input":
+                ok = ok and proc.returncode == 1 and not proc.stdout.strip() and "target file not found" in proc.stderr
+            else:
+                envelope = json.loads(proc.stdout)
+                refusal = mode in {"missing_manifest", "baseline_without_register"}
+                expected = {"schema_version": "1.0", "tool": "setec_run" if refusal else stem,
+                            "task_surface": None if refusal else stem, "available": not refusal}
+                ok = ok and proc.returncode == (3 if refusal else 0)
+                ok = ok and isinstance(envelope, dict) and all(envelope.get(k) == v for k, v in expected.items())
+                if refusal:
+                    message = "judge construction failed" if mode == "missing_manifest" else "--baseline-dir requires --register"
+                    ok = ok and envelope.get("surface") == stem and envelope.get("reason_category") == "bad_input"
+                    ok = ok and message in envelope.get("reason", "")
+                else:
+                    results = envelope.get("results")
+                    ok = ok and isinstance(results, dict) and results.get("judge", {}).get("judge_identity", {}).get("kind") == "mock"
+                    ok = ok and results.get("aggregate", {}).get("verdict_band") == "uncalibrated"
+                    ok = ok and isinstance(envelope.get("claim_license"), dict)
+                    ok = ok and target.with_suffix(".txt.argument.json").is_file() and target.with_suffix(".txt.argument.md").is_file()
+            report.add(f"{stem}:{mode}", ok,
+                       "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+        except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            report.add(f"{stem}:{mode}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -522,6 +574,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_paragraph_conformance(bare_root, outside_cwd, report)
         check_repetition_conformance(bare_root, outside_cwd, report)
         check_narrative_conformance(bare_root, outside_cwd, report)
+        check_argument_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

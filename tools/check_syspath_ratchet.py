@@ -80,7 +80,11 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # root, and succeeds when it is supplied. The two permanent ordinary aliases
 # require two counted sites: measured 189 -> 191, with no exclusions/removals.
 # This relocation-only ceiling adjustment remains subject to build review.
-PINNED_CEILING = 191
+# P4 argument adds one required permanent alias for a whole module with no
+# prior bootstrap. At 8a42a0d, detached foreign-cwd -S runpy/help fails without
+# scripts/ and passes with it. Counted normally: 191 -> 192; no exclusions or
+# unrelated removals. This relocation-only increase requires build review.
+PINNED_CEILING = 192
 
 
 def find_runtime_scripts() -> list[Path]:
