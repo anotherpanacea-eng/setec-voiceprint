@@ -71,7 +71,6 @@ Run in CI:
 from __future__ import annotations
 
 import argparse
-import ast
 import json
 import re
 import sys
@@ -91,7 +90,7 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 from r1_bundle import validate_r1_bundle  # type: ignore  # noqa: E402
-from seed_capabilities import DEFAULT_TODO_REASON  # noqa: E402
+from seed_capabilities import DEFAULT_TODO_REASON, find_scripts as _find_scripts, parse_module  # noqa: E402
 
 # R5 contract-fixture drift (Check 9). Import the generator so the gate and
 # the generator share one definition of "what a golden should be" — they can
@@ -100,13 +99,6 @@ from seed_capabilities import DEFAULT_TODO_REASON  # noqa: E402
 # import is cheap and dependency-free.
 import gen_contract_fixtures  # type: ignore  # noqa: E402
 from _console import enable_utf8_stdio  # noqa: E402
-
-SKIP_FILE_PATTERNS = [
-    re.compile(r"^test_"),
-    re.compile(r"_test\.py$"),
-    re.compile(r"^__init__\.py$"),
-]
-
 
 @dataclass
 class Violation:
@@ -143,37 +135,12 @@ class Report:
 # ---------- source scan -------------------------------------------
 
 def find_scripts() -> list[Path]:
-    out: list[Path] = []
-    for path in SCRIPTS_ROOT.rglob("*.py"):
-        name = path.name
-        if any(p.search(name) for p in SKIP_FILE_PATTERNS):
-            continue
-        if "/tests/" in str(path) or "/__pycache__/" in str(path):
-            continue
-        out.append(path)
-    return sorted(out)
+    return _find_scripts(SCRIPTS_ROOT)
 
 
 def parse_task_surface(path: Path) -> str | None:
-    try:
-        source = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return None
-    try:
-        tree = ast.parse(source, filename=str(path))
-    except SyntaxError:
-        return None
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            for tgt in node.targets:
-                if (
-                    isinstance(tgt, ast.Name)
-                    and tgt.id == "TASK_SURFACE"
-                    and isinstance(node.value, ast.Constant)
-                    and isinstance(node.value.value, str)
-                ):
-                    return node.value.value
-    return None
+    seed = parse_module(path, SCRIPTS_ROOT, REPO_ROOT)
+    return seed.surface if seed is not None else None
 
 
 # ---------- drift checks ------------------------------------------
@@ -183,13 +150,21 @@ def check_drift(
 ) -> Report:
     report = Report()
 
-    scripts = find_scripts()
+    try:
+        scripts = find_scripts()
+    except ValueError as exc:
+        report.violations.append(Violation("launcher_alias", str(SCRIPTS_ROOT), str(exc)))
+        return report
     report.scanned_scripts = len(scripts)
 
     # Build the source-side index: path → TASK_SURFACE
     source_surfaces: dict[Path, str] = {}
     for path in scripts:
-        ts = parse_task_surface(path)
+        try:
+            ts = parse_task_surface(path)
+        except ValueError as exc:
+            report.violations.append(Violation("launcher_alias", str(path), str(exc)))
+            continue
         if ts is not None:
             source_surfaces[path] = ts
 
@@ -288,7 +263,11 @@ def check_drift(
         full = REPO_ROOT / sp
         if not full.exists():
             continue
-        source_surface = parse_task_surface(full)
+        try:
+            source_surface = parse_task_surface(full)
+        except ValueError as exc:
+            report.violations.append(Violation("launcher_alias", sp, str(exc)))
+            continue
         if source_surface is None:
             report.violations.append(Violation(
                 kind="surface_drift",

@@ -76,6 +76,18 @@ def test_real_repo_layering_passes():
     ]
 
 
+def test_only_punctuation_permanent_alias_edge_is_sanctioned():
+    old, new = cl._P4_PUNCTUATION_ALIAS
+    other = "plugins/setec-voiceprint/scripts/another_surface.py"
+    edges = {(old, new), (new, old), (other, new), (old, other)}
+    tiers = {path: "L2" for path in (old, new, other)}
+    violations = cl.find_violations(edges, tiers)
+    assert {(v.from_path, v.to_path) for v in violations} == edges - {(old, new)}
+    # Recognizing the alias does not authorize new exception rows.
+    rows = [{"from_path": old, "to_path": new, "edge_kind": "l2_to_l2"}]
+    assert cl.check_ghost_rows(rows, violations)
+
+
 @pytest.mark.parametrize("location", ["", "setec/contract/"])
 @pytest.mark.parametrize("stem", ["output_schema", "claim_license", "capabilities"])
 def test_contract_outbound_prohibition_survives_relocation(tmp_path, monkeypatch, location, stem):

@@ -100,6 +100,13 @@ _P2_LEGACY_PATHS = {
     for stem in _L0_STEMS
 }
 
+# This one permanent surface alias is plumbing, not surface-to-surface sharing.
+# All other edges, including edges into the legacy surface, remain shrink-only.
+_P4_PUNCTUATION_ALIAS = (
+    _SCRIPTS_PREFIX + "punctuation_cadence_audit.py",
+    _SCRIPTS_PREFIX + "setec/surfaces/punctuation_cadence_audit.py",
+)
+
 # The one from_path allowed to ADD l2_to_l2 baseline rows (see header):
 # the R5 golden generator, whose job is importing every golden surface.
 _GENERATOR_FROM_PATH = "plugins/setec-voiceprint/scripts/gen_contract_fixtures.py"
@@ -390,7 +397,7 @@ def find_violations(
             out.append(Violation(a, b, "l0_outbound"))
         elif ta == "L1" and tb == "L2":
             out.append(Violation(a, b, "l1_to_l2"))
-        elif ta == "L2" and tb == "L2":
+        elif ta == "L2" and tb == "L2" and (a, b) != _P4_PUNCTUATION_ALIAS:
             out.append(Violation(a, b, "l2_to_l2"))
     return out
 
