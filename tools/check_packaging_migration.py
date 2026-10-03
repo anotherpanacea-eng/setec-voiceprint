@@ -143,6 +143,7 @@ _P3_RELOCATION_ANCHORS = {
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/paragraph_audit.py", "_SCRIPT_DIR"),
 }
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template

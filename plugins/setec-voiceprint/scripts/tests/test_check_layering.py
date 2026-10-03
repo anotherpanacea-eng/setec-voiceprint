@@ -76,6 +76,24 @@ def test_real_repo_layering_passes():
     ]
 
 
+def test_paragraph_alias_requires_its_metadata_row(monkeypatch, capsys):
+    """A permanent launcher stays a visible edge, never an implicit bypass."""
+    source = "plugins/setec-voiceprint/scripts/paragraph_audit.py"
+    target = "plugins/setec-voiceprint/scripts/setec/surfaces/paragraph_audit.py"
+    rows = cl.load_layer_exemptions()
+    paragraph_rows = [r for r in rows if r["from_path"] == source and r["to_path"] == target]
+    assert len(paragraph_rows) == 1
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: rows)
+    assert cl.main(["--strict", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["passed"] is True
+
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: [r for r in rows if r not in paragraph_rows])
+    assert cl.main(["--strict", "--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert any(v["from_path"] == source and v["to_path"] == target
+               and v["edge_kind"] == "l2_to_l2" for v in report["unexempted"])
+
+
 @pytest.mark.parametrize("case", [
     "proper_row", "missing_row", "missing_owner", "ghost_row",
     "arbitrary_import", "dynamic_alias", "wrong_main", "renamed_surface",

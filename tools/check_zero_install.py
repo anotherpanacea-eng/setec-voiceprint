@@ -327,6 +327,71 @@ def check_punctuation_conformance(bare_root: Path, outside_cwd: Path, report: Re
             report.add(f"punctuation:{name}", False, str(exc))
 
 
+def check_paragraph_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    """Keep direct paragraph JSON working without promoting its TODO capability."""
+    scripts = bare_root / "scripts"
+    launcher = scripts / "paragraph_audit.py"
+    target = outside_cwd / "paragraph-input.txt"
+    target.write_text(
+        "One paragraph has several words. It ends here.\n\n"
+        "Why another paragraph? A different rhythm follows.\n", encoding="utf-8",
+    )
+    identity = (
+        "import sys, importlib; sys.path.insert(0, sys.argv[1]); "
+        "old = importlib.import_module('paragraph_audit'); "
+        "new = importlib.import_module('setec.surfaces.paragraph_audit'); "
+        "assert old is new; assert str(new.SCRIPT_DIR) == sys.argv[1]; "
+        "new.word_count = lambda text: 17; "
+        "assert old.audit_paragraphs('Three words here.')['paragraph_word_counts'] == [17]; "
+        "old.word_count = lambda text: 23; "
+        "assert new.audit_paragraphs('Three words here.')['paragraph_word_counts'] == [23]"
+    )
+    runpy_code = (
+        "import runpy, sys; path = sys.argv.pop(1); "
+        "runpy.run_path(path, run_name='__main__')"
+    )
+    # Module execution uses the bare scripts search root; direct/runpy and
+    # the dispatcher do not need a repository cwd or PYTHONPATH.
+    commands = [
+        ("identity", ["-c", identity, str(scripts)], outside_cwd),
+        ("direct", [str(launcher), str(target), "--json"], outside_cwd),
+        ("runpy", ["-c", runpy_code, str(launcher), str(target), "--json"], outside_cwd),
+        ("module", ["-m", "setec.surfaces.paragraph_audit", str(target), "--json"], scripts),
+        ("dispatch_refusal", [str(scripts / "setec_run.py"), "paragraph_audit", str(target), "--json"], outside_cwd),
+        ("missing_input", [str(launcher), str(outside_cwd / "absent-paragraph.txt"), "--json"], outside_cwd),
+        ("missing_baseline", [str(launcher), str(target), "--baseline-dir", str(outside_cwd / "absent-paragraph-baseline"), "--json"], outside_cwd),
+    ]
+    expected = {"schema_version": "1.0", "tool": "paragraph_audit",
+                "task_surface": "smoothing_diagnosis", "available": True}
+    refusal = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
+               "surface": "paragraph_audit", "available": False, "reason_category": "bad_input"}
+    for name, argv, cwd in commands:
+        try:
+            proc = subprocess.run([sys.executable, *argv], cwd=cwd, env=_clean_env(),
+                                  capture_output=True, text=True, timeout=30)
+            ok = "Traceback" not in proc.stderr
+            if name in {"missing_input", "missing_baseline"}:
+                message = "Input not found:" if name == "missing_input" else "baseline error:"
+                ok = ok and proc.returncode == 2 and not proc.stdout.strip() and message in proc.stderr
+            elif name == "identity":
+                ok = ok and proc.returncode == 0
+            else:
+                envelope = json.loads(proc.stdout)
+                keys = refusal if name == "dispatch_refusal" else expected
+                ok = ok and proc.returncode == (2 if name == "dispatch_refusal" else 0)
+                ok = ok and isinstance(envelope, dict) and all(
+                    envelope.get(key) == value for key, value in keys.items()
+                )
+                if name == "dispatch_refusal":
+                    ok = ok and "unknown surface 'paragraph_audit'" in envelope.get("reason", "")
+                else:
+                    ok = ok and isinstance(envelope.get("results"), dict) and envelope["results"].get("n_paragraphs") == 2
+            report.add(f"paragraph:{name}", ok,
+                       "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
+        except (subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+            report.add(f"paragraph:{name}", False, str(exc))
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -337,6 +402,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_launcher_classes(bare_root, outside_cwd, report)
         check_setec_run_bare_dispatch(bare_root, outside_cwd, report)
         check_punctuation_conformance(bare_root, outside_cwd, report)
+        check_paragraph_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)

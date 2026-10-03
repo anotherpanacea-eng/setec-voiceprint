@@ -22,6 +22,8 @@ typology + baseline comparison shape. The primary contracts:
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +33,51 @@ except ImportError:  # pragma: no cover
     pytest = None
 
 import paragraph_audit as pa  # type: ignore
+
+
+def test_legacy_and_package_share_function_globals(monkeypatch):
+    from setec.paths import scripts_dir
+    from setec.surfaces import paragraph_audit as packaged
+
+    assert pa is packaged
+    assert pa.SCRIPT_DIR == scripts_dir()
+    monkeypatch.setattr(packaged, "word_count", lambda text: 17)
+    assert pa.audit_paragraphs("Three words here.")["paragraph_word_counts"] == [17]
+    monkeypatch.setattr(pa, "word_count", lambda text: 23)
+    assert packaged.audit_paragraphs("Three words here.")["paragraph_word_counts"] == [23]
+
+
+@pytest.mark.parametrize("first", ["paragraph_audit", "setec.surfaces.paragraph_audit"])
+def test_fresh_import_order_and_runpy_preserve_main_module(tmp_path, first):
+    from setec.paths import scripts_dir
+
+    code = """
+import importlib, runpy, sys
+from pathlib import Path
+scripts = Path(sys.argv[1])
+sys.path.insert(0, str(scripts))
+actual_main = sys.modules['__main__']
+importlib.import_module(sys.argv[2])
+old = importlib.import_module('paragraph_audit')
+new = importlib.import_module('setec.surfaces.paragraph_audit')
+assert old is new
+assert old.SCRIPT_DIR == scripts
+new.main = lambda: 9
+try:
+    runpy.run_path(str(scripts / 'paragraph_audit.py'), run_name='__main__')
+except SystemExit as exc:
+    assert exc.code == 9
+else:
+    raise AssertionError('launcher did not call package main')
+assert sys.modules['__main__'] is actual_main
+"""
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.run(
+        [sys.executable, "-c", code, str(scripts_dir()), first],
+        cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 0, proc.stderr
 
 
 # ------------------- Fixtures -----------------------------------
@@ -398,6 +445,36 @@ class TestCli:
     def test_cli_handles_missing_input(self, tmp_path):
         rc = pa.main([str(tmp_path / "missing.txt")])
         assert rc == 2
+
+    def test_cli_missing_baseline_refuses(self, tmp_path, capsys):
+        target = tmp_path / "draft.txt"
+        target.write_text(_VARIED_PROSE, encoding="utf-8")
+        assert pa.main([str(target), "--baseline-dir", str(tmp_path / "absent"), "--json"]) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "baseline error" in captured.err
+
+    def test_cli_empty_target_remains_unavailable_success(self, tmp_path, capsys):
+        target = tmp_path / "empty.txt"
+        target.write_text("", encoding="utf-8")
+        assert pa.main([str(target), "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["available"] is False
+        assert payload["results"] == {}
+        assert payload["claim_license"] is None
+
+    def test_cli_self_only_baseline_remains_empty(self, tmp_path, capsys):
+        target = tmp_path / "draft.txt"
+        target.write_text(_VARIED_PROSE, encoding="utf-8")
+        (tmp_path / "duplicate.txt").write_text(_VARIED_PROSE, encoding="utf-8")
+        assert pa.main([str(target), "--baseline-dir", str(tmp_path), "--json"]) == 0
+        captured = capsys.readouterr()
+        payload = json.loads(captured.out)
+        assert payload["baseline"]["n_files"] == 0
+        assert payload["results"]["baseline_comparison"] == {"available": False, "reason": "baseline empty"}
+        assert "matches target path" in captured.err
+        assert "content-duplicate" in captured.err
+        assert "0 usable files" in captured.err
 
 
 # ---------- 1.34.1 reviewer-flagged P2 fixes -----------------------
