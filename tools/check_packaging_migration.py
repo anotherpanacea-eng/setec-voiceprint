@@ -190,6 +190,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/tocsin_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/intrinsic_dimension_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/dependency_check.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),
