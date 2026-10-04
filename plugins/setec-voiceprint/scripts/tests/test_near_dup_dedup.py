@@ -482,7 +482,7 @@ def test_spec80_bindings_use_executing_tokenizer_bytes(tmp_path, monkeypatch):
         Path(ndd.passage_tokenizer_v1.__file__).read_bytes()
     ).hexdigest()
     alias = "sha256:" + hashlib.sha256(
-        (Path(ndd.__file__).parent / "passage_tokenizer_v1.py").read_bytes()
+        (Path(__file__).resolve().parents[1] / "passage_tokenizer_v1.py").read_bytes()
     ).hexdigest()
     assert executing != alias
     assert report["spec80_tokenizer"]["implementation_sha256"] == executing
