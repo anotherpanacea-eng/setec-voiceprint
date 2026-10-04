@@ -80,7 +80,12 @@ SENTENCE_SPLITTERS = _MappingProxyType({
      'allowed_backends': (),
      'behavior_sha256': 'bace7d2ce7a5a225448442f1d7fa355b718bb18f398ac27267cc58c8a03554f5'}),
 })
-from setec.core.passage_tokenizer_v1 import tokenize
+def __getattr__(name):
+    if name == "tokenize":
+        from setec.core.passage_tokenizer_v1 import tokenize
+        return tokenize
+    raise AttributeError(name)
+
 
 TOKENIZERS = _MappingProxyType({
     "tokenize": _MappingProxyType({'id': 'tokenizer-d6e53cf12864-v1',

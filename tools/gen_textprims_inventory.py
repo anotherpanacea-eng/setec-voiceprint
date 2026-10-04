@@ -104,6 +104,8 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
     if source(pattern, candidate) != source(old_pattern, baseline):
         errors.append("compiled pattern declaration changed during ownership-only increment")
     protected = set(rows) | {"_SENT_RE"}
+    if "tokenize" in rows:
+        protected.add("__getattr__")
     for name in protected:
         writes = [n for n in ast.walk(tree) if (isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)) and n.id == name) or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == name) or (isinstance(n, ast.arg) and n.arg == name)]
         writes.extend(n for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) and any((a.asname or a.name.split(".")[0]) == name for a in n.names))
@@ -124,9 +126,10 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
             for path in (TOKENIZER_OWNER, TOKENIZER_DATA):
                 if external_bytes[path] != baseline_external_bytes[path]:
                     errors.append("frozen tokenizer dependency changed: " + path)
-            imports = [n for n in tree.body if isinstance(n, ast.ImportFrom) and not n.level and n.module == "setec.core.passage_tokenizer_v1" and any(a.name == "tokenize" and a.asname is None for a in n.names)]
-            if len(imports) != 1:
-                errors.append("frozen tokenizer must reexport its native object")
+            lazy = ast.parse('def __getattr__(name):\n    if name == "tokenize":\n        from setec.core.passage_tokenizer_v1 import tokenize\n        return tokenize\n    raise AttributeError(name)\n').body[0]
+            getters = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "__getattr__"]
+            if len(getters) != 1 or ast.dump(getters[0]) != ast.dump(lazy):
+                errors.append("frozen tokenizer must lazily reexport its native object")
             if row["pattern_sha256"] != hashlib.sha256(external_bytes[TOKENIZER_DATA]).hexdigest():
                 errors.append("frozen tokenizer table digest mismatch")
             fields = {k: v for k, v in row.items() if k not in {"id", "behavior_sha256"}}

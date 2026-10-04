@@ -321,3 +321,20 @@ def test_permanent_alias_preserves_module_qualified_primitive_binding(tmp_path):
     imports, errors = inventory.bindings(tmp_path, {"tokenize"})
     assert not errors
     assert imports[("plugins/setec-voiceprint/scripts/legacy.py", "native.tokenize")] == "tokenize"
+
+
+@pytest.mark.parametrize("replacement", [
+    'return lambda value: tokenize(value)',
+    'return replacement',
+])
+def test_frozen_tokenizer_lazy_export_cannot_wrap_or_replace_native(replacement):
+    owner = (ROOT / inventory.OWNER).read_text()
+    changed = owner.replace('        return tokenize', '        ' + replacement)
+    _, errors = inventory.verify_rows(changed, owner)
+    assert any("lazily reexport" in error for error in errors)
+
+
+def test_frozen_tokenizer_lazy_export_cannot_be_rebound():
+    owner = (ROOT / inventory.OWNER).read_text()
+    _, errors = inventory.verify_rows(owner + '\n__getattr__ = replacement\n', owner)
+    assert any("dependency rebound" in error for error in errors)
