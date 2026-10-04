@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 import dependency_distance_audit as dd  # type: ignore  # noqa: E402
+import surface_disagreement_resolver as sdr  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 from setec.core import dependency_primitives as dp  # type: ignore  # noqa: E402
 
@@ -271,7 +272,11 @@ def test_dependency_distance_not_imported_by_detectors():
         "surface_disagreement_resolver.py", "discrimination_evidence.py",
     ]
     for name in detectors:
-        f = scripts_dir / name
+        f = (
+            Path(sdr.__file__).resolve()
+            if name == "surface_disagreement_resolver.py"
+            else scripts_dir / name
+        )
         if not f.exists():
             continue
         src = f.read_text(encoding="utf-8")
