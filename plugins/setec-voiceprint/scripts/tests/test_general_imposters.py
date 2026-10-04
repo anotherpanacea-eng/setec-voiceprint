@@ -873,6 +873,7 @@ def test_register_selection_fails_closed_when_no_register_can_be_inferred():
 def test_the_guard_does_not_drag_in_the_heavy_stylometry_stack():
     """Importing the lightweight harness must not load the model stack."""
     import subprocess
+    from setec.paths import scripts_dir
 
     heavy = ("spacy", "nltk", "numpy", "scipy", "torch", "sklearn")
     probe = (
@@ -881,7 +882,7 @@ def test_the_guard_does_not_drag_in_the_heavy_stylometry_stack():
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],
-        cwd=Path(gi.__file__).resolve().parent,
+        cwd=scripts_dir(),
         capture_output=True,
         text=True,
         timeout=30,
