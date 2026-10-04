@@ -1099,6 +1099,485 @@
         "result_path": [],
         "expected": false
       }
+    },
+    {
+      "case_id": "frozen_tokenizer_empty",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_whitespace",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        " \n\t"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_digits_underscore",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "12_3"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 4,
+          "normalized_token": "12_3"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_hyphen",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "one-two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 3,
+          "normalized_token": "one"
+        },
+        {
+          "char_start": 4,
+          "char_end": 7,
+          "normalized_token": "two"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_straight_apostrophe",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "can't"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 3,
+          "normalized_token": "can"
+        },
+        {
+          "char_start": 4,
+          "char_end": 5,
+          "normalized_token": "t"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_curly_apostrophe",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "won’t"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 3,
+          "normalized_token": "won"
+        },
+        {
+          "char_start": 4,
+          "char_end": 5,
+          "normalized_token": "t"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_nfc",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "CAFÉ"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 4,
+          "normalized_token": "café"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_nfd",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 4,
+          "normalized_token": "cafe"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_expanded_lower",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "İ"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 1,
+          "normalized_token": "i̇"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_supplementary",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "𐐀"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 1,
+          "normalized_token": "𐐨"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_combining_unassigned",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "́͸"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_abbreviation_ellipsis",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "Dr. X..."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 2,
+          "normalized_token": "dr"
+        },
+        {
+          "char_start": 4,
+          "char_end": 5,
+          "normalized_token": "x"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_paragraph",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        "A\n\nB"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        {
+          "char_start": 0,
+          "char_end": 1,
+          "normalized_token": "a"
+        },
+        {
+          "char_start": 3,
+          "char_end": 4,
+          "normalized_token": "b"
+        }
+      ],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          {
+            "char_start": 0,
+            "char_end": 1,
+            "normalized_token": "z"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "frozen_tokenizer_type_error",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-d6e53cf12864-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize",
+      "args": [
+        42
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "text must be str"
+      },
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "tokenize() got an unexpected keyword argument 'unexpected'"
+        }
+      }
     }
   ]
 }

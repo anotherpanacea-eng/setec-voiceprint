@@ -17,6 +17,8 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OWNER = "plugins/setec-voiceprint/scripts/setec/core/textprims.py"
+TOKENIZER_OWNER = "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py"
+TOKENIZER_DATA = "plugins/setec-voiceprint/scripts/passage_tokenizer_data_v1.json"
 MAPS = {"TOKENIZERS", "SENTENCE_SPLITTERS", "PARAGRAPH_SPLITTERS", "FUNCTION_WORD_SETS", "QUANTILES", "FINGERPRINTS", "PREPROCESSORS"}
 FIELDS = {"id", "family", "implementation_ref", "pattern_sha256", "case_policy", "unicode_normalization", "allowed_backends", "behavior_sha256"}
 REGEX_CALLS = {"compile", "split", "findall", "finditer", "sub", "subn", "search", "match", "fullmatch"}
@@ -78,7 +80,9 @@ def registry(text):
     return result
 
 
-def verify_rows(candidate, baseline):
+def verify_rows(candidate, baseline, external_bytes=None, baseline_external_bytes=None):
+    external_bytes = external_bytes if external_bytes is not None else {path: (ROOT / path).read_bytes() for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
+    baseline_external_bytes = baseline_external_bytes if baseline_external_bytes is not None else external_bytes
     rows, old = registry(candidate), registry(baseline)
     errors = []
     if not {row["id"] for row in old.values()} <= {row["id"] for row in rows.values()}:
@@ -114,6 +118,25 @@ def verify_rows(candidate, baseline):
             errors.append("invalid closed behavior policy: " + symbol)
             continue
         seen.add(row["id"])
+        if symbol == "tokenize" and row["implementation_ref"] == TOKENIZER_OWNER + ":tokenize":
+            if row["family"] != "tokenizer" or row["case_policy"] != "lower" or row["unicode_normalization"] != "frozen_table" or row["allowed_backends"] != ():
+                errors.append("invalid frozen tokenizer policy")
+            for path in (TOKENIZER_OWNER, TOKENIZER_DATA):
+                if external_bytes[path] != baseline_external_bytes[path]:
+                    errors.append("frozen tokenizer dependency changed: " + path)
+            imports = [n for n in tree.body if isinstance(n, ast.ImportFrom) and not n.level and n.module == "setec.core.passage_tokenizer_v1" and any(a.name == "tokenize" and a.asname is None for a in n.names)]
+            if len(imports) != 1:
+                errors.append("frozen tokenizer must reexport its native object")
+            if row["pattern_sha256"] != hashlib.sha256(external_bytes[TOKENIZER_DATA]).hexdigest():
+                errors.append("frozen tokenizer table digest mismatch")
+            fields = {k: v for k, v in row.items() if k not in {"id", "behavior_sha256"}}
+            fields["allowed_backends"] = list(fields["allowed_backends"])
+            digest = hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode() + b"\n" + external_bytes[TOKENIZER_OWNER] + b"\n" + external_bytes[TOKENIZER_DATA]).hexdigest()
+            if row["behavior_sha256"] != digest or row["id"] != "tokenizer-" + digest[:12] + "-v1":
+                errors.append("frozen tokenizer behavior digest mismatch")
+            if symbol in old and row != old[symbol]:
+                errors.append("registered behavior fields changed: " + symbol)
+            continue
         if row["implementation_ref"] != OWNER + ":" + symbol or symbol not in definitions:
             errors.append("unresolved final owner: " + symbol)
             continue
@@ -147,6 +170,7 @@ def discover(root):
     discoveries = []
     owner = root / OWNER
     registered = registry(owner.read_text()) if owner.exists() else {}
+    registered_refs = {row["implementation_ref"] for row in registered.values()}
     for path in sorted((root / "plugins/setec-voiceprint/scripts").rglob("*.py")):
         if "tests" in path.relative_to(root).parts or "__pycache__" in path.parts:
             continue
@@ -192,7 +216,7 @@ def discover(root):
                 candidate_kind = "literal_string_table_candidate"
                 candidate_owner = ",".join(ast.unparse(t) for t in node.targets)
             if candidate_kind:
-                discoveries.append({"path": path.relative_to(root).as_posix(), "line": node.lineno, "owner": candidate_owner, "operation": candidate_kind, "pattern": None, "outcome": "recognized_primitive" if path.relative_to(root).as_posix() == OWNER and candidate_owner in registered else "unresolved", "reason": "registered defining object" if path.relative_to(root).as_posix() == OWNER and candidate_owner in registered else "candidate syntax only; semantic role requires independent review"})
+                discoveries.append({"path": path.relative_to(root).as_posix(), "line": node.lineno, "owner": candidate_owner, "operation": candidate_kind, "pattern": None, "outcome": "recognized_primitive" if path.relative_to(root).as_posix() + ":" + candidate_owner in registered_refs else "unresolved", "reason": "registered defining object" if path.relative_to(root).as_posix() + ":" + candidate_owner in registered_refs else "candidate syntax only; semantic role requires independent review"})
             operation = None
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id in re_modules and node.func.attr in REGEX_CALLS:
@@ -263,6 +287,59 @@ def discover(root):
     return discoveries
 
 
+def permanent_alias(tree):
+    """Recognize only the existing import-time whole-module launcher form."""
+    executable = ast.dump(ast.parse('__name__ == "__main__"', mode="eval").body)
+    import_only = ast.dump(ast.parse('__name__ != "__main__"', mode="eval").body)
+    branches = [n for n in tree.body if isinstance(n, ast.If) and ast.dump(n.test) in {executable, import_only}]
+    if len(branches) != 1:
+        return None
+    branch = branches[0]
+    is_executable = ast.dump(branch.test) == executable
+    if is_executable:
+        if len(branch.body) != 1 or len(branch.orelse) != 1:
+            return None
+        replacement = branch.orelse[0]
+    else:
+        if len(branch.body) != 1 or branch.orelse:
+            return None
+        replacement = branch.body[0]
+    if not isinstance(replacement, ast.Assign) or len(replacement.targets) != 1 or not isinstance(replacement.value, ast.Name):
+        return None
+    if ast.dump(replacement.targets[0]) != ast.dump(ast.parse('sys.modules[__name__] = _mod').body[0].targets[0]):
+        return None
+    local = replacement.value.id
+    expected_main = ast.parse(f'sys.exit({local}.main())').body[0]
+    if is_executable and ast.dump(branch.body[0]) != ast.dump(expected_main):
+        return None
+    imported = [n for n in tree.body if isinstance(n, ast.ImportFrom) and not n.level for a in n.names if (a.asname or a.name) == local]
+    if len(imported) != 1:
+        return None
+    binding = imported[0]
+    alias = next(a for a in binding.names if (a.asname or a.name) == local)
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id == '__name__') or (isinstance(node, ast.arg) and node.arg == '__name__') or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == '__name__') or (isinstance(node, (ast.Import, ast.ImportFrom)) and any((a.asname or a.name.split('.')[0]) == '__name__' for a in node.names)):
+            return None
+    for name in ('sys', local):
+        writes = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                writes.extend((node, a) for a in node.names if (a.asname or a.name.split('.')[0]) == name)
+            elif (isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id == name) or (isinstance(node, ast.arg) and node.arg == name) or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name == name):
+                return None
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)) and isinstance(node.value, ast.Name) and node.value.id == name:
+                return None
+        if len(writes) != 1:
+            return None
+        if name == 'sys' and (not isinstance(writes[0][0], ast.Import) or writes[0][1].name != 'sys'):
+            return None
+    if sum(isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id == local for n in ast.walk(tree)) != (2 if is_executable else 1):
+        return None
+    if sum(isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == 'sys' and n.attr == 'modules' for n in ast.walk(tree)) != 1:
+        return None
+    return binding.module + '.' + alias.name, replacement.lineno
+
+
 def bindings(root, symbols, table_symbols=(), source_texts=None):
     """Resolve direct compatibility re-exports; reject replacement bindings."""
     imports, errors = {}, []
@@ -275,11 +352,16 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
         modules_by_name[module] = (relative, ast.parse(text))
 
     def resolve(module, name, seen=()):
+        if module == "setec.core.passage_tokenizer_v1" and name == "tokenize" and name in symbols:
+            return name
         if module == "setec.core.textprims" and name in symbols:
             return name
         if module not in modules_by_name or (module, name) in seen:
             return None
         tree = modules_by_name[module][1]
+        alias = permanent_alias(tree)
+        if alias is not None:
+            return resolve(alias[0], name, (*seen, (module, name)))
         matches = []
         for node in tree.body:
             if isinstance(node, ast.ImportFrom) and not node.level:
@@ -288,9 +370,15 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                         matches.append(resolve(node.module, alias.name, (*seen, (module, name))))
         return matches[0] if len(matches) == 1 else None
 
+    for module, (relative, tree) in modules_by_name.items():
+        if permanent_alias(tree) is not None:
+            for symbol in symbols:
+                if resolve(module, symbol) == symbol:
+                    imports[(relative, symbol)] = symbol
+
     mutators = {"add", "clear", "discard", "pop", "remove", "update", "difference_update", "intersection_update", "symmetric_difference_update"}
     for relative, tree in modules_by_name.values():
-        imported, owner_modules, all_imports = {}, {}, []
+        imported, owner_modules, external_modules, all_imports = {}, {}, {}, []
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 for alias in node.names:
@@ -298,19 +386,23 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                     all_imports.append((local, node))
                     if isinstance(node, ast.ImportFrom):
                         symbol = None if node.level else resolve(node.module, alias.name)
-                        if symbol is not None or alias.name in symbols:
+                        if symbol is not None or (alias.name in symbols and alias.name != "tokenize"):
                             if symbol is None:
                                 errors.append(f"unresolved registered import: {relative}:{node.lineno}")
                                 symbol = alias.name
                             imported[local] = symbol
                             imports[(relative, local)] = symbol
+                    if "tokenize" in symbols and ((isinstance(node, ast.Import) and alias.name == "setec.core.passage_tokenizer_v1") or (isinstance(node, ast.ImportFrom) and not node.level and node.module == "setec.core" and alias.name == "passage_tokenizer_v1")):
+                        prefix = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
+                        external_modules[local] = prefix
+                        imports[(relative, prefix + ".tokenize")] = "tokenize"
                     if (isinstance(node, ast.Import) and alias.name == "setec.core.textprims") or (isinstance(node, ast.ImportFrom) and node.module == "setec.core" and alias.name == "textprims" and not node.level):
                         owner_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols and relative != OWNER:
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols - {"tokenize"} and relative != OWNER:
                 errors.append(f"duplicate registered owner: {relative}:{node.lineno}")
             elif isinstance(node, ast.Assign) and relative != OWNER and any(isinstance(t, ast.Name) and t.id in table_symbols for t in node.targets):
                 errors.append(f"duplicate registered table owner: {relative}:{node.lineno}")
-        tracked = set(imported) | set(owner_modules)
+        tracked = set(imported) | set(owner_modules) | set(external_modules)
         for local in tracked:
             if sum(name == local for name, _ in all_imports) != 1 or any(name == "*" for name, _ in all_imports):
                 errors.append(f"replacement import may rebind registered binding: {relative}:{local}")
@@ -341,7 +433,16 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                 shadowed_reads.add(binding.arg)
             elif isinstance(binding, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and binding.name in {"len", "sorted"}:
                 shadowed_reads.add(binding.name)
+        def is_external_module(value):
+            return value is not None and ast.unparse(value) in external_modules.values()
+
         for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)) and is_external_module(node.value):
+                errors.append(f"registered external callable replacement: {relative}:{node.lineno}")
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and is_external_module(node.value) and not (permanent_alias(tree) is not None and node.lineno == permanent_alias(tree)[1]):
+                errors.append(f"unresolved registered module alias: {relative}:{node.lineno}")
+            if isinstance(node, ast.Call) and any(is_external_module(arg) for arg in [*node.args, *(keyword.value for keyword in node.keywords)]):
+                errors.append(f"unresolved registered module argument: {relative}:{node.lineno}")
             if isinstance(node, ast.Call) and any(escapes_table(arg) for arg in [*node.args, *(keyword.value for keyword in node.keywords)]):
                 safe_read = isinstance(node.func, ast.Name) and node.func.id in {"len", "sorted"} - shadowed_reads and len(node.args) == 1 and is_table(node.args[0]) and not node.keywords
                 if not safe_read:
@@ -356,16 +457,32 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                 errors.append(f"unresolved registered table method: {relative}:{node.lineno}")
             if isinstance(node, (ast.Assign, ast.AnnAssign, ast.Return, ast.Yield, ast.YieldFrom)) and escapes_table(node.value):
                 errors.append(f"unresolved registered table alias: {relative}:{node.lineno}")
+    # Existing whole-module aliases retain qualified public module bindings too.
+    def target_imports(module, seen=()):
+        if module not in modules_by_name or module in seen:
+            return {}
+        relative, tree = modules_by_name[module]
+        alias = permanent_alias(tree)
+        if alias is not None:
+            return target_imports(alias[0], (*seen, module))
+        return {local: symbol for (path, local), symbol in imports.items() if path == relative}
+    for relative, tree in modules_by_name.values():
+        alias = permanent_alias(tree)
+        if alias is not None:
+            for local, symbol in target_imports(alias[0]).items():
+                imports[(relative, local)] = symbol
     return imports, errors
 
 
 def check(root, base):
     merge_base = subprocess.check_output(["git", "merge-base", base, "HEAD"], cwd=root, text=True).strip()
     baseline = subprocess.check_output(["git", "show", merge_base + ":" + OWNER], cwd=root, text=True)
-    rows, errors = verify_rows((root / OWNER).read_text(), baseline)
+    external_bytes = {path: (root / path).read_bytes() for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
+    baseline_external_bytes = {path: subprocess.check_output(["git", "show", merge_base + ":" + path], cwd=root) for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
+    rows, errors = verify_rows((root / OWNER).read_text(), baseline, external_bytes, baseline_external_bytes)
     imports, binding_errors = bindings(root, set(rows), {symbol for symbol, row in rows.items() if row["family"] == "function_words"})
     errors.extend(binding_errors)
-    for symbol in sorted(set(rows) - set(imports.values())):
+    for symbol in sorted(set(rows) - {symbol for (path, _local), symbol in imports.items() if path != OWNER}):
         errors.append("registered row never imported: " + symbol)
     fixture = json.loads((root / "references/textprims/characterization.json").read_text())
     fixture_ids = {row["registry_id"] for row in fixture["rows"]}
@@ -387,8 +504,17 @@ def check(root, base):
     import_sites = []
     for (path, local), symbol in sorted(imports.items()):
         tree = ast.parse((root / path).read_text())
-        line = next(n.lineno for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == local for a in n.names))
-        import_sites.append({"path": path, "line": line, "local_binding": local, "registered_symbol": symbol})
+        alias = permanent_alias(tree)
+        if alias is not None:
+            line = alias[1]
+        elif local.endswith(".tokenize") and symbol == "tokenize":
+            line = next(n.lineno for n in ast.walk(tree) if (isinstance(n, ast.Import) and any(a.name == "setec.core.passage_tokenizer_v1" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "setec.core" and any(a.name == "passage_tokenizer_v1" for a in n.names)))
+        else:
+            line = alias[1] if alias is not None else next(n.lineno for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == local for a in n.names))
+        site = {"path": path, "line": line, "local_binding": local, "registered_symbol": symbol}
+        if alias is not None:
+            site.update(kind="alias_reexport", canonical_module=alias[0])
+        import_sites.append(site)
     discoveries = discover(root)
     unresolved = [d for d in discoveries if d["outcome"] == "unresolved"]
     return {"registered_rows": len(rows), "enforced_imports": len(imports), "registered_import_sites": import_sites, "discoveries": discoveries, "unresolved_count": len(unresolved), "errors": errors, "complete": False, "scope": "cumulative registered cohort checks only; independent remaining-site review and full reconciliation required"}

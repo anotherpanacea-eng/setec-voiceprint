@@ -34,3 +34,11 @@ def test_splitter_rows_bind_distinct_final_owners_and_closed_fields():
         assert row["implementation_ref"].endswith("setec/core/textprims.py:" + symbol)
         assert row["id"] == "sentence_splitter-" + row["behavior_sha256"][:12] + "-v1"
         assert callable(getattr(textprims, symbol))
+
+
+def test_frozen_tokenizer_registry_reexports_the_native_final_owner():
+    from setec.core import passage_tokenizer_v1
+    assert textprims.tokenize is passage_tokenizer_v1.tokenize
+    row = textprims.TOKENIZERS["tokenize"]
+    assert row["implementation_ref"].endswith("setec/core/passage_tokenizer_v1.py:tokenize")
+    assert row["unicode_normalization"] == "frozen_table"

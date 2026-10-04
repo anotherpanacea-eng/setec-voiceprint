@@ -135,9 +135,13 @@ def test_new_registered_rows_need_a_production_import(tmp_path):
     owner.parent.mkdir(parents=True)
     old = subprocess.check_output(["git", "show", "origin/main:" + inventory.OWNER], cwd=ROOT, text=True)
     owner.write_text(old)
+    for path in (inventory.TOKENIZER_OWNER, inventory.TOKENIZER_DATA):
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / path, target)
     # This is an isolated temporary repository, never the workspace root.
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    subprocess.run(["git", "add", inventory.OWNER], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", inventory.OWNER, inventory.TOKENIZER_OWNER, inventory.TOKENIZER_DATA], cwd=tmp_path, check=True)
     subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "baseline"], cwd=tmp_path, check=True)
     owner.write_text((ROOT / inventory.OWNER).read_text())
     fixture = tmp_path / "references/textprims/characterization.json"
@@ -150,7 +154,7 @@ def test_new_registered_rows_need_a_production_import(tmp_path):
     consumer.write_text("from setec.core.textprims import " + ", ".join(inventory.registry(owner.read_text())) + "\n")
     report = inventory.check(tmp_path, "HEAD")
     assert not report["errors"]
-    assert {site["line"] for site in report["registered_import_sites"]} == {1}
+    assert {site["line"] for site in report["registered_import_sites"] if site["path"].endswith("/consumer.py")} == {1}
 
 
 def test_registered_tables_keep_exact_defining_bytes():
@@ -224,3 +228,96 @@ def test_registered_table_container_or_return_escape_fails(tmp_path, operation):
     (scripts / "consumer.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\n" + operation + "\n")
     _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
     assert any("table alias" in error for error in errors)
+
+
+def _launcher(module):
+    return f'import sys\nfrom {module.rsplit(".", 1)[0]} import {module.rsplit(".", 1)[1]} as _mod\nif __name__ == "__main__":\n    sys.exit(_mod.main())\nelse:\n    sys.modules[__name__] = _mod\n'
+
+
+def test_permanent_module_alias_keeps_registered_reexports(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "canonical.py").write_text("from setec.core.textprims import FUNCTION_WORDS\n")
+    (scripts / "legacy.py").write_text(_launcher("package.canonical"))
+    (scripts / "package").mkdir()
+    (scripts / "package/canonical.py").write_text("from setec.core.textprims import FUNCTION_WORDS\n")
+    imports, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert not errors
+    assert imports[("plugins/setec-voiceprint/scripts/legacy.py", "FUNCTION_WORDS")] == "FUNCTION_WORDS"
+
+
+@pytest.mark.parametrize("repair", [
+    lambda text: text + "_mod = replacement\n",
+    lambda text: text + "sys = replacement\n",
+    lambda text: '__name__ = "__main__"\n' + text,
+    lambda text: text + "sys.modules[__name__] = other\n",
+    lambda text: text.replace('== "__main__"', '!= "__main__"'),
+])
+def test_ambiguous_permanent_alias_is_not_admitted(repair):
+    import ast
+    assert inventory.permanent_alias(ast.parse(repair(_launcher("package.canonical")))) is None
+
+
+def test_wrong_target_and_alias_cycles_do_not_prove_a_binding(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "legacy.py").write_text(_launcher("package.missing"))
+    imports, _ = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert ("plugins/setec-voiceprint/scripts/legacy.py", "FUNCTION_WORDS") not in imports
+    (scripts / "package").mkdir()
+    (scripts / "package/a.py").write_text(_launcher("package.b"))
+    (scripts / "package/b.py").write_text(_launcher("package.a"))
+    imports, _ = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert not imports
+
+
+@pytest.mark.parametrize("path", [inventory.TOKENIZER_OWNER, inventory.TOKENIZER_DATA])
+def test_frozen_tokenizer_dependency_bytes_are_bound(path):
+    owner = (ROOT / inventory.OWNER).read_text()
+    original = {p: (ROOT / p).read_bytes() for p in (inventory.TOKENIZER_OWNER, inventory.TOKENIZER_DATA)}
+    changed = dict(original)
+    changed[path] += b"\n"
+    _, errors = inventory.verify_rows(owner, owner, changed, original)
+    assert any("dependency changed" in error for error in errors)
+    assert any("digest mismatch" in error for error in errors)
+
+
+def test_frozen_tokenizer_cannot_name_the_registry_as_defining_owner():
+    owner = (ROOT / inventory.OWNER).read_text()
+    changed = owner.replace(inventory.TOKENIZER_OWNER + ":tokenize", inventory.OWNER + ":tokenize")
+    _, errors = inventory.verify_rows(changed, owner)
+    assert any("unresolved final owner" in error for error in errors)
+
+
+@pytest.mark.parametrize("operation", ['native.tokenize = replacement', 'native.load_data = replacement', 'native.DATA_FILE = replacement', 'del native.load_data', 'native = replacement', 'alias = native', 'setattr(native, "tokenize", replacement)'])
+def test_frozen_tokenizer_module_binding_cannot_be_replaced(tmp_path, operation):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text('from setec.core import passage_tokenizer_v1 as native\n' + operation + '\n')
+    _, errors = inventory.bindings(tmp_path, {"tokenize"})
+    assert errors
+
+
+def test_frozen_tokenizer_module_import_is_an_obligation(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text('from setec.core import passage_tokenizer_v1 as native\nwords = native.tokenize("A")\n')
+    imports, errors = inventory.bindings(tmp_path, {"tokenize"})
+    assert not errors
+    assert imports[("plugins/setec-voiceprint/scripts/consumer.py", "native.tokenize")] == "tokenize"
+
+
+def test_import_only_native_module_alias_is_recognized():
+    import ast
+    source = 'import sys\nfrom setec.core import passage_tokenizer_v1 as _mod\nif __name__ != "__main__":\n    sys.modules[__name__] = _mod\n'
+    assert inventory.permanent_alias(ast.parse(source)) == ("setec.core.passage_tokenizer_v1", 4)
+
+
+def test_permanent_alias_preserves_module_qualified_primitive_binding(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    (scripts / "package").mkdir(parents=True)
+    (scripts / "legacy.py").write_text(_launcher("package.canonical"))
+    (scripts / "package/canonical.py").write_text('from setec.core import passage_tokenizer_v1 as native\n')
+    imports, errors = inventory.bindings(tmp_path, {"tokenize"})
+    assert not errors
+    assert imports[("plugins/setec-voiceprint/scripts/legacy.py", "native.tokenize")] == "tokenize"

@@ -80,3 +80,21 @@ def test_wrong_table_cannot_pass_shared_membership_cases(tmp_path):
     altered.write_text(json.dumps(doc))
     with pytest.raises(ValueError, match="ownership identity changed"):
         runner.run(altered, os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_frozen_tokenizer_registry_wrapper_is_refused(monkeypatch):
+    from setec.core import textprims
+    native = textprims.tokenize
+    monkeypatch.setattr(textprims, "tokenize", lambda *args, **kwargs: native(*args, **kwargs))
+    with pytest.raises(ValueError, match="registry identity changed"):
+        runner.run(ROOT / "references/textprims/characterization.json", os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_frozen_tokenizer_custom_table_argument_is_refused(tmp_path):
+    doc = json.loads((ROOT / "references/textprims/characterization.json").read_text())
+    row = next(row for row in doc["rows"] if row["family"] == "tokenizer")
+    row["kwargs"]["data_path"] = "alternate.json"
+    fixture = tmp_path / "custom-table.json"
+    fixture.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match="custom frozen tokenizer table"):
+        runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
