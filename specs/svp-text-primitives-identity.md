@@ -27,7 +27,7 @@ The complete new machinery is one registry module, one inventory/check tool, and
 
 Every change is ownership-only. For a migrated primitive, the legacy callable and the registry callable must return exactly the same value or exception on every committed characterization row. A result difference, changed regex/table byte, changed case or Unicode policy, or newly selected backend is out of scope and fails with no exemption.
 
-Finite characterization is not offered as proof that arbitrary regexes are equivalent. The structural rule supplies that proof: the registry initially references or re-exports the exact existing function, compiled pattern, or immutable table object. Reimplementation and cleanup are later behavior-change work.
+Finite characterization is not offered as proof that arbitrary regexes are equivalent. The structural rule supplies that proof: the registry initially references or re-exports the exact existing function, compiled pattern, or table object. Registry maps and rows are immutable; the existing function-word sets retain their types and mutability. Reimplementation and cleanup are later behavior-change work.
 
 ## 1. Final ownership before identity
 
@@ -107,6 +107,8 @@ The runner imports both named callables, calls each with fresh deep-copied `args
 The same comparator-specific encoding applies to `mutant.expected`. No implicit coercion, numeric tolerance, omitted default argument, environment-derived input, or free-form comparator is allowed.
 
 `mutant` is a second explicit input case chosen so at least one output or exception differs from the primary row. The runner first proves both implementations equal `expected`, then proves both equal the mutant expectation and that the comparator distinguishes primary from mutant. This establishes that the row has teeth without inventing a replacement algorithm or coupling characterization to envelope fields.
+
+Function-word table rows may characterize the existing bound `__contains__` method. Their `implementation_ref` names the table; `legacy_callable` and `registered_callable` append `.__contains__` to their respective table references. This exception is limited to the `function_words` family: each method’s `__self__` must be the exact referenced table, and legacy and registered table objects must be identical. Present/absent word queries use `json_exact` boolean expectations and the existing primary/mutant rule. The table’s unchanged defining assignment bytes, encoded as UTF-8, supply its `pattern_sha256` and the defining bytes in its behavior digest. No wrapper, table conversion, added method, or fixture field is permitted.
 
 Rows cover every migrated registry callable and project-authored cases for empty text, digits, hyphens, straight/curly apostrophes, non-ASCII normalization forms, abbreviations, ellipses, and paragraph boundaries where applicable. The fixture carries its synthetic-text license statement. Output-schema and claim-license behavior remain exclusively in existing contract/golden tests.
 
