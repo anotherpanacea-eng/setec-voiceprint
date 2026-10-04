@@ -393,6 +393,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "lambdag_audit",
         "pov_voice_profile",
         "general_imposters",
+        "idiolect_detector",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
@@ -699,7 +700,7 @@ def test_named_limit_keyness_surface_stays_out_of_scope():
     `register` and it builds a keyness/collocation table against a reference
     corpus rather than a stylometric centroid. Pinned so that adding a register
     to its record — or reaching for the pooling primitives — fails here."""
-    src = (SCRIPTS / "idiolect_detector.py").read_text(encoding="utf-8")
+    src = _source_path(SCRIPTS, "idiolect_detector").read_text(encoding="utf-8")
     assert "--manifest" in src
     assert not _sweep_hits(src)
     assert '"register"' not in src and "'register'" not in src

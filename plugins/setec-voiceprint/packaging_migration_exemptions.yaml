@@ -2334,6 +2334,14 @@ exemptions:
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/idiolect_detector.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section
+    2).
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
@@ -3812,11 +3820,11 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/idiolect_detector.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/idiolect_detector.py\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/idiolect_detector.py\
     \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
@@ -4914,4 +4922,12 @@ layer_exemptions:
     section 2).
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/idiolect_detector.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
   removal_phase: not-applicable
