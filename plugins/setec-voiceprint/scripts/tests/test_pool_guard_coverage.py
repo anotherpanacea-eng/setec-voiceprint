@@ -200,6 +200,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "distinct_diversity_audit", "homogeneity_audit", "originality_audit",
         "skeleton_overlap_audit", "verbatim_mosaic_audit",
         "house_style_decomposition",
+        "pov_voice_profile",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
@@ -343,6 +344,7 @@ def test_prefix_family_is_deliberately_out_of_scope():
     for module in ("near_dup_dedup", "house_style_decomposition", "pov_voice_profile",
                    "voice_drift_tracker"):
         src = _source_path(SCRIPTS, module).read_text(encoding="utf-8")
+        assert "_load_manifest" in src, f"{module} fixture drift: expected a prefixed name"
         assert not _defines_pool_loader(src), module
 
 
