@@ -390,6 +390,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "distinct_diversity_audit", "homogeneity_audit", "originality_audit",
         "skeleton_overlap_audit", "verbatim_mosaic_audit",
         "house_style_decomposition",
+        "lambdag_audit",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
@@ -586,7 +587,7 @@ def test_directly_guarded_surfaces_bind_and_call_the_guard():
     for module, row in CLASSIFICATION.items():
         if row["guard"] != GUARDED or row["via"] != DIRECT:
             continue
-        src = (SCRIPTS / f"{module}.py").read_text(encoding="utf-8")
+        src = _source_path(SCRIPTS, module).read_text(encoding="utf-8")
         assert _calls_guard(src), (
             f"{module} is classified GUARDED/direct but does not bind + call "
             f"{GUARD_NAME}"
