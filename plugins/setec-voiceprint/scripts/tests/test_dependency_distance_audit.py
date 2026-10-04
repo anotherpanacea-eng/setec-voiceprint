@@ -267,11 +267,13 @@ def test_dependency_distance_not_imported_by_detectors():
     # / surface_disagreement_resolver scoring path may import it.
     scripts_dir = Path(dd.__file__).resolve().parent
     detectors = [
-        "voice_distance.py", "crosslingual_voice_distance.py",
+        "voice_distance.py", "setec/surfaces/crosslingual_voice_distance.py",
         "surface_disagreement_resolver.py", "discrimination_evidence.py",
     ]
     for name in detectors:
         f = scripts_dir / name
+        if name == "setec/surfaces/crosslingual_voice_distance.py":
+            assert f.is_file(), "moved crosslingual implementation must be checked"
         if not f.exists():
             continue
         src = f.read_text(encoding="utf-8")

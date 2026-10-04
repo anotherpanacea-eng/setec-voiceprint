@@ -1196,12 +1196,12 @@ exemptions:
   introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 39 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/dependency_check.py
   symbol: PLUGIN_ROOT
   reason: pending relocation (P4); anchor `PLUGIN_ROOT` at line 83 not yet converted
@@ -1231,12 +1231,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/dialogue_voice_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 64 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 58 not yet converted
@@ -1552,12 +1552,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/narratorial_distance_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 63 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 94 not yet converted
@@ -1865,12 +1865,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/productive_roughness_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 63 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
@@ -2192,12 +2192,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/sound_texture_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 36 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/specdetect_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 88 not yet converted
@@ -3622,11 +3622,11 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/crosslingual_voice_distance.py
   to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/crosslingual_voice_distance.py\
     \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
@@ -4586,4 +4586,49 @@ layer_exemptions:
     \ edge always fails, --strict or not."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/sound_texture_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/sound_texture_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/crosslingual_voice_distance.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/dialogue_voice_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/dialogue_voice_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/narratorial_distance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/narratorial_distance_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/productive_roughness_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/productive_roughness_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable

@@ -684,7 +684,7 @@ def test_named_limit_directory_only_surface_stays_out_of_scope():
     input carries no row metadata at all — the same manifest-path limit
     `pool_guard.py` names. It has no manifest mode, so there is no register to
     isolate; if it grows one, sweep (C)/(D) drags it into the map."""
-    src = (SCRIPTS / "crosslingual_voice_distance.py").read_text(encoding="utf-8")
+    src = (SCRIPTS / "setec/surfaces/crosslingual_voice_distance.py").read_text(encoding="utf-8")
     assert "--baseline-dir" in src
     assert "--manifest" not in src
     assert not _sweep_hits(src)
