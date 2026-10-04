@@ -202,6 +202,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "house_style_decomposition",
         "pov_voice_profile",
         "general_imposters",
+        "near_dup_dedup",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {

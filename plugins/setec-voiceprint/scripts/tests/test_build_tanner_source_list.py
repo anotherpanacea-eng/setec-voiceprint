@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import http.server
-import importlib.util
 import json
 import math
 from pathlib import Path
@@ -14,11 +13,7 @@ import pytest
 
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-MODULE_PATH = SCRIPTS / "acquisition_sources" / "build_tanner_source_list.py"
-SPEC = importlib.util.spec_from_file_location("build_tanner_source_list", MODULE_PATH)
-assert SPEC and SPEC.loader
-tanner = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(tanner)
+from setec.acquisition_sources import build_tanner_source_list as tanner
 
 FIXTURE_DIR = SCRIPTS / "test_data" / "tanner_source_list_fixture"
 SITEMAP = tanner.DEFAULT_SITEMAP_URL

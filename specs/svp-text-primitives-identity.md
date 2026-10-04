@@ -3,6 +3,7 @@
 **Status:** BUILD-READY (v5, exact-head independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
 **Provenance:** modularization audit, two adversarial six-lens reviews, and two exact-head independent reviews. This revision keeps only registry, inventory, narrow characterization, and import consolidation.
 **Round-5 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the final repair; no remaining P1/P2 within the authorized increment.
+**v6 amendment:** Per the owner's 2026-10-04 decision, discovery covers all production source but CI enforces only cumulative registered cohorts; remaining sites go to independent review. Declares the native Punkt test dependency. The v5 reviews above do not cover this amendment.
 **Depends on:** `specs/svp-packaging-conversion.md` for the `scripts/setec` package home and for the final relocation of each primitive owner before its ID is minted.
 
 ## Outcome and cut line
@@ -63,13 +64,17 @@ allowed_backends: closed list, empty for deterministic rows
 behavior_sha256: sha256 of the canonical preceding behavior fields plus defining source/table bytes
 ```
 
-`tools/gen_textprims_inventory.py --check` AST-scans voiceprint production source for compiled and inline word/sentence/paragraph patterns, function-word literals and re-exports, quantile/fingerprint functions, preprocessing calls, and imports of registered symbols. It compares discoveries directly with the live registry; it writes no second inventory artifact. It rejects a missing or duplicate site, duplicate ID, an unresolved implementation_ref field, a registry row that is never imported or directly characterized, and a legacy implementation that remains reachable after its cohort migrates.
+`tools/gen_textprims_inventory.py --check` AST-scans all voiceprint production source for candidate primitive sites: compiled and inline word/sentence/paragraph patterns, lexical word/phrase matching against prose (including patterns built from literal tables such as `variance_audit.CONNECTIVES`), function-word tables and re-exports, quantile functions, text-derived fingerprints (analyzed content and prompt text, e.g. `stance_modality_audit._content_fingerprint` and `voice_verifier.fingerprint_prompt`), preprocessing calls, and imports of registered symbols. It reports each discovery next to the live registry as recognized, proved nonprimitive, or unresolved, and writes no second inventory artifact. Only source evidence proves a site nonprimitive (for example, a hash that consumes only nontext metadata); mixed text/metadata hashes stay included, and names alone prove nothing. Dynamic construction, rebinding or unresolved aliases stay unresolved, never silently excluded.
+
+CI enforcement is cumulative: every merge-base registry row plus every candidate addition. For those obligations it rejects a missing or duplicate row, site or ID, changed behavior, an unresolved implementation_ref or import, a row never imported or characterized, a legacy implementation still reachable after its cohort migrates, and an unresolved site that could rebind or bypass a registered primitive. Removing a candidate row does not remove an obligation. Unregistered candidates outside those obligations are reported, not failed; independent review of the report admits each cohort, and full R2 completion requires every discovery reconciled. No pending-ID registry, exemption file or cohort ledger.
+
+The first R2 cohort is exactly `plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt` and `plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex`; both need native characterization rows.
 
 IDs use `<family>-<12-hex-behavior-prefix>-v1`. Because IDs are minted only after final ownership, `behavior_sha256` can bind the final defining source/table bytes without confusing a planned relocation with behavior change. Candidate rows are compared with the merge-base row of the same ID; a changed behavior digest requires a new versioned ID and is outside this no-change increment.
 
 ## 3. Narrow pure-primitive characterization
 
-`references/textprims/characterization.json` is a deterministic pure-call oracle. It does not invoke output builders, normalized envelopes, consumers, models, corpora, files outside the fixture, or network services. The top level is exactly `{schema,license,rows}`; each row is exactly:
+`references/textprims/characterization.json` is a deterministic pure-call oracle. It does not invoke output builders, normalized envelopes, consumers, user corpora, generative models, model services, or network services. Native Punkt characterization may read only its declared test dependency: NLTK 3.9.4 and the four English `punkt_tab` files from `nltk_data` revision `550b6625bcef1f2abff2ff770a5a0d272c9c6b2a` (archive SHA256 `e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106`), extracted by test setup into an isolated root to which `nltk.data.path` is restricted. Characterization never downloads, and fails rather than skips when the dependency is missing. Production imports and backend selection are unchanged. The top level is exactly `{schema,license,rows}`; each row is exactly:
 
 ```text
 case_id: unique string
@@ -131,7 +136,7 @@ Each R1/R2 pair is a focused sequence for one non-overlapping cohort. There is n
 
 ## Acceptance gates
 
-1. `gen_textprims_inventory.py --check` resolves every row/site/import against the candidate, refuses old-path IDs and unowned duplicates, and is wired into CI with its self-tests.
+1. `gen_textprims_inventory.py --check` scans all production source, resolves every row/site/import in the cumulative registered cohorts against the candidate, refuses old-path IDs and unowned duplicates, reports remaining/unresolved candidates separately, and is wired into CI with its self-tests. A green cohort check is not full R2 completion.
 2. Every registry row names its final owner; no row is minted in the same commit that still plans a later defining-symbol move.
 3. Every migrated callable passes the exact primary and mutant characterization rows under the closed comparator rules; the legacy and registered callables are the same object after compatibility import where object identity is meaningful.
 4. The cohort's merge-base legacy-site set shrinks to zero except named re-exports. No call arguments, preprocessing order, backend branch, result extraction, pattern/table byte, or output builder changes.
