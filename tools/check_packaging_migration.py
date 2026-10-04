@@ -154,6 +154,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/narratorial_distance_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/productive_roughness_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/sound_texture_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),
