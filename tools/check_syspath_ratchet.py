@@ -84,7 +84,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # prior bootstrap. At 8a42a0d, detached foreign-cwd -S runpy/help fails without
 # scripts/ and passes with it. Counted normally: 191 -> 192; no exclusions or
 # unrelated removals. This relocation-only increase requires build review.
-PINNED_CEILING = 192
+# P4 binoculars adds one necessary permanent launcher bootstrap for a whole
+# module with none before; counted 192 -> 193, no exclusions or other removals.
+PINNED_CEILING = 193
 
 
 def find_runtime_scripts() -> list[Path]:
