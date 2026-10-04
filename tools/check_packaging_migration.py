@@ -177,6 +177,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/within_doc_segmentation.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/model_family_attribution.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/lambdag_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/discourse_move_signature.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),
