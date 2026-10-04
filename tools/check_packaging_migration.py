@@ -170,6 +170,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/setec_run_set.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/manifest_validator.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/house_style_decomposition.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),

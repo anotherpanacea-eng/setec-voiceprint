@@ -389,6 +389,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "corpus_novelty_audit", "cross_doc_novelty_profile",
         "distinct_diversity_audit", "homogeneity_audit", "originality_audit",
         "skeleton_overlap_audit", "verbatim_mosaic_audit",
+        "house_style_decomposition",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {

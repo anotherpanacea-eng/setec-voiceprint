@@ -1412,13 +1412,6 @@ exemptions:
   owner: packaging
   introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 39 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/image_conjunction.py
   symbol: _SCRIPTS_DIR
   reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 66 not yet converted
@@ -2332,6 +2325,13 @@ exemptions:
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
     not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
@@ -4745,6 +4745,14 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/house_style_decomposition.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
     section 2).
