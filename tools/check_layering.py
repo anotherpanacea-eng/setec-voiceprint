@@ -748,6 +748,23 @@ def check_ghost_rows(
     return problems
 
 
+def _surface_implementation_path(legacy: str) -> str | None:
+    """Owning locations for flat and calibration per-file launchers."""
+    try:
+        old_rel = (REPO_ROOT / legacy).relative_to(SCRIPTS_ROOT)
+    except ValueError:
+        return None
+    if old_rel.suffix != ".py" or not old_rel.stem.isidentifier():
+        return None
+    if len(old_rel.parts) == 1:
+        target = SCRIPTS_ROOT / "setec/surfaces" / old_rel.name
+    elif len(old_rel.parts) == 2 and old_rel.parts[0] == "calibration":
+        target = SCRIPTS_ROOT / "setec" / old_rel
+    else:
+        return None
+    return target.relative_to(REPO_ROOT).as_posix()
+
+
 def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
     """Recognize only the existing main+surface ordinary launcher contract.
 
@@ -763,9 +780,7 @@ def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
         new_rel = target.relative_to(SCRIPTS_ROOT)
     except ValueError:
         return False
-    if (len(old_rel.parts) != 1 or old_rel.suffix != ".py"
-            or not old_rel.stem.isidentifier()
-            or new_rel != Path("setec/surfaces") / old_rel.name):
+    if _surface_implementation_path(from_path) != to_path:
         return False
     if (not source.is_file() or not target.is_file()
             or source.resolve() != source or target.resolve() != target):
@@ -777,14 +792,16 @@ def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
             and isinstance(body[0].value.value, str)):
         body = body[1:]  # documentation is not executable launcher plumbing
     stem = old_rel.stem
+    package = ".".join(new_rel.parent.parts)
+    scripts_anchor = "parent" if len(old_rel.parts) == 1 else "parents[1]"
     expected = ast.parse(f"""
 import sys
 from pathlib import Path
-_SCRIPT_DIR = Path(__file__).resolve().parent
+_SCRIPT_DIR = Path(__file__).resolve().{scripts_anchor}
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
-from setec.surfaces import {stem} as _mod
-from setec.surfaces.{stem} import TASK_SURFACE
+from {package} import {stem} as _mod
+from {package}.{stem} import TASK_SURFACE
 if __name__ == "__main__":
     sys.exit(_mod.main())
 else:
@@ -830,8 +847,8 @@ def check_ratchet(base_sha: str) -> list[str]:
         if isinstance(path, str)
     }
     for legacy in old_endpoints:
-        target = (Path(legacy).parent / "setec/surfaces" / Path(legacy).name).as_posix()
-        if _is_permanent_surface_launcher(legacy, target):
+        target = _surface_implementation_path(legacy)
+        if target is not None and _is_permanent_surface_launcher(legacy, target):
             surface_moves[target] = legacy
     added = sorted({
         _exemption_key(r) for r in new_rows if isinstance(r, dict)
