@@ -79,7 +79,8 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # bootstrap needs one counted site in its permanent launcher, because detached
 # foreign-cwd runpy does not put scripts/ on sys.path. Measured 189 -> 199
 # across the 2026-10-03 and 2026-10-04 trains, with no counting exclusions.
-PINNED_CEILING = 199
+# The whole idiolect relocation adds one required permanent alias: 199 -> 200.
+PINNED_CEILING = 200
 
 
 def find_runtime_scripts() -> list[Path]:
