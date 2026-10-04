@@ -28,7 +28,7 @@ import datetime as dt
 import json
 import sys
 from pathlib import Path
-from conftest import read_manifest  # noqa: E402
+from conftest import make_fixture_fetcher, read_manifest  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -100,12 +100,7 @@ def fixture_url_map() -> dict:
 
 
 def make_fetcher(url_map: dict | None = None) -> ac.FixtureFetcher:
-    return ac.FixtureFetcher(
-        url_map=dict(url_map if url_map is not None else fixture_url_map()),
-        fixture_dir=FIXTURE_DIR,
-        rate_limit_seconds=0.0,
-        respect_robots=False,
-    )
+    return make_fixture_fetcher(ac.FixtureFetcher, FIXTURE_DIR, fixture_url_map, url_map)
 
 
 # ------------------- Shared-core: Fetcher extra_headers ----------
