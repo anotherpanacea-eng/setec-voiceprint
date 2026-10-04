@@ -1967,27 +1967,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/restoration_packet.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 52 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/restoration_packet.py
-  symbol: private_dir
-  reason: pending relocation (P4); anchor `private_dir` at line 1260 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/restoration_packet.py
-  symbol: repo_root
-  reason: pending relocation (P4); anchor `repo_root` at line 1259 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/s5_distance.py
   symbol: <inline>
   reason: pending relocation (P4); anchor `<inline>` at line 132 not yet converted
@@ -2348,6 +2327,13 @@ exemptions:
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/restoration_packet.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
     not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
@@ -4849,6 +4835,14 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/pov_voice_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/restoration_packet.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/restoration_packet.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
     section 2).
