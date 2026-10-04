@@ -709,7 +709,9 @@ def test_holdout_validators_do_not_import_selector_encoder(validator):
     """The held-out validators must NOT import the selector's encoder
     module / aliases (the firewall's M1 code-leak form). NECESSARY, not
     SUFFICIENT — the correlation leak is the consumer drift gate's job."""
-    src = (SCRIPTS_ROOT / validator).read_text(encoding="utf-8")
+    package_path = SCRIPTS_ROOT / "setec" / "surfaces" / validator
+    source_path = package_path if package_path.is_file() else SCRIPTS_ROOT / validator
+    src = source_path.read_text(encoding="utf-8")
     assert "import voice_fingerprint" not in src, (
         f"{validator} imports voice_fingerprint — selector manifold leak"
     )

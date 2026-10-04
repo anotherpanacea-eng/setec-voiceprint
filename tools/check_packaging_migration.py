@@ -185,6 +185,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/rank_turbulence_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/general_imposters.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/rank_space_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/binoculars_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reference_ecology_audit.py", "_SCRIPT_DIR"),
