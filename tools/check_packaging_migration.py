@@ -211,6 +211,34 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/narrative_decision_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/narrative_decision_long_form.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/argument_decision_audit.py", "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_courtlistener.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_everycrsreport.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_gmail_sent.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_imessage_sent.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_mirrulations.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_openalex_core.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_pdf_urls.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquire_stackexchange.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquisition_sources/build_opengrants_zenodo_source_list.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/acquisition_sources/build_tanner_source_list.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/near_dup_dedup.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
+    ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
+}
+# Exact intrinsic producer-byte anchors authorized by the acquisition amendment.
+_P4_RELOCATION_ANCHORS = {
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'blob'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'commitment'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'commitment_bytes'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'committed_script'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'payloads'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'receipt'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'repository'),
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'revision'),
 }
 # setec_run.py is an explicit generated-shim exclusion (spec §2): it keeps a
 # dedicated hand-written launcher and is not covered by the four-template
@@ -443,7 +471,7 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         ),
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "revision",
     ): {
         "removal_phase": "not-applicable",
@@ -461,21 +489,21 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         ),
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "blob",
     ): {
         "removal_phase": "not-applicable",
         "reason": "Same tuple-unpacking assignment as 'revision' — see that row.",
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "committed_script",
     ): {
         "removal_phase": "not-applicable",
         "reason": "Same tuple-unpacking assignment as 'revision' — see that row.",
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "commitment",
     ): {
         "removal_phase": "not-applicable",
@@ -489,26 +517,29 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
         ),
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "commitment_bytes",
     ): {
         "removal_phase": "not-applicable",
         "reason": "Downstream of 'commitment' — same self-referential chain, see 'revision'.",
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "receipt",
     ): {
         "removal_phase": "not-applicable",
         "reason": "Downstream of 'commitment'/'commitment_bytes' — same self-referential chain, see 'revision'.",
     },
     (
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py",
         "payloads",
     ): {
         "removal_phase": "not-applicable",
         "reason": "Downstream of 'commitment_bytes'/'receipt' — same self-referential chain, see 'revision'.",
     },
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'): {"removal_phase": "not-applicable", "reason": 'Actual executing package bytes are the Gmail extraction identity; stale approval bindings remain refused.'},
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
+    ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'repository'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
 }
 
 
@@ -1178,7 +1209,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     new_keys = {
         (r.get("path"), r.get("symbol")) for r in new_rows if isinstance(r, dict)
     }
-    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS - _P3_RELOCATION_ANCHORS - _P4_BOOTSTRAP_ANCHORS)
+    added = sorted(new_keys - old_keys - _P2_BOOTSTRAP_ANCHORS - _P3_BOOTSTRAP_ANCHORS - _P3_RELOCATION_ANCHORS - _P4_BOOTSTRAP_ANCHORS - _P4_RELOCATION_ANCHORS)
     if not added:
         return []
     return [

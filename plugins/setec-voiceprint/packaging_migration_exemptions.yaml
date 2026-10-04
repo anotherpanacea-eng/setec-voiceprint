@@ -294,13 +294,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_courtlistener.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 78 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/acquire_epub.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 51 not yet converted
@@ -308,41 +301,13 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_everycrsreport.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 73 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_gmail_sent.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py
   symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at line 1025 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: Actual executing package bytes are the Gmail extraction identity; stale approval
+    bindings remain refused.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_gmail_sent.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 41 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 70 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 29 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_magazine.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 75 not yet converted
@@ -353,27 +318,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/acquire_manuscript.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 42 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_mirrulations.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 62 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_openalex_core.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 57 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/acquire_pdf_urls.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 54 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1404,71 +1348,70 @@ exemptions:
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 94 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: Actual package directory discovers the Git repository for strict committed-producer
+    identity; dirty or uncommitted package bytes remain refused.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: blob
   reason: "Same tuple-unpacking assignment as 'revision' \u2014 see that row."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: commitment
   reason: "Downstream of 'revision'/'blob'/'committed_script' (source_commitment.build_commitment(producer_revision=revision,\
-    \ producer_blob_oid=blob, producer_script_bytes=committed_script, ...)) \u2014\
-    \ part of the same self-referential content-commitment chain rooted in Path(__file__)\
-    \ as this script's own identity. Same disposition, see 'revision'."
+    \ producer_blob_oid=blob, producer_script_bytes=committed_script, ...)) \u2014 part of\
+    \ the same self-referential content-commitment chain rooted in Path(__file__) as this\
+    \ script's own identity. Same disposition, see 'revision'."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: commitment_bytes
   reason: "Downstream of 'commitment' \u2014 same self-referential chain, see 'revision'."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: committed_script
   reason: "Same tuple-unpacking assignment as 'revision' \u2014 see that row."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: payloads
-  reason: "Downstream of 'commitment_bytes'/'receipt' \u2014 same self-referential\
-    \ chain, see 'revision'."
+  reason: "Downstream of 'commitment_bytes'/'receipt' \u2014 same self-referential chain,\
+    \ see 'revision'."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: receipt
-  reason: "Downstream of 'commitment'/'commitment_bytes' \u2014 same self-referential\
-    \ chain, see 'revision'."
+  reason: "Downstream of 'commitment'/'commitment_bytes' \u2014 same self-referential chain,\
+    \ see 'revision'."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: repository
-  reason: pending relocation (P4); anchor `repository` at line 2285 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: Actual package directory discovers the Git repository for strict committed-producer
+    identity; dirty or uncommitted package bytes remain refused.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   symbol: revision
   reason: "Path(__file__) here is passed to source_commitment.committed_producer_identity(script=Path(__file__))\
-    \ as a SELF-REFERENTIAL provenance stamp \u2014 it identifies THIS script's own\
-    \ file for content-commitment hashing (git revision + blob OID + committed script\
-    \ bytes), not a stay-put data-path lookup. setec.paths resolves plugin-relative\
-    \ DATA locations; swapping this anchor for a setec.paths call would change WHAT\
-    \ gets hashed (the plugin root's identity instead of this script's), which is\
-    \ a semantic change this packaging spec explicitly forbids (no production behavior\
-    \ changes). Standing exception."
+    \ as a SELF-REFERENTIAL provenance stamp \u2014 it identifies THIS script's own file for\
+    \ content-commitment hashing (git revision + blob OID + committed script bytes), not a\
+    \ stay-put data-path lookup. setec.paths resolves plugin-relative DATA locations; swapping\
+    \ this anchor for a setec.paths call would change WHAT gets hashed (the plugin root's\
+    \ identity instead of this script's), which is a semantic change this packaging spec explicitly\
+    \ forbids (no production behavior changes). Standing exception."
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
@@ -2334,6 +2277,111 @@ exemptions:
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_courtlistener.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_everycrsreport.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_gmail_sent.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_mirrulations.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_openalex_core.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_pdf_urls.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquire_stackexchange.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquisition_sources/build_opengrants_zenodo_source_list.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/acquisition_sources/build_tanner_source_list.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/passage_remediation.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/shingle_dedup.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/idiolect_detector.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
@@ -2719,7 +2767,7 @@ layer_exemptions:
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/windows_portable_tree.py
-  to_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent_atomic.py
   edge_kind: l1_to_l2
   reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
     \ plugins/setec-voiceprint/scripts/windows_portable_tree.py imports L2 module\
@@ -2769,7 +2817,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_courtlistener.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_courtlistener.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2795,7 +2843,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_everycrsreport.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_everycrsreport.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2808,7 +2856,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_gmail_sent.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2821,7 +2869,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_govinfo_chrg.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2834,7 +2882,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2847,7 +2895,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent_atomic.py
   to_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2860,7 +2908,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent_atomic.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2899,7 +2947,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_mirrulations.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_mirrulations.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2912,7 +2960,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_openalex_core.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_openalex_core.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2925,7 +2973,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_pdf_urls.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_pdf_urls.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3924,7 +3972,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3963,7 +4011,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/passage_remediation.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/passage_remediation.py
   to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4923,6 +4971,112 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_courtlistener.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_courtlistener.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_everycrsreport.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_everycrsreport.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_gmail_sent.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_govinfo_chrg.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent_atomic.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_mirrulations.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_mirrulations.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_openalex_core.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_openalex_core.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_pdf_urls.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_pdf_urls.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquire_stackexchange.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_stackexchange.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquisition_sources/build_opengrants_zenodo_source_list.py
+  to_path: plugins/setec-voiceprint/scripts/setec/acquisition_sources/build_opengrants_zenodo_source_list.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/acquisition_sources/build_tanner_source_list.py
+  to_path: plugins/setec-voiceprint/scripts/setec/acquisition_sources/build_tanner_source_list.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/passage_remediation.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/passage_remediation.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/shingle_dedup.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/shingle_dedup.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary module-identity launcher to its own whole acquisition implementation.
+  owner: packaging
+  introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+
 - from_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/idiolect_detector.py
   edge_kind: l2_to_l2
