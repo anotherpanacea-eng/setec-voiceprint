@@ -14,6 +14,71 @@ import conformal_gate as cg  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
 
+@pytest.mark.parametrize("labels", [("same", "same"), ("", "pos"), ("ref", ""),
+                                    (" \t", "pos"), ("ref", " \t"), (None, "pos"),
+                                    ("ref", 1)])
+def test_two_class_labels_refuse_before_statistics(labels, monkeypatch):
+    def forbidden_statistics(*args, **kwargs):
+        raise AssertionError("Invalid class labels must refuse before statistics")
+
+    monkeypatch.setattr(cg, "conformal_p", forbidden_statistics)
+    with pytest.raises(ValueError, match="distinct nonblank"):
+        cg.gate_two_class([1.0, 2.0, 3.0], [10.0], 2.0, alpha=0.2,
+                          direction="higher_is_nonconforming", reference_label=labels[0],
+                          positive_label=labels[1])
+
+
+@pytest.mark.parametrize("labels", [("same", "same"), ("", "pos"), ("ref", " \t")])
+@pytest.mark.parametrize("existing_output", [False, True])
+def test_two_class_cli_invalid_labels_preserve_output_before_reads(
+        tmp_path, monkeypatch, capsys, labels, existing_output):
+    output = tmp_path / "report.json"
+    if existing_output:
+        output.write_bytes(b"prior report\n")
+
+    def forbidden_probe(*args, **kwargs):
+        raise AssertionError("Invalid labels must refuse before calibration probing")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "is_file", forbidden_probe)
+        assert cg.main(["--calibration", str(tmp_path / "ref.txt"),
+                        "--calibration-positive", str(tmp_path / "pos.txt"), "--score", "2",
+                        "--reference-label", labels[0], "--positive-label", labels[1],
+                        "--json", "--out", str(output)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "Two-class mode requires distinct nonblank class labels.\n"
+    if existing_output:
+        assert output.read_bytes() == b"prior report\n"
+    else:
+        assert not output.exists()
+
+
+@pytest.mark.parametrize("labels", [("ref", "pos"), ("ref", " ref ")])
+def test_distinct_class_labels_preserve_both_evidence_records(labels):
+    result = cg.gate_two_class([1.0, 2.0, 3.0], [10.0], 2.0, alpha=0.2,
+                              direction="higher_is_nonconforming", reference_label=labels[0],
+                              positive_label=labels[1])
+    assert result["n_calibration"] == {labels[0]: 3, labels[1]: 1}
+    assert result["p_values"] == {labels[0]: 0.75, labels[1]: 1.0}
+    assert result["prediction_set"] == list(labels)
+
+
+@pytest.mark.parametrize("fpr_mode", [False, True])
+@pytest.mark.parametrize("unused_label", ["reference", ""])
+def test_unused_positive_labels_do_not_change_other_modes(tmp_path, fpr_mode, unused_label):
+    calibration = tmp_path / "ref.txt"
+    calibration.write_text("\n".join(str(i) for i in range(100)), encoding="utf-8")
+    output = tmp_path / "report.json"
+    args = ["--calibration", str(calibration), "--score", "50", "--json", "--out", str(output)]
+    if fpr_mode:
+        args += ["--fpr-bound", "0.1", "--calibration-positive", str(tmp_path / "absent.txt")]
+    assert cg.main(args) == 0
+    before = json.loads(output.read_text(encoding="utf-8"))["results"]
+    assert cg.main(args + ["--positive-label", unused_label]) == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["results"] == before
+
+
 @pytest.mark.parametrize("alpha", [float("nan"), float("inf"), float("-inf"),
                                    0.0, 1.0, -0.1, 1.1])
 @pytest.mark.parametrize("calibration", [[], [1.0, 2.0, 3.0]])
