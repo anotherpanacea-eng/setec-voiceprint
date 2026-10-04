@@ -505,6 +505,13 @@ def _ratchet_key(
     moves = surface_moves or {}
     if kind == "l2_to_l2":
         fp, tp = moves.get(fp, fp), moves.get(tp, tp)
+    elif (kind == "l1_to_l2"
+          and fp == "plugins/setec-voiceprint/scripts/windows_portable_tree.py"
+          and tp == "plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent_atomic.py"):
+        # This pre-existing adapter edge cuts the legacy-first import cycle.
+        # Translate only its verified pinned atomic launcher; other endpoints
+        # and edge kinds remain new dependencies and fail the ratchet.
+        tp = moves.get(tp, tp)
     return (_P2_LEGACY_PATHS.get(fp, fp), _P2_LEGACY_PATHS.get(tp, tp), kind)
 
 
