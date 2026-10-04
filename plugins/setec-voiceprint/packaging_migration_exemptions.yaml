@@ -1454,13 +1454,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 45 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   symbol: <inline>
   reason: pending relocation (P4); anchor `<inline>` at line 31 not yet converted
@@ -2332,6 +2325,13 @@ exemptions:
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/manifest_validator.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
     not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
@@ -3920,19 +3920,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  to_path: plugins/setec-voiceprint/scripts/register_sweep.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manifest_validator.py\
-    \ imports plugins/setec-voiceprint/scripts/register_sweep.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
@@ -4737,6 +4724,27 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/surface_disagreement_resolver.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py
+  to_path: plugins/setec-voiceprint/scripts/register_sweep.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py\
+    \ imports plugins/setec-voiceprint/scripts/register_sweep.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
     section 2).

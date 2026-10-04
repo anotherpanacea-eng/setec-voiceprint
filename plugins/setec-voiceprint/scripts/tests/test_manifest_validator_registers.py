@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 
+from setec.paths import scripts_dir
+
 import manifest_validator as mv  # type: ignore
 
 
@@ -201,7 +203,7 @@ def test_bare_grant_proposal_cli_default_json_and_strict_exit_modes(
         "use": ["validation"],
         "register": "grant_proposal",
     }) + "\n", encoding="utf-8")
-    script = str(Path(mv.__file__).resolve())
+    script = str(scripts_dir() / "manifest_validator.py")
 
     normal = subprocess.run(
         [sys.executable, script, str(manifest)],
