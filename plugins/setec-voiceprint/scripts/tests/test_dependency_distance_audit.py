@@ -21,6 +21,8 @@ import dependency_distance_audit as dd  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 from setec.core import dependency_primitives as dp  # type: ignore  # noqa: E402
 
+_SCRIPTS_ROOT = Path(__file__).resolve().parent.parent
+
 _needs_parser = pytest.mark.skipif(not dp.HAS_SPACY or dp._NLP is None,
                                    reason="needs spaCy + en_core_web_sm")
 
@@ -230,7 +232,7 @@ def test_no_numpy_scipy_import():
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
-        cwd=Path(dd.__file__).resolve().parent,
+        cwd=_SCRIPTS_ROOT,
         capture_output=True,
         text=True,
         timeout=30,
@@ -240,7 +242,7 @@ def test_no_numpy_scipy_import():
 
 def test_import_stays_on_parser_only_dependency_seam():
     """A parser-only surface must not load unrelated Tier-3/model stacks."""
-    scripts_dir = Path(dd.__file__).resolve().parent
+    scripts_dir = _SCRIPTS_ROOT
     code = (
         "import json,sys; "
         f"sys.path.insert(0, {str(scripts_dir)!r}); "
@@ -265,21 +267,19 @@ def test_dependency_distance_not_imported_by_detectors():
     # AC 10 (anti-Goodhart held-out disjoint): this DESCRIPTIVE surface must stay
     # disjoint from the held-out detector seam — no voice_distance / discrimination
     # / surface_disagreement_resolver scoring path may import it.
-    scripts_dir = Path(dd.__file__).resolve().parent
-    detectors = [
-        "voice_distance.py", "setec/surfaces/crosslingual_voice_distance.py",
-        "surface_disagreement_resolver.py", "discrimination_evidence.py",
-    ]
-    for name in detectors:
-        f = scripts_dir / name
-        if name == "setec/surfaces/crosslingual_voice_distance.py":
-            assert f.is_file(), "moved crosslingual implementation must be checked"
-        if not f.exists():
-            continue
-        src = f.read_text(encoding="utf-8")
-        assert "dependency_distance_audit" not in src, (
-            f"{name} imports/references dependency_distance_audit — breaks the "
-            f"anti-Goodhart disjointness of this descriptive surface")
+    # Legacy names may be launchers; the implementation can live under setec/surfaces.
+    checked = 0
+    for name in ("voice_distance.py", "crosslingual_voice_distance.py",
+                 "surface_disagreement_resolver.py", "discrimination_evidence.py"):
+        for f in (_SCRIPTS_ROOT / name, _SCRIPTS_ROOT / "setec" / "surfaces" / name):
+            if not f.is_file():
+                continue
+            checked += 1
+            src = f.read_text(encoding="utf-8")
+            assert "dependency_distance_audit" not in src, (
+                f"{f.name} imports/references dependency_distance_audit — breaks the "
+                f"anti-Goodhart disjointness of this descriptive surface")
+    assert checked >= 3
 
 
 # --- AC 1/2/3: envelope additivity + posture (parser-gated) -----------------
@@ -364,3 +364,28 @@ def test_shape_passes_bounds_gate(tmp_path):
     rc, env = _envelope([str(t), "--json"])
     assert rc == 0 and env["available"] is True               # build_output ran the gate, no raise
     assert "shape" in env["results"]
+
+
+def test_package_and_legacy_imports_share_module():
+    from setec.surfaces import dependency_distance_audit as packaged
+    assert dd is packaged
+
+
+def test_detached_launcher_parser_refusal(tmp_path):
+    launcher = _SCRIPTS_ROOT / "dependency_distance_audit.py"
+    code = ("import sys;sys.modules['spacy']=None;import runpy;"
+            "sys.argv=[sys.argv[1],sys.argv[2],'--json'];runpy.run_path(sys.argv[0],run_name='__main__')")
+    result = subprocess.run([sys.executable, "-I", "-c", code, str(launcher), str(tmp_path / "missing")], cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 3, result.stderr
+    env = json.loads(result.stdout)
+    assert env['tool'] == 'dependency_distance_audit'
+    assert env['task_surface'] == 'voice_coherence'
+    assert env['reason_category'] == 'missing_dependency'
+
+
+def test_invalid_arguments_precede_parser_refusal(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(dd, "HAS_SPACY", False)
+    assert dd.main([str(tmp_path / 'missing'), '--max-bucket', '1']) == 2
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert '--max-bucket >= 2' in captured.err

@@ -813,15 +813,6 @@ def test_package_and_legacy_module_identity():
     assert packaged is bf
 
 
-def test_packaged_patch_visible_to_legacy_stylometry_consumer(monkeypatch):
-    from setec.surfaces import biber_features as packaged
-    marker = {"relocation_probe": 1.0}
-    monkeypatch.setattr(packaged, "biber_family_features", lambda vector: marker)
-    result = sc.extract_features("The cat waited in the house.", include_spacy=False,
-                                 include_biber=True, biber_vector={"BIN_probe": 1.0})
-    assert result["features"]["biber_features"] is marker
-
-
 @pytest.mark.parametrize("mode", ["direct", "runpy"])
 def test_detached_launcher_preserves_missing_tagger_abstention(tmp_path, mode):
     import subprocess

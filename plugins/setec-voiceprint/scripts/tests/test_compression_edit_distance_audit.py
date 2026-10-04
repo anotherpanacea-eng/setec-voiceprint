@@ -89,12 +89,6 @@ def test_surface_registered():
 def test_legacy_and_package_imports_share_module():
     from setec.surfaces import compression_edit_distance_audit as implementation
     assert c is implementation
-    original = c.TOOL_NAME
-    try:
-        c.TOOL_NAME = "identity-control"
-        assert implementation.TOOL_NAME == "identity-control"
-    finally:
-        c.TOOL_NAME = original
 
 
 @pytest.mark.parametrize("use_runpy", [False, True])
