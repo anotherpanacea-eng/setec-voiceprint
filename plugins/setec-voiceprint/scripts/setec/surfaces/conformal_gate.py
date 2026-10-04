@@ -125,6 +125,15 @@ def _nonconformity(values: list[float], direction: str,
     return list(values)  # higher_is_nonconforming
 
 
+def _require_probability(value: float, *, name: str) -> None:
+    try:
+        valid = math.isfinite(value) and 0 < value < 1
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"{name} must be finite and strictly between 0 and 1") from exc
+    if not valid:
+        raise ValueError(f"{name} must be finite and strictly between 0 and 1")
+
+
 def conformal_p(calibration: list[float], score: float, *,
                 direction: str) -> float:
     """Split-conformal p-value: (1 + #{cal_nc >= score_nc}) / (n + 1).
@@ -176,6 +185,7 @@ def threshold_at_fpr_bound(
     tail and is rejected. Pure stdlib; no model. Returns a dict; an empty
     calibration set yields ``available=False``."""
     _require_finite_scores(calibration, name="calibration")
+    _require_probability(fpr_bound, name="fpr_bound")
     if direction not in FPR_BOUND_DIRECTIONS:
         return {
             "available": False,
@@ -313,6 +323,7 @@ def gate_fpr_bound(
 
 def gate_one_class(calibration: list[float], score: float, *, alpha: float,
                    direction: str, reference_label: str) -> dict[str, Any]:
+    _require_probability(alpha, name="alpha")
     p = conformal_p(calibration, score, direction=direction)
     in_set = p > alpha
     return {
@@ -331,6 +342,8 @@ def gate_one_class(calibration: list[float], score: float, *, alpha: float,
 def gate_two_class(cal_ref: list[float], cal_pos: list[float], score: float, *,
                    alpha: float, direction: str, reference_label: str,
                    positive_label: str) -> dict[str, Any]:
+    _require_distinct_class_labels(reference_label, positive_label)
+    _require_probability(alpha, name="alpha")
     p_ref = conformal_p(cal_ref, score, direction=direction)
     p_pos = conformal_p(cal_pos, score, direction=direction)
     pred = []
@@ -470,6 +483,13 @@ def render_report(payload: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _require_distinct_class_labels(reference_label: str, positive_label: str) -> None:
+    if (type(reference_label) is not str or not reference_label.strip()
+            or type(positive_label) is not str or not positive_label.strip()
+            or reference_label == positive_label):
+        raise ValueError("Two-class mode requires distinct nonblank class labels.")
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -548,6 +568,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.score is not None and not math.isfinite(args.score):
         sys.stderr.write(f"--score must be a finite number; got {args.score}\n")
         return 2
+
+    if args.calibration_positive and not fpr_bound_mode:
+        try:
+            _require_distinct_class_labels(args.reference_label, args.positive_label)
+        except ValueError as exc:
+            sys.stderr.write(f"{exc}\n")
+            return 2
 
     cal_path = Path(args.calibration).expanduser()
     if not cal_path.is_file():
