@@ -432,7 +432,7 @@ def test_manual_dispositions_are_present_in_regenerated_exemptions():
     assert "repository root" in baselines_row["reason"].lower()
 
     revision_row = by_key[(
-        "plugins/setec-voiceprint/scripts/near_dup_dedup.py", "revision",
+        "plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py", "revision",
     )]
     assert revision_row["removal_phase"] == "not-applicable"
     assert "self-referential" in revision_row["reason"].lower()
