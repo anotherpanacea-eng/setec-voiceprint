@@ -1069,7 +1069,7 @@ def test_receipt_pins_match_the_ci_checker_source() -> None:
     # The checker is frozen; read its constants out of the file rather than
     # restating them, so a future divergence is visible here.
     checker = (
-        Path(rs.__file__).resolve().parents[3]
+        REPO_ROOT
         / "tools"
         / "check_register_sweep_h1_gate.py"
     ).read_text(encoding="utf-8")
@@ -2044,7 +2044,7 @@ def test_importing_the_sweep_opens_no_network_or_subprocess_surface() -> None:
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],
-        cwd=Path(rs.__file__).resolve().parent,
+        cwd=rs.scripts_dir(),
         capture_output=True, text=True, timeout=60,
     )
     assert result.returncode == 0, result.stderr
@@ -7138,31 +7138,17 @@ def test_cli_entry_point_ships_seam_refusals_as_bad_input(
 
 
 def _cli_tampered_receipt_script(tmp_path: Path) -> Path:
-    """A second ``register_sweep.py`` whose plugin tree holds a tampered H1
-    receipt.
-
-    Only ``register_sweep.py`` is a real copy -- ``default_h1_paths`` derives
-    the reference tree from ``Path(__file__).resolve().parent``, so a symlink
-    would resolve straight back to the real plugin. Every sibling module is
-    symlinked, so this costs one file rather than a tree copy.
-    """
+    """Copy the public plugin so its package resolves the tampered receipt."""
     plugin = tmp_path / "plugin"
-    fake_scripts = plugin / "scripts"
-    references = plugin / "references"
-    fake_scripts.mkdir(parents=True)
-    references.mkdir(parents=True)
-    for item in SCRIPTS.iterdir():
-        if item.name in ("__pycache__", "tests"):
-            continue
-        if item.name == "register_sweep.py":
-            shutil.copyfile(item, fake_scripts / item.name)
-        else:
-            (fake_scripts / item.name).symlink_to(item)
+    shutil.copytree(
+        SCRIPTS.parent, plugin,
+        ignore=shutil.ignore_patterns("tests", "__pycache__", ".pytest_cache"),
+    )
     receipt_path, _classifier_path = rs.default_h1_paths()
-    (references / receipt_path.name).write_bytes(
+    (plugin / "references" / receipt_path.name).write_bytes(
         receipt_path.read_bytes().replace(b"{", b"{ ", 1)
     )
-    return fake_scripts / "register_sweep.py"
+    return plugin / "scripts" / "register_sweep.py"
 
 
 def test_cli_entry_point_ships_a_tampered_receipt_as_policy_refused(
@@ -7451,36 +7437,6 @@ def test_capability_fragment_and_golden_agree() -> None:
     )
     assert entry["dependencies"]["python"] == []
 
-
-def test_no_orphan_script_or_surface_drift_for_this_capability() -> None:
-    """The drift linter's Check 1/Check 3 conditions, asserted directly.
-
-    The linter itself is a CI gate (it imports the plugin's optional-dependency
-    fixture generators); what this pins is the property it checks: the script
-    declares a module-level ``TASK_SURFACE`` constant, and the fragment's
-    ``surface`` equals it.
-    """
-    import ast as _ast
-
-    tree = _ast.parse(
-        (SCRIPTS / "register_sweep.py").read_text(encoding="utf-8")
-    )
-    declared = [
-        node.value.value
-        for node in tree.body
-        if isinstance(node, _ast.Assign)
-        for target in node.targets
-        if isinstance(target, _ast.Name)
-        and target.id == "TASK_SURFACE"
-        and isinstance(node.value, _ast.Constant)
-    ]
-    assert declared == ["validation"]
-    fragment = (
-        SCRIPTS.parent / "capabilities.d" / "register_composition_sweep.yaml"
-    ).read_text(encoding="utf-8")
-    assert "surface: validation" in fragment
-    assert "- manifest_validator" in fragment
-    assert "status: heuristic" in fragment
 
 
 def test_docs_freshness_is_green() -> None:
