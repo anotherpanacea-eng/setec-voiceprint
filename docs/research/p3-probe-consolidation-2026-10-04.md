@@ -461,3 +461,13 @@ else:
     assert name != 'windows_descriptor_io' or os.name == 'nt'
 assert sys.modules['__main__'] is old
 ```
+
+## Implementation consumption record
+
+The separate preparation is independently cleared draft PR538 at exact `c8c5df5d1e51bf77bf69ba477d8c3d0097369a3f`. This subsequent implementation consumes its cases and expectations. All63 original node IDs map one-to-one to the same IDs, with complete scenario functions, decorators, module globals and embedded payloads preserved outside the local probe/import edits. Diagnostic comparison verified the three complete module trees under that exclusion; no source-freeze test was added.
+
+The focused Windows run passes75 cases:63 originals and12 separate behavioral controls. The controls protect live runner/executable rebinding, argument string conversions and subprocess options, None success return, nonzero-exit refusal with stderr as the assertion message, and refusal of either nonempty output. They inject module-local synthetic bindings rather than patching global sys or subprocess.
+
+Whole-suite collection completes without errors at11014 nodes. A broader run of the21 explicit shared-conftest caller modules plus12 new controls gives629 passes and40 failures. Every657 existing case outcome matches the earlier exploratory broad run, and all12 added cases pass. The40 failing nodes were also reproduced by the earlier exact-base failed-case rerun; no cause beyond reproduction is assigned here. HEAD remained fixed throughout these collection/execution runs.
+
+This is bounded Windows/local evidence. The complete suite was collected, not executed again. No full-suite-green, POSIX execution, hosted CI or integration clearance is claimed. Production code, fixture bytes, workflows/selectors and divergent packaging-argument probes remain unchanged.
