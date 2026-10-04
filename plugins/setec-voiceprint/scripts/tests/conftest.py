@@ -52,3 +52,13 @@ def _results(env):
 
 def _digest(label: str) -> str:
     return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
+
+
+def assert_isolated_probe(run, executable, code, scripts, cwd, *args):
+    """Run an isolated Python probe using the caller's live runner bindings."""
+    result = run(
+        [executable, "-I", "-S", "-B", "-c", code, str(scripts), *map(str, args)],
+        cwd=cwd, text=True, capture_output=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == result.stderr == ""

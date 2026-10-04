@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import assert_isolated_probe
+
 PLUGIN = Path(__file__).resolve().parents[2]
 SCRIPTS = PLUGIN / "scripts"
 MODULES = ("concreteness", "argument_register_baselines",
@@ -14,12 +16,7 @@ MODULES = ("concreteness", "argument_register_baselines",
 
 
 def _probe(code, scripts, cwd, *args):
-    result = subprocess.run(
-        [sys.executable, "-I", "-S", "-B", "-c", code, str(scripts), *map(str, args)],
-        cwd=cwd, text=True, capture_output=True, timeout=30,
-    )
-    assert result.returncode == 0, result.stderr
-    assert result.stdout == result.stderr == ""
+    assert_isolated_probe(subprocess.run, sys.executable, code, scripts, cwd, *args)
 
 
 @pytest.mark.parametrize("name", MODULES)
