@@ -469,7 +469,9 @@ class TestAntiGoodhart:
 
     def test_model_family_attribution_does_not_import_biber(self):
         """AC7: model_family_attribution.py does not import biber_features."""
-        mfa_path = SCRIPTS / "model_family_attribution.py"
+        import model_family_attribution as mfa
+
+        mfa_path = Path(mfa.__file__)
         if not mfa_path.exists():
             pytest.skip("model_family_attribution.py not found")
         src = mfa_path.read_text(encoding="utf-8")
