@@ -172,6 +172,47 @@ stale-profile refusal. These are verification suggestions, not a requirement for
 another permanent checking system. Acquire implementation/test paths separately;
 no model load, real authority activation or private prose is needed for this move.
 
+### S5 whole-family relocation amendment
+
+The complete P4 `voice-distance` family includes `s5_distance.py`,
+`voice_distance.py`, and `voice_profile.py`, as derived from the live capability
+fragments. Relocate whole modules together; this amendment permits no partial
+family, shared harness, output-builder change, scoring change or new consumer
+exposure. It supplies a contract exception, not an implemented relocation.
+
+S5 binds two ordered inputs in `results.implementation_sha256`: its actual
+executing package `s5_distance.py`, then the unchanged existing
+`setec/core/stylometry_distance.py`. For each input, preserve UTF-8 basename,
+NUL, actual bytes with CRLF replaced by LF, then NUL, in that order. Necessary
+location plumbing may change S5 implementation bytes and the resulting digest;
+it does not permit changing the core implementation. Resolve the core input
+through the existing `setec.paths.scripts_dir()` accessor. Never hash the
+compatibility alias, reconstruct pre-move bytes, hardcode a digest, remove the
+binding or change its algorithm, field or schema.
+
+For this whole-family relocation only, the unchanged-fixture acceptance rule
+has one exception: the producer S5 golden's `results.implementation_sha256` may
+change to the value produced by the candidate's real fixture builder. Regenerate
+that fixture from the real S5 execution; all other normalized S5 values and all
+other fixtures remain unchanged. Do not add digest sentinelization to the
+normalizer. Any affected consumer fixture copy remains a separate coordinated
+consumer PR; this amendment does not repin consumers or expand their exposure.
+
+Previously bound G1 triples, verification records, analysis freezes, authority
+and profile records, and stale instrument expectations remain immutable. Do not
+recompute, mint, replace, rebind or automatically ratify that existing evidence.
+Keep each original binding and its existing refusal behavior. A truthful changed
+implementation digest does not make stale evidence current.
+
+Qualification compares actual baseline and candidate scoring, envelopes,
+warnings, licenses, CLI/refusal behavior and data paths. Verify the new digest
+against both actual implementation inputs with the preserved framing, rather
+than ignoring it. Reuse the existing S5 digest mutation and newline checks, and
+verify legacy/package module identity plus copied-plugin direct and `runpy`
+execution. Existing consumer expected-binding, instrument-freeze and verification
+commitment checks keep their refusal behavior. No new digest registry, resolver,
+cache, gate, approval mechanism, model job or private corpus input is required.
+
 ## 5. Drift, reachability, and truthful degradation
 
 `check_capabilities_drift.py` and `seed_capabilities.py` share package-aware discovery. The drift parser follows the pinned static `TASK_SURFACE` import in a launcher to the implementation. Package implementations are not double-counted as new flat surfaces. For every manifest entry, CI proves: the recorded path exists in a scratch plugin copy, resolves without following repo-root symlinks, has a matching implementation, and retains its declared `TASK_SURFACE`.
