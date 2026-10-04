@@ -52,3 +52,14 @@ def _results(env):
 
 def _digest(label: str) -> str:
     return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
+
+
+def run_environment_probe(os_module, subprocess_module, sys_module, code, cwd, *args):
+    """Return a bare Python probe result using the caller's live module bindings."""
+    env = os_module.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
+    return subprocess_module.run(
+        [sys_module.executable, "-B", "-S", "-c", code, *map(str, args)],
+        cwd=cwd, env=env, capture_output=True, text=True, timeout=30,
+    )

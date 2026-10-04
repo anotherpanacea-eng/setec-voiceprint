@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import run_environment_probe
+
 _TOOLS = Path(__file__).resolve().parents[4] / "tools"
 if str(_TOOLS) not in sys.path:
     sys.path.insert(0, str(_TOOLS))
@@ -19,11 +21,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 
 
 def _probe(code, cwd, *args):
-    env = os.environ.copy()
-    env.pop("PYTHONPATH", None)
-    env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
-    return subprocess.run([sys.executable, "-B", "-S", "-c", code, *map(str, args)],
-                          cwd=cwd, env=env, capture_output=True, text=True, timeout=30)
+    return run_environment_probe(os, subprocess, sys, code, cwd, *args)
 
 
 @pytest.mark.parametrize("stem", STEMS)
