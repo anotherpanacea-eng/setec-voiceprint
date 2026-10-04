@@ -525,12 +525,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/biber_features.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 40 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/calibration/_benchmark_embedding_length_sort.py
   symbol: here
   reason: pending relocation (P4); anchor `here` at line 132 not yet converted to
@@ -4516,4 +4516,11 @@ layer_exemptions:
     \ edge always fails, --strict or not."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/biber_features.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/biber_features.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher imports only its own whole implementation.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
