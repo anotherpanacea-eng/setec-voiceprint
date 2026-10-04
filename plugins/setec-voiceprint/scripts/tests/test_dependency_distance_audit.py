@@ -8,6 +8,7 @@ complexity pin, and the claim-license refuses-verdict + length-confound caveat."
 
 from __future__ import annotations
 
+import ast
 import io
 import json
 import subprocess
@@ -20,6 +21,8 @@ import pytest
 import dependency_distance_audit as dd  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 from setec.core import dependency_primitives as dp  # type: ignore  # noqa: E402
+
+_SCRIPTS_ROOT = Path(__file__).resolve().parent.parent
 
 _needs_parser = pytest.mark.skipif(not dp.HAS_SPACY or dp._NLP is None,
                                    reason="needs spaCy + en_core_web_sm")
@@ -230,7 +233,7 @@ def test_no_numpy_scipy_import():
     )
     result = subprocess.run(
         [sys.executable, "-c", code],
-        cwd=Path(dd.__file__).resolve().parent,
+        cwd=_SCRIPTS_ROOT,
         capture_output=True,
         text=True,
         timeout=30,
@@ -240,7 +243,7 @@ def test_no_numpy_scipy_import():
 
 def test_import_stays_on_parser_only_dependency_seam():
     """A parser-only surface must not load unrelated Tier-3/model stacks."""
-    scripts_dir = Path(dd.__file__).resolve().parent
+    scripts_dir = _SCRIPTS_ROOT
     code = (
         "import json,sys; "
         f"sys.path.insert(0, {str(scripts_dir)!r}); "
@@ -265,19 +268,29 @@ def test_dependency_distance_not_imported_by_detectors():
     # AC 10 (anti-Goodhart held-out disjoint): this DESCRIPTIVE surface must stay
     # disjoint from the held-out detector seam — no voice_distance / discrimination
     # / surface_disagreement_resolver scoring path may import it.
-    scripts_dir = Path(dd.__file__).resolve().parent
+    scripts_dir = _SCRIPTS_ROOT
     detectors = [
         "voice_distance.py", "crosslingual_voice_distance.py",
-        "surface_disagreement_resolver.py", "discrimination_evidence.py",
+        "surface_disagreement_resolver.py",
     ]
+    # Historical optional detector is absent on the settled base; inspect it if added.
+    if (scripts_dir / "discrimination_evidence.py").is_file():
+        detectors.append("discrimination_evidence.py")
     for name in detectors:
         f = scripts_dir / name
-        if not f.exists():
-            continue
-        src = f.read_text(encoding="utf-8")
-        assert "dependency_distance_audit" not in src, (
-            f"{name} imports/references dependency_distance_audit — breaks the "
-            f"anti-Goodhart disjointness of this descriptive surface")
+        assert f.is_file(), f"missing expected detector: {name}"
+        paths = [f]
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ImportFrom) and node.module == "setec.surfaces":
+                for alias in node.names:
+                    implementation = scripts_dir / "setec" / "surfaces" / (alias.name + ".py")
+                    assert implementation.is_file()
+                    paths.append(implementation)
+        for path in paths:
+            src = path.read_text(encoding="utf-8")
+            assert "dependency_distance_audit" not in src, (
+                f"{path.name} imports/references dependency_distance_audit — breaks the "
+                f"anti-Goodhart disjointness of this descriptive surface")
 
 
 # --- AC 1/2/3: envelope additivity + posture (parser-gated) -----------------
@@ -362,3 +375,42 @@ def test_shape_passes_bounds_gate(tmp_path):
     rc, env = _envelope([str(t), "--json"])
     assert rc == 0 and env["available"] is True               # build_output ran the gate, no raise
     assert "shape" in env["results"]
+
+
+def test_package_legacy_identity_and_monkeypatch(monkeypatch):
+    from setec.surfaces import dependency_distance_audit as packaged
+    assert dd is packaged
+    monkeypatch.setattr(dd, "HAS_SPACY", False)
+    assert packaged.HAS_SPACY is False
+
+
+@pytest.mark.parametrize("runpy", [False, True])
+def test_detached_launcher_parser_refusal(tmp_path, runpy):
+    launcher = _SCRIPTS_ROOT / "dependency_distance_audit.py"
+    prefix = "import sys;sys.modules['spacy']=None;"
+    if runpy:
+        code = prefix + "import runpy;sys.argv=[sys.argv[1],sys.argv[2],'--json'];runpy.run_path(sys.argv[0],run_name='__main__')"
+    else:
+        code = prefix + "p=sys.argv[1];sys.argv=[p,sys.argv[2],'--json'];exec(compile(open(p).read(),p,'exec'),{'__name__':'__main__','__file__':p})"
+    result = subprocess.run([sys.executable, "-I", "-c", code, str(launcher), str(tmp_path / "missing")], cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 3, result.stderr
+    env = json.loads(result.stdout)
+    assert env['tool'] == 'dependency_distance_audit'
+    assert env['task_surface'] == 'voice_coherence'
+    assert env['reason_category'] == 'missing_dependency'
+
+
+def test_invalid_arguments_precede_parser_refusal(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(dd, "HAS_SPACY", False)
+    assert dd.main([str(tmp_path / 'missing'), '--max-bucket', '1']) == 2
+    captured = capsys.readouterr()
+    assert not captured.out
+    assert '--max-bucket >= 2' in captured.err
+
+
+def test_actual_direct_launcher_without_site_packages(tmp_path):
+    result = subprocess.run([sys.executable, '-I', '-S', str(_SCRIPTS_ROOT / 'dependency_distance_audit.py'), str(tmp_path / 'missing'), '--json'], cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 3, result.stderr
+    env = json.loads(result.stdout)
+    assert env['tool'] == 'dependency_distance_audit'
+    assert env['reason_category'] == 'missing_dependency'
