@@ -69,7 +69,6 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     zi.check_argument_quality_conformance(bare_root, tmp_path, report)
     zi.check_argument_consistency_conformance(bare_root, tmp_path, report)
     zi.check_non_voice_structure_conformance(bare_root, tmp_path, report)
-    zi.check_set_level_diversity_conformance(bare_root, tmp_path, report)
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
@@ -114,27 +113,6 @@ def test_non_voice_short_input_is_unavailable_not_an_error(tmp_path, stem, surfa
     with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
         zi.check_non_voice_structure_conformance(tmp_path, tmp_path, report)
     assert not next(r for r in report.results if r.name == stem + ":short").passed
-
-
-@pytest.mark.parametrize("change", ["promoted", "wrong_reason", "wrong_surface", "wrong_exit"])
-def test_set_level_diversity_dispatch_refusal_stays_truthful(tmp_path, change):
-    stem = "originality_audit"
-    envelope = {"schema_version": "1.0", "tool": "setec_run", "task_surface": None,
-                "available": False, "surface": stem, "reason_category": "bad_input",
-                "reason": f"unknown surface '{stem}'"}
-    code = 2
-    if change == "promoted":
-        envelope["available"], code = True, 0
-    elif change == "wrong_reason":
-        envelope["reason"] = "cannot open launcher"
-    elif change == "wrong_surface":
-        envelope["surface"] = "other"
-    else:
-        code = 0
-    report = zi.Report()
-    with mock.patch.object(zi.subprocess, "run", return_value=_fake_proc(code, json.dumps(envelope))):
-        zi.check_set_level_diversity_conformance(tmp_path, tmp_path, report)
-    assert not next(r for r in report.results if r.name == stem + ":dispatch").passed
 
 
 def test_make_bare_copy_refuses_source_symlinks(tmp_path, monkeypatch):

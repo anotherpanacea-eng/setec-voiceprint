@@ -174,44 +174,23 @@ no model load, real authority activation or private prose is needed for this mov
 
 ### S5 whole-family relocation amendment
 
-The complete P4 `voice-distance` family includes `s5_distance.py`,
-`voice_distance.py`, and `voice_profile.py`, as derived from the live capability
-fragments. Relocate whole modules together; this amendment permits no partial
-family, shared harness, output-builder change, scoring change or new consumer
-exposure. It supplies a contract exception, not an implemented relocation.
+The complete P4 `voice-distance` family (`s5_distance.py`, `voice_distance.py`,
+`voice_profile.py`, per the live capability fragments) relocates as whole
+modules. This amendment supplies a contract exception, not a relocation.
 
-S5 binds two ordered inputs in `results.implementation_sha256`: its actual
-executing package `s5_distance.py`, then the unchanged existing
-`setec/core/stylometry_distance.py`. For each input, preserve UTF-8 basename,
-NUL, actual bytes with CRLF replaced by LF, then NUL, in that order. Necessary
-location plumbing may change S5 implementation bytes and the resulting digest;
-it does not permit changing the core implementation. Resolve the core input
-through the existing `setec.paths.scripts_dir()` accessor. Never hash the
-compatibility alias, reconstruct pre-move bytes, hardcode a digest, remove the
-binding or change its algorithm, field or schema.
+S5 binds two ordered inputs in `results.implementation_sha256`: its executing
+package `s5_distance.py`, then the unchanged `setec/core/stylometry_distance.py`,
+resolved through `setec.paths.scripts_dir()`. Necessary location plumbing may
+change the S5 bytes and so the digest. Never hash the compatibility alias,
+reconstruct pre-move bytes, hardcode a digest, or change the binding's
+algorithm, framing, field or schema.
 
-For this whole-family relocation only, the unchanged-fixture acceptance rule
-has one exception: the producer S5 golden's `results.implementation_sha256` may
-change to the value produced by the candidate's real fixture builder. Regenerate
-that fixture from the real S5 execution; all other normalized S5 values and all
-other fixtures remain unchanged. Do not add digest sentinelization to the
-normalizer. Any affected consumer fixture copy remains a separate coordinated
-consumer PR; this amendment does not repin consumers or expand their exposure.
-
-Previously bound G1 triples, verification records, analysis freezes, authority
-and profile records, and stale instrument expectations remain immutable. Do not
-recompute, mint, replace, rebind or automatically ratify that existing evidence.
-Keep each original binding and its existing refusal behavior. A truthful changed
-implementation digest does not make stale evidence current.
-
-Qualification compares actual baseline and candidate scoring, envelopes,
-warnings, licenses, CLI/refusal behavior and data paths. Verify the new digest
-against both actual implementation inputs with the preserved framing, rather
-than ignoring it. Reuse the existing S5 digest mutation and newline checks, and
-verify legacy/package module identity plus copied-plugin direct and `runpy`
-execution. Existing consumer expected-binding, instrument-freeze and verification
-commitment checks keep their refusal behavior. No new digest registry, resolver,
-cache, gate, approval mechanism, model job or private corpus input is required.
+For this relocation only, the producer S5 golden's `results.implementation_sha256`
+may change to the value the real fixture builder produces; every other S5 value
+and fixture stays unchanged. Consumer fixture copies move in their own
+coordinated PRs. Existing bindings keep their refusal behavior; a changed digest
+does not make stale evidence current. No new digest registry, resolver, cache,
+gate or approval mechanism is required.
 
 ## 5. Drift, reachability, and truthful degradation
 
@@ -250,46 +229,15 @@ Every phase is independently mergeable and keeps the full existing suite green.
 
 ## Acquisition producer-byte bindings during P4 relocation
 
-The complete `acquisition` family is derived from the live capability fragments,
-not from this section's examples. Move whole modules together under P4. Keep
-all existing normalized launcher paths, including per-file launchers for
-`acquisition_sources/`; retain that directory's package home as
-`scripts/setec/acquisition_sources/`. This clarification supplies a contract,
-not an implemented relocation, approval, profile ratification or acquisition.
-
-Two existing bindings describe executing implementation bytes. Necessary
-location plumbing may change those bytes and their derived identities:
-
-- `acquire_gmail_sent._extraction_code_sha256()` continues to hash its actual
-  executing package file with the existing raw-byte SHA-256; do not normalize
-  newlines or source bytes. Preserve the current extraction policy value,
-  receipt/descriptor/checkpoint schemas, fingerprint domains and framing.
-  Former smoke descriptors, receipts and resume checkpoints whose extraction
-  binding no longer matches retain their existing refusal behavior. Do not
-  translate, mint, reapprove or rebind existing approvals as part of relocation.
-- `near_dup_dedup._publish_spec80_package()` continues to call
-  `passage_source_population_commitment.committed_producer_identity()` with the
-  actual package implementation. Its Git repository lookup may start from that
-  implementation's directory; the helper must still read the actual committed
-  path at HEAD and refuse missing/uncommitted or dirty producer bytes. New
-  producer revision, blob OID and SHA-256 fields describe the committed executing
-  package file. Preserve schemas, digest algorithms, parameters, source admission
-  and marker-last publication. Earlier reports, commitments, receipts and profiles
-  remain immutable; each keeps its existing authority and matching rules.
-
-Never hash the compatibility alias, reconstruct former implementation bytes,
-hardcode any digest, remove a binding or add a general digest normalization
-exception. No other normalized fixture change is authorized. Keep the tokenizer
-implementation/data bindings and frozen data bytes unchanged. No new resolver,
-identity registry, cache, approval mechanism or guard is needed.
-
-Use existing synthetic Gmail stale-binding and resume refusals and strict
-committed/dirty producer tests to qualify these contracts after the move. Also
-check actual digest inputs, ordinary module identity, old CLI paths and copied
-plugin execution. Preserve current dependency requirements; zero install does
-not promise stdlib-only execution. Complete-family tests and the existing P4
-acceptance gates remain required for final relocation clearance; this docs
-increment does not claim those gates have run or that P4/P5 is complete.
+Two acquisition bindings describe executing implementation bytes, so a P4 move
+may change them: `acquire_gmail_sent._extraction_code_sha256()` keeps hashing
+its executing package file (raw bytes, no normalization), and
+`near_dup_dedup._publish_spec80_package()` keeps calling
+`committed_producer_identity()` with the package implementation, whose Git lookup
+may start from that implementation's directory and must still refuse
+uncommitted or dirty bytes. Never hash the compatibility alias or hardcode a
+digest. Existing descriptors, receipts, checkpoints and commitments are not
+rebound; stale ones keep their refusal behavior.
 
 ## Acceptance gates
 

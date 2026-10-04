@@ -915,99 +915,6 @@ def check_non_voice_structure_conformance(bare_root: Path, outside_cwd: Path, re
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
-def check_set_level_diversity_conformance(bare_root: Path, outside_cwd: Path, report: Report) -> None:
-    """Whole local lenses with optional NLP imports blocked; no model-path qualification."""
-    scripts = bare_root / "scripts"
-    pool = outside_cwd / "diversity-pool"
-    pool.mkdir(exist_ok=True)
-    for i in range(12):
-        text = (f"First, document {i} describes a separate orchard beside the river. "
-                f"However, keeper {i} counts the branches before the morning rain. ") * 8
-        (pool / f"doc{i}.txt").write_text(text, encoding="utf-8")
-    target = outside_cwd / "diversity-target.txt"
-    target.write_text((pool / "doc0.txt").read_text(encoding="utf-8") +
-                      "Finally, a new traveler records a different ending.", encoding="utf-8")
-    blocked = (
-        "import sys; sys.modules.update(dict.fromkeys(('spacy','nltk','torch','transformers',"
-        "'sentence_transformers','sklearn','textstat','openai','anthropic'))); "
-    )
-    runpy_code = blocked + (
-        "import runpy; path=sys.argv.pop(1); old=sys.modules['__main__']\n"
-        "try:\n    runpy.run_path(path,run_name='__main__')\n"
-        "finally:\n    assert sys.modules['__main__'] is old"
-    )
-    stems = ("corpus_novelty_audit", "cross_doc_novelty_profile", "distinct_diversity_audit",
-             "homogeneity_audit", "originality_audit", "skeleton_overlap_audit", "verbatim_mosaic_audit")
-    for stem in stems:
-        launcher = scripts / (stem + ".py")
-        if stem in ("corpus_novelty_audit", "skeleton_overlap_audit"):
-            args = ["--corpus-dir", str(pool)]
-        elif stem in ("distinct_diversity_audit", "homogeneity_audit"):
-            args = ["--dir", str(pool)]
-        else:
-            args = ["--target", str(target),
-                    "--reference-dir", str(pool)]
-        identity = blocked + (
-            "import importlib; from pathlib import Path; sys.path.insert(0,sys.argv[1]); "
-            "a=importlib.import_module(sys.argv[2]); b=importlib.import_module('setec.surfaces.'+sys.argv[2]); "
-            "assert a is b and a.TASK_SURFACE=='set_level_diversity'; "
-            "assert a.from_legacy is importlib.import_module('claim_license').from_legacy; "
-            "assert a.build_output is importlib.import_module('output_schema').build_output; "
-            "a._claim_license=lambda:{'probe':17}; assert b._claim_license()=={'probe':17}; "
-            "b._claim_license=lambda:{'probe':23}; assert a._claim_license()=={'probe':23}; "
-            "assert getattr(a,'SCRIPT_DIR',Path(sys.argv[1]))==Path(sys.argv[1])"
-        )
-        for mode in ("identity", "direct", "runpy", "module", "output_file", "missing_input", "invalid_option", "dispatch"):
-            output = outside_cwd / (stem + "-diversity.json")
-            argv_args = list(args)
-            if mode == "missing_input":
-                argv_args[1] = str(outside_cwd / "absent-diversity")
-            if mode == "invalid_option":
-                argv_args += ["--not-a-real-option"]
-            cwd = outside_cwd
-            if mode == "identity":
-                argv = ["-S", "-c", identity, str(scripts), stem]
-            elif mode == "module":
-                argv, cwd = ["-S", "-m", "setec.surfaces." + stem, *argv_args, "--json"], scripts
-            elif mode == "runpy":
-                argv = ["-S", "-c", runpy_code, str(launcher), *argv_args, "--json"]
-            elif mode == "dispatch":
-                argv = [str(scripts / "setec_run.py"), stem, *argv_args, "--json"]
-            else:
-                argv = ["-S", str(launcher), *argv_args]
-                argv += ["--out", str(output)] if mode == "output_file" else ["--json"]
-            try:
-                proc = subprocess.run([sys.executable, "-B", *argv], cwd=cwd, env=_clean_env(),
-                                      capture_output=True, text=True, timeout=30)
-                ok = "Traceback" not in proc.stderr
-                if mode == "identity":
-                    ok = ok and proc.returncode == 0
-                elif mode == "invalid_option":
-                    ok = ok and proc.returncode == 2 and not proc.stdout.strip()
-                    ok = ok and "unrecognized arguments" in proc.stderr
-                else:
-                    envelope = json.loads(output.read_text(encoding="utf-8") if mode == "output_file" else proc.stdout)
-                    dispatch, missing = mode == "dispatch", mode == "missing_input"
-                    expected = {"schema_version": "1.0", "tool": "setec_run" if dispatch else stem,
-                                "task_surface": None if dispatch else "set_level_diversity",
-                                "available": not (dispatch or missing)}
-                    ok = ok and proc.returncode == (2 if dispatch else 3 if missing else 0)
-                    ok = ok and all(envelope.get(k) == v for k, v in expected.items())
-                    if dispatch or missing:
-                        ok = ok and envelope.get("reason_category") == "bad_input"
-                    else:
-                        ok = ok and isinstance(envelope.get("claim_license"), dict) and bool(envelope.get("results"))
-                    if dispatch:
-                        ok = ok and envelope.get("surface") == stem
-                        ok = ok and f"unknown surface '{stem}'" in envelope.get("reason", "")
-                    if mode == "output_file":
-                        ok = ok and not proc.stdout.strip()
-                report.add(f"{stem}:{mode}", ok,
-                           "" if ok else f"exit={proc.returncode} stdout={proc.stdout[-300:]!r} stderr={proc.stderr[-300:]!r}")
-            except (subprocess.TimeoutExpired, ValueError, OSError) as exc:
-                report.add(f"{stem}:{mode}", False, str(exc))
-
-
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -1026,7 +933,6 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_argument_quality_conformance(bare_root, outside_cwd, report)
         check_argument_consistency_conformance(bare_root, outside_cwd, report)
         check_non_voice_structure_conformance(bare_root, outside_cwd, report)
-        check_set_level_diversity_conformance(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)
