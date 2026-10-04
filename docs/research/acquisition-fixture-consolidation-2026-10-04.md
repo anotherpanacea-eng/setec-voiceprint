@@ -1404,3 +1404,11 @@ assert pu.run(make_args(allow_empty=True, **ze), fetcher=make_fetcher()) == 0
 assert pu.run(make_args(**od), fetcher=make_fetcher()) == 0
 assert pu.run(make_args(**od), fetcher=make_fetcher()) == 0
 ```
+
+## Implementation consumption record
+
+The separate preparation is Voiceprint draft PR534, exact `c170c9f6b884fc1eae7c08226990d1852f5d0f85`, independently CLEAR before publication. This later branch consumes that receipt. The existing 136 nodes map one-to-one to identical IDs, with unchanged complete scenario functions, decorators, fixture maps and module globals outside the helper/import edits. Diagnostic comparison verified all four source trees outside those two edits; no source-freeze test was added.
+
+All 136 original acquisition cases and four added behavioral cases pass on Python 3.13. The four added cases also pass on Python 3.12 without acquisition extras, using module-local synthetic constructor bindings rather than mutating shared acquisition_core or requiring missing optional modules. They cover lazy default evaluation, explicit empty-map bypass, dictionary isolation, constructor options and live per-module bindings. Existing dependency skip markers remain intact.
+
+Broader suite and final implementation review remain pending. No full-suite, hosted CI or integration clearance is claimed by these focused results. Runtime code, fixture bytes and workflows are unchanged.
