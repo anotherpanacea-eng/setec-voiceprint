@@ -86,7 +86,9 @@ jobs:
           echo "TEXTPRIMS_PUNKT_DATA=$PUNKT_DATA" >> "$GITHUB_ENV"
 
       - name: Check cumulative text-primitives cohorts and report remaining candidates
-        run: python tools/gen_textprims_inventory.py --check --base origin/main
+        env:
+          TEXTPRIMS_BASE: origin/${{ github.base_ref }}
+        run: python tools/gen_textprims_inventory.py --check --base "$TEXTPRIMS_BASE"
 
       - name: Run test suite
         run: |

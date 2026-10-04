@@ -147,7 +147,80 @@ def test_new_registered_rows_need_a_production_import(tmp_path):
     assert "registered row never imported: split_sentences_punkt" in report["errors"]
     assert "registered row never imported: split_sentences_regex" in report["errors"]
     consumer = owner.parents[2] / "consumer.py"
-    consumer.write_text("from setec.core.textprims import split_sentences_punkt, split_sentences_regex\n")
+    consumer.write_text("from setec.core.textprims import " + ", ".join(inventory.registry(owner.read_text())) + "\n")
     report = inventory.check(tmp_path, "HEAD")
     assert not report["errors"]
-    assert [site["line"] for site in report["registered_import_sites"]] == [1, 1]
+    assert {site["line"] for site in report["registered_import_sites"]} == {1}
+
+
+def test_registered_tables_keep_exact_defining_bytes():
+    baseline = (ROOT / inventory.OWNER).read_text()
+    changed = baseline.replace('"above"', '"unlisted_word"', 1)
+    _, errors = inventory.verify_rows(changed, baseline)
+    assert any("table digest mismatch" in error for error in errors)
+    assert any("defining callable changed" in error for error in errors)
+
+
+def test_compatibility_reexport_chain_resolves_final_table(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "legacy.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\n")
+    (scripts / "consumer.py").write_text("from legacy import WORDS as vocabulary\n")
+    imports, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert not errors
+    assert imports[("plugins/setec-voiceprint/scripts/consumer.py", "vocabulary")] == "FUNCTION_WORDS"
+    (scripts / "legacy.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\nWORDS = set()\n")
+    _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert any("rebound registered import" in error for error in errors)
+
+
+@pytest.mark.parametrize("operation", ['WORDS.add("new")', 'mutator = WORDS.pop', 'getattr(WORDS, "add")("new")', 'alias = WORDS'])
+def test_registered_table_mutation_or_escaping_alias_fails(tmp_path, operation):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\n" + operation + "\n")
+    _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert errors
+
+
+def test_module_qualified_table_mutation_fails(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text('import setec.core.textprims\nsetec.core.textprims.FUNCTION_WORDS.clear()\n')
+    _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert any("table mutation" in error for error in errors)
+
+
+@pytest.mark.parametrize("operation", [
+    'set.add(WORDS, "new")',
+    'def change(table):\n    table.add("new")\nchange(WORDS)',
+    'consume(table=WORDS)',
+    'consume([WORDS])',
+    'consume({"table": (WORDS,)})',
+    'sorted = change\nsorted(WORDS)',
+    'def sorted(table):\n    table.clear()\nsorted(WORDS)',
+    'def caller(len):\n    len(WORDS)',
+])
+def test_registered_table_arguments_cannot_escape(tmp_path, operation):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\n" + operation + "\n")
+    _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert any("table argument" in error for error in errors)
+
+
+def test_unshadowed_table_read_builtins_remain_allowed(tmp_path):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\nordered = sorted(WORDS)\nsize = len(WORDS)\n")
+    _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert not errors
+
+
+@pytest.mark.parametrize("operation", ['holder = [WORDS]\nholder[0].clear()', 'holder = {"table": WORDS}', 'def give():\n    return WORDS'])
+def test_registered_table_container_or_return_escape_fails(tmp_path, operation):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "consumer.py").write_text("from setec.core.textprims import FUNCTION_WORDS as WORDS\n" + operation + "\n")
+    _, errors = inventory.bindings(tmp_path, {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"})
+    assert any("table alias" in error for error in errors)
