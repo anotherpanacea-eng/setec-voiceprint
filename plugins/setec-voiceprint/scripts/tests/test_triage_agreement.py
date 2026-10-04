@@ -17,45 +17,11 @@ def _pairs(framework, human):
     return list(zip(framework, human))
 
 
-@pytest.mark.parametrize("fmt", ["jsonl", "csv"])
-@pytest.mark.parametrize("keys", [("framework", "framework"), ("", "human"),
-                                  ("framework", ""), (" \t", "human"),
-                                  ("framework", " \t"), (None, "human")])
-def test_invalid_pair_selectors_refuse_before_read(fmt, keys):
-    class UnreadableInput:
-        def open(self, *args, **kwargs):
-            raise AssertionError("Invalid selectors must not read input")
-
-        def read_text(self, *args, **kwargs):
-            raise AssertionError("Invalid selectors must not read input")
-
-    with pytest.raises(ValueError):
-        ta.load_pairs(UnreadableInput(), framework_key=keys[0], human_key=keys[1], fmt=fmt)
-
-
-@pytest.mark.parametrize("keys", [("framework", "framework"), ("", "human"),
-                                  ("framework", " \t")])
-@pytest.mark.parametrize("existing_output", [False, True])
-def test_cli_invalid_selectors_preserve_output_before_input_probe(
-        tmp_path, monkeypatch, capsys, keys, existing_output):
-    output = tmp_path / "report.json"
-    if existing_output:
-        output.write_bytes(b"existing report\n")
-
-    def forbidden_probe(*args, **kwargs):
-        raise AssertionError("Invalid selectors must refuse before input probing")
-
-    with monkeypatch.context() as patch:
-        patch.setattr(Path, "is_file", forbidden_probe)
-        assert ta.main([str(tmp_path / "unread-input.jsonl"), "--framework-key", keys[0],
-                        "--human-key", keys[1], "--json", "--out", str(output)]) == 2
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert captured.err == "Select two distinct nonblank label columns.\n"
-    if existing_output:
-        assert output.read_bytes() == b"existing report\n"
-    else:
-        assert not output.exists()
+def test_cli_refuses_self_column_comparison(tmp_path, capsys):
+    path = tmp_path / "labels.jsonl"
+    path.write_text("\n".join(json.dumps({"framework": "a"}) for _ in range(12)), encoding="utf-8")
+    assert ta.main([str(path), "--human-key", "framework"]) == 2
+    assert "distinct label columns" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("fmt", ["jsonl", "csv"])

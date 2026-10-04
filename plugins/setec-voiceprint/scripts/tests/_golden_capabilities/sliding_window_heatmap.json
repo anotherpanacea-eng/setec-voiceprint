@@ -1,64 +1,59 @@
 {
-  "_seeded_at": "2026-05-28",
-  "compute": {
-    "cost_note": "Standard-library rendering with in-repo helpers, no model, API or fresh scoring. No optional runtime dependencies are required. Reads the complete JSON and constructs window/signal grids in memory. Upstream measurement costs and heuristic caveats remain separate; Explicit files need a resolved ai-prose-baselines-private path component unless opted out. This path convention does not check permissions; stdout is not guarded. Paths and localization output can be sensitive without prose.",
-    "length_floor_words": null,
-    "tier": "core"
-  },
+  "id": "sliding_window_heatmap",
+  "script_path": "plugins/setec-voiceprint/scripts/sliding_window_heatmap.py",
+  "surface": "smoothing_diagnosis",
+  "status": "heuristic",
+  "handoff": "none",
   "consumers": [],
-  "dependencies": {
-    "python": []
-  },
+  "family": "variance-localization",
+  "purpose": "Render already-measured variance_audit window bands and flagged signals as a Markdown localization heatmap with an optional JSON sidecar. Heuristic operator cues for further investigation, not calibrated per-zone judgments.",
+  "use_when": [
+    "You have sliding-window variance diagnostics and want to inspect word-coordinate hot zones, dominant signals and phenomenon cues.",
+    "You want to visualize existing measurements without running fresh scoring or loading a model."
+  ],
   "do_not_use_when": [
     "Input is raw manuscript prose or a non-windowed audit; this renderer requires a windows block.",
-    "You need a fresh score, baseline comparison or full upstream schema/provenance validation.",
-    "You want calibrated per-zone certainty, an authorship or AI verdict, or automatic scene-defect decisions.",
-    "Upstream register or baseline caveats make the window measurements inappropriate; rendering does not resolve those caveats."
+    "You want calibrated per-zone certainty or an authorship or AI verdict."
   ],
-  "examples": [
-    {
-      "cmd": "python3 plugins/setec-voiceprint/scripts/sliding_window_heatmap.py --in windows.json --out ai-prose-baselines-private/heatmap.md --json-out ai-prose-baselines-private/heatmap.json",
-      "description": "Render existing window measurements to explicitly private Markdown and JSON paths; routing registers inherit upstream applicability, not new calibration."
-    }
-  ],
-  "family": "variance-localization",
-  "handoff": "none",
-  "id": "sliding_window_heatmap",
   "inputs": {
-    "optional": [
-      "--in JSON path or '-' (default stdin).",
-      "--out caller-named Markdown path (otherwise Markdown stdout).",
-      "--json-out caller-named schema 1.0 sidecar path; there is no --json flag.",
-      "--allow-public-output explicitly bypasses the private-root output-path convention for already-public material; it is not required for ordinary private output."
-    ],
+    "target": "variance_audit sliding-window JSON via stdin or --in (not manuscript prose).",
     "required": [
-      "Existing sliding-window measurements as a raw windows block, legacy top-level windows, or current results.windows envelope; this is not full upstream schema/provenance validation."
+      "variance_audit windows (raw block or JSON envelope)."
     ],
-    "target": "variance_audit sliding-window JSON via stdin or --in (not manuscript prose)."
+    "optional": [
+      "--in, --out, --json-out, --allow-public-output (see --help)."
+    ]
   },
   "outputs": {
+    "schema_version": "1.0",
     "artifacts": [
-      "Optional caller-named Markdown file (for example heatmap.md); Markdown stdout is the default.",
-      "Optional caller-named JSON sidecar (for example heatmap.json); target.path identifies the input JSON path ('-' for stdin) and target.words is zero, not the manuscript count."
-    ],
-    "schema_version": "1.0"
+      "Markdown heatmap (stdout or --out).",
+      "Optional JSON sidecar (--json-out)."
+    ]
   },
-  "purpose": "Render already-measured variance_audit window bands and flagged signals as a Markdown localization heatmap with an optional JSON sidecar. Heuristic operator cues for further investigation, not calibrated per-zone judgments.",
-  "references": [
-    "plugins/setec-voiceprint/scripts/sliding_window_heatmap.py",
-    "plugins/setec-voiceprint/capabilities.d/variance_audit.yaml"
-  ],
+  "compute": {
+    "tier": "core",
+    "cost_note": "Standard-library rendering of existing measurements; no model or fresh scoring. File outputs must sit under ai-prose-baselines-private/ unless --allow-public-output.",
+    "length_floor_words": null
+  },
   "registers": [
     "literary_fiction",
     "blog_essay",
     "academic_philosophy",
     "long_form_journalism"
   ],
-  "script_path": "plugins/setec-voiceprint/scripts/sliding_window_heatmap.py",
-  "status": "heuristic",
-  "surface": "smoothing_diagnosis",
-  "use_when": [
-    "You have sliding-window variance diagnostics and want to inspect word-coordinate hot zones, dominant signals and phenomenon cues.",
-    "You want to visualize existing measurements without running fresh scoring or loading a model."
-  ]
+  "dependencies": {
+    "python": []
+  },
+  "examples": [
+    {
+      "description": "Render existing window measurements to private Markdown and JSON files.",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/sliding_window_heatmap.py --in windows.json --out ai-prose-baselines-private/heatmap.md --json-out ai-prose-baselines-private/heatmap.json"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/scripts/sliding_window_heatmap.py",
+    "plugins/setec-voiceprint/capabilities.d/variance_audit.yaml"
+  ],
+  "_seeded_at": "2026-05-28"
 }

@@ -12,26 +12,21 @@ entries:
   - You want to visualize existing measurements without running fresh scoring or loading a model.
   do_not_use_when:
   - Input is raw manuscript prose or a non-windowed audit; this renderer requires a windows block.
-  - You need a fresh score, baseline comparison or full upstream schema/provenance validation.
-  - You want calibrated per-zone certainty, an authorship or AI verdict, or automatic scene-defect decisions.
-  - Upstream register or baseline caveats make the window measurements inappropriate; rendering does not resolve those caveats.
+  - You want calibrated per-zone certainty or an authorship or AI verdict.
   inputs:
     target: variance_audit sliding-window JSON via stdin or --in (not manuscript prose).
     required:
-    - Existing sliding-window measurements as a raw windows block, legacy top-level windows, or current results.windows envelope; this is not full upstream schema/provenance validation.
+    - variance_audit windows (raw block or JSON envelope).
     optional:
-    - --in JSON path or '-' (default stdin).
-    - --out caller-named Markdown path (otherwise Markdown stdout).
-    - --json-out caller-named schema 1.0 sidecar path; there is no --json flag.
-    - --allow-public-output explicitly bypasses the private-root output-path convention for already-public material; it is not required for ordinary private output.
+    - --in, --out, --json-out, --allow-public-output (see --help).
   outputs:
     schema_version: '1.0'
     artifacts:
-    - Optional caller-named Markdown file (for example heatmap.md); Markdown stdout is the default.
-    - Optional caller-named JSON sidecar (for example heatmap.json); target.path identifies the input JSON path ('-' for stdin) and target.words is zero, not the manuscript count.
+    - Markdown heatmap (stdout or --out).
+    - Optional JSON sidecar (--json-out).
   compute:
     tier: core
-    cost_note: Standard-library rendering with in-repo helpers, no model, API or fresh scoring. No optional runtime dependencies are required. Reads the complete JSON and constructs window/signal grids in memory. Upstream measurement costs and heuristic caveats remain separate; Explicit files need a resolved ai-prose-baselines-private path component unless opted out. This path convention does not check permissions; stdout is not guarded. Paths and localization output can be sensitive without prose.
+    cost_note: Standard-library rendering of existing measurements; no model or fresh scoring. File outputs must sit under ai-prose-baselines-private/ unless --allow-public-output.
     length_floor_words: null
   registers:
   - literary_fiction
@@ -41,7 +36,7 @@ entries:
   dependencies:
     python: []
   examples:
-  - description: Render existing window measurements to explicitly private Markdown and JSON paths; routing registers inherit upstream applicability, not new calibration.
+  - description: Render existing window measurements to private Markdown and JSON files.
     cmd: python3 plugins/setec-voiceprint/scripts/sliding_window_heatmap.py --in windows.json --out ai-prose-baselines-private/heatmap.md --json-out ai-prose-baselines-private/heatmap.json
   references:
   - plugins/setec-voiceprint/scripts/sliding_window_heatmap.py

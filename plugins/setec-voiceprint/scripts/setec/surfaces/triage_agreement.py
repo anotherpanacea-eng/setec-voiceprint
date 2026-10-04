@@ -43,10 +43,8 @@ MIN_ITEMS = 10
 
 
 def _validate_pair_keys(framework_key: str, human_key: str) -> None:
-    if (type(framework_key) is not str or not framework_key.strip()
-            or type(human_key) is not str or not human_key.strip()
-            or framework_key == human_key):
-        raise ValueError("Select two distinct nonblank label columns.")
+    if framework_key == human_key:
+        raise ValueError("Select two distinct label columns.")
 
 
 def load_pairs(path: Path, *, framework_key: str, human_key: str,

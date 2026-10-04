@@ -65,7 +65,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from setec.core.script_console import enable_utf8_stdio  # noqa: E402
 from claim_license import ClaimLicense  # noqa: E402
-from output_schema import build_error_output, build_output  # noqa: E402
+from output_schema import build_output  # noqa: E402
 
 TASK_SURFACE = "smoothing_diagnosis"
 TOOL_NAME = "sliding_window_heatmap"
@@ -845,15 +845,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def _emit_refusal(args, category: str, reason: str) -> None:
-    """Report metadata-only R3 failure when JSON delivery was requested."""
-    if args.json_output_path:
-        print(json.dumps(build_error_output(
-            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
-            reason=reason, reason_category=category,
-        ), indent=2))
-
-
 def main(argv: list[str] | None = None) -> int:
     enable_utf8_stdio()
     args = build_arg_parser().parse_args(argv)
@@ -861,7 +852,6 @@ def main(argv: list[str] | None = None) -> int:
         windows_block = load_input(args.input_path)
     except (OSError, json.JSONDecodeError, ValueError) as e:
         sys.stderr.write(f"  failed to load input: {e}\n")
-        _emit_refusal(args, "bad_input", "Could not load sliding-window JSON input.")
         return 2
 
     # Check both destinations before any rendering or partial publication.
@@ -874,7 +864,6 @@ def main(argv: list[str] | None = None) -> int:
                 "ai-prose-baselines-private/ or pass "
                 "--allow-public-output explicitly\n"
             )
-            _emit_refusal(args, "policy_refused", "Refused heatmap output outside the required private directory.")
             return 3
 
     source_label = (

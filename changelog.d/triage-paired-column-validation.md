@@ -1,3 +1,3 @@
 ### Fixed
 
-**`triage_agreement` — refuse self-column comparisons.** Framework and human label selectors must be distinct, nonblank keys. Invalid selectors are refused before input access or report writes; distinct columns with identical labels still report perfect agreement.
+**`triage_agreement` — refuse self-column comparisons.** The framework and human label columns must differ; comparing a column with itself no longer reports perfect agreement.

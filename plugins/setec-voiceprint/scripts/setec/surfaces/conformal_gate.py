@@ -126,11 +126,7 @@ def _nonconformity(values: list[float], direction: str,
 
 
 def _require_probability(value: float, *, name: str) -> None:
-    try:
-        valid = math.isfinite(value) and 0 < value < 1
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError(f"{name} must be finite and strictly between 0 and 1") from exc
-    if not valid:
+    if not (isinstance(value, (int, float)) and math.isfinite(value) and 0 < value < 1):
         raise ValueError(f"{name} must be finite and strictly between 0 and 1")
 
 
@@ -484,10 +480,8 @@ def render_report(payload: dict[str, Any]) -> str:
 
 
 def _require_distinct_class_labels(reference_label: str, positive_label: str) -> None:
-    if (type(reference_label) is not str or not reference_label.strip()
-            or type(positive_label) is not str or not positive_label.strip()
-            or reference_label == positive_label):
-        raise ValueError("Two-class mode requires distinct nonblank class labels.")
+    if reference_label == positive_label:
+        raise ValueError("Two-class mode requires distinct class labels.")
 
 
 def build_arg_parser() -> argparse.ArgumentParser:

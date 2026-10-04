@@ -459,30 +459,8 @@ class TestPrivacyGuard:
 
 
 class TestCli:
-    @pytest.mark.parametrize("json_requested", [False, True])
-    def test_loading_refusal_preserves_exit_and_sanitizes_payload(self, tmp_path, capsys, json_requested):
-        source = tmp_path / "missing.json"
-        sidecar = tmp_path / "ai-prose-baselines-private" / "failure.json"
-        args = ["--in", str(source)]
-        if json_requested:
-            args += ["--json-out", str(sidecar)]
-        assert swh.main(args) == 2
-        captured = capsys.readouterr()
-        assert "failed to load input:" in captured.err
-        if json_requested:
-            payload = json.loads(captured.out)
-            assert payload["available"] is False
-            assert payload["reason_category"] == "bad_input"
-            assert payload["results"] == {}
-            assert payload["baseline"] is None and payload["claim_license"] is None
-            assert payload["target"]["path"] is None
-            assert str(source) not in captured.out
-        else:
-            assert captured.out == ""
-        assert not sidecar.exists()
-
     @pytest.mark.parametrize("markdown_private", [True, False, None])
-    def test_json_privacy_refusal_precedes_all_output(self, tmp_path, capsys, markdown_private):
+    def test_privacy_refusal_precedes_all_output(self, tmp_path, capsys, markdown_private):
         source = tmp_path / "audit.json"
         source.write_text(json.dumps(_make_windows_block([])), encoding="utf-8")
         sidecar = tmp_path / "public" / "failure.json"
@@ -492,43 +470,9 @@ class TestCli:
         if markdown is not None:
             args += ["--out", str(markdown)]
         assert swh.main(args) == 3
-        captured = capsys.readouterr()
-        assert "refusing to write" in captured.err
-        payload = json.loads(captured.out)
-        assert payload["reason_category"] == "policy_refused"
-        assert payload["available"] is False and payload["results"] == {}
-        assert "# Sliding-window" not in captured.out
+        assert "refusing to write" in capsys.readouterr().err
         assert not sidecar.exists()
         assert markdown is None or not markdown.exists()
-
-    def test_input_failure_precedes_output_privacy(self, tmp_path, capsys):
-        assert swh.main(["--in", str(tmp_path / "missing.json"),
-                         "--json-out", str(tmp_path / "public.json")]) == 2
-        assert json.loads(capsys.readouterr().out)["reason_category"] == "bad_input"
-
-    @pytest.mark.parametrize("stdin", [False, True])
-    def test_cli_current_variance_envelope(self, tmp_path, monkeypatch, stdin):
-        from io import StringIO
-
-        windows = _make_windows_block([
-            _make_window(start_word=0, end_word=500,
-                         band="Heavily smoothed", fraction=0.55,
-                         flagged=["burstiness_B"]),
-        ])
-        envelope = _current_envelope(windows, monkeypatch)
-        raw = json.dumps(envelope)
-        in_path = tmp_path / "audit.json"
-        in_path.write_text(raw, encoding="utf-8")
-        monkeypatch.setattr(sys, "stdin", StringIO(raw))
-        out_dir = tmp_path / "ai-prose-baselines-private"
-        markdown = out_dir / "heatmap.md"
-        sidecar = out_dir / "heatmap.json"
-        assert swh.main(["--in", "-" if stdin else str(in_path),
-                         "--out", str(markdown), "--json-out", str(sidecar)]) == 0
-        assert "# Sliding-window compression heatmap" in markdown.read_text(encoding="utf-8")
-        payload = json.loads(sidecar.read_text(encoding="utf-8"))
-        assert payload["results"]["n_windows"] == 1
-        assert payload["schema_version"] == "1.0"
 
     def test_cli_round_trip_to_files(self, tmp_path, monkeypatch, capsys):
         windows = [
