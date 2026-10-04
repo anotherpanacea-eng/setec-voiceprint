@@ -1202,13 +1202,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 33 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/dialogue_voice_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
@@ -2344,6 +2337,13 @@ exemptions:
     requires scripts/ on sys.path before importing setec.
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
@@ -4669,6 +4669,13 @@ layer_exemptions:
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
     section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/dependency_distance_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its whole P4 implementation.
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
