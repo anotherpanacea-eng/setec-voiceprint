@@ -98,8 +98,10 @@ def test_paragraph_alias_requires_its_metadata_row(monkeypatch, capsys):
     "proper_row", "missing_row", "missing_owner", "ghost_row",
     "arbitrary_import", "dynamic_alias", "wrong_main", "renamed_surface",
     "wrong_target", "unrelated_source", "extra_dependency", "side_effect",
+    "wrong_bootstrap", "unsupported_directory",
 ])
-def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case):
+@pytest.mark.parametrize("layout", ["flat", "calibration"])
+def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout):
     scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
@@ -108,32 +110,36 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case):
     # Isolate candidate admission against an existing, empty baseline.
     monkeypatch.setattr(cl, "_merge_base", lambda ref: "baseline")
     monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: [])
-    for package in ("setec", "setec/surfaces"):
+    legacy_dir = "" if layout == "flat" else "calibration/"
+    package_dir = "setec/surfaces" if layout == "flat" else "setec/calibration"
+    package_name = package_dir.replace("/", ".")
+    scripts_anchor = "parent" if layout == "flat" else "parents[1]"
+    for package in ("setec", package_dir):
         _write(scripts, package + "/__init__.py", "")
     implementation = (
         'TASK_SURFACE = "voice_coherence"\n'
         "def main():\n    return 0\n"
         "if __name__ == '__main__':\n    main()\n"
     )
-    _write(scripts, "setec/surfaces/audit.py", implementation)
-    _write(scripts, "setec/surfaces/other.py", implementation)
+    _write(scripts, package_dir + "/audit.py", implementation)
+    _write(scripts, package_dir + "/other.py", implementation)
     launcher = (
         '"""Permanent ordinary launcher."""\n'
         "import sys\nfrom pathlib import Path\n"
-        "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
+        f"_SCRIPT_DIR = Path(__file__).resolve().{scripts_anchor}\n"
         "if str(_SCRIPT_DIR) not in sys.path:\n"
         "    sys.path.insert(0, str(_SCRIPT_DIR))\n"
-        "from setec.surfaces import audit as _mod\n"
-        "from setec.surfaces.audit import TASK_SURFACE\n"
+        f"from {package_name} import audit as _mod\n"
+        f"from {package_name}.audit import TASK_SURFACE\n"
         "if __name__ == '__main__':\n"
         "    sys.exit(_mod.main())\n"
         "else:\n    sys.modules[__name__] = _mod\n"
     )
     prefix = "plugins/setec-voiceprint/scripts/"
-    source = "audit.py"
-    target = "setec/surfaces/audit.py"
+    source = legacy_dir + "audit.py"
+    target = package_dir + "/audit.py"
     if case == "arbitrary_import":
-        launcher = "from setec.surfaces.audit import TASK_SURFACE\n"
+        launcher = f"from {package_name}.audit import TASK_SURFACE\n"
     elif case == "dynamic_alias":
         launcher = launcher.replace("sys.modules[__name__] = _mod", "globals().update(vars(_mod))")
     elif case == "wrong_main":
@@ -142,16 +148,21 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case):
         launcher = launcher.replace("import TASK_SURFACE", "import TASK_SURFACE as OTHER")
     elif case == "wrong_target":
         launcher = launcher.replace("import audit as _mod", "import other as _mod")
-        launcher = launcher.replace("surfaces.audit import", "surfaces.other import")
-        target = "setec/surfaces/other.py"
+        launcher = launcher.replace(f"{package_name}.audit import", f"{package_name}.other import")
+        target = package_dir + "/other.py"
     elif case == "unrelated_source":
-        source = "another.py"
+        source = legacy_dir + "another.py"
     elif case == "extra_dependency":
-        launcher += "from setec.surfaces import other\n"
+        launcher += f"from {package_name} import other\n"
     elif case == "side_effect":
         launcher += "_mod.main()\n"
     elif case == "ghost_row":
         launcher = implementation
+    elif case == "wrong_bootstrap":
+        wrong_anchor = "parents[1]" if layout == "flat" else "parent"
+        launcher = launcher.replace(f"resolve().{scripts_anchor}\n", f"resolve().{wrong_anchor}\n")
+    elif case == "unsupported_directory":
+        source = "unlisted/audit.py"
     _write(scripts, source, launcher)
     monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source})
     row = {
@@ -165,7 +176,7 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case):
     elif case == "missing_owner":
         del row["owner"]
     elif case == "extra_dependency":
-        rows.append(dict(row, to_path=prefix + "setec/surfaces/other.py"))
+        rows.append(dict(row, to_path=prefix + package_dir + "/other.py"))
     exemptions.write_text(json.dumps({"layer_exemptions": rows}), encoding="utf-8")
     assert cl.main(["--strict", "--json"]) == (0 if case == "proper_row" else 1)
     report = json.loads(capsys.readouterr().out)
@@ -459,22 +470,27 @@ def test_ratchet_preserves_only_existing_p2_dependencies(tmp_path, monkeypatch, 
     "changed_kind", "malformed_launcher", "wrong_target", "extra_dependency",
     "already_relocated", "already_relocated_new_target",
 ])
-def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case):
+@pytest.mark.parametrize("layout", ["flat", "calibration"])
+def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case, layout):
     prefix = "plugins/setec-voiceprint/scripts/"
     scripts = tmp_path / prefix
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
-    for package in ("setec", "setec/surfaces"):
+    legacy_dir = "" if layout == "flat" else "calibration/"
+    package_dir = "setec/surfaces" if layout == "flat" else "setec/calibration"
+    package_name = package_dir.replace("/", ".")
+    scripts_anchor = "parent" if layout == "flat" else "parents[1]"
+    for package in ("setec", package_dir):
         _write(scripts, package + "/__init__.py", "")
     implementation = 'TASK_SURFACE = "smoothing_diagnosis"\ndef main():\n    return 0\n'
     for stem in ("audit", "baseline", "other"):
-        _write(scripts, "setec/surfaces/" + stem + ".py", implementation)
+        _write(scripts, package_dir + "/" + stem + ".py", implementation)
         launcher = (
             "import sys\nfrom pathlib import Path\n"
-            "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
+            f"_SCRIPT_DIR = Path(__file__).resolve().{scripts_anchor}\n"
             "if str(_SCRIPT_DIR) not in sys.path:\n    sys.path.insert(0, str(_SCRIPT_DIR))\n"
-            f"from setec.surfaces import {stem} as _mod\n"
-            f"from setec.surfaces.{stem} import TASK_SURFACE\n"
+            f"from {package_name} import {stem} as _mod\n"
+            f"from {package_name}.{stem} import TASK_SURFACE\n"
             "if __name__ == '__main__':\n    sys.exit(_mod.main())\n"
             "else:\n    sys.modules[__name__] = _mod\n"
         )
@@ -482,33 +498,33 @@ def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monk
             if case == "malformed_launcher":
                 launcher = launcher.replace("sys.modules[__name__] = _mod", "globals().update(vars(_mod))")
             elif case == "wrong_target":
-                launcher = launcher.replace("import audit as", "import other as").replace("surfaces.audit import", "surfaces.other import")
+                launcher = launcher.replace("import audit as", "import other as").replace(f"{package_name}.audit import", f"{package_name}.other import")
             elif case == "extra_dependency":
-                launcher += "from setec.surfaces import other\n"
-        _write(scripts, stem + ".py", launcher)
-    old = {"from_path": prefix + "audit.py", "to_path": prefix + "baseline.py",
+                launcher += f"from {package_name} import other\n"
+        _write(scripts, legacy_dir + stem + ".py", launcher)
+    old = {"from_path": prefix + legacy_dir + "audit.py", "to_path": prefix + legacy_dir + "baseline.py",
            "edge_kind": "l2_to_l2", "reason": "existing edge", "owner": "packaging",
            "introduced_sha": "base", "removal_phase": "not-applicable"}
-    new = dict(old, from_path=prefix + "setec/surfaces/audit.py",
-               to_path=prefix + "setec/surfaces/baseline.py")
+    new = dict(old, from_path=prefix + package_dir + "/audit.py",
+               to_path=prefix + package_dir + "/baseline.py")
     if case == "source_only":
         new["to_path"] = old["to_path"]
     elif case == "target_only":
         new["from_path"] = old["from_path"]
     elif case == "new_target":
-        new["to_path"] = prefix + "setec/surfaces/other.py"
+        new["to_path"] = prefix + package_dir + "/other.py"
     elif case == "new_source":
-        new["from_path"] = prefix + "setec/surfaces/other.py"
+        new["from_path"] = prefix + package_dir + "/other.py"
     elif case == "changed_kind":
         new["edge_kind"] = "l1_to_l2"
     old_rows, new_rows = [old], [new]
     if case in {"already_relocated", "already_relocated_new_target"}:
         old_rows = [dict(new)]
-        alias = dict(old, to_path=prefix + "setec/surfaces/audit.py")
+        alias = dict(old, to_path=prefix + package_dir + "/audit.py")
         old_rows.append(alias)
         new_rows.append(alias)
         if case == "already_relocated_new_target":
-            new["to_path"] = prefix + "setec/surfaces/other.py"
+            new["to_path"] = prefix + package_dir + "/other.py"
     monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: old_rows)
     monkeypatch.setattr(cl, "load_layer_exemptions", lambda: new_rows)
     problems = cl.check_ratchet("base")
