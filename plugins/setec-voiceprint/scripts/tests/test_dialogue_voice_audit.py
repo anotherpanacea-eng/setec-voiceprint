@@ -48,7 +48,7 @@ def test_function_words_reexport_final_owner_without_drift() -> None:
 
 
 def test_textprims_import_does_not_load_model_stack() -> None:
-    scripts_dir = Path(dva.__file__).resolve().parent
+    scripts_dir = Path(__file__).resolve().parent.parent
     probe = (
         "import sys; import setec.core.textprims; "
         "blocked={'spacy','nltk','torch','transformers','sentence_transformers'}; "
