@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from email.message import Message
 import hashlib
-import importlib.util
 import io
 import json
 import os
@@ -18,11 +17,7 @@ import pytest
 
 
 SCRIPTS = Path(__file__).resolve().parents[1]
-MODULE_PATH = SCRIPTS / "acquisition_sources" / "build_opengrants_zenodo_source_list.py"
-SPEC = importlib.util.spec_from_file_location("opengrants_resolver", MODULE_PATH)
-assert SPEC and SPEC.loader
-resolver = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(resolver)
+from setec.acquisition_sources import build_opengrants_zenodo_source_list as resolver
 FIXTURES = SCRIPTS / "test_data" / "opengrants_zenodo_source_list_fixture"
 
 

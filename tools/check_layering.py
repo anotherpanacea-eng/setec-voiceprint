@@ -505,6 +505,13 @@ def _ratchet_key(
     moves = surface_moves or {}
     if kind == "l2_to_l2":
         fp, tp = moves.get(fp, fp), moves.get(tp, tp)
+    elif (kind == "l1_to_l2"
+          and fp == "plugins/setec-voiceprint/scripts/windows_portable_tree.py"
+          and tp == "plugins/setec-voiceprint/scripts/setec/surfaces/acquire_imessage_sent_atomic.py"):
+        # This pre-existing adapter edge cuts the legacy-first import cycle.
+        # Translate only its verified pinned atomic launcher; other endpoints
+        # and edge kinds remain new dependencies and fail the ratchet.
+        tp = moves.get(tp, tp)
     return (_P2_LEGACY_PATHS.get(fp, fp), _P2_LEGACY_PATHS.get(tp, tp), kind)
 
 
@@ -749,7 +756,7 @@ def check_ghost_rows(
 
 
 def _surface_implementation_path(legacy: str) -> str | None:
-    """Owning locations for flat and calibration per-file launchers."""
+    """Owning locations for flat, calibration and acquisition per-file launchers."""
     try:
         old_rel = (REPO_ROOT / legacy).relative_to(SCRIPTS_ROOT)
     except ValueError:
@@ -758,7 +765,7 @@ def _surface_implementation_path(legacy: str) -> str | None:
         return None
     if len(old_rel.parts) == 1:
         target = SCRIPTS_ROOT / "setec/surfaces" / old_rel.name
-    elif len(old_rel.parts) == 2 and old_rel.parts[0] == "calibration":
+    elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources"}:
         target = SCRIPTS_ROOT / "setec" / old_rel
     else:
         return None

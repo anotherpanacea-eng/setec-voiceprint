@@ -1,0 +1,3 @@
+### Changed
+
+Relocate the complete acquisition family into the package with permanent CLI/module aliases: acquire_courtlistener, acquire_everycrsreport, acquire_gmail_sent, acquire_govinfo_chrg, acquire_imessage_sent, acquire_imessage_sent_atomic, acquire_mirrulations, acquire_openalex_core, acquire_pdf_urls, acquire_stackexchange, build_opengrants_zenodo_source_list, build_tanner_source_list, near_dup_dedup, passage_remediation, shingle_dedup. Preserve extraction and committed-producer byte bindings, stale refusal rules, and native Windows adapter identity. This is a P4 relocation, not new acquisition or empirical qualification.
