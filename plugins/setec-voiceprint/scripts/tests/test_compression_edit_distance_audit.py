@@ -86,6 +86,32 @@ def test_surface_registered():
     assert "compression_edit_distance" in TASK_SURFACE_LABELS
 
 
+def test_legacy_and_package_imports_share_module():
+    from setec.surfaces import compression_edit_distance_audit as implementation
+    assert c is implementation
+
+
+@pytest.mark.parametrize("use_runpy", [False, True])
+def test_launcher_from_foreign_working_directory(tmp_path, use_runpy):
+    target = tmp_path / "target.txt"
+    reference = tmp_path / "reference.txt"
+    target.write_text(TGT_MAJOR, encoding="utf-8")
+    reference.write_text(REF, encoding="utf-8")
+    launcher = _SCRIPTS / "compression_edit_distance_audit.py"
+    args = [str(target), "--reference", str(reference), "--json"]
+    if use_runpy:
+        command = [sys.executable, "-I", "-c",
+                   "import runpy,sys; p=sys.argv.pop(1); sys.argv[0]=p; runpy.run_path(p,run_name='__main__')",
+                   str(launcher), *args]
+    else:
+        command = [sys.executable, "-I", str(launcher), *args]
+    result = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    envelope = json.loads(result.stdout)
+    assert envelope["task_surface"] == c.TASK_SURFACE
+    assert envelope["results"] == c.audit_compression_edit_distance(REF, TGT_MAJOR)
+
+
 def test_surface_fragment_file_is_source_of_truth():
     frag = _SCRIPTS / "claim_license_surfaces" / "compression_edit_distance.txt"
     assert frag.exists()

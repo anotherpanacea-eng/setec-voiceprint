@@ -229,7 +229,7 @@ def test_two_cycles_and_self_loops_exact():
 # --- AC-8 anti-Goodhart import disjointness ---------------------------------
 
 def test_no_held_out_detector_imports():
-    src = (SCRIPTS / "function_word_adjacency_audit.py").read_text(encoding="utf-8")
+    src = Path(fwan.__file__).read_text(encoding="utf-8")
     # FWAN must not import the held-out detector / selection paths.
     for forbidden in ("voice_distance", "surface_disagreement_resolver",
                       "fast_detect_curvature", "binoculars"):

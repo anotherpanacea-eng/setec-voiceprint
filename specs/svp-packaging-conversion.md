@@ -172,6 +172,26 @@ stale-profile refusal. These are verification suggestions, not a requirement for
 another permanent checking system. Acquire implementation/test paths separately;
 no model load, real authority activation or private prose is needed for this move.
 
+### S5 whole-family relocation amendment
+
+The complete P4 `voice-distance` family (`s5_distance.py`, `voice_distance.py`,
+`voice_profile.py`, per the live capability fragments) relocates as whole
+modules. This amendment supplies a contract exception, not a relocation.
+
+S5 binds two ordered inputs in `results.implementation_sha256`: its executing
+package `s5_distance.py`, then the unchanged `setec/core/stylometry_distance.py`,
+resolved through `setec.paths.scripts_dir()`. Necessary location plumbing may
+change the S5 bytes and so the digest. Never hash the compatibility alias,
+reconstruct pre-move bytes, hardcode a digest, or change the binding's
+algorithm, framing, field or schema.
+
+For this relocation only, the producer S5 golden's `results.implementation_sha256`
+may change to the value the real fixture builder produces; every other S5 value
+and fixture stays unchanged. Consumer fixture copies move in their own
+coordinated PRs. Existing bindings keep their refusal behavior; a changed digest
+does not make stale evidence current. No new digest registry, resolver, cache,
+gate or approval mechanism is required.
+
 ## 5. Drift, reachability, and truthful degradation
 
 `check_capabilities_drift.py` and `seed_capabilities.py` share package-aware discovery. The drift parser follows the pinned static `TASK_SURFACE` import in a launcher to the implementation. Package implementations are not double-counted as new flat surfaces. For every manifest entry, CI proves: the recorded path exists in a scratch plugin copy, resolves without following repo-root symlinks, has a matching implementation, and retains its declared `TASK_SURFACE`.
@@ -206,6 +226,18 @@ If two companion changes would edit the same file, relocation lands first as a s
 - **P5 — enforcement required.** Turn on layering, anchor, shim, reachability, and remaining `sys.path` ratchets in CI; audit already-fragmented `acquisition_core`, `length_bootstrap`, and `register_composition_sweep` rather than minting duplicate fragments.
 
 Every phase is independently mergeable and keeps the full existing suite green.
+
+## Acquisition producer-byte bindings during P4 relocation
+
+Two acquisition bindings describe executing implementation bytes, so a P4 move
+may change them: `acquire_gmail_sent._extraction_code_sha256()` keeps hashing
+its executing package file (raw bytes, no normalization), and
+`near_dup_dedup._publish_spec80_package()` keeps calling
+`committed_producer_identity()` with the package implementation, whose Git lookup
+may start from that implementation's directory and must still refuse
+uncommitted or dirty bytes. Never hash the compatibility alias or hardcode a
+digest. Existing descriptors, receipts, checkpoints and commitments are not
+rebound; stale ones keep their refusal behavior.
 
 ## Acceptance gates
 

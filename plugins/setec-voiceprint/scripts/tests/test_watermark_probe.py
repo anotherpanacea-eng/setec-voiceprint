@@ -513,7 +513,7 @@ def test_imports_no_selection_or_calibration_or_threshold_layer():
     threshold-setting layer (mirrors the in-repo separation-guard pattern).
     Named real modules: conformal_gate, calibrate_thresholds,
     calibration_drift_monitor, calibration_survey."""
-    src = (_SCRIPTS / "watermark_probe.py").read_text(encoding="utf-8")
+    src = Path(wp.__file__).read_text(encoding="utf-8")
     tree = ast.parse(src)
     imported: set[str] = set()
     for node in ast.walk(tree):
@@ -536,7 +536,7 @@ def test_imports_no_selection_or_calibration_or_threshold_layer():
 
 def test_import_pulls_no_model_dependency():
     """Importing the module pulls no torch/transformers (stays stdlib)."""
-    src = (_SCRIPTS / "watermark_probe.py").read_text(encoding="utf-8")
+    src = Path(wp.__file__).read_text(encoding="utf-8")
     tree = ast.parse(src)
     imported: set[str] = set()
     for node in ast.walk(tree):

@@ -7,12 +7,43 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 import triage_agreement as ta  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
 
 def _pairs(framework, human):
     return list(zip(framework, human))
+
+
+def test_cli_refuses_self_column_comparison(tmp_path, capsys):
+    path = tmp_path / "labels.jsonl"
+    path.write_text("\n".join(json.dumps({"framework": "a"}) for _ in range(12)), encoding="utf-8")
+    assert ta.main([str(path), "--human-key", "framework"]) == 2
+    assert "distinct label columns" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("fmt", ["jsonl", "csv"])
+@pytest.mark.parametrize("opposite", [False, True])
+def test_distinct_literal_columns_preserve_agreement(tmp_path, fmt, opposite):
+    # Whitespace is part of a valid key; do not normalize distinct column names.
+    path = tmp_path / f"labels.{fmt}"
+    rows = [("a" if i % 2 else "b", "b" if i % 2 else "a") for i in range(12)]
+    if not opposite:
+        rows = [(framework, framework) for framework, _ in rows]
+    if fmt == "jsonl":
+        path.write_text("\n".join(json.dumps({"framework": f, " framework ": h})
+                                  for f, h in rows), encoding="utf-8")
+    else:
+        path.write_text("framework, framework \n" + "\n".join(f"{f},{h}" for f, h in rows),
+                        encoding="utf-8")
+    output = tmp_path / "result.json"
+    assert ta.main([str(path), "--human-key", " framework ", "--format", fmt,
+                    "--bootstrap", "0", "--json", "--out", str(output)]) == 0
+    result = json.loads(output.read_text(encoding="utf-8"))["results"]
+    assert result["percent_agreement"] == (0.0 if opposite else 1.0)
+    assert result["cohens_kappa"] == (-1.0 if opposite else 1.0)
 
 
 def test_task_surface_is_validation():

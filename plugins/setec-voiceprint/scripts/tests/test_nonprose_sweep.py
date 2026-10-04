@@ -1300,7 +1300,7 @@ def test_broken_terminal_does_not_escape_main() -> None:
 
 
 def test_optional_posix_apis_and_flags_are_guarded() -> None:
-    source = (SCRIPTS / "nonprose_sweep.py").read_text(encoding="utf-8")
+    source = Path(N.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source)
     forbidden = {
         "chmod",

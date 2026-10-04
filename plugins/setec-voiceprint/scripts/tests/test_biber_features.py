@@ -469,7 +469,9 @@ class TestAntiGoodhart:
 
     def test_model_family_attribution_does_not_import_biber(self):
         """AC7: model_family_attribution.py does not import biber_features."""
-        mfa_path = SCRIPTS / "model_family_attribution.py"
+        import model_family_attribution as mfa
+
+        mfa_path = Path(mfa.__file__)
         if not mfa_path.exists():
             pytest.skip("model_family_attribution.py not found")
         src = mfa_path.read_text(encoding="utf-8")
@@ -803,3 +805,38 @@ class TestPackagePresentDoesNotCrash:
         assert env["available"] is False
         assert env["reason_category"] == "missing_dependency"
         assert rc == 3
+
+
+# Whole-family relocation contracts: old consumers and detached CLIs remain usable.
+def test_package_and_legacy_module_identity():
+    from setec.surfaces import biber_features as packaged
+    assert packaged is bf
+
+
+@pytest.mark.parametrize("mode", ["direct", "runpy"])
+def test_detached_launcher_preserves_missing_tagger_abstention(tmp_path, mode):
+    import subprocess
+    target = tmp_path / "synthetic.txt"
+    target.write_text("The cat waited in the house.", encoding="utf-8")
+    launcher = str(SCRIPTS / "biber_features.py")
+    if mode == "direct":
+        command = [sys.executable, "-I", "-S", launcher, str(target), "--json"]
+    else:
+        code = ("import runpy,sys; "
+                "sys.argv=[sys.argv[1],sys.argv[2],'--json']; "
+                "runpy.run_path(sys.argv[0],run_name='__main__')")
+        command = [sys.executable, "-I", "-S", "-c", code, launcher, str(target)]
+    proc = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 3, proc.stderr
+    envelope = json.loads(proc.stdout)
+    assert envelope["available"] is False
+    assert envelope["reason_category"] == "missing_dependency"
+
+
+def test_detached_invalid_argument_precedes_tagger_refusal(tmp_path):
+    import subprocess
+    proc = subprocess.run([sys.executable, "-I", "-S", str(SCRIPTS / "biber_features.py"),
+                           str(tmp_path / "missing.txt"), "--unknown-relocation-option"],
+                          cwd=tmp_path, capture_output=True, text=True)
+    assert proc.returncode == 2
+    assert not proc.stdout

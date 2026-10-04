@@ -22,6 +22,12 @@ import conformal_gate as cg  # type: ignore  # noqa: E402
 CAL = [float(x) for x in range(1, 101)]
 
 
+@pytest.mark.parametrize("bound", [float("nan"), 0.0, 1.5])
+def test_direct_fpr_helper_refuses_invalid_probability(bound):
+    with pytest.raises(ValueError, match="fpr_bound"):
+        cg.threshold_at_fpr_bound(CAL, fpr_bound=bound, direction="higher_is_nonconforming")
+
+
 def _exit_code(args):
     try:
         return cg.main(args)

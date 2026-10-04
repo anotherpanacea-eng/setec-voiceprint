@@ -4,6 +4,13 @@
 # Then hand-review the diff -- a `--seed` run freezes every CURRENT violation as exempt; it does not decide whether a NEW violation introduced by an unrelated PR should be. Ordinary dependencies remain SHRINK-ONLY; only the existing fixture-generator exception and a verified pinned permanent launcher to its own implementation may add l2_to_l2 rows.
 schema_version: 1
 exemptions:
+- path: plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/argument_decision_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -434,13 +441,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/argmove_profile.py
-  symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at line 40 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/argquality_dimension_profile.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -521,13 +521,6 @@ exemptions:
   symbol: ROOT
   reason: pending relocation (P4); anchor `ROOT` at line 69 not yet converted to setec.paths
     (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/biber_features.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 40 not yet converted
-    to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -1014,20 +1007,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
-  symbol: SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `SCRIPTS_DIR` at line 82 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
-  symbol: SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `SCRIPTS_DIR` at line 79 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/calibration/raid_to_manifest.py
   symbol: DEFAULT_MANIFEST
   reason: pending relocation (P4); anchor `DEFAULT_MANIFEST` at line 131 not yet converted
@@ -1119,19 +1098,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 113 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/conformal_gate.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 37 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/confounder_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 55 not yet converted
@@ -1154,19 +1126,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 27 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/cosine_explanation.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 46 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/cross_doc_argument_consistency.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -1182,68 +1147,33 @@ exemptions:
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 38 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 39 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/dependency_check.py
-  symbol: PLUGIN_ROOT
-  reason: pending relocation (P4); anchor `PLUGIN_ROOT` at line 83 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/dependency_check.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 82 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/dependency_check.py
-  symbol: req_path
-  reason: pending relocation (P4); anchor `req_path` at line 714 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 33 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/dialogue_voice_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 64 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 58 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/distinct_diversity_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 58 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/document_layout_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
@@ -1254,20 +1184,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 81 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/edit_magnitude_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 60 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/embedding_attribution.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 80 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1349,13 +1265,6 @@ exemptions:
   owner: packaging
   introduced_sha: 080ae001fc90508d5fc7a09ed9515026d1430592
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/fast_detect_curvature.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 95 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/fetch_brysbaert.py
   symbol: default_output
   reason: pending relocation (P4); anchor `default_output` at line 206 not yet converted
@@ -1370,13 +1279,6 @@ exemptions:
   owner: packaging
   introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 49 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 57 not yet converted
@@ -1426,13 +1328,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/general_imposters.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 85 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/generate_voice_report.py
   symbol: DEFAULT_TEMPLATE_PATH
   reason: pending relocation (P4); anchor `DEFAULT_TEMPLATE_PATH` at line 82 not yet
@@ -1455,29 +1350,15 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/homogeneity_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 37 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 39 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/image_conjunction.py
   symbol: _SCRIPTS_DIR
   reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 66 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/intrinsic_dimension_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 77 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1492,20 +1373,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/known_editor_profile.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 80 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/lambdag_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 45 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 45 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -1530,27 +1397,13 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 95 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/model_family_attribution.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 41 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/narratorial_distance_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 63 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 94 not yet converted
@@ -1788,12 +1641,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/originality_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 28 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/paragraph_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
@@ -1843,13 +1696,6 @@ exemptions:
   owner: packaging
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
-  symbol: ROOT
-  reason: pending relocation (P4); anchor `ROOT` at line 57 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
   symbol: _SCRIPTS_DIR
   reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 87 not yet converted
@@ -1858,12 +1704,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/productive_roughness_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 63 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
+    on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
@@ -1871,20 +1717,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/rank_space_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 76 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/rank_turbulence_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 27 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 39 not yet converted
@@ -1913,27 +1745,6 @@ exemptions:
   owner: packaging
   introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/register_sweep.py
-  symbol: classifier
-  reason: pending relocation (P4); anchor `classifier` at line 1604 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_sweep.py
-  symbol: receipt
-  reason: pending relocation (P4); anchor `receipt` at line 1605 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/register_sweep.py
-  symbol: scripts
-  reason: pending relocation (P4); anchor `scripts` at line 1603 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/setec/core/register_typical_baselines.py
   symbol: _DEFAULT_YAML_PATH
   reason: Derived from _REPO_ROOT for baselines/register_typical.yaml;
@@ -2093,34 +1904,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/restoration_packet.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 52 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/restoration_packet.py
-  symbol: private_dir
-  reason: pending relocation (P4); anchor `private_dir` at line 1260 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/restoration_packet.py
-  symbol: repo_root
-  reason: pending relocation (P4); anchor `repo_root` at line 1259 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 64 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/s5_distance.py
   symbol: <inline>
   reason: pending relocation (P4); anchor `<inline>` at line 132 not yet converted
@@ -2163,20 +1946,13 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P2
-- path: plugins/setec-voiceprint/scripts/setec_run_set.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 84 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 30 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/sliding_window_heatmap.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 62 not yet converted
@@ -2185,12 +1961,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/sound_texture_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 36 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put
+    scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/specdetect_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 88 not yet converted
@@ -2215,13 +1991,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/style_vectorizer.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 37 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 70 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -2275,20 +2044,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/tocsin_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 61 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/triage_agreement.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 36 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
   symbol: ROOT
   reason: pending relocation (P4); anchor `ROOT` at line 73 not yet converted to setec.paths
@@ -2324,21 +2079,325 @@ exemptions:
   owner: packaging
   introduced_sha: 080ae001fc90508d5fc7a09ed9515026d1430592
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/watermark_probe.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 77 not yet converted
-    to setec.paths (P1 lands no production moves)
+- path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/embedding_attribution.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached runpy
+    requires scripts/ on sys.path before importing setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached runpy
+    requires scripts/ on sys.path before importing setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
+    put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/edit_magnitude_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/biber_features.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/conformal_gate.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/triage_agreement.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/register_sweep.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/validation_harness.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec_run_set.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section
+    2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/argmove_profile.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/nonprose_sweep.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section
+    2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/within_doc_segmentation.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 36 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/model_family_attribution.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/lambdag_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/watermark_probe.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/restoration_packet.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/rank_turbulence_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/general_imposters.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/rank_space_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
+    can import setec without installation (specs/svp-packaging-conversion.md section
+    2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/fast_detect_curvature.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/tocsin_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/intrinsic_dimension_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/dependency_check.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy does
+    not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
 layer_exemptions:
+- from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/cross_doc_novelty_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/distinct_diversity_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/distinct_diversity_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/homogeneity_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/homogeneity_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/originality_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/originality_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/skeleton_overlap_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/verbatim_mosaic_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/verbatim_mosaic_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
+  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/document_layout_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/document_layout_audit.py
   edge_kind: l2_to_l2
@@ -2415,6 +2474,14 @@ layer_exemptions:
   reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md section 2).
   owner: packaging
   introduced_sha: 080ae001fc90508d5fc7a09ed9515026d1430592
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/compression_edit_distance_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation,
+    not surface-to-surface sharing.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/argument_decision_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/argument_decision_audit.py
@@ -2915,19 +2982,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/aic_pattern_audit.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/apply_owner_corrections.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
@@ -2938,32 +2992,6 @@ layer_exemptions:
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
     \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/argmove_profile.py
-  to_path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/argmove_profile.py\
-    \ imports plugins/setec-voiceprint/scripts/agency_abstraction_audit.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/argmove_profile.py
-  to_path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/argmove_profile.py\
-    \ imports plugins/setec-voiceprint/scripts/stance_modality_audit.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
@@ -3318,58 +3346,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
-  to_path: plugins/setec-voiceprint/scripts/adversarial_fixtures.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py\
-    \ imports plugins/setec-voiceprint/scripts/adversarial_fixtures.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
-  to_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py\
-    \ imports plugins/setec-voiceprint/scripts/adversarial_robustness_card.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
-  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py\
-    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
   to_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
   edge_kind: l2_to_l2
@@ -3487,51 +3463,12 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
-  to_path: plugins/setec-voiceprint/scripts/originality_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/originality_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/corpus_novelty_audit.py\
     \ imports plugins/setec-voiceprint/scripts/originality_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
-  to_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cosine_explanation.py\
-    \ imports plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cosine_explanation.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
-  to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/cosine_explanation.py\
-    \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
@@ -3552,11 +3489,11 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/crosslingual_voice_distance.py
   to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/crosslingual_voice_distance.py\
     \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
@@ -3575,32 +3512,6 @@ layer_exemptions:
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
     \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/embedding_attribution.py
-  to_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/embedding_attribution.py\
-    \ imports plugins/setec-voiceprint/scripts/cosine_explanation.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
-  to_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py\
-    \ imports plugins/setec-voiceprint/scripts/function_word_grammar_audit.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
@@ -3875,19 +3786,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/general_imposters.py
-  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/general_imposters.py\
-    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
@@ -3933,32 +3831,6 @@ layer_exemptions:
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/known_editor_profile.py\
     \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/lambdag_audit.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/lambdag_audit.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  to_path: plugins/setec-voiceprint/scripts/register_sweep.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manifest_validator.py\
-    \ imports plugins/setec-voiceprint/scripts/register_sweep.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
@@ -4024,19 +3896,6 @@ layer_exemptions:
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py\
     \ imports plugins/setec-voiceprint/scripts/repetition_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/model_family_attribution.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/model_family_attribution.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
@@ -4135,19 +3994,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
-  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/pov_voice_profile.py\
-    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/prepare_author_document_adapter.py
   to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
   edge_kind: l2_to_l2
@@ -4187,19 +4033,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/register_sweep.py
-  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/register_sweep.py\
-    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
@@ -4226,77 +4059,12 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/setec_run_set.py
-  to_path: plugins/setec-voiceprint/scripts/setec_run.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec_run_set.py\
-    \ imports plugins/setec-voiceprint/scripts/setec_run.py directly. L2\u2192L2 sharing\
-    \ between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/setec_run_set.py
-  to_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec_run_set.py\
-    \ imports plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py
-  to_path: plugins/setec-voiceprint/scripts/originality_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/skeleton_overlap_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/originality_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
     \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py\
     \ imports plugins/setec-voiceprint/scripts/originality_audit.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
-  to_path: plugins/setec-voiceprint/scripts/check_corpus.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/validation_harness.py\
-    \ imports plugins/setec-voiceprint/scripts/check_corpus.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
-  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/validation_harness.py\
-    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
-    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
-    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
-    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
-    \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
-  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/validation_harness.py\
-    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
@@ -4504,11 +4272,69 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/within_doc_segmentation.py
+- from_path: plugins/setec-voiceprint/scripts/sound_texture_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/sound_texture_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface
+    implementation (packaging spec section 2), not surface-to-surface sharing.
+    The edge remains visible to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/crosslingual_voice_distance.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/dialogue_voice_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/dialogue_voice_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/narratorial_distance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/narratorial_distance_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/productive_roughness_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/productive_roughness_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole-surface implementation
+    (packaging spec section 2), not surface-to-surface sharing. The edge remains visible
+    to metadata validation and strict ghost checks.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py
+  to_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py\
+    \ imports plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/within_doc_segmentation.py\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py\
     \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
     L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
@@ -4516,4 +4342,576 @@ layer_exemptions:
     \ edge always fails, --strict or not."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py
+  to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py\
+    \ imports plugins/setec-voiceprint/scripts/voice_fingerprint.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/embedding_attribution.py
+  to_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/embedding_attribution.py\
+    \ imports plugins/setec-voiceprint/scripts/cosine_explanation.py\
+    \ directly. L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/cosine_explanation.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/cosine_explanation.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/embedding_attribution.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/embedding_attribution.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/adversarial_fixtures.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py\
+    \ imports plugins/setec-voiceprint/scripts/adversarial_fixtures.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py\
+    \ imports plugins/setec-voiceprint/scripts/adversarial_robustness_card.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_robustness.py
+  to_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_robustness.py\
+    \ imports plugins/setec-voiceprint/scripts/validation_harness.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py
+  to_path: plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_ladder.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
+  to_path: plugins/setec-voiceprint/scripts/setec/calibration/paraphrase_robustness.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/dependency_distance_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its whole P4 implementation.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/edit_magnitude_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/edit_magnitude_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/rewriting_invariance_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/biber_features.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/biber_features.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher imports only its own whole implementation.
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/register_sweep.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/register_sweep.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/check_corpus.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/check_corpus.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/conformal_gate.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/conformal_gate.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/register_sweep.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/register_sweep.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/triage_agreement.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/triage_agreement.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/validation_harness.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/setec_run_set.py
+  to_path: plugins/setec-voiceprint/scripts/setec_run.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/setec_run_set.py\
+    \ imports plugins/setec-voiceprint/scripts/setec_run.py directly. L2\u2192L2 sharing\
+    \ between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/setec_run_set.py
+  to_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/setec_run_set.py\
+    \ imports plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec_run_set.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/setec_run_set.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/surface_disagreement_resolver.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py
+  to_path: plugins/setec-voiceprint/scripts/register_sweep.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py\
+    \ imports plugins/setec-voiceprint/scripts/register_sweep.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/house_style_decomposition.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/aic_pattern_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/aic_pattern_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/aic_pattern_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/argmove_profile.py
+  to_path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/argmove_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/agency_abstraction_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/argmove_profile.py
+  to_path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/argmove_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/stance_modality_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/argmove_profile.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/argmove_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/nonprose_sweep.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/nonprose_sweep.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/within_doc_segmentation.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/within_doc_segmentation.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/within_doc_segmentation.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/within_doc_segmentation.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/model_family_attribution.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/model_family_attribution.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/model_family_attribution.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/model_family_attribution.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/lambdag_audit.py
+  to_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/lambdag_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/variance_audit.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/lambdag_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/lambdag_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/discourse_move_signature.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/watermark_probe.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/watermark_probe.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/function_word_adjacency_audit.py
+  to_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/function_word_adjacency_audit.py\
+    \ imports plugins/setec-voiceprint/scripts/function_word_grammar_audit.py directly.\
+    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
+    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
+    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
+    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/function_word_adjacency_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/pov_voice_profile.py
+  to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/pov_voice_profile.py\
+    \ imports plugins/setec-voiceprint/scripts/manifest_validator.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/pov_voice_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/restoration_packet.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/restoration_packet.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/rank_turbulence_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/rank_turbulence_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/general_imposters.py
+  to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+  edge_kind: l2_to_l2
+  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
+    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/setec/surfaces/general_imposters.py\
+    \ imports plugins/setec-voiceprint/scripts/acquisition_core.py directly. L2\u2192\
+    L2 sharing between capability-bearing surfaces is real architecture (e.g. acquisition_core/variance_audit\
+    \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
+    \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
+    \ edge always fails, --strict or not."
+  owner: packaging
+  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/general_imposters.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/general_imposters.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/rank_space_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/rank_space_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/binoculars_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/fast_detect_curvature.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/fast_detect_curvature.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/tocsin_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/tocsin_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/intrinsic_dimension_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/intrinsic_dimension_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/dependency_check.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/dependency_check.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/mimicry_cosplay_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation (specs/svp-packaging-conversion.md
+    section 2).
+  owner: packaging
+  introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable

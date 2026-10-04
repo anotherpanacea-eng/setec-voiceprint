@@ -14,6 +14,27 @@ import conformal_gate as cg  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
 
+def test_two_class_refuses_identical_labels():
+    with pytest.raises(ValueError, match="distinct"):
+        cg.gate_two_class([1.0, 2.0, 3.0], [10.0], 2.0, alpha=0.2,
+                          direction="higher_is_nonconforming", reference_label="x",
+                          positive_label="x")
+
+
+def test_two_class_cli_refuses_identical_labels(tmp_path, capsys):
+    assert cg.main(["--calibration", str(tmp_path / "ref.txt"),
+                    "--calibration-positive", str(tmp_path / "pos.txt"), "--score", "2",
+                    "--reference-label", "x", "--positive-label", "x"]) == 2
+    assert "distinct class labels" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("alpha", [float("nan"), 0.0, 1.0])
+def test_direct_class_gates_refuse_invalid_alpha(alpha):
+    with pytest.raises(ValueError, match="alpha"):
+        cg.gate_one_class([1.0, 2.0, 3.0], 2.0, alpha=alpha,
+                          direction="higher_is_nonconforming", reference_label="ref")
+
+
 def test_task_surface_is_validation():
     assert cg.TASK_SURFACE == "validation"
     assert cg.TASK_SURFACE in VALID_TASK_SURFACES

@@ -81,7 +81,32 @@ def _make_windows_block(windows: list[dict]) -> dict:
 # ------------------- Loading -----------------------------------
 
 
+def _current_envelope(windows, monkeypatch):
+    # The producer's optional tokenizer initialization must not fetch data.
+    try:
+        import nltk
+    except ImportError:
+        pass
+    else:
+        monkeypatch.setattr(nltk, "download", lambda *args, **kwargs: False)
+    import variance_audit as va
+    return va.build_audit_payload({"windows": windows}, target_path="synthetic.txt")
+
+
 class TestLoading:
+    def test_load_current_variance_envelope(self, monkeypatch):
+        windows = _make_windows_block([
+            _make_window(start_word=0, end_word=500,
+                         band="Lightly smoothed", fraction=0.10),
+        ])
+        envelope = _current_envelope(windows, monkeypatch)
+        assert swh.load_windows_block(envelope) == windows
+
+    @pytest.mark.parametrize("results", [None, [], "invalid", {}, {"windows": None}, {"windows": []}])
+    def test_reject_nonwindowed_or_malformed_envelope(self, results):
+        with pytest.raises(ValueError):
+            swh.load_windows_block({"schema_version": "1.0", "results": results})
+
     def test_load_windows_block_accepts_full_audit_output(self):
         full = {
             "audit": {},
@@ -434,6 +459,21 @@ class TestPrivacyGuard:
 
 
 class TestCli:
+    @pytest.mark.parametrize("markdown_private", [True, False, None])
+    def test_privacy_refusal_precedes_all_output(self, tmp_path, capsys, markdown_private):
+        source = tmp_path / "audit.json"
+        source.write_text(json.dumps(_make_windows_block([])), encoding="utf-8")
+        sidecar = tmp_path / "public" / "failure.json"
+        markdown = None if markdown_private is None else tmp_path / (
+            "ai-prose-baselines-private" if markdown_private else "public") / "report.md"
+        args = ["--in", str(source), "--json-out", str(sidecar)]
+        if markdown is not None:
+            args += ["--out", str(markdown)]
+        assert swh.main(args) == 3
+        assert "refusing to write" in capsys.readouterr().err
+        assert not sidecar.exists()
+        assert markdown is None or not markdown.exists()
+
     def test_cli_round_trip_to_files(self, tmp_path, monkeypatch, capsys):
         windows = [
             _make_window(start_word=0, end_word=500,

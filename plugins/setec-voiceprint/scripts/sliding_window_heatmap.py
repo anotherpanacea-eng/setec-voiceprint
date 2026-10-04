@@ -114,6 +114,9 @@ def load_windows_block(source: Any) -> dict[str, Any]:
         return source
     if "windows" in source and isinstance(source["windows"], dict):
         return source["windows"]
+    results = source.get("results")
+    if isinstance(results, dict) and isinstance(results.get("windows"), dict):
+        return results["windows"]
     raise ValueError(
         "input does not contain a 'windows' block or 'results' list; "
         "expected variance_audit.py --json output"
@@ -851,6 +854,18 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"  failed to load input: {e}\n")
         return 2
 
+    # Check both destinations before any rendering or partial publication.
+    for destination, label in ((args.output_path, "heatmap"),
+                               (args.json_output_path, "heatmap JSON")):
+        if destination and not args.allow_public_output and not _is_under_private_root(Path(destination)):
+            sys.stderr.write(
+                f"  refusing to write {label} to non-private path "
+                f"{destination}; either move under "
+                "ai-prose-baselines-private/ or pass "
+                "--allow-public-output explicitly\n"
+            )
+            return 3
+
     source_label = (
         args.input_path
         if args.input_path and args.input_path != "-"
@@ -860,14 +875,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.output_path:
         out_path = Path(args.output_path)
-        if not args.allow_public_output and not _is_under_private_root(out_path):
-            sys.stderr.write(
-                "  refusing to write heatmap to non-private path "
-                f"{out_path}; either move under "
-                "ai-prose-baselines-private/ or pass "
-                "--allow-public-output explicitly\n"
-            )
-            return 3
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(report, encoding="utf-8")
         sys.stderr.write(f"  wrote heatmap report → {out_path}\n")
@@ -876,14 +883,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.json_output_path:
         jpath = Path(args.json_output_path)
-        if not args.allow_public_output and not _is_under_private_root(jpath):
-            sys.stderr.write(
-                "  refusing to write heatmap JSON to non-private "
-                f"path {jpath}; either move under "
-                "ai-prose-baselines-private/ or pass "
-                "--allow-public-output explicitly\n"
-            )
-            return 3
         jpath.parent.mkdir(parents=True, exist_ok=True)
         jpath.write_text(
             json.dumps(

@@ -2,30 +2,43 @@ entries:
 - id: sliding_window_heatmap
   script_path: plugins/setec-voiceprint/scripts/sliding_window_heatmap.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers: []
-  family: TODO
-  purpose: render variance_audit sliding-window output as a heatmap.
+  family: variance-localization
+  purpose: Render already-measured variance_audit window bands and flagged signals as a Markdown localization heatmap with an optional JSON sidecar. Heuristic operator cues for further investigation, not calibrated per-zone judgments.
   use_when:
-  - TODO
+  - You have sliding-window variance diagnostics and want to inspect word-coordinate hot zones, dominant signals and phenomenon cues.
+  - You want to visualize existing measurements without running fresh scoring or loading a model.
   do_not_use_when:
-  - TODO
+  - Input is raw manuscript prose or a non-windowed audit; this renderer requires a windows block.
+  - You want calibrated per-zone certainty or an authorship or AI verdict.
   inputs:
-    target: TODO
+    target: variance_audit sliding-window JSON via stdin or --in (not manuscript prose).
+    required:
+    - variance_audit windows (raw block or JSON envelope).
+    optional:
+    - --in, --out, --json-out, --allow-public-output (see --help).
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown heatmap (stdout or --out).
+    - Optional JSON sidecar (--json-out).
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: Standard-library rendering of existing measurements; no model or fresh scoring. File outputs must sit under ai-prose-baselines-private/ unless --allow-public-output.
     length_floor_words: null
   registers:
-  - TODO
+  - literary_fiction
+  - blog_essay
+  - academic_philosophy
+  - long_form_journalism
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Render existing window measurements to private Markdown and JSON files.
+    cmd: python3 plugins/setec-voiceprint/scripts/sliding_window_heatmap.py --in windows.json --out ai-prose-baselines-private/heatmap.md --json-out ai-prose-baselines-private/heatmap.json
+  references:
+  - plugins/setec-voiceprint/scripts/sliding_window_heatmap.py
+  - plugins/setec-voiceprint/capabilities.d/variance_audit.yaml
   _seeded_at: '2026-05-28'
