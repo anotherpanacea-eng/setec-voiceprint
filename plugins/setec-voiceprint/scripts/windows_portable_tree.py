@@ -10,7 +10,7 @@ import secrets
 import time
 from typing import Any, Callable, Mapping
 
-from setec.surfaces import acquire_imessage_sent_atomic as A
+import acquire_imessage_sent_atomic as A
 import windows_descriptor_io as W
 
 
