@@ -386,6 +386,7 @@ def _source_path(scope: Path, module: str) -> Path:
     """Read relocated implementations only for the actual scripts scope."""
     if scope == SCRIPTS and module in {
         "cross_doc_argument_consistency", "position_pair_register",
+        "general_imposters",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
@@ -582,7 +583,7 @@ def test_directly_guarded_surfaces_bind_and_call_the_guard():
     for module, row in CLASSIFICATION.items():
         if row["guard"] != GUARDED or row["via"] != DIRECT:
             continue
-        src = (SCRIPTS / f"{module}.py").read_text(encoding="utf-8")
+        src = _source_path(SCRIPTS, module).read_text(encoding="utf-8")
         assert _calls_guard(src), (
             f"{module} is classified GUARDED/direct but does not bind + call "
             f"{GUARD_NAME}"

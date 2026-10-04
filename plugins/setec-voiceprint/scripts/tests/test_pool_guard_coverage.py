@@ -196,6 +196,7 @@ def _source_path(scope: Path, module: str) -> Path:
     """Read relocated implementations only for the actual scripts scope."""
     if scope == SCRIPTS and module in {
         "cross_doc_argument_consistency", "position_pair_register",
+        "general_imposters",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
