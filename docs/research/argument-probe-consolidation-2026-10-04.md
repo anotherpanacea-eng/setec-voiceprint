@@ -520,3 +520,13 @@ def test_copied_certainty_manifest_does_not_invent_provenance(bare_plugin, recor
                                              "model": recorded.get("model"), "prompt_version": recorded.get("prompt_version")}
     assert envelope["results"]["claims"][0]["alignment"] == "overclaim"
 ```
+
+## Implementation consumption record
+
+The separate preparation is independently cleared draft PR541 at exact `9aadfe0b34620d9e329ad0e042891cec05f3a1c7`. This subsequent implementation consumes those reviewed cases. All37 original node IDs map one-to-one to identical IDs; complete scenario functions, decorators, module globals, fixtures and literal/constructed payloads remain unchanged outside the local probe/import edits. Diagnostic comparison verified the three complete module trees under that exclusion; no source-freeze test was added.
+
+Focused Windows execution passes46 cases:37 originals and9 separate behavioral controls. The controls protect original-environment independence, PYTHONPATH removal, forced settings, live module bindings and environment-copy-before-runner/executable lookup, exact argv/options, opaque result identity even for nonzero exits/output, and natural timeout-exception identity. Module-local synthetic namespaces avoid patching global os, sys or subprocess.
+
+Whole-suite collection completes without errors at11011 nodes. The21 explicit shared-conftest caller modules plus9 new controls produce600 passes and40 failures. All631 existing outcomes match prior broad evidence; all40 failing nodes also reproduced in the earlier exact-base failed-case run. No cause beyond reproduction is assigned. All9 added cases pass. HEAD remained fixed during these runs.
+
+This is bounded Windows/local evidence. The complete suite was collected, not executed again. No full-suite-green, other-platform execution, hosted CI or integration clearance is claimed. Runtime code, fixture bytes, workflows/selectors and divergent asserting/conditional-S probes remain unchanged.
