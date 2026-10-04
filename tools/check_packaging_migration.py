@@ -142,6 +142,10 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/dialogue_voice_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/narratorial_distance_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/productive_roughness_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/sound_texture_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/document_layout_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/formulaicity_audit.py", "_SCRIPT_DIR"),
