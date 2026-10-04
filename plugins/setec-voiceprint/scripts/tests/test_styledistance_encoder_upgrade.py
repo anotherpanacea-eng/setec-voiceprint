@@ -699,7 +699,7 @@ def test_crosslingual_encoder_lazy_import_only_on_flag(
 
 _HELDOUT_VALIDATORS = (
     "general_imposters.py",
-    "mimicry_cosplay_audit.py",
+    "setec/surfaces/mimicry_cosplay_audit.py",
     "binoculars_audit.py",
 )
 
