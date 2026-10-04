@@ -459,7 +459,7 @@ _FORBIDDEN_SYMBOLS = {"SetecFitness", "calibrate_thresholds", "conformal_gate"}
 
 def _guarded_sources() -> list[Path]:
     return [
-        CALIBRATION_DIR / "paraphrase_ladder.py",
+        SCRIPTS_ROOT / "setec/calibration/paraphrase_ladder.py",
         SCRIPTS_ROOT / "adversarial_fixtures.py",
     ]
 
@@ -512,7 +512,7 @@ def test_import_pulls_no_model_dependency():
     # If the module imported a heavy model lib at top level, it would be in
     # sys.modules already (the test imports pl at file load). Assert the
     # heavy libs were not dragged in BY paraphrase_ladder's import.
-    src = _strip_comments_and_strings(CALIBRATION_DIR / "paraphrase_ladder.py")
+    src = _strip_comments_and_strings(SCRIPTS_ROOT / "setec/calibration/paraphrase_ladder.py")
     tree = ast.parse(src)
     imported = set()
     for node in ast.walk(tree):
