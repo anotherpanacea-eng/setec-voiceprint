@@ -1,0 +1,576 @@
+{
+  "schema": "textprims-characterization/1",
+  "license": "Project-authored synthetic test text; CC0-1.0.",
+  "rows": [
+    {
+      "case_id": "split_sentences_punkt-empty",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-digits",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "A number: 3.5. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A number: 3.5.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "A number: 3.5. Next sentence.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A number: 3.5.",
+          "Next sentence.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-hyphens",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "A well-known plan. Another plan."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A well-known plan.",
+        "Another plan."
+      ],
+      "mutant": {
+        "args": [
+          "A well-known plan. Another plan.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A well-known plan.",
+          "Another plan.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-straight-apostrophe",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "It's ready. She's waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It's ready.",
+        "She's waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It's ready. She's waiting.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It's ready.",
+          "She's waiting.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-curly-apostrophe",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "It’s ready. She’s waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It’s ready.",
+        "She’s waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It’s ready. She’s waiting.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It’s ready.",
+          "She’s waiting.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-unicode-nfc",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "Café arrived. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived. Next sentence.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived.",
+          "Next sentence.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-unicode-nfd",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "Café arrived. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived. Next sentence.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived.",
+          "Next sentence.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-abbreviation",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "Dr. Hale arrived. He waited."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr. Hale arrived.",
+        "He waited."
+      ],
+      "mutant": {
+        "args": [
+          "Dr. Hale arrived. He waited.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr. Hale arrived.",
+          "He waited.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-ellipses",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "Some words... More words."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Some words... More words."
+      ],
+      "mutant": {
+        "args": [
+          "Some words... More words.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Some words... More words.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_punkt-paragraphs",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-0a069702b2f6-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt",
+      "args": [
+        "First paragraph.\n\nSecond paragraph."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "First paragraph.",
+        "Second paragraph."
+      ],
+      "mutant": {
+        "args": [
+          "First paragraph.\n\nSecond paragraph.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "First paragraph.",
+          "Second paragraph.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-empty",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-digits",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "A number: 3.5. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A number: 3.5.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "A number: 3.5. Next sentence.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A number: 3.5.",
+          "Next sentence.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-hyphens",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "A well-known plan. Another plan."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A well-known plan.",
+        "Another plan."
+      ],
+      "mutant": {
+        "args": [
+          "A well-known plan. Another plan.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A well-known plan.",
+          "Another plan.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-straight-apostrophe",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "It's ready. She's waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It's ready.",
+        "She's waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It's ready. She's waiting.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It's ready.",
+          "She's waiting.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-curly-apostrophe",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "It’s ready. She’s waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It’s ready.",
+        "She’s waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It’s ready. She’s waiting.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It’s ready.",
+          "She’s waiting.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-unicode-nfc",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "Café arrived. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived. Next sentence.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived.",
+          "Next sentence.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-unicode-nfd",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "Café arrived. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived. Next sentence.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived.",
+          "Next sentence.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-abbreviation",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "Dr. Hale arrived. He waited."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr.",
+        "Hale arrived.",
+        "He waited."
+      ],
+      "mutant": {
+        "args": [
+          "Dr. Hale arrived. He waited.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr.",
+          "Hale arrived.",
+          "He waited.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-ellipses",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "Some words... More words."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Some words...",
+        "More words."
+      ],
+      "mutant": {
+        "args": [
+          "Some words... More words.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Some words...",
+          "More words.",
+          "A different ending."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_regex-paragraphs",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-bace7d2ce7a5-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex",
+      "args": [
+        "First paragraph.\n\nSecond paragraph."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "First paragraph.",
+        "Second paragraph."
+      ],
+      "mutant": {
+        "args": [
+          "First paragraph.\n\nSecond paragraph.\n\nA different ending."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "First paragraph.",
+          "Second paragraph.",
+          "A different ending."
+        ]
+      }
+    }
+  ]
+}
