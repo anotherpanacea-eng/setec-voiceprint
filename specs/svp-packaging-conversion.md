@@ -207,6 +207,49 @@ If two companion changes would edit the same file, relocation lands first as a s
 
 Every phase is independently mergeable and keeps the full existing suite green.
 
+## Acquisition producer-byte bindings during P4 relocation
+
+The complete `acquisition` family is derived from the live capability fragments,
+not from this section's examples. Move whole modules together under P4. Keep
+all existing normalized launcher paths, including per-file launchers for
+`acquisition_sources/`; retain that directory's package home as
+`scripts/setec/acquisition_sources/`. This clarification supplies a contract,
+not an implemented relocation, approval, profile ratification or acquisition.
+
+Two existing bindings describe executing implementation bytes. Necessary
+location plumbing may change those bytes and their derived identities:
+
+- `acquire_gmail_sent._extraction_code_sha256()` continues to hash its actual
+  executing package file with the existing raw-byte SHA-256; do not normalize
+  newlines or source bytes. Preserve the current extraction policy value,
+  receipt/descriptor/checkpoint schemas, fingerprint domains and framing.
+  Former smoke descriptors, receipts and resume checkpoints whose extraction
+  binding no longer matches retain their existing refusal behavior. Do not
+  translate, mint, reapprove or rebind existing approvals as part of relocation.
+- `near_dup_dedup._publish_spec80_package()` continues to call
+  `passage_source_population_commitment.committed_producer_identity()` with the
+  actual package implementation. Its Git repository lookup may start from that
+  implementation's directory; the helper must still read the actual committed
+  path at HEAD and refuse missing/uncommitted or dirty producer bytes. New
+  producer revision, blob OID and SHA-256 fields describe the committed executing
+  package file. Preserve schemas, digest algorithms, parameters, source admission
+  and marker-last publication. Earlier reports, commitments, receipts and profiles
+  remain immutable; each keeps its existing authority and matching rules.
+
+Never hash the compatibility alias, reconstruct former implementation bytes,
+hardcode any digest, remove a binding or add a general digest normalization
+exception. No other normalized fixture change is authorized. Keep the tokenizer
+implementation/data bindings and frozen data bytes unchanged. No new resolver,
+identity registry, cache, approval mechanism or guard is needed.
+
+Use existing synthetic Gmail stale-binding and resume refusals and strict
+committed/dirty producer tests to qualify these contracts after the move. Also
+check actual digest inputs, ordinary module identity, old CLI paths and copied
+plugin execution. Preserve current dependency requirements; zero install does
+not promise stdlib-only execution. Complete-family tests and the existing P4
+acceptance gates remain required for final relocation clearance; this docs
+increment does not claim those gates have run or that P4/P5 is complete.
+
 ## Acceptance gates
 
 All new checkers use the repository convention: violations are errors and exit non-zero by default; informational inventory output is not a warning gate; `--strict` additionally rejects expired/unmatched committed exemptions. An exemption is accepted only from the named YAML file and must include owner, reason, introduced SHA, and removal phase. There is no CLI flag that silently ignores a violation.
