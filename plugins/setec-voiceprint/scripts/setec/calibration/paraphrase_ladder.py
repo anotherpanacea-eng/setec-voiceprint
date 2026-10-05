@@ -83,15 +83,32 @@ from adversarial_robustness_card import (  # type: ignore
     _VARIANCE_SIGNALS,
     build_robustness_card,
 )
-from variance_audit import (  # type: ignore
-    audit_text,
-    classify_compression,
-)
-from adversarial_fixtures import (  # type: ignore
-    alternative_spelling,
-    synonym_swap,
-    whitespace,
-)
+# Help and fixture parsing must not initialize optional scoring dependencies.
+# Keep these callable names so existing callers can replace them independently.
+def audit_text(*args, **kwargs):
+    from variance_audit import audit_text as implementation
+    return implementation(*args, **kwargs)
+
+
+def classify_compression(*args, **kwargs):
+    from variance_audit import classify_compression as implementation
+    return implementation(*args, **kwargs)
+
+
+def alternative_spelling(*args, **kwargs):
+    from adversarial_fixtures import alternative_spelling as implementation
+    return implementation(*args, **kwargs)
+
+
+def synonym_swap(*args, **kwargs):
+    from adversarial_fixtures import synonym_swap as implementation
+    return implementation(*args, **kwargs)
+
+
+def whitespace(*args, **kwargs):
+    from adversarial_fixtures import whitespace as implementation
+    return implementation(*args, **kwargs)
+
 
 TASK_SURFACE = "validation"
 TOOL_NAME = "paraphrase_ladder"
