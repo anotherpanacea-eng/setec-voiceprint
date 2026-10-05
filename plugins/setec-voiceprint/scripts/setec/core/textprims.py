@@ -80,7 +80,23 @@ SENTENCE_SPLITTERS = _MappingProxyType({
      'allowed_backends': (),
      'behavior_sha256': 'bace7d2ce7a5a225448442f1d7fa355b718bb18f398ac27267cc58c8a03554f5'}),
 })
-TOKENIZERS = _MappingProxyType({})
+def __getattr__(name):
+    if name == "tokenize":
+        from setec.core.passage_tokenizer_v1 import tokenize
+        return tokenize
+    raise AttributeError(name)
+
+
+TOKENIZERS = _MappingProxyType({
+    "tokenize": _MappingProxyType({'id': 'tokenizer-d6e53cf12864-v1',
+ 'family': 'tokenizer',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize',
+ 'pattern_sha256': '13df86429c6498c2cbffe6dacad99dae69824f69775a23514bd053a8a1633aed',
+ 'case_policy': 'lower',
+ 'unicode_normalization': 'frozen_table',
+ 'allowed_backends': (),
+ 'behavior_sha256': 'd6e53cf12864e702a89ed5c3d0d2f1a5b56c5dacafe627385244cfbb9ed10c02'}),
+})
 PARAGRAPH_SPLITTERS = _MappingProxyType({})
 FUNCTION_WORD_SETS = _MappingProxyType({
     'FUNCTION_WORDS': _MappingProxyType({'id': 'function_words-297455e23b54-v1',

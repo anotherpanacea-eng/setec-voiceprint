@@ -34,3 +34,27 @@ def test_splitter_rows_bind_distinct_final_owners_and_closed_fields():
         assert row["implementation_ref"].endswith("setec/core/textprims.py:" + symbol)
         assert row["id"] == "sentence_splitter-" + row["behavior_sha256"][:12] + "-v1"
         assert callable(getattr(textprims, symbol))
+
+
+def test_frozen_tokenizer_registry_reexports_the_native_final_owner():
+    from setec.core import passage_tokenizer_v1
+    assert textprims.tokenize is passage_tokenizer_v1.tokenize
+    row = textprims.TOKENIZERS["tokenize"]
+    assert row["implementation_ref"].endswith("setec/core/passage_tokenizer_v1.py:tokenize")
+    assert row["unicode_normalization"] == "frozen_table"
+
+
+def test_function_word_import_does_not_load_plugin_dependent_tokenizer(tmp_path):
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+    scripts = tmp_path / "scripts"
+    core = scripts / "setec/core"
+    core.mkdir(parents=True)
+    shutil.copyfile(Path(textprims.__file__), core / "textprims.py")
+    # No marker, tokenizer module or data is present: pure table imports must work.
+    code = "import sys; sys.path.insert(0, sys.argv[1]); from setec.core.textprims import FUNCTION_WORDS; assert 'and' in FUNCTION_WORDS; assert 'setec.core.passage_tokenizer_v1' not in sys.modules"
+    result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code, str(scripts)], cwd=tmp_path, text=True, capture_output=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == result.stderr == ""

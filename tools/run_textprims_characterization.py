@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import hashlib
 from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "plugins/setec-voiceprint/scripts"
+TOKENIZER_OWNER = "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py"
 OWNER = "plugins/setec-voiceprint/scripts/setec/core/textprims.py"
 FIELDS = {"case_id", "family", "registry_id", "legacy_callable", "registered_callable", "args", "kwargs", "result_path", "comparator", "expected", "mutant"}
 COMPARATORS = {"json_exact", "sequence_exact", "set_exact", "bytes_hex_exact", "float_hex_exact", "exception_exact"}
@@ -111,6 +113,17 @@ def run(fixture, resource_root):
         seen.add(row["case_id"])
         entry = registry[row["registry_id"]]
         table_row = entry["family"] == "function_words"
+        frozen_tokenizer = entry["implementation_ref"] == TOKENIZER_OWNER + ":tokenize"
+        if frozen_tokenizer:
+            from setec.core import passage_tokenizer_v1
+            expected_data = SCRIPTS / "passage_tokenizer_data_v1.json"
+            if passage_tokenizer_v1.DATA_FILE.resolve() != expected_data.resolve() or expected_data.is_symlink() or hashlib.sha256(expected_data.read_bytes()).hexdigest() != entry["pattern_sha256"]:
+                raise ValueError("frozen tokenizer default table mismatch")
+            default_path = passage_tokenizer_v1.tokenize.__kwdefaults__.get("data_path")
+            if not isinstance(default_path, Path) or default_path.resolve() != expected_data.resolve():
+                raise ValueError("frozen tokenizer callable default table mismatch")
+            if textprims.tokenize is not passage_tokenizer_v1.tokenize:
+                raise ValueError("frozen tokenizer registry identity changed")
         expected_ref = entry["implementation_ref"] + (".__contains__" if table_row else "")
         if row["family"] != entry["family"] or row["registered_callable"] != expected_ref:
             raise ValueError("fixture registry binding mismatch")
@@ -119,6 +132,11 @@ def run(fixture, resource_root):
         functions = []
         for ref in (row["legacy_callable"], row["registered_callable"]):
             module, symbol = ref.split(":")
+            if frozen_tokenizer:
+                if module != TOKENIZER_OWNER or symbol != "tokenize":
+                    raise ValueError("frozen tokenizer must name its native final owner")
+                functions.append(passage_tokenizer_v1.tokenize)
+                continue
             if module != OWNER:
                 raise ValueError("non-owner callable outside this cohort")
             if table_row:
@@ -140,6 +158,8 @@ def run(fixture, resource_root):
         for case in (row, mutant):
             if type(case["args"]) is not list or type(case["kwargs"]) is not dict or type(case["result_path"]) is not list or any(type(v) not in (str, int) for v in case["result_path"]):
                 raise ValueError("invalid call arguments or selectors")
+            if frozen_tokenizer and "data_path" in case["kwargs"]:
+                raise ValueError("custom frozen tokenizer table is forbidden")
             if table_row and (len(case["args"]) != 1 or type(case["args"][0]) is not str or case["kwargs"] or case["result_path"]):
                 raise ValueError("table membership requires one word query")
         primary = encode(row["expected"], row["comparator"])
