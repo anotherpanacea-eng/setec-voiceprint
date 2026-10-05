@@ -172,12 +172,12 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
 def discover(root):
     discoveries = []
     owner = root / OWNER
-    registered = registry(owner.read_text()) if owner.exists() else {}
+    registered = registry(owner.read_text(encoding="utf-8")) if owner.exists() else {}
     registered_refs = {row["implementation_ref"] for row in registered.values()}
     for path in sorted((root / "plugins/setec-voiceprint/scripts").rglob("*.py")):
         if "tests" in path.relative_to(root).parts or "__pycache__" in path.parts:
             continue
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         tree = ast.parse(text)
         parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
         re_modules, re_functions = set(), {}
@@ -320,7 +320,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
     scripts = root / "plugins/setec-voiceprint/scripts"
     modules_by_name = {}
     if source_texts is None:
-        source_texts = {path.relative_to(root).as_posix(): path.read_text() for path in sorted(scripts.rglob("*.py")) if "tests" not in path.relative_to(root).parts and "__pycache__" not in path.parts}
+        source_texts = {path.relative_to(root).as_posix(): path.read_text(encoding="utf-8") for path in sorted(scripts.rglob("*.py")) if "tests" not in path.relative_to(root).parts and "__pycache__" not in path.parts}
     for relative, text in source_texts.items():
         module = Path(relative).relative_to("plugins/setec-voiceprint/scripts").with_suffix("").as_posix().replace("/", ".")
         modules_by_name[module] = (relative, ast.parse(text))
@@ -449,16 +449,16 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
 
 
 def check(root, base):
-    merge_base = subprocess.check_output(["git", "merge-base", base, "HEAD"], cwd=root, text=True).strip()
-    baseline = subprocess.check_output(["git", "show", merge_base + ":" + OWNER], cwd=root, text=True)
+    merge_base = subprocess.check_output(["git", "merge-base", base, "HEAD"], cwd=root, encoding="utf-8").strip()
+    baseline = subprocess.check_output(["git", "show", merge_base + ":" + OWNER], cwd=root, encoding="utf-8")
     external_bytes = {path: (root / path).read_bytes() for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
     baseline_external_bytes = {path: subprocess.check_output(["git", "show", merge_base + ":" + path], cwd=root) for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
-    rows, errors = verify_rows((root / OWNER).read_text(), baseline, external_bytes, baseline_external_bytes)
+    rows, errors = verify_rows((root / OWNER).read_text(encoding="utf-8"), baseline, external_bytes, baseline_external_bytes)
     imports, binding_errors = bindings(root, set(rows), {symbol for symbol, row in rows.items() if row["family"] == "function_words"})
     errors.extend(binding_errors)
     for symbol in sorted(set(rows) - {symbol for (path, _local), symbol in imports.items() if path != OWNER}):
         errors.append("registered row never imported: " + symbol)
-    fixture = json.loads((root / "references/textprims/characterization.json").read_text())
+    fixture = json.loads((root / "references/textprims/characterization.json").read_text(encoding="utf-8"))
     fixture_ids = {row["registry_id"] for row in fixture["rows"]}
     if fixture_ids != {row["id"] for row in rows.values()}:
         errors.append("fixture and cumulative registry coverage differ")
@@ -477,7 +477,7 @@ def check(root, base):
             errors.append("merge-base compatibility binding removed: " + path + ":" + local)
     import_sites = []
     for (path, local), symbol in sorted(imports.items()):
-        tree = ast.parse((root / path).read_text())
+        tree = ast.parse((root / path).read_text(encoding="utf-8"))
         alias = permanent_alias(tree)
         if alias is not None:
             line = alias[1]

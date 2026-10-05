@@ -116,7 +116,7 @@ def _run(fixture):
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
     from setec.core import textprims
-    document = json.loads(Path(fixture).read_text())
+    document = json.loads(Path(fixture).read_text(encoding="utf-8"))
     if set(document) != {"schema", "license", "rows"} or document["schema"] != "textprims-characterization/1" or not document["license"]:
         raise ValueError("invalid fixture header")
     registry = {row["id"]: row for name in ("TOKENIZERS", "SENTENCE_SPLITTERS", "PARAGRAPH_SPLITTERS", "FUNCTION_WORD_SETS", "QUANTILES", "FINGERPRINTS", "PREPROCESSORS") for row in getattr(textprims, name).values()}

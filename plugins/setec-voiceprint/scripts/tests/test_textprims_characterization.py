@@ -43,13 +43,13 @@ def test_native_rows_and_mutants(tmp_path):
     resource = os.environ["TEXTPRIMS_PUNKT_DATA"]
     fixture = ROOT / "references/textprims/characterization.json"
     runner.run(fixture, resource)
-    document = json.loads(fixture.read_text())
+    document = json.loads(fixture.read_text(encoding="utf-8"))
     document["rows"][0]["mutant"]["expected"] = document["rows"][0]["expected"]
     altered = tmp_path / "weak.json"
     altered.write_text(json.dumps(document))
     with pytest.raises(ValueError, match="no teeth"):
         runner.run(altered, resource)
-    document = json.loads(fixture.read_text())
+    document = json.loads(fixture.read_text(encoding="utf-8"))
     document["rows"][0]["expected"] = ["An incorrect expectation."]
     altered.write_text(json.dumps(document))
     with pytest.raises(ValueError, match="mismatch"):
@@ -73,7 +73,7 @@ def test_native_resolution_rejects_missing_resources(tmp_path):
 
 def test_wrong_table_cannot_pass_shared_membership_cases(tmp_path):
     fixture = ROOT / "references/textprims/characterization.json"
-    doc = json.loads(fixture.read_text())
+    doc = json.loads(fixture.read_text(encoding="utf-8"))
     row = next(row for row in doc["rows"] if row["family"] == "function_words")
     row["legacy_callable"] = row["legacy_callable"].replace(":FUNCTION_WORDS.", ":DIALOGUE_FUNCTION_WORDS.")
     altered = tmp_path / "substitute-table.json"
@@ -91,7 +91,7 @@ def test_frozen_tokenizer_registry_wrapper_is_refused(monkeypatch):
 
 
 def test_frozen_tokenizer_custom_table_argument_is_refused(tmp_path):
-    doc = json.loads((ROOT / "references/textprims/characterization.json").read_text())
+    doc = json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))
     row = next(row for row in doc["rows"] if row["family"] == "tokenizer")
     row["kwargs"]["data_path"] = "alternate.json"
     fixture = tmp_path / "custom-table.json"
