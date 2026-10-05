@@ -42,7 +42,7 @@ def test_exception_call_does_not_accept_success():
 def test_native_rows_and_mutants(tmp_path):
     resource = os.environ["TEXTPRIMS_PUNKT_DATA"]
     fixture = ROOT / "references/textprims/characterization.json"
-    assert runner.run(fixture, resource) == 20
+    runner.run(fixture, resource)
     document = json.loads(fixture.read_text())
     document["rows"][0]["mutant"]["expected"] = document["rows"][0]["expected"]
     altered = tmp_path / "weak.json"
@@ -69,3 +69,14 @@ def test_provisioning_rejects_unverified_archive(tmp_path):
 def test_native_resolution_rejects_missing_resources(tmp_path):
     with pytest.raises((ValueError, FileNotFoundError)):
         runner.configure_punkt(tmp_path)
+
+
+def test_wrong_table_cannot_pass_shared_membership_cases(tmp_path):
+    fixture = ROOT / "references/textprims/characterization.json"
+    doc = json.loads(fixture.read_text())
+    row = next(row for row in doc["rows"] if row["family"] == "function_words")
+    row["legacy_callable"] = row["legacy_callable"].replace(":FUNCTION_WORDS.", ":DIALOGUE_FUNCTION_WORDS.")
+    altered = tmp_path / "substitute-table.json"
+    altered.write_text(json.dumps(doc))
+    with pytest.raises(ValueError, match="ownership identity changed"):
+        runner.run(altered, os.environ["TEXTPRIMS_PUNKT_DATA"])

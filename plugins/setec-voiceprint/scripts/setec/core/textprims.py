@@ -82,7 +82,24 @@ SENTENCE_SPLITTERS = _MappingProxyType({
 })
 TOKENIZERS = _MappingProxyType({})
 PARAGRAPH_SPLITTERS = _MappingProxyType({})
-FUNCTION_WORD_SETS = _MappingProxyType({})
+FUNCTION_WORD_SETS = _MappingProxyType({
+    'FUNCTION_WORDS': _MappingProxyType({'id': 'function_words-297455e23b54-v1',
+ 'family': 'function_words',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS',
+ 'pattern_sha256': '36049cc02a8d65add587f8d6c96029627c173bc86a94c886476bf6a23a8ce29c',
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '297455e23b5447903d9fe9d62c6f5e47f9c7820103aefcbbd48fe3cd09d2dacc'}),
+    'DIALOGUE_FUNCTION_WORDS': _MappingProxyType({'id': 'function_words-80dee76c8121-v1',
+ 'family': 'function_words',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS',
+ 'pattern_sha256': 'c71678be291fdf2b2df6ee74db20ecf0860acd981ea08ce99334e421200107fa',
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '80dee76c81212de0ddbb226b2536eb0f2db21b4834c3f89afd8331c8fd473ff5'}),
+})
 QUANTILES = _MappingProxyType({})
 FINGERPRINTS = _MappingProxyType({})
 PREPROCESSORS = _MappingProxyType({})

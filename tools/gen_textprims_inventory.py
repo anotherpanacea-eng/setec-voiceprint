@@ -9,9 +9,11 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
+import tarfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OWNER = "plugins/setec-voiceprint/scripts/setec/core/textprims.py"
@@ -82,8 +84,16 @@ def verify_rows(candidate, baseline):
     if not {row["id"] for row in old.values()} <= {row["id"] for row in rows.values()}:
         errors.append("merge-base registry obligation removed")
     tree = ast.parse(candidate)
-    definitions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
-    old_definitions = {n.name: n for n in ast.parse(baseline).body if isinstance(n, ast.FunctionDef)}
+    def definitions_in(tree):
+        definitions = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Set) and all(isinstance(v, ast.Constant) and type(v.value) is str for v in node.value.elts):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        definitions[target.id] = node
+        return definitions
+    definitions = definitions_in(tree)
+    old_definitions = definitions_in(ast.parse(baseline))
     pattern = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_SENT_RE" for t in n.targets))
     pattern_bytes = ast.literal_eval(pattern.value.args[0]).encode()
     old_pattern = next(n for n in ast.parse(baseline).body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_SENT_RE" for t in n.targets))
@@ -107,7 +117,15 @@ def verify_rows(candidate, baseline):
         if row["implementation_ref"] != OWNER + ":" + symbol or symbol not in definitions:
             errors.append("unresolved final owner: " + symbol)
             continue
+        if row["family"] == "function_words" and not isinstance(definitions[symbol], ast.Assign):
+            errors.append("function-word row must name its literal table: " + symbol)
+            continue
+        if row["family"] != "function_words" and not isinstance(definitions[symbol], ast.FunctionDef):
+            errors.append("callable row must name its defining function: " + symbol)
+            continue
         defining = source(definitions[symbol], candidate)
+        if row["family"] == "function_words" and row["pattern_sha256"] != hashlib.sha256(defining.encode()).hexdigest():
+            errors.append("table digest mismatch: " + symbol)
         if symbol not in old_definitions or defining != source(old_definitions[symbol], baseline):
             errors.append("defining callable changed during ownership-only increment: " + symbol)
         fields = {k: v for k, v in row.items() if k not in {"id", "behavior_sha256"}}
@@ -127,6 +145,8 @@ def verify_rows(candidate, baseline):
 
 def discover(root):
     discoveries = []
+    owner = root / OWNER
+    registered = registry(owner.read_text()) if owner.exists() else {}
     for path in sorted((root / "plugins/setec-voiceprint/scripts").rglob("*.py")):
         if "tests" in path.relative_to(root).parts or "__pycache__" in path.parts:
             continue
@@ -172,7 +192,7 @@ def discover(root):
                 candidate_kind = "literal_string_table_candidate"
                 candidate_owner = ",".join(ast.unparse(t) for t in node.targets)
             if candidate_kind:
-                discoveries.append({"path": path.relative_to(root).as_posix(), "line": node.lineno, "owner": candidate_owner, "operation": candidate_kind, "pattern": None, "outcome": "unresolved", "reason": "candidate syntax only; semantic role requires independent review"})
+                discoveries.append({"path": path.relative_to(root).as_posix(), "line": node.lineno, "owner": candidate_owner, "operation": candidate_kind, "pattern": None, "outcome": "recognized_primitive" if path.relative_to(root).as_posix() == OWNER and candidate_owner in registered else "unresolved", "reason": "registered defining object" if path.relative_to(root).as_posix() == OWNER and candidate_owner in registered else "candidate syntax only; semantic role requires independent review"})
             operation = None
             if isinstance(node, ast.Call):
                 if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id in re_modules and node.func.attr in REGEX_CALLS:
@@ -243,38 +263,99 @@ def discover(root):
     return discoveries
 
 
-def bindings(root, symbols):
-    """Validate static owner imports and reject replacement/shadow bindings."""
+def bindings(root, symbols, table_symbols=(), source_texts=None):
+    """Resolve direct compatibility re-exports; reject replacement bindings."""
     imports, errors = {}, []
-    for path in sorted((root / "plugins/setec-voiceprint/scripts").rglob("*.py")):
-        if "tests" in path.relative_to(root).parts or "__pycache__" in path.parts:
-            continue
-        relative = path.relative_to(root).as_posix()
-        tree = ast.parse(path.read_text())
-        imported, modules, all_imports = {}, {}, []
+    scripts = root / "plugins/setec-voiceprint/scripts"
+    modules_by_name = {}
+    if source_texts is None:
+        source_texts = {path.relative_to(root).as_posix(): path.read_text() for path in sorted(scripts.rglob("*.py")) if "tests" not in path.relative_to(root).parts and "__pycache__" not in path.parts}
+    for relative, text in source_texts.items():
+        module = Path(relative).relative_to("plugins/setec-voiceprint/scripts").with_suffix("").as_posix().replace("/", ".")
+        modules_by_name[module] = (relative, ast.parse(text))
+
+    def resolve(module, name, seen=()):
+        if module == "setec.core.textprims" and name in symbols:
+            return name
+        if module not in modules_by_name or (module, name) in seen:
+            return None
+        tree = modules_by_name[module][1]
+        matches = []
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and not node.level:
+                for alias in node.names:
+                    if (alias.asname or alias.name) == name:
+                        matches.append(resolve(node.module, alias.name, (*seen, (module, name))))
+        return matches[0] if len(matches) == 1 else None
+
+    mutators = {"add", "clear", "discard", "pop", "remove", "update", "difference_update", "intersection_update", "symmetric_difference_update"}
+    for relative, tree in modules_by_name.values():
+        imported, owner_modules, all_imports = {}, {}, []
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 for alias in node.names:
                     local = alias.asname or alias.name.split(".")[0]
                     all_imports.append((local, node))
-                    if isinstance(node, ast.ImportFrom) and alias.name in symbols:
-                        if node.module != "setec.core.textprims" or node.level:
-                            errors.append(f"unresolved registered import: {relative}:{node.lineno}")
-                        imported[local] = alias.name
-                        imports[(relative, local)] = alias.name
+                    if isinstance(node, ast.ImportFrom):
+                        symbol = None if node.level else resolve(node.module, alias.name)
+                        if symbol is not None or alias.name in symbols:
+                            if symbol is None:
+                                errors.append(f"unresolved registered import: {relative}:{node.lineno}")
+                                symbol = alias.name
+                            imported[local] = symbol
+                            imports[(relative, local)] = symbol
                     if (isinstance(node, ast.Import) and alias.name == "setec.core.textprims") or (isinstance(node, ast.ImportFrom) and node.module == "setec.core" and alias.name == "textprims" and not node.level):
-                        modules[local] = node.lineno
+                        owner_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols and relative != OWNER:
                 errors.append(f"duplicate registered owner: {relative}:{node.lineno}")
-        tracked = set(imported) | set(modules)
+            elif isinstance(node, ast.Assign) and relative != OWNER and any(isinstance(t, ast.Name) and t.id in table_symbols for t in node.targets):
+                errors.append(f"duplicate registered table owner: {relative}:{node.lineno}")
+        tracked = set(imported) | set(owner_modules)
         for local in tracked:
             if sum(name == local for name, _ in all_imports) != 1 or any(name == "*" for name, _ in all_imports):
                 errors.append(f"replacement import may rebind registered binding: {relative}:{local}")
+        table_locals = {local for local, symbol in imported.items() if symbol in table_symbols}
+        if relative == OWNER:
+            table_locals.update(table_symbols)
+        def is_table(receiver):
+            return (isinstance(receiver, ast.Name) and receiver.id in table_locals) or (isinstance(receiver, ast.Attribute) and receiver.attr in table_symbols and ast.unparse(receiver.value) in owner_modules.values())
+
+        def escapes_table(value):
+            if is_table(value):
+                return True
+            if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+                return any(escapes_table(item) for item in value.elts)
+            if isinstance(value, ast.Dict):
+                return any(escapes_table(item) for item in [*value.keys, *value.values] if item is not None)
+            if isinstance(value, ast.Starred):
+                return escapes_table(value.value)
+            return False
+
+        # Only the existing read-only builtins may receive a table directly.
+        # Any binding of their names makes that call ambiguous, even in a nested scope.
+        shadowed_reads = {local for local, _ in all_imports if local in {"len", "sorted"}}
+        for binding in ast.walk(tree):
+            if isinstance(binding, ast.Name) and isinstance(binding.ctx, (ast.Store, ast.Del)) and binding.id in {"len", "sorted"}:
+                shadowed_reads.add(binding.id)
+            elif isinstance(binding, ast.arg) and binding.arg in {"len", "sorted"}:
+                shadowed_reads.add(binding.arg)
+            elif isinstance(binding, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and binding.name in {"len", "sorted"}:
+                shadowed_reads.add(binding.name)
         for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and any(escapes_table(arg) for arg in [*node.args, *(keyword.value for keyword in node.keywords)]):
+                safe_read = isinstance(node.func, ast.Name) and node.func.id in {"len", "sorted"} - shadowed_reads and len(node.args) == 1 and is_table(node.args[0]) and not node.keywords
+                if not safe_read:
+                    errors.append(f"unresolved registered table argument: {relative}:{node.lineno}")
             if (isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in tracked) or (isinstance(node, ast.arg) and node.arg in tracked) or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in tracked):
                 errors.append(f"rebound registered import: {relative}:{node.lineno}")
             if isinstance(node, ast.Attribute) and node.attr in symbols and isinstance(node.ctx, (ast.Store, ast.Del)):
                 errors.append(f"registered attribute replacement: {relative}:{node.lineno}")
+            if isinstance(node, ast.Attribute) and is_table(node.value) and node.attr in mutators:
+                errors.append(f"registered table mutation: {relative}:{node.lineno}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr" and node.args and is_table(node.args[0]):
+                errors.append(f"unresolved registered table method: {relative}:{node.lineno}")
+            if isinstance(node, (ast.Assign, ast.AnnAssign, ast.Return, ast.Yield, ast.YieldFrom)) and escapes_table(node.value):
+                errors.append(f"unresolved registered table alias: {relative}:{node.lineno}")
     return imports, errors
 
 
@@ -282,7 +363,7 @@ def check(root, base):
     merge_base = subprocess.check_output(["git", "merge-base", base, "HEAD"], cwd=root, text=True).strip()
     baseline = subprocess.check_output(["git", "show", merge_base + ":" + OWNER], cwd=root, text=True)
     rows, errors = verify_rows((root / OWNER).read_text(), baseline)
-    imports, binding_errors = bindings(root, set(rows))
+    imports, binding_errors = bindings(root, set(rows), {symbol for symbol, row in rows.items() if row["family"] == "function_words"})
     errors.extend(binding_errors)
     for symbol in sorted(set(rows) - set(imports.values())):
         errors.append("registered row never imported: " + symbol)
@@ -292,22 +373,21 @@ def check(root, base):
         errors.append("fixture and cumulative registry coverage differ")
     # Existing compatibility imports are baseline obligations even when the
     # candidate deletes their containing file or renames the imported binding.
-    paths = subprocess.check_output(["git", "ls-tree", "-r", "--name-only", merge_base, "plugins/setec-voiceprint/scripts"], cwd=root, text=True).splitlines()
-    for path in paths:
-        if not path.endswith(".py") or "tests" in Path(path).parts:
-            continue
-        old_text = subprocess.check_output(["git", "show", merge_base + ":" + path], cwd=root, text=True)
-        if not any(symbol in old_text for symbol in rows):
-            continue
-        for node in ast.walk(ast.parse(old_text)):
-            if isinstance(node, ast.ImportFrom) and node.module == "setec.core.textprims":
-                for alias in node.names:
-                    if alias.name in rows and imports.get((path, alias.asname or alias.name)) != alias.name:
-                        errors.append("merge-base compatibility binding removed: " + path + ":" + alias.name)
+    archive = subprocess.check_output(["git", "archive", merge_base, "plugins/setec-voiceprint/scripts"], cwd=root)
+    baseline_sources = {}
+    with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+        for member in bundle:
+            if member.isfile() and member.name.endswith(".py") and "tests" not in Path(member.name).parts and "__pycache__" not in Path(member.name).parts:
+                baseline_sources[member.name] = bundle.extractfile(member).read().decode("utf-8")
+    baseline_imports, baseline_errors = bindings(root, set(rows), {symbol for symbol, row in rows.items() if row["family"] == "function_words"}, baseline_sources)
+    errors.extend("merge-base " + error for error in baseline_errors)
+    for (path, local), symbol in baseline_imports.items():
+        if imports.get((path, local)) != symbol:
+            errors.append("merge-base compatibility binding removed: " + path + ":" + local)
     import_sites = []
     for (path, local), symbol in sorted(imports.items()):
         tree = ast.parse((root / path).read_text())
-        line = next(n.lineno for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and any(a.name == symbol and (a.asname or a.name) == local for a in n.names))
+        line = next(n.lineno for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and any((a.asname or a.name) == local for a in n.names))
         import_sites.append({"path": path, "line": line, "local_binding": local, "registered_symbol": symbol})
     discoveries = discover(root)
     unresolved = [d for d in discoveries if d["outcome"] == "unresolved"]

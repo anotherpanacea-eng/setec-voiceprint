@@ -103,14 +103,16 @@ def run(fixture, resource_root):
     document = json.loads(Path(fixture).read_text())
     if set(document) != {"schema", "license", "rows"} or document["schema"] != "textprims-characterization/1" or not document["license"]:
         raise ValueError("invalid fixture header")
-    registry = {row["id"]: row for row in textprims.SENTENCE_SPLITTERS.values()}
+    registry = {row["id"]: row for name in ("TOKENIZERS", "SENTENCE_SPLITTERS", "PARAGRAPH_SPLITTERS", "FUNCTION_WORD_SETS", "QUANTILES", "FINGERPRINTS", "PREPROCESSORS") for row in getattr(textprims, name).values()}
     seen, covered = set(), set()
     for row in document["rows"]:
         if set(row) != FIELDS or row["case_id"] in seen or row["comparator"] not in COMPARATORS:
             raise ValueError("invalid or duplicate fixture row")
         seen.add(row["case_id"])
         entry = registry[row["registry_id"]]
-        if row["family"] != entry["family"] or row["registered_callable"] != entry["implementation_ref"]:
+        table_row = entry["family"] == "function_words"
+        expected_ref = entry["implementation_ref"] + (".__contains__" if table_row else "")
+        if row["family"] != entry["family"] or row["registered_callable"] != expected_ref:
             raise ValueError("fixture registry binding mismatch")
         # R1 had already relocated these callables. The legacy oracle names
         # that pre-R2 owner, not a side-effectful compatibility-module import.
@@ -119,8 +121,18 @@ def run(fixture, resource_root):
             module, symbol = ref.split(":")
             if module != OWNER:
                 raise ValueError("non-owner callable outside this cohort")
-            functions.append(getattr(textprims, symbol))
-        if functions[0] is not functions[1]:
+            if table_row:
+                if not symbol.endswith(".__contains__") or row["comparator"] != "json_exact" or type(row["expected"]) is not bool or type(row["mutant"]["expected"]) is not bool:
+                    raise ValueError("closed boolean table membership required")
+                table = getattr(textprims, symbol.removesuffix(".__contains__"))
+                fn = table.__contains__
+                if fn.__self__ is not table:
+                    raise ValueError("membership method lost its table identity")
+                functions.append(fn)
+            else:
+                functions.append(getattr(textprims, symbol))
+        same_object = functions[0].__self__ is functions[1].__self__ if table_row else functions[0] is functions[1]
+        if not same_object:
             raise ValueError("ownership identity changed")
         mutant = row["mutant"]
         if set(mutant) != {"args", "kwargs", "result_path", "expected"}:
@@ -128,6 +140,8 @@ def run(fixture, resource_root):
         for case in (row, mutant):
             if type(case["args"]) is not list or type(case["kwargs"]) is not dict or type(case["result_path"]) is not list or any(type(v) not in (str, int) for v in case["result_path"]):
                 raise ValueError("invalid call arguments or selectors")
+            if table_row and (len(case["args"]) != 1 or type(case["args"][0]) is not str or case["kwargs"] or case["result_path"]):
+                raise ValueError("table membership requires one word query")
         primary = encode(row["expected"], row["comparator"])
         secondary = encode(mutant["expected"], row["comparator"])
         if primary == secondary:

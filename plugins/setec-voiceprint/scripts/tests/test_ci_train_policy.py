@@ -125,7 +125,7 @@ EXPECTED_COMMANDS = {
             'echo "TEXTPRIMS_PUNKT_DATA=$PUNKT_DATA" >> "$GITHUB_ENV"',
         ),
         "Check cumulative text-primitives cohorts and report remaining candidates": (
-            "python tools/gen_textprims_inventory.py --check --base origin/main",
+            'python tools/gen_textprims_inventory.py --check --base "$TEXTPRIMS_BASE"',
         ),
         "Run test suite": ("pytest plugins/setec-voiceprint/scripts/tests -n auto -q -rs",),
         "Consistency gates": (
@@ -329,6 +329,10 @@ def _violations(text: str) -> list[str]:
                     allowed_keys.add("env")
                     if step.get("env") != {"PUNKT_DATA": "${{ runner.temp }}/textprims-punkt-${{ github.run_id }}-${{ github.run_attempt }}"}:
                         problems.append(f"{job_name}/{step_name}: isolated native resource root")
+                if step_name == "Check cumulative text-primitives cohorts and report remaining candidates":
+                    allowed_keys.add("env")
+                    if step.get("env") != {"TEXTPRIMS_BASE": "origin/${{ github.base_ref }}"}:
+                        problems.append(f"{job_name}/{step_name}: cumulative PR base binding")
                 if job_name.startswith("windows-") and step_name.startswith("Run "):
                     allowed_keys.add("shell")
                     if step.get("shell") != "pwsh":
@@ -403,7 +407,7 @@ def test_release_workflow_cost_or_command_mutation_fails_closed(old: str, new: s
         ("    timeout-minutes: 30", "    timeout-minutes: 300"),
         ("      - uses: actions/setup-python@v5", "      - run: sleep 600\n      - uses: actions/setup-python@v5"),
         ("python -m pip install nltk==3.9.4", "python -m pip install nltk"),
-        ("python tools/gen_textprims_inventory.py --check --base origin/main", "echo skipped inventory"),
+        ('python tools/gen_textprims_inventory.py --check --base "$TEXTPRIMS_BASE"', "echo skipped inventory"),
         ("python3 tools/check_capabilities_drift.py", "python3 tools/check_capabilities_drift.py\ncurl https://example.invalid"),
         ("python3 tools/check_pr_merge_binding.py", "echo python3 tools/check_pr_merge_binding.py"),
         ("        id: merge_binding", "        id: merge_binding\n        continue-on-error: true"),

@@ -571,6 +571,534 @@
           "A different ending."
         ]
       }
+    },
+    {
+      "case_id": "function_words-empty",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-digits",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "1234"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-hyphens",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "well-known"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-straight_apostrophe",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "isn't"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-curly_apostrophe",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "isn’t"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-nfc",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-nfd",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-abbreviation",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "Dr."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-ellipsis",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "..."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-paragraph",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "first\n\nsecond"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "function_words-present",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "and"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": true,
+      "mutant": {
+        "args": [
+          "__absent_function_word__"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": false
+      }
+    },
+    {
+      "case_id": "function_words-dialogue_difference",
+      "family": "function_words",
+      "registry_id": "function_words-297455e23b54-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS.__contains__",
+      "args": [
+        "yes"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-empty",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-digits",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "1234"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-hyphens",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "well-known"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-straight_apostrophe",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "isn't"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-curly_apostrophe",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "isn’t"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-nfc",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-nfd",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-abbreviation",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "Dr."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-ellipsis",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "..."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-paragraph",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "first\n\nsecond"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": false,
+      "mutant": {
+        "args": [
+          "and"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": true
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-present",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "and"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": true,
+      "mutant": {
+        "args": [
+          "__absent_function_word__"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": false
+      }
+    },
+    {
+      "case_id": "dialogue_function_words-dialogue_difference",
+      "family": "function_words",
+      "registry_id": "function_words-80dee76c8121-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS.__contains__",
+      "args": [
+        "yes"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": true,
+      "mutant": {
+        "args": [
+          "__absent_function_word__"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": false
+      }
     }
   ]
 }
