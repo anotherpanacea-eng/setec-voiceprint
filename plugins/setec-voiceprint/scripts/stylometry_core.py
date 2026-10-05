@@ -24,8 +24,9 @@ from register_taxonomy import (
     resolve_register_tier,
 )
 
+from setec.core.textprims import FUNCTION_WORDS
+
 from variance_audit import (  # type: ignore
-    FUNCTION_WORDS,
     HAS_SPACY,
     _NLP,
     split_sentences,

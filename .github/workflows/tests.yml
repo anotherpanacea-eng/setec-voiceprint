@@ -77,6 +77,19 @@ jobs:
           # spaCy Tier-2/Tier-3 model (not on PyPI).
           python -m spacy download en_core_web_sm
 
+      - name: Provision pinned native Punkt characterization dependency
+        env:
+          PUNKT_DATA: ${{ runner.temp }}/textprims-punkt-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          python -m pip install nltk==3.9.4
+          python tools/prepare_punkt_characterization.py --destination "$PUNKT_DATA"
+          echo "TEXTPRIMS_PUNKT_DATA=$PUNKT_DATA" >> "$GITHUB_ENV"
+
+      - name: Check cumulative text-primitives cohorts and report remaining candidates
+        env:
+          TEXTPRIMS_BASE: origin/${{ github.base_ref }}
+        run: python tools/gen_textprims_inventory.py --check --base "$TEXTPRIMS_BASE"
+
       - name: Run test suite
         run: |
           # -n auto: parallel via pytest-xdist (installed above). Explicit here so

@@ -709,6 +709,31 @@ def test_score_text_parity_with_pan_replay():
     assert a == b, "paraphrase_ladder._score_text drifted from pan_replay._score_text"
 
 
+def test_help_does_not_initialize_scoring_dependencies():
+    import subprocess
+
+    probe = """
+import importlib.abc, runpy, sys
+from pathlib import Path
+class RefuseScoring(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname.split('.')[0] in {'variance_audit', 'adversarial_fixtures', 'nltk', 'spacy', 'torch', 'transformers'}:
+            raise AssertionError('help initialized scoring: ' + fullname)
+sys.meta_path.insert(0, RefuseScoring())
+sys.path.insert(0, sys.argv[1])
+script = sys.argv[2]
+sys.argv = [script, '--help']
+runpy.run_path(script, run_name='__main__')
+"""
+    for relative in ('calibration/paraphrase_ladder.py', 'setec/calibration/paraphrase_ladder.py'):
+        result = subprocess.run(
+            [sys.executable, '-S', '-c', probe, str(SCRIPTS_ROOT), str(SCRIPTS_ROOT / relative)],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert 'usage:' in result.stdout
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

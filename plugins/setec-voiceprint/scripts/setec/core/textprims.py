@@ -57,3 +57,65 @@ def split_sentences_punkt(text: str) -> list[str]:
 def split_sentences_regex(text: str) -> list[str]:
     parts = _SENT_RE.split(text)
     return [p.strip() for p in parts if p.strip()]
+
+
+# Closed rows bind final defining source and referenced pattern declaration.
+from types import MappingProxyType as _MappingProxyType
+
+SENTENCE_SPLITTERS = _MappingProxyType({
+    'split_sentences_punkt': _MappingProxyType({'id': 'sentence_splitter-0a069702b2f6-v1',
+     'family': 'sentence_splitter',
+     'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt',
+     'pattern_sha256': None,
+     'case_policy': 'preserve',
+     'unicode_normalization': 'none',
+     'allowed_backends': ('nltk',),
+     'behavior_sha256': '0a069702b2f6cdacfa4fd44828ea65fe79edca38f589dfa8facc4a8ec49989da'}),
+    'split_sentences_regex': _MappingProxyType({'id': 'sentence_splitter-bace7d2ce7a5-v1',
+     'family': 'sentence_splitter',
+     'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex',
+     'pattern_sha256': '560a69ee13a6d8414aa14c1c90f7395985cc4169eeb232767a161518850206f6',
+     'case_policy': 'preserve',
+     'unicode_normalization': 'none',
+     'allowed_backends': (),
+     'behavior_sha256': 'bace7d2ce7a5a225448442f1d7fa355b718bb18f398ac27267cc58c8a03554f5'}),
+})
+def __getattr__(name):
+    if name == "tokenize":
+        from setec.core.passage_tokenizer_v1 import tokenize
+        return tokenize
+    raise AttributeError(name)
+
+
+TOKENIZERS = _MappingProxyType({
+    "tokenize": _MappingProxyType({'id': 'tokenizer-d6e53cf12864-v1',
+ 'family': 'tokenizer',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize',
+ 'pattern_sha256': '13df86429c6498c2cbffe6dacad99dae69824f69775a23514bd053a8a1633aed',
+ 'case_policy': 'lower',
+ 'unicode_normalization': 'frozen_table',
+ 'allowed_backends': (),
+ 'behavior_sha256': 'd6e53cf12864e702a89ed5c3d0d2f1a5b56c5dacafe627385244cfbb9ed10c02'}),
+})
+PARAGRAPH_SPLITTERS = _MappingProxyType({})
+FUNCTION_WORD_SETS = _MappingProxyType({
+    'FUNCTION_WORDS': _MappingProxyType({'id': 'function_words-297455e23b54-v1',
+ 'family': 'function_words',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:FUNCTION_WORDS',
+ 'pattern_sha256': '36049cc02a8d65add587f8d6c96029627c173bc86a94c886476bf6a23a8ce29c',
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '297455e23b5447903d9fe9d62c6f5e47f9c7820103aefcbbd48fe3cd09d2dacc'}),
+    'DIALOGUE_FUNCTION_WORDS': _MappingProxyType({'id': 'function_words-80dee76c8121-v1',
+ 'family': 'function_words',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:DIALOGUE_FUNCTION_WORDS',
+ 'pattern_sha256': 'c71678be291fdf2b2df6ee74db20ecf0860acd981ea08ce99334e421200107fa',
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '80dee76c81212de0ddbb226b2536eb0f2db21b4834c3f89afd8331c8fd473ff5'}),
+})
+QUANTILES = _MappingProxyType({})
+FINGERPRINTS = _MappingProxyType({})
+PREPROCESSORS = _MappingProxyType({})
