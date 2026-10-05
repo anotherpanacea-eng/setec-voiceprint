@@ -258,35 +258,6 @@ def discover(root):
                 recognized = False
                 reason = "regex import may be rebound or shadowed"
             discoveries.append({"path": relative, "line": node.lineno, "owner": owner, "operation": operation, "pattern": ({"bytes_hex": pattern.hex()} if isinstance(pattern, bytes) else pattern), "outcome": "recognized_primitive" if recognized else "unresolved", "reason": reason})
-    # Attach source-derived construction and direct consumer locations. These
-    # are inspection evidence, not a claim of semantic provenance inference.
-    by_path = {}
-    for row in discoveries:
-        by_path.setdefault(row["path"], []).append(row)
-    for relative, rows in by_path.items():
-        text = (root / relative).read_text()
-        tree = ast.parse(text)
-        nodes = list(ast.walk(tree))
-        parents = {child: parent for parent in nodes for child in ast.iter_child_nodes(parent)}
-        for row in rows:
-            matching = [n for n in nodes if getattr(n, "lineno", None) == row["line"] and isinstance(n, (ast.Call, ast.Assign, ast.FunctionDef, ast.AsyncFunctionDef))]
-            node = next((n for n in matching if isinstance(n, ast.Call)), matching[0] if matching else None)
-            if node is None:
-                row["construction"] = "unresolved"
-                row["direct_consumers"] = []
-                continue
-            row["construction"] = ast.unparse(node)[:500] if isinstance(node, (ast.Call, ast.Assign)) else "definition " + node.name
-            consumers = []
-            parent = parents.get(node)
-            if parent is not None:
-                consumers.append({"line": getattr(parent, "lineno", row["line"]), "kind": type(parent).__name__})
-            binding = node if isinstance(node, ast.Assign) else parent
-            names = {t.id for t in binding.targets if isinstance(t, ast.Name)} if isinstance(binding, ast.Assign) else ({node.name} if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else set())
-            for use in nodes:
-                if isinstance(use, ast.Name) and isinstance(use.ctx, ast.Load) and use.id in names:
-                    context = parents.get(use)
-                    consumers.append({"line": use.lineno, "kind": type(context).__name__, "binding": use.id})
-            row["direct_consumers"] = consumers
     return discoveries
 
 
