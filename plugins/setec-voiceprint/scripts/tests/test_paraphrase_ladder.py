@@ -709,13 +709,6 @@ def test_score_text_parity_with_pan_replay():
     assert a == b, "paraphrase_ladder._score_text drifted from pan_replay._score_text"
 
 
-if __name__ == "__main__":
-    if pytest is None:
-        sys.stderr.write("pytest not installed; cannot run tests.\n")
-        sys.exit(2)
-    sys.exit(pytest.main([__file__, "-v"]))
-
-
 def test_help_does_not_initialize_scoring_dependencies():
     import subprocess
 
@@ -741,13 +734,8 @@ runpy.run_path(script, run_name='__main__')
         assert 'usage:' in result.stdout
 
 
-def test_lazy_scoring_and_proxy_names_remain_replaceable(monkeypatch):
-    calls = []
-    monkeypatch.setattr(pl, 'audit_text', lambda text, **kwargs: calls.append((text, kwargs)) or {})
-    monkeypatch.setattr(pl, 'classify_compression', lambda audit: {})
-    pl._score_text('sample')
-    assert calls == [('sample', {'do_tier2': True, 'do_tier3': True, 'do_tier4': False})]
-    monkeypatch.setattr(pl, 'synonym_swap', lambda text: text + ':synonym')
-    monkeypatch.setattr(pl, 'alternative_spelling', lambda text: text + ':spelling')
-    monkeypatch.setattr(pl, 'whitespace', lambda text: text + ':space')
-    assert pl._proxy_pass('sample') == 'sample:synonym:spelling:space'
+if __name__ == "__main__":
+    if pytest is None:
+        sys.stderr.write("pytest not installed; cannot run tests.\n")
+        sys.exit(2)
+    sys.exit(pytest.main([__file__, "-v"]))

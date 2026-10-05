@@ -83,32 +83,6 @@ from adversarial_robustness_card import (  # type: ignore
     _VARIANCE_SIGNALS,
     build_robustness_card,
 )
-# Help and fixture parsing must not initialize optional scoring dependencies.
-# Keep these callable names so existing callers can replace them independently.
-def audit_text(*args, **kwargs):
-    from variance_audit import audit_text as implementation
-    return implementation(*args, **kwargs)
-
-
-def classify_compression(*args, **kwargs):
-    from variance_audit import classify_compression as implementation
-    return implementation(*args, **kwargs)
-
-
-def alternative_spelling(*args, **kwargs):
-    from adversarial_fixtures import alternative_spelling as implementation
-    return implementation(*args, **kwargs)
-
-
-def synonym_swap(*args, **kwargs):
-    from adversarial_fixtures import synonym_swap as implementation
-    return implementation(*args, **kwargs)
-
-
-def whitespace(*args, **kwargs):
-    from adversarial_fixtures import whitespace as implementation
-    return implementation(*args, **kwargs)
-
 
 TASK_SURFACE = "validation"
 TOOL_NAME = "paraphrase_ladder"
@@ -267,6 +241,12 @@ def _proxy_pass(text: str) -> str:
     alternative-spelling + whitespace insertion). Honestly weaker than a
     neural paraphraser — it exercises the LADDER MECHANICS, not realistic
     paraphrase quality."""
+    # Imported on use so --help never initializes scoring dependencies.
+    from adversarial_fixtures import (  # type: ignore
+        alternative_spelling,
+        synonym_swap,
+        whitespace,
+    )
     return whitespace(alternative_spelling(synonym_swap(text)))
 
 
@@ -302,6 +282,7 @@ def _score_text(text: str) -> dict[str, Any]:
     shape the robustness card consumes. Identical contract to
     ``pan_replay._score_text``: audit_text + classify_compression,
     Tier 4 OFF (CPU, no-model)."""
+    from variance_audit import audit_text, classify_compression  # type: ignore
     audit = audit_text(text, do_tier2=True, do_tier3=True, do_tier4=False)
     compression = classify_compression(audit)
     return {"audit": audit, "compression": compression}
