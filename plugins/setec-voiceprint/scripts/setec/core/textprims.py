@@ -57,3 +57,32 @@ def split_sentences_punkt(text: str) -> list[str]:
 def split_sentences_regex(text: str) -> list[str]:
     parts = _SENT_RE.split(text)
     return [p.strip() for p in parts if p.strip()]
+
+
+# Closed rows bind final defining source and referenced pattern declaration.
+from types import MappingProxyType as _MappingProxyType
+
+SENTENCE_SPLITTERS = _MappingProxyType({
+    'split_sentences_punkt': _MappingProxyType({'id': 'sentence_splitter-0a069702b2f6-v1',
+     'family': 'sentence_splitter',
+     'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt',
+     'pattern_sha256': None,
+     'case_policy': 'preserve',
+     'unicode_normalization': 'none',
+     'allowed_backends': ('nltk',),
+     'behavior_sha256': '0a069702b2f6cdacfa4fd44828ea65fe79edca38f589dfa8facc4a8ec49989da'}),
+    'split_sentences_regex': _MappingProxyType({'id': 'sentence_splitter-bace7d2ce7a5-v1',
+     'family': 'sentence_splitter',
+     'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex',
+     'pattern_sha256': '560a69ee13a6d8414aa14c1c90f7395985cc4169eeb232767a161518850206f6',
+     'case_policy': 'preserve',
+     'unicode_normalization': 'none',
+     'allowed_backends': (),
+     'behavior_sha256': 'bace7d2ce7a5a225448442f1d7fa355b718bb18f398ac27267cc58c8a03554f5'}),
+})
+TOKENIZERS = _MappingProxyType({})
+PARAGRAPH_SPLITTERS = _MappingProxyType({})
+FUNCTION_WORD_SETS = _MappingProxyType({})
+QUANTILES = _MappingProxyType({})
+FINGERPRINTS = _MappingProxyType({})
+PREPROCESSORS = _MappingProxyType({})
