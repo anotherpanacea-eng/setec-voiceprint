@@ -99,8 +99,22 @@ def configure_punkt(resource_root):
 
 
 def run(fixture, resource_root):
-    configure_punkt(resource_root)
-    sys.path.insert(0, str(SCRIPTS))
+    # Restore NLTK's search path afterwards: a pytest worker must not keep
+    # Punkt visible to later tests, which would flip variance_audit's
+    # split_sentences backend for them.
+    import nltk
+    saved_path = list(nltk.data.path)
+    try:
+        configure_punkt(resource_root)
+        return _run(fixture)
+    finally:
+        nltk.data.path[:] = saved_path
+        nltk.tokenize._get_punkt_tokenizer.cache_clear()
+
+
+def _run(fixture):
+    if str(SCRIPTS) not in sys.path:
+        sys.path.insert(0, str(SCRIPTS))
     from setec.core import textprims
     document = json.loads(Path(fixture).read_text())
     if set(document) != {"schema", "license", "rows"} or document["schema"] != "textprims-characterization/1" or not document["license"]:
