@@ -1,0 +1,3 @@
+### Fixed
+
+`setec-voiceprint`: `discourse_move_signature`'s explicit-relation layer now matches multi-word connectives across any run of whitespace, not just a single space. `strip_non_prose` keeps hard line breaks and double spaces, so in hard-wrapped or loosely spaced prose a phrase like `as a` / `result` split by a newline was missed, or counted as the bare temporal `as`. Only `relation_distribution` changes. On the repo's own Markdown, 8 files shift, the largest fraction moving by 0.024. The layer is uncalibrated and has no band, so no band or golden moves (fleet-coordination#460). The move-category patterns have the same literal-space form and are left for a separate issue.
