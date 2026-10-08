@@ -791,6 +791,31 @@ def test_anchor_offsets_masks_and_rejoin_exact_source_slice() -> None:
     assert probe.valid_anchors(masked, text, plan, plan_sha256=_digest("plan")) == []
 
 
+def test_anchor_search_tokenizes_linearly_in_document_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: the whole document was re-tokenized once per candidate
+    # anchor, making anchor search quadratic (TP-SWEEP shard 14).
+    text = " ".join(f"word{i}" for i in range(400))
+    row = _row("linear", "qualification")
+    plan = _plan(prompt_words=2, suffix_words=2)
+    real_tokens = probe._tokens
+    tokenized_chars = 0
+
+    def counting_tokens(value: str) -> list[str]:
+        nonlocal tokenized_chars
+        tokenized_chars += len(value)
+        return real_tokens(value)
+
+    monkeypatch.setattr(probe, "_tokens", counting_tokens)
+    anchors = probe.valid_anchors(row, text, plan, plan_sha256=_digest("plan"))
+    assert len(anchors) == 397
+    # Each anchor re-tokenizes only its own 4-word window, so the budget is a
+    # small multiple of the window; the quadratic form tokenized
+    # ~len(anchors) * len(text) characters (~400x here).
+    assert tokenized_chars <= 2 * (2 + 2) * len(text)
+
+
 def test_score_population_matches_direct_leave_one_out() -> None:
     shared = "one two three four five six seven eight nine ten"
     rows = [

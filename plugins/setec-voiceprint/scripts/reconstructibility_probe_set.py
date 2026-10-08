@@ -538,6 +538,7 @@ def valid_anchors(
     prompt_words = plan["prompt_words"]
     suffix_words = plan["minimum_suffix_words"]
     limit = len(matches) - prompt_words - suffix_words + 1
+    tokens = _tokens(text)
     anchors: list[dict[str, Any]] = []
     for start_token in range(max(0, limit)):
         prompt_start = matches[start_token].source_start
@@ -552,7 +553,6 @@ def valid_anchors(
             continue
         prompt = text[prompt_start:prompt_end]
         continuation = text[prompt_end:continuation_end]
-        tokens = _tokens(text)
         if list(_tokens(prompt)) != tokens[start_token:start_token + prompt_words]:
             raise ProbeSetError("token_semantics_refused")
         if list(_tokens(continuation)) != tokens[
