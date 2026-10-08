@@ -57,9 +57,9 @@ Where that unit is itself a primitive, it is the same cohort's second row.
   `"\n".join(_TOKEN.findall(text.lower()))` stream, with
   `_TOKEN = re.compile(r"[a-z]+")` (`:38`).
 - `_counts` (`:42`) uses the same `_TOKEN.findall(text.lower())` inline
-  expression. Under the Cohort B contract's treatment of inline uses of a bound
-  pattern, `:42` is a consumer of the row's `_TOKEN`. If the reviewer of that
-  contract rejects that treatment, this cohort needs the same answer.
+  expression. Following the reviewed Cohort B contract (draft #588), this
+  defines and rebinds neither registered callable, so it is not a legacy site.
+  It stays an unresolved candidate until a later cohort reconciles inline uses.
 - The four calls in `_load_baseline` (`:191`, `:200`, `:217`, `:227`) are uses
   of the row inside its owner.
 
