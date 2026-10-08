@@ -58,6 +58,12 @@ Register: 13 (5 for passages, 6 for the tokenizer and its `shingles` uses, 2 for
 The two patterns are compiled objects used inline, so each row names the
 pattern object. Register: 7.
 
+**Mint in place only.** `setec/surfaces/register_sweep.py:271` records that the
+committed register-sweep receipt byte-pins `register_classifier.py`, and the
+spec says register-sweep hashes stay untouched. So these rows can't use an R1
+move or any re-export edit to `register_classifier.py`. The registry must
+reference the objects where they are (see shard 13).
+
 ## Consumer (2)
 
 `_strict_token_words` and `_strict_token_spans` (`near_dup_dedup.py:1376`,
