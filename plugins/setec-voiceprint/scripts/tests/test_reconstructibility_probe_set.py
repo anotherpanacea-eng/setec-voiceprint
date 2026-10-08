@@ -795,7 +795,7 @@ def test_anchor_search_tokenizes_linearly_in_document_length(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Regression: the whole document was re-tokenized once per candidate
-    # anchor, making anchor search quadratic (TP-SWEEP shard 14).
+    # anchor, making anchor search quadratic in document length.
     text = " ".join(f"word{i}" for i in range(400))
     row = _row("linear", "qualification")
     plan = _plan(prompt_words=2, suffix_words=2)
