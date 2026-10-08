@@ -19,8 +19,8 @@ Paths are relative to `plugins/setec-voiceprint/scripts/`.
 | `setec/surfaces/rank_turbulence_audit.py` | 15 | 12 | 0 | 0 | 3 |
 | `setec/surfaces/cross_doc_novelty_profile.py` | 12 | 9 | 0 | 1 | 2 |
 | `setec/surfaces/crosslingual_voice_distance.py` | 17 | 14 | 0 | 2 | 1 |
-| `voice_distance.py` | 17 | 5 | 6 | 0 | 6 |
-| **Total** | **76** | **49** | **6** | **3** | **18** |
+| `voice_distance.py` | 17 | 0 | 6 | 0 | 11 |
+| **Total** | **76** | **44** | **6** | **3** | **23** |
 
 The labels are as in earlier shards, plus **Hold**: a whitespace word count
 (`len(text.split())`) that should be minted once as a family, after a shard
@@ -42,9 +42,11 @@ consolidated with Cohort B or with each other:
 | `rank_turbulence_audit` | lowercase, then `[a-z]+` | `\n` |
 | `cross_doc_novelty_profile` | `stylometry_core.normalize_for_char_ngrams` (lowercase, whitespace collapsed, stripped) | n/a |
 | `crosslingual_voice_distance` | `_normalize`: NFC, `\s+` collapsed to one space, stripped; case and punctuation kept | n/a |
-| `voice_distance` | the `strip_non_prose`-cleaned string itself | n/a |
+| `voice_distance` | the `strip_non_prose`-cleaned string itself (a bare digest; out of scope per Q1) | n/a |
 
 Each fingerprint row therefore binds its own surface's tokenizer or normalizer.
+A fingerprint that hashes its input unchanged has no text policy of its own and,
+under the owner's Q1 ruling, is not registered.
 Where that unit is itself a primitive, it is the same cohort's second row.
 
 ## Proposed cohorts
@@ -90,15 +92,21 @@ these rows therefore first needs a separate, reviewed change that compiles
 behavior-change work under the firewall rule, not part of an ownership-only
 cohort. Register: 9.
 
-### Cohort M: `voice_distance` fingerprint (one row)
+### `voice_distance` fingerprint: out of scope under the owner's Q1 ruling
 
-`_content_fingerprint(cleaned_text)` (`:138`, `:155`) is sha256 of the
-already-cleaned string. Its equivalence class depends entirely on the caller
-passing the `strip_non_prose` output computed with the comparison's own
-options (`:786-797`). The row binds only the hashing step. The cleaning is
-preprocessing's row (`setec/core/preprocessing.py:strip_non_prose`, owned by
-§1's preprocessor family, not yet registered). Calls at `:797` and `:814`.
-Register: 5.
+`_content_fingerprint(cleaned_text)` (`:138`, `:155`) is
+`hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()`. It reads no module
+global and applies no case, normalization or segmentation rule. All of its text
+policy lives in the caller's `strip_non_prose` call (`:786-797`).
+
+The owner ruled on 2026-10-08 (shard 1, Q1) that a bare digest with no text
+policy is out of scope. Its text policy belongs to the preprocessing row, here
+`setec/core/preprocessing.py:strip_non_prose`. So this is local, as are the
+calls at `:797` and `:814`. Six other modules have the same body, byte for byte
+(`stance_modality_audit`, `function_word_grammar_audit`,
+`agency_abstraction_audit`, `discourse_move_signature`,
+`punctuation_cadence_audit` and `paragraph_audit`). The same ruling applies to
+them. Local: 5.
 
 ### Quantile (blocked by a nested definition)
 
@@ -125,7 +133,9 @@ These are calls in `voice_distance.py` to primitives defined elsewhere:
   `stylometry_core`.
 - `strip_non_prose` calls at `:268`, `:287`, `:753` and `:790`.
 
-## Local (18)
+## Local (23)
+
+- `voice_distance.py` fingerprint (5), per the Q1 ruling above.
 
 - **Manifest or file handling:**
   - `general_imposters.py:173`×2 (comment and blank-line skip)
