@@ -74,8 +74,8 @@ try:
 except ImportError:
     HAS_TEXTSTAT = False
 
-# Punkt data is explicit setup (`python -m nltk.downloader punkt_tab`), never
-# fetched at import; split_sentences falls back to regex when it is missing.
+# Punkt data is explicit setup (see requirements.txt), never fetched at
+# import; split_sentences falls back to regex when it is missing.
 try:
     import nltk  # type: ignore  # noqa: F401
     HAS_NLTK = True
