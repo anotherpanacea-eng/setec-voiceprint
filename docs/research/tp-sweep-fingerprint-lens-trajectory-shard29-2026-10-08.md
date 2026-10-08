@@ -63,31 +63,37 @@ inconsistent with another's, which nobody compares. The row mainly pins three
 identical copies to one object. Admit it late. It does meet proposed Q8's
 "two or more copies" bar.
 
-### Cohort BH: the shared feature-lens tokenizer (one row, in place)
+### The feature-lens tokenizer joins Cohort S (corrected)
 
-| Proposed row | Family | Evidence |
+*Corrected after shard 30 (#621). The first version of this report proposed the
+lens tokenizer as a new Cohort BH, having compared it only with Cohort R. It is
+Cohort S.*
+
+| Unit | Family | Evidence |
 |---|---|---|
-| `segmentation_feature_lens` word tokens | tokenizer | `WORD_RE = [A-Za-z']+` (`:16`) applied to `text.lower()` (`:43`, `:60`). Case lower; normalization none; no backend. |
+| `segmentation_feature_lens` word tokens | tokenizer (Cohort S) | `WORD_RE = [A-Za-z']+` (`:16`) applied to `text.lower()` (`:43`, `:60`). |
 
-Register: 5 (`:16`, `:43` ×2, `:60` ×2).
+Register: 5 (`:16`, `:43` ×2, `:60` ×2), register-bound to Cohort S.
 
-**It lowercases before matching; Cohort R matches before lowercasing.**
-`stylometry_core.word_tokens` is `[w.lower() for w in WORD_RE.findall(text)]`
-with the same pattern bytes. The two give different tokens and counts on any
-text containing U+0130 (`İ`, which lowercases to `i` plus a combining dot) or
-U+212A (the Kelvin sign, which lowercases to `k`). A scan of every code point
-found these two are the only ones outside `[A-Za-z']` whose lowercase contains a
-character in `[A-Za-z']`. On all other text the outputs are equal. So this is a
-separate unit by a two-code-point margin, and it cannot join R without changing
-behavior on those inputs.
+Cohort S is `variance_audit.split_words`, `_WORD_RE.findall(text.lower())` with
+`_WORD_RE = [A-Za-z']+` (`variance_audit.py:131`, `:145-146`): the same
+expression over the same pattern bytes. A scan of every Unicode code point
+found 0 differences between the two. The lens compiles its own pattern object,
+so these are inline copies under the Cohort B contract (#588), not imports. The
+lens already imports `FUNCTION_WORDS` from `textprims`, so adopting S's object
+once S is minted would be behavior-neutral.
 
-The module docstring calls it the "import-clean feature lens shared by document
-segmentation and mosaic audit". Its importers are
-`setec/surfaces/within_doc_segmentation.py`,
+**It differs from Cohort R by two code points.** R's `stylometry_core.word_tokens`
+matches before lowercasing (`[w.lower() for w in WORD_RE.findall(text)]`, same
+pattern bytes). The two give different tokens on text containing U+0130 (`İ`,
+which lowercases to `i` plus a combining dot) or U+212A (the Kelvin sign, which
+lowercases to `k`); a scan of every code point found these are the only two
+outside `[A-Za-z']` whose lowercase contains a character in `[A-Za-z']`. So S
+and R remain separate rows, as shards 7 and 30 have them.
+
+The lens's importers are `setec/surfaces/within_doc_segmentation.py`,
 `setec/surfaces/verbatim_mosaic_audit.py` and
-`generate_verbatim_mosaic_fixture.py`. It already lives in `setec/core` and
-imports `FUNCTION_WORDS` from `setec.core.textprims`, so it can be minted in
-place.
+`generate_verbatim_mosaic_fixture.py`.
 
 ### Existing cohorts
 
@@ -151,8 +157,8 @@ from `text.split()` (`:188`), the same case as shard 23's window-sizing split.
 
 ## Word counts and sentence splitters
 
-- **Word units:** one new tokenizer, BH, which differs from R only on U+0130 and
-  U+212A. No new word-count unit otherwise; the trajectory counts are Hold.
+- **Word units:** no new unit. The lens tokenizer is Cohort S, which differs
+  from R only on U+0130 and U+212A; the trajectory counts are Hold.
 - **Sentence splitters:** no new unit. The lens uses the registered regex
   splitter's bytes with offsets, and the trajectory module uses F's pattern bytes
   and a dead fallback.
