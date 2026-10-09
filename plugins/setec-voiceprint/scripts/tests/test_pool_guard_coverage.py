@@ -203,6 +203,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "pov_voice_profile",
         "general_imposters",
         "near_dup_dedup",
+        "voice_fingerprint",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
@@ -405,6 +406,24 @@ def test_no_classified_module_is_missing_from_the_tree():
 
 
 # ---------------- self-test of the sweep ----------------
+
+
+def test_relocated_implementation_cannot_hide_an_unclassified_loader(monkeypatch):
+    """A loader added to the running implementation must still close the sweep."""
+    import voice_fingerprint
+
+    implementation = Path(voice_fingerprint.__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match="voice_fingerprint"):
+        test_loader_definer_sweep_is_closed()
 
 
 def test_sweep_catches_an_unclassified_synthetic_loader(tmp_path):

@@ -394,6 +394,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "pov_voice_profile",
         "general_imposters",
         "idiolect_detector",
+        "voice_fingerprint",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
     if scope == SCRIPTS and module in {
@@ -707,6 +708,24 @@ def test_named_limit_keyness_surface_stays_out_of_scope():
 
 
 # ---------------- self-test of the sweeps ----------------
+
+
+def test_relocated_implementation_cannot_hide_an_unclassified_loader(monkeypatch):
+    """A loader added to the running implementation must still close the sweep."""
+    import voice_fingerprint
+
+    implementation = Path(voice_fingerprint.__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match="voice_fingerprint"):
+        test_sweep_is_closed("D", "defines a pool loader")
 
 
 def test_sweep_catches_an_unclassified_synthetic_clean_room_builder(tmp_path):
