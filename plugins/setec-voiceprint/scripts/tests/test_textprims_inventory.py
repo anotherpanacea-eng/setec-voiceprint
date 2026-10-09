@@ -650,3 +650,15 @@ def test_relative_preflight_imports_resolve_to_the_owner(tmp_path):
 def test_storing_aliasing_or_passing_a_relative_preflight_owner_module_fails(tmp_path, source):
     _, errors = _scripts(tmp_path, {"setec/preflight/__init__.py": "", "setec/preflight/user.py": source}, inventory.PREFLIGHT_ROWS)
     assert errors
+
+
+@pytest.mark.parametrize("source, symbols, tables", [
+    ("from . import passage_tokenizer_v1\npassage_tokenizer_v1.tokenize = len\n", {"tokenize"}, set()),
+    ("from . import textprims\ntextprims.FUNCTION_WORDS.add('x')\n", {"FUNCTION_WORDS"}, {"FUNCTION_WORDS"}),
+])
+def test_relative_imports_of_registry_and_tokenizer_modules_are_tracked(tmp_path, source, symbols, tables):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts/setec/core"
+    scripts.mkdir(parents=True)
+    (scripts / "user.py").write_text(source, encoding="utf-8")
+    _, errors = inventory.bindings(tmp_path, symbols, tables)
+    assert errors

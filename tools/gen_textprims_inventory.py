@@ -486,7 +486,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                                 symbol = alias.name
                             imported[local] = symbol
                             imports[(relative, local)] = symbol
-                    if "tokenize" in symbols and ((isinstance(node, ast.Import) and alias.name == "setec.core.passage_tokenizer_v1") or (isinstance(node, ast.ImportFrom) and not node.level and node.module == "setec.core" and alias.name == "passage_tokenizer_v1")):
+                    if "tokenize" in symbols and ((isinstance(node, ast.Import) and alias.name == "setec.core.passage_tokenizer_v1") or (isinstance(node, ast.ImportFrom) and absolute(module, node) == "setec.core" and alias.name == "passage_tokenizer_v1")):
                         prefix = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
                         external_modules[local] = prefix
                         imports[(relative, prefix + ".tokenize")] = "tokenize"
@@ -494,7 +494,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                     if module_name and any(resolve(module_name, name) == name for name in OWNED_ROWS if name in symbols):
                         external_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
                         owned_modules[external_modules[local]] = module_name
-                    if (isinstance(node, ast.Import) and alias.name == "setec.core.textprims") or (isinstance(node, ast.ImportFrom) and node.module == "setec.core" and alias.name == "textprims" and not node.level):
+                    if (isinstance(node, ast.Import) and alias.name == "setec.core.textprims") or (isinstance(node, ast.ImportFrom) and absolute(module, node) == "setec.core" and alias.name == "textprims"):
                         owner_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols - IMPORT_RESOLVED and relative != OWNER:
                 errors.append(f"duplicate registered owner: {relative}:{node.lineno}")
