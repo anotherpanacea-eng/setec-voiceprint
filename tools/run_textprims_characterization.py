@@ -12,6 +12,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "plugins/setec-voiceprint/scripts"
 TOKENIZER_OWNER = "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py"
+VERBATIM_OWNER = "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py"
+VERBATIM_SYMBOLS = {"_tokens", "_content_fingerprint"}
 OWNER = "plugins/setec-voiceprint/scripts/setec/core/textprims.py"
 FIELDS = {"case_id", "family", "registry_id", "legacy_callable", "registered_callable", "args", "kwargs", "result_path", "comparator", "expected", "mutant"}
 COMPARATORS = {"json_exact", "sequence_exact", "set_exact", "bytes_hex_exact", "float_hex_exact", "exception_exact"}
@@ -138,6 +140,12 @@ def _run(fixture):
                 raise ValueError("frozen tokenizer callable default table mismatch")
             if textprims.tokenize is not passage_tokenizer_v1.tokenize:
                 raise ValueError("frozen tokenizer registry identity changed")
+        verbatim_symbol = entry["implementation_ref"].removeprefix(VERBATIM_OWNER + ":")
+        verbatim = verbatim_symbol in VERBATIM_SYMBOLS
+        if verbatim:
+            from setec.core import verbatim_cover
+            if getattr(textprims, verbatim_symbol) is not getattr(verbatim_cover, verbatim_symbol):
+                raise ValueError("verbatim-cover registry identity changed")
         expected_ref = entry["implementation_ref"] + (".__contains__" if table_row else "")
         if row["family"] != entry["family"] or row["registered_callable"] != expected_ref:
             raise ValueError("fixture registry binding mismatch")
@@ -150,6 +158,11 @@ def _run(fixture):
                 if module != TOKENIZER_OWNER or symbol != "tokenize":
                     raise ValueError("frozen tokenizer must name its native final owner")
                 functions.append(passage_tokenizer_v1.tokenize)
+                continue
+            if verbatim:
+                if module != VERBATIM_OWNER or symbol != verbatim_symbol:
+                    raise ValueError("verbatim-cover row must name its final owner")
+                functions.append(getattr(verbatim_cover, symbol))
                 continue
             if module != OWNER:
                 raise ValueError("non-owner callable outside this cohort")

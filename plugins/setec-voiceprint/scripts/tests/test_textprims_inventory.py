@@ -135,13 +135,13 @@ def test_new_registered_rows_need_a_production_import(tmp_path):
     owner.parent.mkdir(parents=True)
     old = subprocess.check_output(["git", "show", "origin/main:" + inventory.OWNER], cwd=ROOT, text=True)
     owner.write_text(old)
-    for path in (inventory.TOKENIZER_OWNER, inventory.TOKENIZER_DATA):
+    for path in inventory.EXTERNAL:
         target = tmp_path / path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / path, target)
     # This is an isolated temporary repository, never the workspace root.
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    subprocess.run(["git", "add", inventory.OWNER, inventory.TOKENIZER_OWNER, inventory.TOKENIZER_DATA], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", inventory.OWNER, *inventory.EXTERNAL], cwd=tmp_path, check=True)
     subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "baseline"], cwd=tmp_path, check=True)
     owner.write_text((ROOT / inventory.OWNER).read_text())
     fixture = tmp_path / "references/textprims/characterization.json"
@@ -338,3 +338,146 @@ def test_frozen_tokenizer_lazy_export_cannot_be_rebound():
     owner = (ROOT / inventory.OWNER).read_text()
     _, errors = inventory.verify_rows(owner + '\n__getattr__ = replacement\n', owner)
     assert any("dependency rebound" in error for error in errors)
+
+
+def _verbatim_rows(owner_text):
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    original = (ROOT / inventory.VERBATIM_OWNER).read_bytes()
+    return inventory.verify_rows(registry, registry, {inventory.VERBATIM_OWNER: owner_text.encode("utf-8")}, {inventory.VERBATIM_OWNER: original})
+
+
+def test_verbatim_cover_rows_verify_against_the_live_owner():
+    rows, errors = _verbatim_rows((ROOT / inventory.VERBATIM_OWNER).read_text(encoding="utf-8"))
+    assert not errors
+    assert rows["_tokens"]["family"] == "tokenizer" and rows["_content_fingerprint"]["family"] == "fingerprint"
+
+
+@pytest.mark.parametrize("old, new", [
+    ('def _tokens(text: str) -> list[str]:\n', 'def _tokens(text: str) -> list[str]:  # changed\n'),
+    ('_TOKEN = re.compile(r"[a-z0-9]+")\n', '_TOKEN = re.compile(r"[a-z0-9]+")  # changed\n'),
+    ('# ASCII unit separator: a non-token byte', '# changed separator comment'),
+    ('return hashlib.sha256(_FP_SEP.join(', 'return hashlib.sha256(_FP_SEP.join( '),
+])
+def test_verbatim_cover_bound_source_change_is_rejected(old, new):
+    text = (ROOT / inventory.VERBATIM_OWNER).read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    _, errors = _verbatim_rows(text.replace(old, new))
+    assert any("bound source changed" in error for error in errors)
+    assert any("verbatim-cover behavior digest mismatch" in error for error in errors)
+
+
+def test_verbatim_cover_digest_ignores_unbound_owner_code():
+    text = (ROOT / inventory.VERBATIM_OWNER).read_text(encoding="utf-8")
+    old = 'def _bounded(toks: list[str], i: int, length: int) -> str:\n'
+    assert text.count(old) == 1
+    _, errors = _verbatim_rows(text.replace(old, old + '    # matcher edit outside this cohort\n'))
+    assert not errors
+
+
+@pytest.mark.parametrize("name", ["_TOKEN", "_FP_SEP", "_tokens", "_content_fingerprint"])
+def test_verbatim_cover_second_owner_binding_is_rejected(name):
+    text = (ROOT / inventory.VERBATIM_OWNER).read_text(encoding="utf-8")
+    _, errors = _verbatim_rows(text + "\n" + name + " = replacement\n")
+    assert "verbatim-cover owner binding not unique: " + name in errors
+
+
+def test_verbatim_cover_decorated_callable_is_rejected():
+    text = (ROOT / inventory.VERBATIM_OWNER).read_text(encoding="utf-8")
+    _, errors = _verbatim_rows(text.replace("\ndef _tokens(", "\n@decorator\ndef _tokens(", 1))
+    assert "verbatim-cover callable decorated: _tokens" in errors
+
+
+@pytest.mark.parametrize("module, extra", [("re", "re = replacement\n"), ("re", "from regex import compile as re\n"), ("hashlib", "def f(hashlib):\n    pass\n")])
+def test_verbatim_cover_module_imports_must_be_sole_plain_bindings(module, extra):
+    text = (ROOT / inventory.VERBATIM_OWNER).read_text(encoding="utf-8")
+    _, errors = _verbatim_rows(text + "\n" + extra)
+    assert "verbatim-cover module binding must be one plain import: " + module in errors
+
+
+@pytest.mark.parametrize("old, new", [
+    ("from setec.core.verbatim_cover import _content_fingerprint, _tokens\n", "from setec.core.verbatim_cover import _content_fingerprint\nfrom setec.core.verbatim_cover import _tokens\n"),
+    ("from setec.core.verbatim_cover import _content_fingerprint, _tokens\n", "from setec.core.verbatim_cover import _content_fingerprint, _tokens as _native\n_tokens = _native\n"),
+])
+def test_registry_must_import_verbatim_cover_callables_directly(old, new):
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    assert registry.count(old) == 1
+    _, errors = inventory.verify_rows(registry.replace(old, new), registry)
+    assert "registry must directly import its verbatim-cover callables" in errors
+
+
+def test_registry_cannot_rebind_a_verbatim_cover_callable():
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    _, errors = inventory.verify_rows(registry + "\ndef _content_fingerprint(text):\n    return text\n", registry)
+    assert "registered owner or dependency rebound: _content_fingerprint" in errors
+
+
+def _scripts(tmp_path, files):
+    scripts = tmp_path / "plugins/setec-voiceprint/scripts"
+    for name, text in files.items():
+        (scripts / name).parent.mkdir(parents=True, exist_ok=True)
+        (scripts / name).write_text(text, encoding="utf-8")
+    return inventory.bindings(tmp_path, set(inventory.VERBATIM_ROWS))
+
+
+def test_verbatim_cover_reexport_chain_resolves_to_the_owner(tmp_path):
+    imports, errors = _scripts(tmp_path, {
+        "setec/surfaces/audit.py": "from setec.core.verbatim_cover import _content_fingerprint, _tokens\n",
+        "consumer.py": "from setec.surfaces.audit import _tokens as words\n",
+    })
+    assert not errors
+    assert imports[("plugins/setec-voiceprint/scripts/consumer.py", "words")] == "_tokens"
+    assert imports[("plugins/setec-voiceprint/scripts/setec/surfaces/audit.py", "_content_fingerprint")] == "_content_fingerprint"
+
+
+@pytest.mark.parametrize("operation", ["_tokens = replacement", "def _tokens(text):\n    return []", "from elsewhere import other as _tokens"])
+def test_rebinding_an_owner_resolved_callable_fails(tmp_path, operation):
+    _, errors = _scripts(tmp_path, {"consumer.py": "from setec.core.verbatim_cover import _tokens\n" + operation + "\n"})
+    assert errors
+
+
+def test_same_named_independent_definitions_are_not_registered_objects(tmp_path):
+    imports, errors = _scripts(tmp_path, {
+        "independent.py": 'import hashlib\nimport re\n_TOKEN = re.compile(r"[a-z]+")\ndef _tokens(text):\n    return _TOKEN.findall(text.lower())\ndef _content_fingerprint(text):\n    return hashlib.sha256(text.encode()).hexdigest()\n',
+        "consumer.py": "from independent import _tokens, _content_fingerprint\n",
+    })
+    assert not errors
+    assert not imports
+
+
+def test_inline_token_pattern_use_stays_an_unresolved_candidate(tmp_path):
+    source = "from setec.core.verbatim_cover import _TOKEN, _content_fingerprint\ndef words(text):\n    return len(_TOKEN.findall(text.lower()))\n"
+    _, errors = _scripts(tmp_path, {"consumer.py": source})
+    assert not errors
+    inline = next(row for row in inventory.discover(tmp_path) if row["operation"] == "possible_compiled_pattern.findall")
+    assert inline["outcome"] == "unresolved"
+
+
+def test_verbatim_cover_definition_sites_are_recognized_only_when_registered(tmp_path):
+    import shutil
+    for path in (inventory.OWNER, inventory.VERBATIM_OWNER):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / path, tmp_path / path)
+    def outcomes():
+        return {(row["owner"], row["operation"]): row["outcome"] for row in inventory.discover(tmp_path) if row["path"] == inventory.VERBATIM_OWNER}
+    found = outcomes()
+    for key in [("_tokens", "named_primitive_candidate"), ("_content_fingerprint", "named_primitive_candidate"), ("<module>", "regex.compile"), ("_tokens", "possible_compiled_pattern.findall"), ("_content_fingerprint", "possible_primitive.sha256")]:
+        assert found[key] == "recognized_primitive"
+    assert found[("_load_reference_dir", "possible_primitive.lower")] == "unresolved"
+    registry = (tmp_path / inventory.OWNER).read_text(encoding="utf-8")
+    start = registry.index('    "_tokens": _MappingProxyType(')
+    (tmp_path / inventory.OWNER).write_text(registry[:start] + registry[registry.index("}),\n", start) + 4:], encoding="utf-8")
+    found = outcomes()
+    assert found[("<module>", "regex.compile")] == found[("_tokens", "named_primitive_candidate")] == "unresolved"
+    assert found[("_content_fingerprint", "named_primitive_candidate")] == "recognized_primitive"
+
+
+@pytest.mark.parametrize("old, new, error", [
+    ("'pattern_sha256': '6e4816cd686ec03e0953452b4db122df21c7a5d83a99db3aeb98c0889ca6b9f5'", "'pattern_sha256': None", "verbatim-cover pattern digest mismatch: _tokens"),
+    ("'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint',\n 'pattern_sha256': None", "'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint',\n 'pattern_sha256': '6e4816cd686ec03e0953452b4db122df21c7a5d83a99db3aeb98c0889ca6b9f5'", "verbatim-cover pattern digest mismatch: _content_fingerprint"),
+    ("'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens',\n 'pattern_sha256': '6e4816cd686ec03e0953452b4db122df21c7a5d83a99db3aeb98c0889ca6b9f5',\n 'case_policy': 'lower'", "'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens',\n 'pattern_sha256': '6e4816cd686ec03e0953452b4db122df21c7a5d83a99db3aeb98c0889ca6b9f5',\n 'case_policy': 'casefold'", "invalid verbatim-cover policy: _tokens"),
+])
+def test_verbatim_cover_row_fields_are_bound(old, new, error):
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    assert registry.count(old) == 1
+    _, errors = inventory.verify_rows(registry.replace(old, new), registry)
+    assert error in errors

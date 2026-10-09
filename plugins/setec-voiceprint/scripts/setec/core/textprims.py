@@ -87,6 +87,8 @@ def __getattr__(name):
     raise AttributeError(name)
 
 
+from setec.core.verbatim_cover import _content_fingerprint, _tokens
+
 TOKENIZERS = _MappingProxyType({
     "tokenize": _MappingProxyType({'id': 'tokenizer-d6e53cf12864-v1',
  'family': 'tokenizer',
@@ -96,6 +98,14 @@ TOKENIZERS = _MappingProxyType({
  'unicode_normalization': 'frozen_table',
  'allowed_backends': (),
  'behavior_sha256': 'd6e53cf12864e702a89ed5c3d0d2f1a5b56c5dacafe627385244cfbb9ed10c02'}),
+    "_tokens": _MappingProxyType({'id': 'tokenizer-7dd59b96051d-v1',
+ 'family': 'tokenizer',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens',
+ 'pattern_sha256': '6e4816cd686ec03e0953452b4db122df21c7a5d83a99db3aeb98c0889ca6b9f5',
+ 'case_policy': 'lower',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '7dd59b96051dbc53519e422f9e7093b29b7dfc590690377b5c295fd0ebacabcf'}),
 })
 PARAGRAPH_SPLITTERS = _MappingProxyType({})
 FUNCTION_WORD_SETS = _MappingProxyType({
@@ -117,5 +127,14 @@ FUNCTION_WORD_SETS = _MappingProxyType({
  'behavior_sha256': '80dee76c81212de0ddbb226b2536eb0f2db21b4834c3f89afd8331c8fd473ff5'}),
 })
 QUANTILES = _MappingProxyType({})
-FINGERPRINTS = _MappingProxyType({})
+FINGERPRINTS = _MappingProxyType({
+    "_content_fingerprint": _MappingProxyType({'id': 'fingerprint-4a8b28690b9a-v1',
+ 'family': 'fingerprint',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint',
+ 'pattern_sha256': None,
+ 'case_policy': 'lower',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '4a8b28690b9a6078f7b81e2b54607745a25f8e180a53a939203bcb1a382829b4'}),
+})
 PREPROCESSORS = _MappingProxyType({})

@@ -98,3 +98,35 @@ def test_frozen_tokenizer_custom_table_argument_is_refused(tmp_path):
     fixture.write_text(json.dumps(doc))
     with pytest.raises(ValueError, match="custom frozen tokenizer table"):
         runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+@pytest.mark.parametrize("symbol", ["_tokens", "_content_fingerprint"])
+def test_verbatim_cover_registry_wrapper_is_refused(monkeypatch, symbol):
+    from setec.core import textprims
+    native = getattr(textprims, symbol)
+    monkeypatch.setattr(textprims, symbol, lambda *args, **kwargs: native(*args, **kwargs))
+    with pytest.raises(ValueError, match="verbatim-cover registry identity changed"):
+        runner.run(ROOT / "references/textprims/characterization.json", os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_verbatim_cover_legacy_callable_must_name_the_owner(tmp_path):
+    doc = json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))
+    row = next(row for row in doc["rows"] if row["case_id"].startswith("verbatim_tokens-"))
+    row["legacy_callable"] = row["legacy_callable"].replace("verbatim_cover.py:", "textprims.py:")
+    fixture = tmp_path / "other-owner.json"
+    fixture.write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(ValueError, match="must name its final owner"):
+        runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_verbatim_cover_rows_carry_the_contract_cases():
+    rows = {row["case_id"]: row for row in json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))["rows"]}
+    assert rows["verbatim_tokens-nfc"]["args"] == ["Café NAÏVE déjà-vu 42"]
+    assert rows["verbatim_tokens-nfc"]["expected"] == ["caf", "na", "ve", "d", "j", "vu", "42"]
+    assert rows["verbatim_tokens-nfd"]["expected"] != rows["verbatim_tokens-nfc"]["expected"]
+    assert rows["verbatim_tokens-kelvin_sign"]["args"][0][0] == "K" and rows["verbatim_tokens-kelvin_sign"]["expected"][0] == "k"
+    assert rows["verbatim_tokens-sharp_s_lower_not_casefold"]["expected"] == ["stra", "e"]
+    plain, variant = rows["verbatim_content_fingerprint-plain"], rows["verbatim_content_fingerprint-punctuation_variant"]
+    assert plain["args"] != variant["args"] and plain["expected"] == variant["expected"]
+    boundary = rows["verbatim_content_fingerprint-token_boundary"]
+    assert (boundary["args"], boundary["mutant"]["args"]) == (["ab"], ["a b"])

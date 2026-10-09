@@ -19,6 +19,13 @@ ROOT = Path(__file__).resolve().parents[1]
 OWNER = "plugins/setec-voiceprint/scripts/setec/core/textprims.py"
 TOKENIZER_OWNER = "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py"
 TOKENIZER_DATA = "plugins/setec-voiceprint/scripts/passage_tokenizer_data_v1.json"
+VERBATIM_OWNER = "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py"
+EXTERNAL = (TOKENIZER_OWNER, TOKENIZER_DATA, VERBATIM_OWNER)
+# Verbatim-cover rows: family and the ordered owner-module bindings each behavior digest covers.
+VERBATIM_ROWS = {"_tokens": ("tokenizer", ("_tokens", "_TOKEN")), "_content_fingerprint": ("fingerprint", ("_content_fingerprint", "_FP_SEP", "_tokens", "_TOKEN"))}
+VERBATIM_IMPORT = "from setec.core.verbatim_cover import _content_fingerprint, _tokens"
+# External rows are identified by import resolution to their owner, never by bare name.
+IMPORT_RESOLVED = {"tokenize"} | set(VERBATIM_ROWS)
 MAPS = {"TOKENIZERS", "SENTENCE_SPLITTERS", "PARAGRAPH_SPLITTERS", "FUNCTION_WORD_SETS", "QUANTILES", "FINGERPRINTS", "PREPROCESSORS"}
 FIELDS = {"id", "family", "implementation_ref", "pattern_sha256", "case_policy", "unicode_normalization", "allowed_backends", "behavior_sha256"}
 REGEX_CALLS = {"compile", "split", "findall", "finditer", "sub", "subn", "search", "match", "fullmatch"}
@@ -26,6 +33,50 @@ REGEX_CALLS = {"compile", "split", "findall", "finditer", "sub", "subn", "search
 
 def source(node, text):
     return "".join(text.splitlines(keepends=True)[node.lineno - 1:node.end_lineno])
+
+
+def binding_nodes(tree, name):
+    writes = [n for n in ast.walk(tree) if (isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)) and n.id == name) or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == name) or (isinstance(n, ast.arg) and n.arg == name)]
+    writes.extend(n for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) and any((a.asname or a.name.split(".")[0]) == name for a in n.names))
+    return writes
+
+
+def verbatim_bindings(text):
+    """Top-level defining nodes of the verbatim-cover owner, plus single-binding errors."""
+    tree = ast.parse(text)
+    errors, nodes = [], {}
+    for name in ("_tokens", "_content_fingerprint", "_TOKEN", "_FP_SEP"):
+        writes = binding_nodes(tree, name)
+        if len(writes) != 1:
+            errors.append("verbatim-cover owner binding not unique: " + name)
+            continue
+        node = writes[0]
+        if name in VERBATIM_ROWS:
+            if not isinstance(node, ast.FunctionDef) or node not in tree.body:
+                errors.append("verbatim-cover callable must be a top-level function: " + name)
+                continue
+            if node.decorator_list:
+                errors.append("verbatim-cover callable decorated: " + name)
+        else:
+            node = next((n for n in tree.body if isinstance(n, ast.Assign) and len(n.targets) == 1 and n.targets[0] is writes[0]), None)
+            if node is None:
+                errors.append("verbatim-cover binding must be one top-level assignment: " + name)
+                continue
+        nodes[name] = node
+    for module in ("re", "hashlib"):
+        writes = binding_nodes(tree, module)
+        if len(writes) != 1 or writes[0] not in tree.body or ast.dump(writes[0]) != ast.dump(ast.parse("import " + module).body[0]):
+            errors.append("verbatim-cover module binding must be one plain import: " + module)
+    return nodes, errors
+
+
+def verbatim_digest(symbol, row, text, nodes):
+    fields = {k: v for k, v in row.items() if k not in {"id", "behavior_sha256"}}
+    fields["allowed_backends"] = list(fields["allowed_backends"])
+    payload = json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    for name in VERBATIM_ROWS[symbol][1]:
+        payload += b"\n" + source(nodes[name], text).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def registry(text):
@@ -81,8 +132,8 @@ def registry(text):
 
 
 def verify_rows(candidate, baseline, external_bytes=None, baseline_external_bytes=None):
-    external_bytes = external_bytes if external_bytes is not None else {path: (ROOT / path).read_bytes() for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
-    baseline_external_bytes = baseline_external_bytes if baseline_external_bytes is not None else external_bytes
+    external_bytes = {**{path: (ROOT / path).read_bytes() for path in EXTERNAL}, **(external_bytes or {})}
+    baseline_external_bytes = {**external_bytes, **(baseline_external_bytes or {})}
     rows, old = registry(candidate), registry(baseline)
     errors = []
     if not {row["id"] for row in old.values()} <= {row["id"] for row in rows.values()}:
@@ -107,10 +158,20 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
     if "tokenize" in rows:
         protected.add("__getattr__")
     for name in protected:
-        writes = [n for n in ast.walk(tree) if (isinstance(n, ast.Name) and isinstance(n.ctx, (ast.Store, ast.Del)) and n.id == name) or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and n.name == name) or (isinstance(n, ast.arg) and n.arg == name)]
-        writes.extend(n for n in ast.walk(tree) if isinstance(n, (ast.Import, ast.ImportFrom)) and any((a.asname or a.name.split(".")[0]) == name for a in n.names))
-        if len(writes) != 1:
+        if len(binding_nodes(tree, name)) != 1:
             errors.append("registered owner or dependency rebound: " + name)
+    if any(row.get("implementation_ref") == VERBATIM_OWNER + ":" + symbol for symbol, row in rows.items()):
+        verbatim_text = external_bytes[VERBATIM_OWNER].decode("utf-8")
+        verbatim_nodes, verbatim_errors = verbatim_bindings(verbatim_text)
+        errors.extend(verbatim_errors)
+        baseline_text = baseline_external_bytes[VERBATIM_OWNER].decode("utf-8")
+        baseline_nodes, _ = verbatim_bindings(baseline_text)
+        for name, node in verbatim_nodes.items():
+            if name not in baseline_nodes or source(node, verbatim_text) != source(baseline_nodes[name], baseline_text):
+                errors.append("verbatim-cover bound source changed: " + name)
+        expected_import = ast.dump(ast.parse(VERBATIM_IMPORT).body[0])
+        if [ast.dump(n) for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == "setec.core.verbatim_cover"] != [expected_import]:
+            errors.append("registry must directly import its verbatim-cover callables")
     seen = set()
     for symbol, row in rows.items():
         if set(row) != FIELDS or row["id"] in seen:
@@ -137,6 +198,25 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
             digest = hashlib.sha256(json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode() + b"\n" + external_bytes[TOKENIZER_OWNER] + b"\n" + external_bytes[TOKENIZER_DATA]).hexdigest()
             if row["behavior_sha256"] != digest or row["id"] != "tokenizer-" + digest[:12] + "-v1":
                 errors.append("frozen tokenizer behavior digest mismatch")
+            if symbol in old and row != old[symbol]:
+                errors.append("registered behavior fields changed: " + symbol)
+            continue
+        if symbol in VERBATIM_ROWS and row["implementation_ref"] == VERBATIM_OWNER + ":" + symbol:
+            if row["family"] != VERBATIM_ROWS[symbol][0] or row["case_policy"] != "lower" or row["unicode_normalization"] != "none" or row["allowed_backends"] != ():
+                errors.append("invalid verbatim-cover policy: " + symbol)
+            if not all(name in verbatim_nodes for name in VERBATIM_ROWS[symbol][1]):
+                continue
+            expected_pattern = None
+            if symbol == "_tokens":
+                try:
+                    expected_pattern = hashlib.sha256(ast.literal_eval(verbatim_nodes["_TOKEN"].value.args[0]).encode()).hexdigest()
+                except (AttributeError, IndexError, ValueError, TypeError):
+                    expected_pattern = "unparsed literal pattern"
+            if row["pattern_sha256"] != expected_pattern:
+                errors.append("verbatim-cover pattern digest mismatch: " + symbol)
+            digest = verbatim_digest(symbol, row, verbatim_text, verbatim_nodes)
+            if row["behavior_sha256"] != digest or row["id"] != row["family"] + "-" + digest[:12] + "-v1":
+                errors.append("verbatim-cover behavior digest mismatch: " + symbol)
             if symbol in old and row != old[symbol]:
                 errors.append("registered behavior fields changed: " + symbol)
             continue
@@ -241,6 +321,8 @@ def discover(root):
             relative = path.relative_to(root).as_posix()
             recognized = relative == OWNER and (owner == "split_sentences_regex" or (operation == "regex.compile" and source(node, text).strip().startswith("_SENT_RE =")))
             reason = "existing sentence-splitter owner" if recognized else "input/output provenance and static binding not yet proved"
+            if relative == VERBATIM_OWNER and (relative + ":" + owner in registered_refs or (relative + ":_tokens" in registered_refs and operation == "regex.compile" and source(node, text).strip().startswith("_TOKEN ="))):
+                recognized, reason = True, "registered verbatim-cover owner"
             pattern = None
             if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id in compiled:
                 pattern = compiled[node.func.value.id]
@@ -330,6 +412,8 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
             return name
         if module == "setec.core.textprims" and name in symbols:
             return name
+        if module == "setec.core.verbatim_cover" and name in VERBATIM_ROWS and name in symbols:
+            return name
         if module not in modules_by_name or (module, name) in seen:
             return None
         tree = modules_by_name[module][1]
@@ -360,7 +444,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                     all_imports.append((local, node))
                     if isinstance(node, ast.ImportFrom):
                         symbol = None if node.level else resolve(node.module, alias.name)
-                        if symbol is not None or (alias.name in symbols and alias.name != "tokenize"):
+                        if symbol is not None or (alias.name in symbols and alias.name not in IMPORT_RESOLVED):
                             if symbol is None:
                                 errors.append(f"unresolved registered import: {relative}:{node.lineno}")
                                 symbol = alias.name
@@ -372,7 +456,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                         imports[(relative, prefix + ".tokenize")] = "tokenize"
                     if (isinstance(node, ast.Import) and alias.name == "setec.core.textprims") or (isinstance(node, ast.ImportFrom) and node.module == "setec.core" and alias.name == "textprims" and not node.level):
                         owner_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols - {"tokenize"} and relative != OWNER:
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols - IMPORT_RESOLVED and relative != OWNER:
                 errors.append(f"duplicate registered owner: {relative}:{node.lineno}")
             elif isinstance(node, ast.Assign) and relative != OWNER and any(isinstance(t, ast.Name) and t.id in table_symbols for t in node.targets):
                 errors.append(f"duplicate registered table owner: {relative}:{node.lineno}")
@@ -451,8 +535,8 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
 def check(root, base):
     merge_base = subprocess.check_output(["git", "merge-base", base, "HEAD"], cwd=root, encoding="utf-8").strip()
     baseline = subprocess.check_output(["git", "show", merge_base + ":" + OWNER], cwd=root, encoding="utf-8")
-    external_bytes = {path: (root / path).read_bytes() for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
-    baseline_external_bytes = {path: subprocess.check_output(["git", "show", merge_base + ":" + path], cwd=root) for path in (TOKENIZER_OWNER, TOKENIZER_DATA)}
+    external_bytes = {path: (root / path).read_bytes() for path in EXTERNAL}
+    baseline_external_bytes = {path: subprocess.check_output(["git", "show", merge_base + ":" + path], cwd=root) for path in EXTERNAL}
     rows, errors = verify_rows((root / OWNER).read_text(encoding="utf-8"), baseline, external_bytes, baseline_external_bytes)
     imports, binding_errors = bindings(root, set(rows), {symbol for symbol, row in rows.items() if row["family"] == "function_words"})
     errors.extend(binding_errors)

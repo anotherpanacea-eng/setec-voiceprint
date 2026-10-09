@@ -1578,6 +1578,572 @@
           "message": "tokenize() got an unexpected keyword argument 'unexpected'"
         }
       }
+    },
+    {
+      "case_id": "verbatim_tokens-empty",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "z"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-whitespace",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        " \t\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\nZ "
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "z"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-digits_underscore",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Route 66_B in 2024"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "route",
+        "66",
+        "b",
+        "in",
+        "2024"
+      ],
+      "mutant": {
+        "args": [
+          "Route 66B in 2024"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "route",
+          "66b",
+          "in",
+          "2024"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-hyphen",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "well-known co-op"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "well",
+        "known",
+        "co",
+        "op"
+      ],
+      "mutant": {
+        "args": [
+          "wellknown coop"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "wellknown",
+          "coop"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-straight_apostrophe",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Don't stop; it's fine."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "don",
+        "t",
+        "stop",
+        "it",
+        "s",
+        "fine"
+      ],
+      "mutant": {
+        "args": [
+          "Dont stop; its fine."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "dont",
+          "stop",
+          "its",
+          "fine"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-curly_apostrophe",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Don’t stop; it’s fine."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "don",
+        "t",
+        "stop",
+        "it",
+        "s",
+        "fine"
+      ],
+      "mutant": {
+        "args": [
+          "Dont stop; its fine."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "dont",
+          "stop",
+          "its",
+          "fine"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-nfc",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Café NAÏVE déjà-vu 42"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "caf",
+        "na",
+        "ve",
+        "d",
+        "j",
+        "vu",
+        "42"
+      ],
+      "mutant": {
+        "args": [
+          "Café NAÏVE déjà-vu 42"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "cafe",
+          "nai",
+          "ve",
+          "de",
+          "ja",
+          "vu",
+          "42"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-nfd",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Café NAÏVE déjà-vu 42"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "cafe",
+        "nai",
+        "ve",
+        "de",
+        "ja",
+        "vu",
+        "42"
+      ],
+      "mutant": {
+        "args": [
+          "Café NAÏVE déjà-vu 42"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "caf",
+          "na",
+          "ve",
+          "d",
+          "j",
+          "vu",
+          "42"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-kelvin_sign",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "K 300K"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "k",
+        "300k"
+      ],
+      "mutant": {
+        "args": [
+          "Å 300Å"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "300"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-sharp_s_lower_not_casefold",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Straße"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "stra",
+        "e"
+      ],
+      "mutant": {
+        "args": [
+          "Strasse"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "strasse"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-abbreviation_ellipsis",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "Dr. Smith arrived... e.g. at 5 p.m."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "dr",
+        "smith",
+        "arrived",
+        "e",
+        "g",
+        "at",
+        "5",
+        "p",
+        "m"
+      ],
+      "mutant": {
+        "args": [
+          "Dr. Smith arrived... i.e. at 5 p.m."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "dr",
+          "smith",
+          "arrived",
+          "i",
+          "e",
+          "at",
+          "5",
+          "p",
+          "m"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-paragraph",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        "First line.\n\nSecond PARAGRAPH."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "first",
+        "line",
+        "second",
+        "paragraph"
+      ],
+      "mutant": {
+        "args": [
+          "First line.\n\nSecond PARAGRAPH 2."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "first",
+          "line",
+          "second",
+          "paragraph",
+          "2"
+        ]
+      }
+    },
+    {
+      "case_id": "verbatim_tokens-type_error",
+      "family": "tokenizer",
+      "registry_id": "tokenizer-7dd59b96051d-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_tokens",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.AttributeError",
+        "message": "'NoneType' object has no attribute 'lower'"
+      },
+      "mutant": {
+        "args": [
+          0
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.AttributeError",
+          "message": "'int' object has no attribute 'lower'"
+        }
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-empty",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "mutant": {
+        "args": [
+          "Z"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "594e519ae499312b29433b7dd8a97ff068defcba9755b6d5d00e84c524d67b06"
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-plain",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        "alpha beta gamma"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "8b381259cfc574b06114399cb8925c07bdca5505bbe49938670a226d73aeecd1",
+      "mutant": {
+        "args": [
+          "alpha beta delta"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "439decb038945196fe45447ed25555efc86a7ea83289c45fbdf45aff958738af"
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-punctuation_variant",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        "Alpha, BETA... gamma!"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "8b381259cfc574b06114399cb8925c07bdca5505bbe49938670a226d73aeecd1",
+      "mutant": {
+        "args": [
+          "Alpha, BETA... delta!"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "439decb038945196fe45447ed25555efc86a7ea83289c45fbdf45aff958738af"
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-token_boundary",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        "ab"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "fb8e20fc2e4c3f248c60c39bd652f3c1347298bb977b8b4d5903b85055620603",
+      "mutant": {
+        "args": [
+          "a b"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "f04cdced9736a69da6103f08a4daaf8c485dd481217d218a1b4993c8c3968e13"
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-nfc",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        "Café NAÏVE déjà-vu 42"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "b5e8cc4436b82e254c71a25853f0c1c0bab99f741c1f3408f2cbd35bd4e651f1",
+      "mutant": {
+        "args": [
+          "Café NAÏVE déjà-vu 42"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "5cc1591cb5e1b66170a7333ac2554a3faa91d96c451b76ff1fdd225a27a0259b"
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-sharp_s_lower_not_casefold",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        "Straße"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "d1f1e2c2566e38a02b16ea56ae7260aff1ff27abc149c0b0fadb6b7b77b66219",
+      "mutant": {
+        "args": [
+          "Strasse"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "16d96952087774fee069b7585d3991b24d90c181c09b2129b4908c35baa7f0c0"
+      }
+    },
+    {
+      "case_id": "verbatim_content_fingerprint-paragraph",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-4a8b28690b9a-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py:_content_fingerprint",
+      "args": [
+        "First line.\n\nSecond PARAGRAPH."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "6bb9638a17b1137e6d10ff2b77be8d98503ecf7cbcfa028a22d2beea652930fb",
+      "mutant": {
+        "args": [
+          "First line Second paragraph X"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "d4bbc1dddab73cbd9625ed48d52234a9be2a89eea638e4d92e76f4cfe98019e5"
+      }
     }
   ]
 }
