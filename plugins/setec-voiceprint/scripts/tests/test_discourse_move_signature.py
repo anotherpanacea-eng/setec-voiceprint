@@ -470,6 +470,33 @@ class TestRelationDistribution:
             # a standalone ambiguous-list member.
             assert rel["ambiguous_connective_fraction"] == 0.0
 
+    def test_multiword_connective_spans_line_breaks_and_extra_spaces(self):
+        """Regression: ``strip_non_prose`` keeps hard line breaks and
+        double spaces, so a wrapped ``As a\\nresult`` must count as the
+        contingency phrase, not fall through to the bare temporal
+        ``as`` (or to nothing, for ``in other words``)."""
+        phrases = [
+            "as a result", "as soon as", "on the other hand",
+            "in other words", "even though",
+        ]
+        for phrase in phrases:
+            single = dms.audit_explicit_relations(
+                f"It rained, {phrase} we left.", n_words=8
+            )
+            for sep in ("\n", "  ", " \n  ", "\t"):
+                wrapped = phrase.replace(" ", sep)
+                rel = dms.audit_explicit_relations(
+                    f"It rained, {wrapped} we left.", n_words=8
+                )
+                assert rel["counts"] == single["counts"], (
+                    f"{wrapped!r}: got {rel['counts']}, "
+                    f"expected {single['counts']}"
+                )
+                assert (
+                    rel["ambiguous_connective_fraction"]
+                    == single["ambiguous_connective_fraction"]
+                )
+
     def test_as_soon_as_does_not_triple_count(self):
         """Regression (P2 finding #2): ``as soon as`` previously
         scored temporal:3 (bare ``as`` twice + the phrase once). It

@@ -82,9 +82,13 @@ _ABUSIVE_ASSURING = re.compile(
 )
 
 
-def agd_markers(text: str) -> dict[str, float]:
-    """Net-new deterministic AGD densities (per 1,000 words). Proxies, not judge-grade."""
-    n = _n_words(text)
+def agd_markers(text: str, n_words: int | None = None) -> dict[str, float]:
+    """Net-new deterministic AGD densities (per 1,000 words). Proxies, not judge-grade.
+
+    ``n_words`` is the denominator; ``argmove_vector`` passes the same count it
+    publishes as ``_n_words`` so every density in the vector shares one unit.
+    """
+    n = _n_words(text) if n_words is None else n_words
     reason = len(_REASON_MARKER.findall(text))
     concl = len(_CONCLUSION_MARKER.findall(text))
     return {
@@ -145,8 +149,9 @@ def argmove_vector(text: str) -> dict[str, Any]:
     mc = mean_concreteness(text)
     if mc is not None:
         vec["abstraction.mean_concreteness"] = mc
-    vec.update({f"agd.{k}": v for k, v in agd_markers(text).items()})
-    vec["_n_words"] = s.get("n_words") or _n_words(text)
+    n_words = s.get("n_words") or _n_words(text)
+    vec.update({f"agd.{k}": v for k, v in agd_markers(text, n_words).items()})
+    vec["_n_words"] = n_words
     return vec
 
 
@@ -185,7 +190,9 @@ def profile_corpus(root: Path, min_words: int = MIN_WORDS) -> dict[str, Any]:
             continue
         mean = statistics.fmean(col)
         sd = statistics.pstdev(col) if len(col) > 1 else 0.0
-        qs = statistics.quantiles(col, n=10) if len(col) >= 2 else None
+        # "inclusive" keeps the band inside the observed values; the default
+        # "exclusive" method extrapolates past them on small corpora.
+        qs = statistics.quantiles(col, n=10, method="inclusive") if len(col) >= 2 else None
         signals[k] = {
             "mean": round(mean, 4), "sd": round(sd, 4),
             "cv": round(sd / mean, 4) if mean else None,

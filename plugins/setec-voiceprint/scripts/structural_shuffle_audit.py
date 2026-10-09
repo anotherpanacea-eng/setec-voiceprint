@@ -158,7 +158,7 @@ DEFAULT_DOES_NOT_LICENSE = (
 
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
-# Regex sentence-boundary fallback when spaCy is unavailable: split after a
+# Sentence boundary for split_sentences (stdlib only): split after a
 # sentence-final punctuation mark followed by whitespace.
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
@@ -173,29 +173,16 @@ def count_words(text: str) -> int:
 
 
 def split_sentences(text: str) -> list[str]:
-    """Split ``text`` into sentences.
+    """Split ``text`` into sentences after sentence-final punctuation.
 
-    Uses spaCy ``en_core_web_sm`` if available (more robust on dialogue-heavy
-    literary prose), else a regex fallback that splits after sentence-final
-    punctuation. Returns a list of non-empty, stripped sentence strings. The
-    fallback is fully stdlib and is what runs in CI.
+    Returns a list of non-empty, stripped sentence strings. It is stdlib-only
+    on purpose: an earlier optional spaCy sentencizer branch gave different
+    sentences on hosts where spaCy happened to be importable, so the audit's
+    output depended on the host.
     """
     stripped = text.strip()
     if not stripped:
         return []
-    try:  # pragma: no cover - spaCy path is exercised only when installed
-        import spacy  # type: ignore
-
-        # Load a blank English pipeline with just the rule-based sentencizer
-        # (no model download needed); falls through to regex on any failure.
-        nlp = spacy.blank("en")
-        nlp.add_pipe("sentencizer")
-        doc = nlp(stripped)
-        sents = [s.text.strip() for s in doc.sents if s.text.strip()]
-        if sents:
-            return sents
-    except Exception:
-        pass
     parts = _SENT_SPLIT_RE.split(stripped)
     return [p.strip() for p in parts if p.strip()]
 

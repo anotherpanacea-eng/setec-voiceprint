@@ -66,6 +66,9 @@ statsmodels>=0.14
 # Optional: NLTK is used in two graceful-degradation paths:
 #   1. variance_audit.py uses nltk.tokenize.sent_tokenize when available
 #      (regex fallback when not); minor quality-of-life difference.
+#      Nothing is downloaded at import: run
+#      `python -m nltk.downloader punkt_tab` to enable it (NLTK 3.9+;
+#      older 3.8.x releases read `punkt` instead).
 #   2. idiolect_detector.py uses nltk.corpus.brown for the optional
 #      --reference-corpus brown built-in. The detector's core scoring
 #      path runs on user-supplied --reference-dir / --reference-manifest
