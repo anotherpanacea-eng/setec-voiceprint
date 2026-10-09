@@ -74,9 +74,12 @@ DEFAULT_FUNCTION_WORDS = {
     "little", "long", "short", "high", "low", "real", "maybe",
 }
 
-# Letters in any script plus straight or curly apostrophes, read after NFC
-# so decomposed accents stay in their word; tokens fold U+2019 to "'" so
-# "don’t" and "don't" count as one word. Anchors get the same treatment.
+# Precomposed letters (Latin, Greek, Cyrillic, ...) plus straight or curly
+# apostrophes, read after NFC so decomposed accents stay in their word.
+# Scripts with combining vowel signs still split, and unspaced scripts are
+# not segmented. Tokens fold U+2019 to "'" (so "don’t" and "don't" are one
+# word) and drop apostrophes at their ends (closing quotes). Anchors get the
+# same folding.
 WORD_RE = re.compile(r"(?:[^\W\d_]|['\u2019])+")
 
 
@@ -90,7 +93,8 @@ SCRIPT_VERSION = "1.0"
 
 def tokenize(text: str) -> list[str]:
     text = unicodedata.normalize("NFC", text)
-    return [w.lower().replace("\u2019", "'") for w in WORD_RE.findall(text)]
+    words = (w.lower().replace("\u2019", "'").strip("'") for w in WORD_RE.findall(text))
+    return [w for w in words if w]
 
 
 def load_anchors(path: str | None) -> set[str]:
@@ -195,7 +199,8 @@ def score_against_baseline_counts(
     skip = function_words | anchor_words
     candidates: list[dict] = []
     for word, c in target_counts.items():
-        if word in skip:
+        # An anchor or function word also covers its possessive ("mark's").
+        if word in skip or word.removesuffix("'s") in skip:
             continue
         if len(word) < min_word_len:
             continue
