@@ -340,13 +340,7 @@ def test_receipt_is_canonical_and_normative_vectors_match() -> None:
     assert hashlib.sha256(raw).hexdigest() == RECEIPT_SHA256
     assert raw == GATE._canonical(receipt) + b"\n"
 
-    classifier = (
-        ROOT
-        / "plugins"
-        / "setec-voiceprint"
-        / "scripts"
-        / "register_classifier.py"
-    ).read_bytes()
+    classifier = (ROOT / GATE.CURRENT_CLASSIFIER_PATH).read_bytes()
     namespace = GATE._load_classifier(classifier, GATE.FINAL_CLASSIFIER_SHA256)
     assert GATE._mapping_digest(namespace) == GATE.MAPPING_SHA256
     assert GATE._refusal_digest(namespace) == GATE.REFUSAL_SHA256
