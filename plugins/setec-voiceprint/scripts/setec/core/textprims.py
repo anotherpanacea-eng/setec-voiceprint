@@ -59,6 +59,11 @@ def split_sentences_regex(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _normws(s: str) -> str:
+    """Whitespace-normalized form for a tolerant verbatim-containment check."""
+    return " ".join(s.split())
+
+
 # Closed rows bind final defining source and referenced pattern declaration.
 from types import MappingProxyType as _MappingProxyType
 
