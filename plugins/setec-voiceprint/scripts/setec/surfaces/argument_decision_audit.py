@@ -56,6 +56,7 @@ from setec.core.argument_judge import (  # type: ignore
     validate_labels,
 )
 from setec.contract.claim_license import ClaimLicense  # type: ignore
+from setec.core.textprims import count_words_alpha as count_words
 from setec.contract.output_schema import build_output  # type: ignore
 
 TASK_SURFACE = "argument_decision_audit"
@@ -121,13 +122,6 @@ def split_paragraphs(text: str) -> list[str]:
     these paragraphs (aligned by index)."""
     parts = re.split(r"\n\s*\n", text.strip())
     return [p.strip() for p in parts if p.strip()]
-
-
-_WORD_RE = re.compile(r"[A-Za-z']+")
-
-
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
 
 
 def compute_arc_signals(labels: list[dict[str, Any]]) -> dict[str, float | None]:
