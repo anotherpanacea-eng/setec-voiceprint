@@ -1911,12 +1911,12 @@ exemptions:
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/specdetect_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 88 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility launcher bootstrap; runpy needs the
+    stay-put scripts directory before importing setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 60 not yet converted
@@ -5094,4 +5094,12 @@ layer_exemptions:
     section 2).
   owner: packaging
   introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/specdetect_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/specdetect_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
