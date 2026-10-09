@@ -142,6 +142,7 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/author_corpus_export.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/idiolect_detector.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/style_vectorizer.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/corpus_novelty_audit.py", "_SCRIPT_DIR"),
@@ -230,6 +231,7 @@ _P4_BOOTSTRAP_ANCHORS = {
 }
 # Exact intrinsic producer-byte anchors authorized by the acquisition amendment.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'blob'),
@@ -267,6 +269,7 @@ def _phase_for(rel_path: str) -> str:
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"): {"removal_phase": "not-applicable", "reason": 'Actual executing package bytes are the exporter producer revision; stale receipt, smoke, and configuration bindings remain refused.'},
     ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"): {
         "removal_phase": "not-applicable",
         "reason": (
