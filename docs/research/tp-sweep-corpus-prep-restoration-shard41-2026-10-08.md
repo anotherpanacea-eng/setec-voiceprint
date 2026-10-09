@@ -230,9 +230,11 @@ No new word tokenizer, sentence splitter or paragraph splitter.
   `stylometry_core.word_tokens` (Cohort R, `voice_distance.py:273-274`), and
   `variance_audit` from `split_words` (Cohort S, `variance_audit.py:1177-1178`,
   read back at `:1653`). For `"Well -- that's 2 dollars, 3.5% off!"` the counts
-  are `\S+` 7, R 4 and S 4. A "length-matched" window is therefore longer in
-  `\S+` terms whenever the text has punctuation-only or numeric tokens. I did
-  not measure the effect on any percentile.
+  are `\S+` 7, R 4 and S 4. Passing that analysis count asks for a four-`\S+`-token window,
+  although the target has seven `\S+` tokens. It is shorter in this example.
+  The direction depends on the text (hyphenated tokens can reverse the count
+  mismatch); the general finding is that the window and target counts use
+  different units. I did not measure the effect on any percentile.
 - **Dead branch in `before_after_restoration`.** `:464` is
   `_aic_density(...) if False else None`; `before` is never read, and the branch
   returns `not_measurable` regardless. `_aic_density` (`:489-504`) has no other
