@@ -305,10 +305,7 @@ def parse_issue_page(
     except ImportError as e:  # pragma: no cover
         raise RuntimeError("beautifulsoup4 required") from e
 
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
 
     href_pat = re.compile(config.story_href_pattern, re.IGNORECASE)
     stories: list[StoryMetadata] = []
@@ -365,10 +362,7 @@ def parse_story_page(
     except ImportError as e:  # pragma: no cover
         raise RuntimeError("beautifulsoup4 required") from e
 
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
 
     title = _select_text(soup, config.title_selector)
     author = _clean_author(_select_text(soup, config.author_selector))
@@ -429,10 +423,7 @@ def discover_issue_urls(
     except ImportError as e:  # pragma: no cover
         raise RuntimeError("beautifulsoup4 required") from e
 
-    try:
-        soup = BeautifulSoup(archive_html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(archive_html, "html.parser")
+    soup = BeautifulSoup(archive_html, "lxml")
 
     pat = re.compile(config.issue_href_pattern, re.IGNORECASE)
     urls: list[str] = []

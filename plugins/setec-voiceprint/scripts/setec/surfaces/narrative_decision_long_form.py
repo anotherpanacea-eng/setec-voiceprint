@@ -332,17 +332,12 @@ def _base_audit_identity() -> str:
     """Base-audit identity component of the cache key.
 
     The base audit exposes a module-level SCRIPT_VERSION and (via
-    narrative_judge) a canonical prompt fingerprint; bind both. Fall back
-    to a hash of the module's file bytes only if the version constant ever
-    disappears.
+    narrative_judge) a canonical prompt fingerprint; bind both.
     """
-    version = getattr(nda, "SCRIPT_VERSION", None)
-    prompt_fp = nj.fingerprint_prompt()
-    if version:
-        return f"narrative_decision_audit/{version}+prompt:{prompt_fp}"
-    return "sha256:" + hashlib.sha256(
-        Path(nda.__file__).read_bytes()
-    ).hexdigest()
+    return (
+        f"narrative_decision_audit/{nda.SCRIPT_VERSION}"
+        f"+prompt:{nj.fingerprint_prompt()}"
+    )
 
 
 def _judge_input_digest(judge_kind: str, entry: Any) -> str | None:

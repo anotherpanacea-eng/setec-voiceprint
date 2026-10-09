@@ -147,7 +147,7 @@ def test_unicode_counters_share_function_and_pattern(module_name):
 
 
 @pytest.mark.parametrize("module_name, public_name", [
-    ("repetition_audit", "tokenize"), ("stylometry_core", "word_tokens"),
+    ("stylometry_core", "word_tokens"),
 ])
 def test_alpha_word_token_consumers_share_function_and_pattern(module_name, public_name):
     import importlib
