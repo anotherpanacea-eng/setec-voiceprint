@@ -158,7 +158,7 @@ DEFAULT_DOES_NOT_LICENSE = (
 
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
-# Regex sentence-boundary fallback when spaCy is unavailable: split after a
+# Sentence boundary for split_sentences (stdlib only): split after a
 # sentence-final punctuation mark followed by whitespace.
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
