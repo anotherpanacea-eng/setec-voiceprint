@@ -30,6 +30,7 @@ entries:
   dependencies:
     python:
     - bs4
+    - lxml
     - requests
   examples: []
   references:

@@ -243,8 +243,8 @@ ACQUISITION_PYTHON_DEPS = [
         import_name="lxml",
         pip_name="lxml",
         summary=(
-            "Production HTML parser used by BeautifulSoup; faster and "
-            "more tolerant than the stdlib fallback."
+            "Required production HTML parser used by BeautifulSoup; "
+            "HTML acquisition fails when it is missing."
         ),
     ),
     PythonDep(

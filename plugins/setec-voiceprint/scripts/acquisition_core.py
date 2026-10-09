@@ -1154,7 +1154,7 @@ def html_to_text(
     """Extract plain text from an HTML document.
 
     Pipeline:
-      1. Parse with BeautifulSoup (lxml backend if available).
+      1. Parse with BeautifulSoup (lxml backend, which is required).
       2. Drop noise elements globally: ``<script>``, ``<style>``,
          ``<noscript>``, ``<svg>``, ``<form>``, ``<nav>``, ``<aside>``,
          ``<footer>``, anything in ``strip_selectors``.
@@ -1176,12 +1176,10 @@ def html_to_text(
             "pip install -r requirements-acquisition.txt"
         ) from e
 
-    # Try lxml first; fall back to the stdlib parser if lxml isn't
-    # installed.
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    # lxml only (pinned in requirements-acquisition.txt). The old html.parser
+    # fallback produced different text on malformed markup, so the stored
+    # text and content hash depended on whether lxml happened to be installed.
+    soup = BeautifulSoup(html, "lxml")
 
     title = None
     if soup.title and soup.title.string:
@@ -1227,8 +1225,9 @@ def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
     hands trafilatura an already-de-chromed document, so the primary path
     keeps the site-specific cleanliness the selector-based fallback had.
 
-    Best-effort: if bs4 is unavailable or parsing fails, return ``html``
-    unchanged (trafilatura still runs on the raw document).
+    Best-effort: if bs4 is unavailable or a selector fails, return ``html``
+    unchanged (trafilatura still runs on the raw document). A missing lxml
+    parser raises ``bs4.FeatureNotFound``.
     """
     if not strip_selectors:
         return html
@@ -1236,11 +1235,10 @@ def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
         from bs4 import BeautifulSoup  # type: ignore
     except Exception:
         return html
+    # lxml is required (requirements-acquisition.txt): a missing parser must
+    # fail loudly, not silently skip the strip.
+    soup = BeautifulSoup(html, "lxml")
     try:
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception:
-            soup = BeautifulSoup(html, "html.parser")
         for sel in strip_selectors:
             for tag in soup.select(sel):
                 tag.decompose()
