@@ -152,7 +152,7 @@ def _phrase_hits(
     """
     if not phrases:
         return 0, 0, [], []
-    text_lower = target_text.lower()
+    text_lower: str | None = None
     matched: list[str] = []
     missing: list[str] = []
     n_total_occurrences = 0
@@ -161,8 +161,19 @@ def _phrase_hits(
             continue
         # Case-insensitive non-overlapping occurrences, bounded by
         # the word class `idiolect_detector` builds phrases from.
-        pattern = r"(?<![A-Za-z'])" + re.escape(p.lower()) + r"(?![A-Za-z'])"
-        count = len(re.findall(pattern, text_lower))
+        if p.isascii():
+            # Detector phrases are ASCII. Check their boundaries before any
+            # Unicode lowercasing can turn a separator (e.g. Kelvin sign)
+            # into an ASCII letter, or invent a detector word from it.
+            haystack, literal, flags = target_text, p, re.IGNORECASE | re.ASCII
+        else:
+            # The JSON loader also accepts explicit non-ASCII phrases;
+            # preserve their existing lowercase matching behavior.
+            if text_lower is None:
+                text_lower = target_text.lower()
+            haystack, literal, flags = text_lower, p.lower(), 0
+        pattern = r"(?<![A-Za-z'])" + re.escape(literal) + r"(?![A-Za-z'])"
+        count = len(re.findall(pattern, haystack, flags))
         if count > 0:
             matched.append(p)
             n_total_occurrences += count

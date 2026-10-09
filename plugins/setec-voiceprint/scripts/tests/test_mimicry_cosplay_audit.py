@@ -101,6 +101,20 @@ class TestPhraseHits:
         assert n_unique == 1
         assert n_occurrences == 20
 
+    @pytest.mark.parametrize("delimiter", ["\u212a", "\u0130", "\u017f"])
+    def test_ascii_phrase_uses_original_detector_boundaries(self, delimiter):
+        # These are separators for the detector's ASCII word class even
+        # when Unicode lowercasing turns one into an ASCII word character.
+        assert mca._phrase_hits(delimiter + "ArT" + delimiter, ["art"]) == (1, 1, ["art"], [])
+
+    @pytest.mark.parametrize("letter", ["\u212a", "\u0130", "\u017f"])
+    def test_unicode_case_equivalents_do_not_create_ascii_detector_words(self, letter):
+        phrase = {"\u212a": "k", "\u0130": "i", "\u017f": "s"}[letter]
+        assert mca._phrase_hits(letter, [phrase]) == (0, 0, [], [phrase])
+
+    def test_explicit_nonascii_phrases_keep_the_existing_lowercase_behavior(self):
+        assert mca._phrase_hits("\u00c9 \u0130", ["\u00e9", "i\u0307"]) == (2, 2, ["\u00e9", "i\u0307"], [])
+
 
 class TestPhraseDensityAnomalyRegression:
     """Reviewer-reproduced regression: pre-1.41.1
