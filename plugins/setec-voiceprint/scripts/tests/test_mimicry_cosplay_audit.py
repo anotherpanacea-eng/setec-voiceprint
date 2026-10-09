@@ -74,6 +74,22 @@ class TestPhraseHits:
         assert n_unique == 1
         assert n_occurrences == 1
 
+    def test_phrase_does_not_match_inside_a_longer_word(self):
+        n_unique, n_occurrences, matched, missing = mca._phrase_hits(
+            "The other mother set off at the start.",
+            ["the", "art", "set off"],
+        )
+        assert n_occurrences == 3  # "The", "the", "set off"
+        assert matched == ["the", "set off"]
+        assert missing == ["art"]
+
+    def test_phrase_bounded_like_the_detector_words(self):
+        # idiolect_detector splits on [A-Za-z'], so "19th" yields "th".
+        n_unique, _, _, _ = mca._phrase_hits(
+            "Late 19th century prose.", ["th century"],
+        )
+        assert n_unique == 1
+
     def test_repeated_phrase_counts_occurrences_not_unique(self):
         # Reviewer-reproduced regression: a phrase repeated 20×
         # in the target should contribute 20 to the occurrence

@@ -1,0 +1,3 @@
+### Changed
+
+`setec-voiceprint`: removed dead code found by the text-primitives sweep. Unused helpers in `generate_voice_report`, `length_bootstrap`, `before_after_restoration` and `external_mirror/compute_distances`, an unreachable fallback in `narrative_decision_long_form`, unused imports, and the `ImportError` fallback sentence splitters in `aic_pattern_audit`, `construction_signature_audit`, `semantic_preservation_check` and `semantic_trajectory_audit` (`variance_audit` always imports in the packaged plugin) are gone. `_mirror_gate._initial` moved into its test. The only user-visible change: `kicker_density`'s claim-license caveat no longer recommends a nonexistent `classify_with_pretokenized` function.

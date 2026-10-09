@@ -171,13 +171,9 @@ def _split_paragraphs(text: str) -> list[str]:
 
 
 def _split_sentences(text: str) -> list[str]:
-    """Best-effort sentence splitter. Mirrors `variance_audit.split_
-    sentences` if available, falls back to a regex split otherwise."""
-    try:
-        from variance_audit import split_sentences as _vs  # type: ignore
-        return _vs(text)
-    except ImportError:
-        return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    """Sentence splitter; delegates to `variance_audit.split_sentences`."""
+    from variance_audit import split_sentences  # type: ignore
+    return split_sentences(text)
 
 
 def _split_fixed_token(text: str, window_size: int) -> list[str]:

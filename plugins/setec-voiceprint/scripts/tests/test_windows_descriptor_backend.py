@@ -15,6 +15,51 @@ import acquire_imessage_sent_atomic as A  # noqa: E402
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows descriptor backend")
 
 
+@pytest.mark.parametrize(
+    ("path", "expected_root"),
+    [
+        (r"D:\private-root", "\\\\?\\D:\\"),
+        (r"\\?\D:\private-root", "\\\\?\\D:\\"),
+        (r"\\localhost\fixture-share\private-root", "\\\\?\\UNC\\localhost\\fixture-share\\"),
+        (r"\\?\UNC\localhost\fixture-share\private-root", "\\\\?\\UNC\\localhost\\fixture-share\\"),
+    ],
+)
+def test_directory_chain_uses_valid_native_root_syntax(
+    path: str, expected_root: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import windows_descriptor_io as descriptor
+
+    class RootObserved(Exception):
+        pass
+
+    def observe_root(native_path: str, *_args: object) -> None:
+        assert native_path == expected_root
+        raise RootObserved
+
+    monkeypatch.setattr(descriptor.kernel32, "CreateFileW", observe_root)
+    with pytest.raises(RootObserved):
+        descriptor.pin_directory_chain(Path(path), writable_final=False)
+
+
+@pytest.mark.parametrize("extended", [False, True])
+def test_directory_chain_pins_and_revalidates_local_handles(
+    tmp_path: Path, extended: bool
+) -> None:
+    import windows_descriptor_io as descriptor
+
+    root = tmp_path / "private-root" / "nested"
+    root.mkdir(parents=True)
+    path = Path("\\\\?\\" + str(root)) if extended else root
+    handles = descriptor.pin_directory_chain(path, writable_final=False)
+    try:
+        assert len(handles) == len(path.parts)
+        assert all(descriptor.require_direct(handle, "directory") for handle in handles)
+        descriptor.revalidate_directory_chain(path, handles)
+    finally:
+        for handle in reversed(handles):
+            descriptor.close(handle)
+
+
 def _private_tree(tmp_path: Path) -> tuple[Path, A.PortableDurableRowIo]:
     root = tmp_path / A.PRIVATE_ROOT_COMPONENT / "output"
     root.mkdir(parents=True)
