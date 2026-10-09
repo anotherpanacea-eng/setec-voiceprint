@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import judge_backends  # type: ignore
+from setec.core.textprims import _normws
 
 PROMPT_VERSION = "agd_move_scan_v1"
 
@@ -162,11 +163,6 @@ def utc_now() -> str:
 
 def _is_index(idx: Any, n: int) -> bool:
     return isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < n
-
-
-def _normws(s: str) -> str:
-    """Whitespace-normalized form for a tolerant verbatim-containment check."""
-    return " ".join(s.split())
 
 
 _CUE_GAP_RE = re.compile(r"\.\.\.|…")

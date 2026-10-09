@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import judge_backends  # type: ignore
+from setec.core.textprims import _normws
 
 PROMPT_VERSION = "fallacy_scan_v1"
 
@@ -186,11 +187,6 @@ def utc_now() -> str:
 def _is_index(idx: Any, n: int) -> bool:
     """True iff ``idx`` is a real paragraph index (int, not bool, in range)."""
     return isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < n
-
-
-def _normws(s: str) -> str:
-    """Whitespace-normalized form for a tolerant verbatim-containment check."""
-    return " ".join(s.split())
 
 
 def normalize_flags(raw: Any, paragraphs: list[str]) -> list[dict[str, Any]]:
