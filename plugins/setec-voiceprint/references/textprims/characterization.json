@@ -2994,6 +2994,412 @@
         "result_path": [],
         "expected": 1
       }
+    },
+    {
+      "case_id": "count_words_alnum-empty",
+      "callable": "count_words_alnum",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "123"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alnum-digits",
+      "callable": "count_words_alnum",
+      "args": [
+        "one 42 two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "one 42.5 two"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_alnum-apostrophes",
+      "callable": "count_words_alnum",
+      "args": [
+        "can't can’t ' ''' 123"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 6,
+      "mutant": {
+        "args": [
+          "can't can't 123"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alnum-unicode",
+      "callable": "count_words_alnum",
+      "args": [
+        "K K İ I CAFÉ café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "K K I I CAFE cafe"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_alnum-hyphens",
+      "callable": "count_words_alnum",
+      "args": [
+        "one-two three_four"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "onetwo threefour"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alnum-alnum",
+      "callable": "count_words_alnum",
+      "args": [
+        "A1b 123 a"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "a a a a"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "split_sentences_enthymeme-empty",
+      "callable": "split_sentences_enthymeme",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "one"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one"
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_enthymeme-lowercase",
+      "callable": "split_sentences_enthymeme",
+      "args": [
+        "one. two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one.",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one two"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one two"
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_enthymeme-paragraph",
+      "callable": "split_sentences_enthymeme",
+      "args": [
+        "one\n\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one\n\ntwo"
+      ],
+      "mutant": {
+        "args": [
+          "one.\n\ntwo"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one.",
+          "two"
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_enthymeme-abbreviation",
+      "callable": "split_sentences_enthymeme",
+      "args": [
+        "Dr. Green waited."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr.",
+        "Green waited."
+      ],
+      "mutant": {
+        "args": [
+          "Dr Green waited."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr Green waited."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_enthymeme-ellipsis",
+      "callable": "split_sentences_enthymeme",
+      "args": [
+        "Wait... now! go?"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Wait...",
+        "now!",
+        "go?"
+      ],
+      "mutant": {
+        "args": [
+          "Wait...now!go?"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Wait...now!go?"
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_enthymeme-whitespace",
+      "callable": "split_sentences_enthymeme",
+      "args": [
+        "  one.\t two  "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one.",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one.two"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one.two"
+        ]
+      }
+    },
+    {
+      "case_id": "content_tokens_enthymeme-stopwords",
+      "callable": "content_tokens_enthymeme",
+      "args": [
+        "THE cat cat 42 42"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "set_exact",
+      "expected": [
+        "42",
+        "cat"
+      ],
+      "mutant": {
+        "args": [
+          "the cat dog 42"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "42",
+          "cat",
+          "dog"
+        ]
+      }
+    },
+    {
+      "case_id": "content_tokens_enthymeme-apostrophes",
+      "callable": "content_tokens_enthymeme",
+      "args": [
+        "can't can’t ' ''' 123"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "set_exact",
+      "expected": [
+        "'",
+        "'''",
+        "123",
+        "can't",
+        "t"
+      ],
+      "mutant": {
+        "args": [
+          "can't can't 123"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "123",
+          "can't"
+        ]
+      }
+    },
+    {
+      "case_id": "content_tokens_enthymeme-unicode",
+      "callable": "content_tokens_enthymeme",
+      "args": [
+        "K K İ I CAFÉ café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "set_exact",
+      "expected": [
+        "caf",
+        "cafe",
+        "k"
+      ],
+      "mutant": {
+        "args": [
+          "K K I I CAFE cafe"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "cafe",
+          "k"
+        ]
+      }
+    },
+    {
+      "case_id": "content_tokens_enthymeme-empty",
+      "callable": "content_tokens_enthymeme",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "set_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "cat"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "cat"
+        ]
+      }
+    },
+    {
+      "case_id": "content_tokens_enthymeme-digits",
+      "callable": "content_tokens_enthymeme",
+      "args": [
+        "the 1st-place cat"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "set_exact",
+      "expected": [
+        "1st",
+        "cat",
+        "place"
+      ],
+      "mutant": {
+        "args": [
+          "the firstplace cat"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "cat",
+          "firstplace"
+        ]
+      }
+    },
+    {
+      "case_id": "content_tokens_enthymeme-case-dedup",
+      "callable": "content_tokens_enthymeme",
+      "args": [
+        "Cats cats CATS"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "set_exact",
+      "expected": [
+        "cats"
+      ],
+      "mutant": {
+        "args": [
+          "cat"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "cat"
+        ]
+      }
     }
   ]
 }

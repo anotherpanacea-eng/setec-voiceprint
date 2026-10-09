@@ -70,6 +70,37 @@ def count_words_alpha(text: str) -> int:
     return len(_WORD_RE.findall(text))
 
 
+# Enthymeme text units retain their distinct alphanumeric and sentence rules.
+_WORD_ALNUM_RE = re.compile(r"[A-Za-z0-9']+")
+
+_ENTHYMEME_SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+_ENTHYMEME_STOPWORDS = frozenset((
+    "a", "an", "the", "and", "or", "but", "if", "then", "so", "of", "to", "in",
+    "on", "at", "by", "for", "with", "as", "is", "are", "was", "were", "be",
+    "been", "being", "it", "its", "this", "that", "these", "those", "we", "you",
+    "they", "he", "she", "i", "not", "no", "do", "does", "did", "have", "has",
+    "had", "will", "would", "can", "could", "should", "may", "might", "must",
+    "from", "into", "than", "such", "which", "who", "what", "there", "their",
+    "them", "our", "us", "all", "any", "more", "most", "some", "very", "also",
+))
+
+
+def count_words_alnum(text: str) -> int:
+    return len(_WORD_ALNUM_RE.findall(text))
+
+
+def split_sentences_enthymeme(paragraph: str) -> list[str]:
+    """Deterministic stdlib sentence split within a paragraph (not a parser)."""
+    raw = _ENTHYMEME_SENT_SPLIT_RE.split(paragraph.strip())
+    return [s.strip() for s in raw if s.strip()]
+
+
+def content_tokens_enthymeme(text: str) -> set[str]:
+    """Stopword-filtered lowercase content tokens — the set the tautology guard compares."""
+    return {t for t in _WORD_ALNUM_RE.findall(text.lower()) if t not in _ENTHYMEME_STOPWORDS}
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -84,6 +115,9 @@ PRIMITIVES = _MappingProxyType({
     "split_sentences_regex": "setec.core.textprims",
     "_normws": "setec.core.textprims",
     "count_words_alpha": "setec.core.textprims",
+    "count_words_alnum": "setec.core.textprims",
+    "split_sentences_enthymeme": "setec.core.textprims",
+    "content_tokens_enthymeme": "setec.core.textprims",
     "tokenize": "setec.core.passage_tokenizer_v1",
     "_tokens": "setec.core.verbatim_cover",
     "_content_fingerprint": "setec.core.verbatim_cover",
