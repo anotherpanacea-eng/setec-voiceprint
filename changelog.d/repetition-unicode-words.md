@@ -1,0 +1,3 @@
+### Fixed
+
+`setec-voiceprint`: `repetition_audit` (and `chapter_distinctiveness_audit`, which shares its tokenizer and anchor loader) now counts words in any script and keeps curly apostrophes. It tokenized with `[A-Za-z']+`, so an anchor such as `José`, `O’Brien` or `café` could never match and the name you asked to exclude was still flagged (as `jos`, `o`/`brien`, `caf`). Text and anchors are read after NFC normalization, and U+2019 folds to `'`, so `don’t` and `don't` are one word. Word counts and repetition ratios change for any text with accented letters, non-Latin scripts or curly apostrophes. Hyphens and digits still split words.

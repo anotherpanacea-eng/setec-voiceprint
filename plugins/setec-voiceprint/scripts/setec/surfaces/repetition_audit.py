@@ -21,6 +21,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -73,7 +74,10 @@ DEFAULT_FUNCTION_WORDS = {
     "little", "long", "short", "high", "low", "real", "maybe",
 }
 
-WORD_RE = re.compile(r"[A-Za-z']+")
+# Letters in any script plus straight or curly apostrophes, read after NFC
+# so decomposed accents stay in their word; tokens fold U+2019 to "'" so
+# "don’t" and "don't" count as one word. Anchors get the same treatment.
+WORD_RE = re.compile(r"(?:[^\W\d_]|['\u2019])+")
 
 
 # See variance_audit.TASK_SURFACE for the contract. Vocabulary
@@ -85,14 +89,16 @@ SCRIPT_VERSION = "1.0"
 
 
 def tokenize(text: str) -> list[str]:
-    return [w.lower() for w in WORD_RE.findall(text)]
+    text = unicodedata.normalize("NFC", text)
+    return [w.lower().replace("\u2019", "'") for w in WORD_RE.findall(text)]
 
 
 def load_anchors(path: str | None) -> set[str]:
     if not path:
         return set()
     text = Path(path).read_text(encoding="utf-8", errors="ignore")
-    return {w.strip().lower() for w in re.split(r"[,\s]+", text) if w.strip()}
+    text = unicodedata.normalize("NFC", text)
+    return {w.strip().lower().replace("\u2019", "'") for w in re.split(r"[,\s]+", text) if w.strip()}
 
 
 def cluster_max(tokens: list[str], target: str, window: int = 300) -> int:
