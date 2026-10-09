@@ -393,6 +393,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "lambdag_audit",
         "pov_voice_profile",
         "general_imposters",
+        "structural_shuffle_audit",
         "idiolect_detector",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
@@ -755,6 +756,24 @@ def test_guard_binding_without_a_call_does_not_satisfy_the_obligation(tmp_path):
     src = p.read_text(encoding="utf-8")
     assert "A" in _sweep_hits(src)
     assert not _calls_guard(src)
+
+
+def test_structural_shuffle_audit_implementation_cannot_hide_an_unclassified_loader(monkeypatch):
+    """The executing implementation must remain inside corpus closure sweeps."""
+    import structural_shuffle_audit
+
+    implementation = Path(structural_shuffle_audit.__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match="structural_shuffle_audit"):
+        test_sweep_is_closed("D", "defines a pool loader")
 
 
 if __name__ == "__main__":  # pragma: no cover

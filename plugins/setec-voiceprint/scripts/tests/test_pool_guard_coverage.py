@@ -202,6 +202,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "house_style_decomposition",
         "pov_voice_profile",
         "general_imposters",
+        "structural_shuffle_audit",
         "near_dup_dedup",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
@@ -515,6 +516,24 @@ def test_pool_guard_is_pure_stdlib():
                 assert a.name.split(".")[0] not in third_party, a.name
         elif isinstance(node, ast.ImportFrom) and node.module:
             assert node.module.split(".")[0] not in third_party, node.module
+
+
+def test_structural_shuffle_audit_implementation_cannot_hide_an_unclassified_loader(monkeypatch):
+    """The executing implementation must remain inside corpus closure sweeps."""
+    import structural_shuffle_audit
+
+    implementation = Path(structural_shuffle_audit.__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match="structural_shuffle_audit"):
+        test_loader_definer_sweep_is_closed()
 
 
 if __name__ == "__main__":  # pragma: no cover
