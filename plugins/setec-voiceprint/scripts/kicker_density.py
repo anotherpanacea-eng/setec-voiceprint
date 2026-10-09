@@ -36,9 +36,8 @@ CLI usage::
 Limitations:
 
   * Sentence boundary detection is regex-based (via
-    ``paragraph_parser.split_sentences``). Operators with abbreviation-
-    heavy prose may want to pre-tokenize via spaCy and pass via
-    ``classify_with_pretokenized`` instead.
+    ``paragraph_parser.split_sentences``) and may misplace boundaries
+    in abbreviation-heavy prose.
   * Proper-noun detection prefers spaCy POS tagging; falls back to
     a mid-sentence-capitalization heuristic when spaCy is
     unavailable. Both have known failure modes (spaCy mistags rare
@@ -560,9 +559,7 @@ def _claim_license(block: dict[str, Any]) -> ClaimLicense:
         additional_caveats=[
             "Sentence boundaries come from `paragraph_parser`'s "
             "regex split. Abbreviation-heavy prose may produce "
-            "spurious or missed boundaries; pre-tokenizing via "
-            "spaCy and using `classify_with_pretokenized` "
-            "tightens the call.",
+            "spurious or missed boundaries.",
             "Proper-noun detection prefers spaCy POS tagging; "
             "regex fallback flags title-cased common nouns and "
             "may mistag rare proper nouns. The reported "

@@ -88,14 +88,7 @@ from claim_license import (  # type: ignore
     with_state_caveats,
 )
 
-try:
-    from variance_audit import HAS_SPACY, _NLP, split_sentences  # type: ignore
-except ImportError:
-    HAS_SPACY = False
-    _NLP = None
-
-    def split_sentences(text: str) -> list[str]:  # type: ignore
-        return re.split(r"(?<=[.!?])\s+", text.strip())
+from variance_audit import HAS_SPACY, _NLP, split_sentences  # type: ignore
 
 
 TASK_SURFACE = "craft_restoration"

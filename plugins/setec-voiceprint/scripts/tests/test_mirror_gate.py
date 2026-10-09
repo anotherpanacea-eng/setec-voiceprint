@@ -693,16 +693,25 @@ def test_inline_unmatched_opener_closer_lookup_count(monkeypatch: pytest.MonkeyP
     assert lookups == gate.MAX_TOKENS
 
 
+def _initial_oracle(text: str, start: int) -> bool:
+    """Per-position prefix-scan reference for ``gate._initial_flags``."""
+    prefix = text[:start]
+    if not prefix.strip():
+        return True
+    line = prefix.rsplit("\n", 1)[-1]
+    if not line.strip():
+        return True
+    return prefix.rstrip().endswith((".", "!", "?"))
+
+
 def test_entity_initial_classification_one_scan_at_token_ceiling(monkeypatch: pytest.MonkeyPatch) -> None:
     original = gate._initial_flags
-    original_initial = gate._initial
     scans = 0
     def counted(*args: object) -> dict[int, bool]:
         nonlocal scans
         scans += 1
         return original(*args)
     monkeypatch.setattr(gate, "_initial_flags", counted)
-    monkeypatch.setattr(gate, "_initial", lambda *args: (_ for _ in ()).throw(AssertionError("quadratic prefix scan")))
     text = " ".join(["Alice."] * gate.MAX_TOKENS)
     phrases = gate._phrases(text)
     assert len(phrases) == gate.MAX_TOKENS and scans == 1
@@ -710,7 +719,7 @@ def test_entity_initial_classification_one_scan_at_token_ceiling(monkeypatch: py
     sample = "  Alice met Bob.\n  Carol asked? Then Dave.\n\nEcho"
     matches = list(gate._TOKEN_RE.finditer(sample))
     flags = original(sample, matches)
-    assert flags == {match.start(): original_initial(sample, match.start()) for match in matches}
+    assert flags == {match.start(): _initial_oracle(sample, match.start()) for match in matches}
 
 
 def test_reconcile_merge_walk_overlap_probe_count(monkeypatch: pytest.MonkeyPatch) -> None:

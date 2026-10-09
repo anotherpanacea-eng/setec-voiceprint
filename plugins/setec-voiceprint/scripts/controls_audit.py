@@ -66,8 +66,6 @@ from register_taxonomy import (  # type: ignore
     assert_personal_register_isolated,
 )
 from stylometry_core import (  # type: ignore
-    FUNCTION_WORDS,
-    function_word_features,
     load_entries,
     read_text,
     word_tokens,
