@@ -231,3 +231,19 @@ def test_alpha_lower_counter_consumers_share_function_and_pattern(module_name):
         module.count_words(None)
     with pytest.raises(TypeError):
         module.count_words(b"AbC")
+
+
+
+@pytest.mark.parametrize("module_name", [
+    "agd_move_scan_judge", "argquality_judge", "argument_judge",
+    "fallacy_judge", "warrant_judge",
+])
+def test_numbered_paragraph_consumers_share_primitive(module_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert module._number_paragraphs is textprims.number_paragraphs
+    paragraphs = ["", "second"]
+    assert module._number_paragraphs(paragraphs=paragraphs) == "[0] \n\n[1] second"
+    assert module._build_user_content("synthetic prompt", paragraphs).endswith("[0] \n\n[1] second")
+    assert paragraphs == ["", "second"]
