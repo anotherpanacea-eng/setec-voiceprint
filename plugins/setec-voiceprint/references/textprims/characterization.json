@@ -4900,6 +4900,454 @@
         "result_path": [],
         "expected": 1
       }
+    },
+    {
+      "case_id": "split_sentences_uppercase-empty",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-whitespace",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\r\n  New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-uppercase",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. Two! Three? Four."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two!",
+        "Three?",
+        "Four."
+      ],
+      "mutant": {
+        "args": [
+          "One. Two! Three? Four. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "Two!",
+          "Three?",
+          "Four.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-lowercase",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. two! three? four."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. two! three? four."
+      ],
+      "mutant": {
+        "args": [
+          "One. two! three? four. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. two! three? four.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-straight-double",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. \"Two words.\""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "\"Two words.\""
+      ],
+      "mutant": {
+        "args": [
+          "One. \"Two words.\" New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "\"Two words.\" New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-curly-double",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. “Two words.”"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "“Two words.”"
+      ],
+      "mutant": {
+        "args": [
+          "One. “Two words.” New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "“Two words.” New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-parenthesis",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. (Two words.)"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "(Two words.)"
+      ],
+      "mutant": {
+        "args": [
+          "One. (Two words.) New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "(Two words.) New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-single-quote",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. 'Two words.'"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. 'Two words.'"
+      ],
+      "mutant": {
+        "args": [
+          "One. 'Two words.' New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. 'Two words.' New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-bracket",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. [Two words.]"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. [Two words.]"
+      ],
+      "mutant": {
+        "args": [
+          "One. [Two words.] New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. [Two words.] New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-unicode-upper",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. Éclair. Αλφα. 中文。"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. Éclair. Αλφα. 中文。"
+      ],
+      "mutant": {
+        "args": [
+          "One. Éclair. Αλφα. 中文。 New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. Éclair. Αλφα. 中文。 New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-blankline-only",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One\n\nTwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One\n\nTwo"
+      ],
+      "mutant": {
+        "args": [
+          "One\n\nTwo New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One\n\nTwo New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-abbreviation",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "Dr. Smith arrived. Next came Ms. Jones."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr.",
+        "Smith arrived.",
+        "Next came Ms.",
+        "Jones."
+      ],
+      "mutant": {
+        "args": [
+          "Dr. Smith arrived. Next came Ms. Jones. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr.",
+          "Smith arrived.",
+          "Next came Ms.",
+          "Jones.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-ellipsis",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "Wait... Then go."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Wait...",
+        "Then go."
+      ],
+      "mutant": {
+        "args": [
+          "Wait... Then go. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Wait...",
+          "Then go.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-unicode-space",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. Two. Three. Four."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two.",
+        "Three.",
+        "Four."
+      ],
+      "mutant": {
+        "args": [
+          "One. Two. Three. Four. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "Two.",
+          "Three.",
+          "Four.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-trailing",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "  One. Two.  "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two."
+      ],
+      "mutant": {
+        "args": [
+          "  One. Two.   New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "Two.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-zero-nul",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One.​Two.\u0000Three."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.​Two.\u0000Three."
+      ],
+      "mutant": {
+        "args": [
+          "One.​Two.\u0000Three. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.​Two.\u0000Three.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-invalid",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-keyword",
+      "callable": "split_sentences_uppercase",
+      "args": [],
+      "kwargs": {
+        "text": "One. Two."
+      },
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two."
+      ],
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "One. two."
+        },
+        "result_path": [],
+        "expected": [
+          "One. two."
+        ]
+      }
     }
   ]
 }

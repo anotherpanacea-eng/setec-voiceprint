@@ -333,16 +333,11 @@ for _form, _bucket in _SURFACE_FORMS:
 _RELATION_ENTROPY_MAX_BITS = math.log2(len(RELATION_BUCKETS))  # 2.0 for 4 buckets
 
 
-_SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
+from setec.core.textprims import _SENTENCE_TERMINATORS
 from setec.core.textprims import _WORD_UNICODE_RE as _WORD_RE
 
 
-def _split_sentences(text: str) -> list[str]:
-    return [
-        s.strip()
-        for s in _SENTENCE_TERMINATORS.split(text)
-        if s.strip()
-    ]
+from setec.core.textprims import split_sentences_uppercase as _split_sentences
 
 
 from setec.core.textprims import count_words_unicode as _word_count
