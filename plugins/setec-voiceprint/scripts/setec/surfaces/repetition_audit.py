@@ -21,6 +21,7 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -73,7 +74,12 @@ DEFAULT_FUNCTION_WORDS = {
     "little", "long", "short", "high", "low", "real", "maybe",
 }
 
-from setec.core.textprims import WORD_RE
+# Precomposed letters (Latin, Greek, Cyrillic, ...) plus straight or curly
+# apostrophes, read after NFC so decomposed accents stay in their word.
+# Scripts with combining vowel signs still split, and unspaced scripts are
+# not segmented. Tokens fold U+2019 to "'" (so "don’t" and "don't" are one
+# word) and drop apostrophes at their ends (closing quotes). Anchors get the
+# same folding.
 
 
 # See variance_audit.TASK_SURFACE for the contract. Vocabulary
@@ -84,14 +90,21 @@ TOOL_NAME = "repetition_audit"
 SCRIPT_VERSION = "1.0"
 
 
-from setec.core.textprims import word_tokens_alpha as tokenize
+def tokenize(text: str) -> list[str]:
+    text = unicodedata.normalize("NFC", text)
+    # Unicode \w also includes nondecimal numbers (such as superscripts and
+    # fractions); use letters explicitly so they cannot join adjacent words.
+    text = "".join(c if c.isalpha() or c in "'\u2019" else " " for c in text)
+    words = (w.lower().replace("\u2019", "'").strip("'") for w in text.split())
+    return [w for w in words if w]
 
 
 def load_anchors(path: str | None) -> set[str]:
     if not path:
         return set()
     text = Path(path).read_text(encoding="utf-8", errors="ignore")
-    return {w.strip().lower() for w in re.split(r"[,\s]+", text) if w.strip()}
+    text = unicodedata.normalize("NFC", text)
+    return {w.strip().lower().replace("\u2019", "'") for w in re.split(r"[,\s]+", text) if w.strip()}
 
 
 def cluster_max(tokens: list[str], target: str, window: int = 300) -> int:
@@ -188,7 +201,8 @@ def score_against_baseline_counts(
     skip = function_words | anchor_words
     candidates: list[dict] = []
     for word, c in target_counts.items():
-        if word in skip:
+        # An anchor or function word also covers its possessive ("mark's").
+        if word in skip or word.removesuffix("'s") in skip:
             continue
         if len(word) < min_word_len:
             continue

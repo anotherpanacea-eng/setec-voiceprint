@@ -119,8 +119,8 @@ unaffected (no model loads); the expansion is documented here per R1.
    (`= exp(mean_nats)`). The M1 orchestrator accepts injected perplexity directly so no model is
    needed in CI.
 2. **Shuffle variants** (seeded, default `--seed 0`, reported in output):
-   - `sent_shuffled`: split on sentence boundaries (spaCy `en_core_web_sm` sentencizer if available;
-     regex fallback `(?<=[.!?])\s+`), permute the sentences, rejoin.
+   - `sent_shuffled`: split on sentence boundaries with the stdlib regex
+     `(?<=[.!?])\s+` on every host, permute the sentences, rejoin.
    - `word_shuffled`: a single **passage-level** permutation of all whitespace-split tokens
      (REVIEW Rec-1 / Open Question #4 resolved: passage-level, not per-sentence — recorded in the
      `shuffle_words` docstring). Rejoin.
@@ -163,7 +163,7 @@ does not exist, ship as an independent reimplementation in the DetectGPT perturb
 
 `plugins/setec-voiceprint/scripts/structural_shuffle_audit.py`:
 
-1. `split_sentences(text) -> list[str]` — spaCy if available, regex fallback. Stdlib-testable.
+1. `split_sentences(text) -> list[str]` — stdlib regex on every host. Stdlib-testable.
 2. `shuffle_sentences(sentences, seed) -> str` and `shuffle_words(text, seed) -> str` — pure Python.
 3. `extract_shuffle_features(ppl_orig, ppl_sent, ppl_word) -> dict[str, float]` — pure arithmetic.
 4. `score_window(text, backend, seed) -> dict` — injected (stub) backend computes features from
@@ -208,14 +208,13 @@ is broken). On Code-Mac, the model would load via the standard HF cache. M2 is `
   `discrimination_structural_shuffle`, `status: heuristic` (UNVERIFIED preprint + on-corpus
   calibration pending — DO NOT promote to `literature_anchored` until arXiv 2604.25860 is
   confirmed), `handoff: experimental`, `compute.tier: surprisal`,
-  `compute.length_floor_words: 50`, deps `[transformers, torch, spacy]`,
-  `python_optional: [en_core_web_sm]`.
+  `compute.length_floor_words: 50`, deps `[transformers, torch]`; no spaCy model dependency.
 
 ---
 
 ## Test contract (`tests/test_structural_shuffle.py`) — all torch-free (stub backend)
 
-1. `test_split_sentences` — 3-sentence fixture → 3 items (spaCy and regex fallback).
+1. `test_split_sentences` — 3-sentence fixture → 3 items (stdlib regex, independent of spaCy availability).
 2. `test_shuffle_sentences_deterministic` — same seed same order; different seed differs (≥3 sents).
 3. `test_shuffle_words_deterministic` — same seed same word order; different seed differs.
 4. `test_shuffle_sentences_same_words` / `test_shuffle_words_same_words` — same multiset of words.

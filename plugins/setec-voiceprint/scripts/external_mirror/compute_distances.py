@@ -22,7 +22,6 @@ import argparse
 import hashlib
 import json
 import math
-import re
 import sys
 from collections import Counter
 from datetime import datetime, timezone
@@ -133,9 +132,6 @@ def _load_target_continuations(path: Path, windows_count: int) -> list[str]:
 # ============================================================
 # v2 metric helpers
 # ============================================================
-
-
-_WORD_TOKEN_RE = re.compile(r"[A-Za-z']+")
 
 
 def _cosine_from_dict_vectors(

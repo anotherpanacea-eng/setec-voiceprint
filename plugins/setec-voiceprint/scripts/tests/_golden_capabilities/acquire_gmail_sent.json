@@ -37,7 +37,8 @@
   ],
   "dependencies": {
     "python": [
-      "bs4"
+      "bs4",
+      "lxml"
     ]
   },
   "examples": [],

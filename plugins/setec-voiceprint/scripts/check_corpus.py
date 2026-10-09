@@ -255,7 +255,7 @@ def check_path(
     fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
 ) -> dict[str, Any]:
     try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        data = path.read_bytes()
     except OSError as exc:
         return {
             "path": str(path),
@@ -268,6 +268,13 @@ def check_path(
             "strip_ratio": 0.0,
             "dominant_rule": None,
         }
+    # Bytes that are not UTF-8 become U+FFFD so the strip ratio sees
+    # them; the record counts the replacements (genuine U+FFFD excluded).
+    text = data.decode("utf-8", errors="replace")
+    # Preserve read_text's universal-newline behavior for valid UTF-8 too;
+    # rules such as YAML front matter intentionally match LF newlines.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    decode_replacements = text.count("\ufffd") - data.count("\ufffd".encode("utf-8"))
     try:
         _cleaned, meta = strip_non_prose(
             text,
@@ -290,7 +297,10 @@ def check_path(
     ratio = float(meta.get("strip_ratio", 0.0) or 0.0)
     meta["path"] = str(path)
     meta["status"] = classify_file(ratio, warn_threshold, fail_threshold)
+    if decode_replacements and meta["status"] == "clean":
+        meta["status"] = "warning"  # bytes that aren't UTF-8 are contamination
     meta["error"] = None
+    meta["decode_replacements"] = decode_replacements
     return meta
 
 
@@ -459,6 +469,9 @@ def _summarize_hygiene_records(
         "strip_ratio": (stripped / tokens_before) if tokens_before else 0.0,
         "tokens_stripped_by_rule": dict(by_rule),
         "dominant_rule": dominant_rule,
+        "decode_replacements": sum(
+            int(r.get("decode_replacements", 0) or 0) for r in records
+        ),
     }
 
 
@@ -479,7 +492,9 @@ def _summarize_hygiene_records(
 _RECORDS_CACHE_TOOL = "check_corpus"
 # 1.1: cache payload now carries per-file content fingerprints. Bumping the
 # version invalidates pre-fingerprint (1.0) caches, forcing a safe rescore.
-_RECORDS_CACHE_VERSION = "1.1"
+# 1.2: records decode bad bytes as U+FFFD and carry `decode_replacements`.
+# 1.3: a file with replacements is at least a warning.
+_RECORDS_CACHE_VERSION = "1.3"
 
 
 def _records_cache_meta(
@@ -659,6 +674,11 @@ def render_report(result: dict[str, Any]) -> str:
         f"**Counts:** {result['n_clean']} clean, {result['n_warning']} warning, "
         f"{result['n_fail']} fail, {result['n_error']} error"
     )
+    if result.get("decode_replacements"):
+        lines.append(
+            f"**Non-UTF-8 bytes:** {result['decode_replacements']} "
+            "replacement character(s); affected files are at least a warning"
+        )
     lines.append(
         f"**Aggregate stripped:** {result['tokens_stripped']} / "
         f"{result['input_tokens_before']} tokens "
@@ -847,7 +867,7 @@ def build_audit_payload(
         "input_tokens_before", "input_tokens_after",
         "tokens_stripped", "strip_ratio",
         "tokens_stripped_by_rule", "dominant_rule",
-        "files",
+        "decode_replacements", "files",
     ):
         if k in result:
             results_payload[k] = result[k]

@@ -314,9 +314,16 @@ _SURFACE_FORMS: tuple[tuple[str, str], ...] = _extract_surface_forms()
 # One combined alternation, longest-first. We recover the bucket from
 # the matched text via ``_FORM_TO_BUCKET`` (below) rather than from N
 # named groups, because a bare-string lookup is simpler and Python
-# caps named groups at 100.
+# caps named groups at 100. The words of a multi-word form are joined
+# by ``\s+``, not the lexicon's literal single space: ``strip_non_prose``
+# keeps hard line breaks and double spaces, and a literal space would
+# let ``as a\nresult`` fall through to the bare temporal ``as``.
 _COMBINED_RE = re.compile(
-    r"\b(?:" + "|".join(re.escape(f) for f, _ in _SURFACE_FORMS) + r")\b",
+    r"\b(?:"
+    + "|".join(
+        r"\s+".join(re.escape(w) for w in f.split()) for f, _ in _SURFACE_FORMS
+    )
+    + r")\b",
     re.I,
 )
 

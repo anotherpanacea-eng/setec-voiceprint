@@ -80,14 +80,7 @@ from claim_license import (  # type: ignore
 )
 
 # Reuse spaCy loader and tokenizer from variance_audit.
-try:
-    from variance_audit import HAS_SPACY, _NLP, split_sentences  # type: ignore
-except ImportError:
-    HAS_SPACY = False
-    _NLP = None
-
-    def split_sentences(text: str) -> list[str]:  # type: ignore
-        return re.split(r"(?<=[.!?])\s+", text.strip())
+from variance_audit import HAS_SPACY, _NLP, split_sentences  # type: ignore
 
 
 TASK_SURFACE = "voice_coherence"

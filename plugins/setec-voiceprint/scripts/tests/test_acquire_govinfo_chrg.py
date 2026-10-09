@@ -48,6 +48,7 @@ _acq_deps_available = True
 _skip_reason = ""
 try:
     import bs4  # type: ignore  # noqa: F401
+    import lxml  # type: ignore  # noqa: F401
 except ImportError as _e:
     _acq_deps_available = False
     _skip_reason = (

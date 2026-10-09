@@ -814,10 +814,7 @@ def _historical_extract(html: str) -> tuple[str, bool, str]:
     # Historical mode retains the visible body after confirmed site chrome.
     container = soup.body or soup
     nontext = bool(container.select("img, svg, canvas, figure"))
-    body = container.get_text("\n")
-    body = re.sub(r"[ \t]+", " ", body)
-    body = re.sub(r"\n[ \t]+", "\n", body)
-    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    body = ac.normalize_extracted_whitespace(container.get_text("\n"))
     return body, nontext, title
 
 

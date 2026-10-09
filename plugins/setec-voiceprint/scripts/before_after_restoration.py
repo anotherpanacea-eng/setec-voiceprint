@@ -457,11 +457,6 @@ def evaluate_packet(
     if pid.startswith("aic_"):
         # AIC density values aren't extracted from variance_audit;
         # they require an aic_pattern_audit JSON pair.
-        # v1 reports the pattern name + delta if both fixtures are
-        # supplied; we compare densities by the pattern's `name`
-        # field within each AIC JSON.
-        pattern_name = pid[len("aic_"):].replace("_", " ")
-        before = _aic_density(before_idiolect or {}, pattern_name) if False else None
         # NOTE: AIC fixtures aren't a standard input here; the v1
         # fallback is to mark not_measurable. v2 should accept
         # --before-aic-json / --after-aic-json explicitly.
@@ -484,24 +479,6 @@ def evaluate_packet(
         verdict="not_measurable",
         notes=[f"Unknown packet id shape: {pid!r}"],
     )
-
-
-def _aic_density(aic: dict[str, Any], pattern_name: str) -> float | None:
-    """Pull density for the named AIC pattern from an aic_pattern_audit
-    JSON. Best-effort; the AIC schema accepts a list of dicts or a
-    flat dict of name->density."""
-    patterns = aic.get("patterns") or aic.get("pattern_densities") or []
-    if isinstance(patterns, dict):
-        v = patterns.get(pattern_name)
-        if isinstance(v, dict):
-            v = v.get("density")
-        return float(v) if isinstance(v, (int, float)) else None
-    if isinstance(patterns, list):
-        for p in patterns:
-            if isinstance(p, dict) and (p.get("name") or p.get("pattern")) == pattern_name:
-                v = p.get("density") or p.get("per_1000_words")
-                return float(v) if isinstance(v, (int, float)) else None
-    return None
 
 
 # --------------- Metric-gaming detection --------------------
