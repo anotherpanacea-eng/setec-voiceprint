@@ -133,7 +133,9 @@ def _phrase_hits(
 ) -> tuple[int, int, list[str], list[str]]:
     """Return ``(n_unique_matched, n_total_occurrences,
     matched_phrases, missing_phrases)`` over case-insensitive
-    substring search.
+    whole-phrase search on ``[A-Za-z']`` word boundaries: a phrase
+    does not match inside a longer word (``"the"`` does not hit
+    ``"other"``).
 
     ``n_unique_matched`` counts each preservation-list phrase at
     most once and is the right value for the survival-rate
@@ -150,18 +152,28 @@ def _phrase_hits(
     """
     if not phrases:
         return 0, 0, [], []
-    text_lower = target_text.lower()
+    text_lower: str | None = None
     matched: list[str] = []
     missing: list[str] = []
     n_total_occurrences = 0
     for p in phrases:
         if not p:
             continue
-        # Count case-insensitive non-overlapping occurrences in
-        # the target. Falls back to substring `count()` which
-        # is sufficient for word-boundary phrase matches in
-        # natural prose (overlapping idiolect phrases are rare).
-        count = text_lower.count(p.lower())
+        # Case-insensitive non-overlapping occurrences, bounded by
+        # the word class `idiolect_detector` builds phrases from.
+        if p.isascii():
+            # Detector phrases are ASCII. Check their boundaries before any
+            # Unicode lowercasing can turn a separator (e.g. Kelvin sign)
+            # into an ASCII letter, or invent a detector word from it.
+            haystack, literal, flags = target_text, p, re.IGNORECASE | re.ASCII
+        else:
+            # The JSON loader also accepts explicit non-ASCII phrases;
+            # preserve their existing lowercase matching behavior.
+            if text_lower is None:
+                text_lower = target_text.lower()
+            haystack, literal, flags = text_lower, p.lower(), 0
+        pattern = r"(?<![A-Za-z'])" + re.escape(literal) + r"(?![A-Za-z'])"
+        count = len(re.findall(pattern, haystack, flags))
         if count > 0:
             matched.append(p)
             n_total_occurrences += count
@@ -459,12 +471,13 @@ def _claim_license(
             "1k, 2.0× over-preservation factor) are documented "
             "defaults, not labeled-corpus-validated values.",
             "Idiolect-phrase survival is computed by case-"
-            "insensitive substring match, mirroring the "
-            "convention `confounder_audit` uses. Phrase "
+            "insensitive whole-phrase match on the same "
+            "[A-Za-z'] word class `idiolect_detector` uses. Phrase "
             "preservation does not require sentence-level "
             "structural equivalence; a cosplay revision that "
             "preserves the phrase but breaks the surrounding "
-            "syntax will read as preserved here.",
+            "syntax will read as preserved here. It can differ from "
+            "confounder_audit, whose survival check uses substring matching.",
             "The audit composes with `before_after_restoration` "
             "(metric-gaming detection), `surface_disagreement_"
             "resolver` (cross-surface meta-interpretation), and "

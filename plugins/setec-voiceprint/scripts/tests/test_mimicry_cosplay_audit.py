@@ -74,6 +74,22 @@ class TestPhraseHits:
         assert n_unique == 1
         assert n_occurrences == 1
 
+    def test_phrase_does_not_match_inside_a_longer_word(self):
+        n_unique, n_occurrences, matched, missing = mca._phrase_hits(
+            "The other mother set off at the start.",
+            ["the", "art", "set off"],
+        )
+        assert n_occurrences == 3  # "The", "the", "set off"
+        assert matched == ["the", "set off"]
+        assert missing == ["art"]
+
+    def test_phrase_bounded_like_the_detector_words(self):
+        # idiolect_detector splits on [A-Za-z'], so "19th" yields "th".
+        n_unique, _, _, _ = mca._phrase_hits(
+            "Late 19th century prose.", ["th century"],
+        )
+        assert n_unique == 1
+
     def test_repeated_phrase_counts_occurrences_not_unique(self):
         # Reviewer-reproduced regression: a phrase repeated 20×
         # in the target should contribute 20 to the occurrence
@@ -84,6 +100,20 @@ class TestPhraseHits:
         )
         assert n_unique == 1
         assert n_occurrences == 20
+
+    @pytest.mark.parametrize("delimiter", ["\u212a", "\u0130", "\u017f"])
+    def test_ascii_phrase_uses_original_detector_boundaries(self, delimiter):
+        # These are separators for the detector's ASCII word class even
+        # when Unicode lowercasing turns one into an ASCII word character.
+        assert mca._phrase_hits(delimiter + "ArT" + delimiter, ["art"]) == (1, 1, ["art"], [])
+
+    @pytest.mark.parametrize("letter", ["\u212a", "\u0130", "\u017f"])
+    def test_unicode_case_equivalents_do_not_create_ascii_detector_words(self, letter):
+        phrase = {"\u212a": "k", "\u0130": "i", "\u017f": "s"}[letter]
+        assert mca._phrase_hits(letter, [phrase]) == (0, 0, [], [phrase])
+
+    def test_explicit_nonascii_phrases_keep_the_existing_lowercase_behavior(self):
+        assert mca._phrase_hits("\u00c9 \u0130", ["\u00e9", "i\u0307"]) == (2, 2, ["\u00e9", "i\u0307"], [])
 
 
 class TestPhraseDensityAnomalyRegression:
