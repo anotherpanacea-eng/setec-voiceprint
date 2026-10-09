@@ -53,6 +53,7 @@ from setec.paths import scripts_dir
 SCRIPT_DIR = scripts_dir()
 
 from setec.contract.claim_license import ClaimLicense  # type: ignore
+from setec.core.textprims import count_words_alpha as count_words
 from setec.contract.output_schema import build_error_output, build_output  # type: ignore
 from setec.core.argquality_judge import (  # type: ignore
     DIMENSIONS,
@@ -101,7 +102,6 @@ DEFAULT_DOES_NOT_LICENSE = (
     "`mock` judge is a test stub, infer nothing from it."
 )
 
-_WORD_RE = re.compile(r"[A-Za-z']+")
 # Light, honest register heuristic: argument-shaped prose tends to carry
 # inferential connectives. Their absence is a SOFT caveat, never a hard abstain
 # (there is no register classifier; the fabricated --register gate stays unbuilt,
@@ -112,10 +112,6 @@ _ARGUMENT_MARKERS = re.compile(
     r"for example|on the other hand|it follows)\b",
     re.IGNORECASE,
 )
-
-
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
 
 
 def split_paragraphs(text: str) -> list[str]:

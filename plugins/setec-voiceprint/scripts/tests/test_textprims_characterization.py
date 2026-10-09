@@ -71,30 +71,29 @@ def test_native_resolution_rejects_missing_resources(tmp_path):
         runner.configure_punkt(tmp_path)
 
 
-def test_wrong_table_cannot_pass_shared_membership_cases(tmp_path):
-    fixture = ROOT / "references/textprims/characterization.json"
-    doc = json.loads(fixture.read_text(encoding="utf-8"))
-    row = next(row for row in doc["rows"] if row["family"] == "function_words")
-    row["legacy_callable"] = row["legacy_callable"].replace(":FUNCTION_WORDS.", ":DIALOGUE_FUNCTION_WORDS.")
-    altered = tmp_path / "substitute-table.json"
-    altered.write_text(json.dumps(doc))
-    with pytest.raises(ValueError, match="ownership identity changed"):
-        runner.run(altered, os.environ["TEXTPRIMS_PUNKT_DATA"])
-
-
-def test_frozen_tokenizer_registry_wrapper_is_refused(monkeypatch):
-    from setec.core import textprims
-    native = textprims.tokenize
-    monkeypatch.setattr(textprims, "tokenize", lambda *args, **kwargs: native(*args, **kwargs))
-    with pytest.raises(ValueError, match="registry identity changed"):
-        runner.run(ROOT / "references/textprims/characterization.json", os.environ["TEXTPRIMS_PUNKT_DATA"])
-
-
-def test_frozen_tokenizer_custom_table_argument_is_refused(tmp_path):
+def _altered(tmp_path, change):
     doc = json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))
-    row = next(row for row in doc["rows"] if row["family"] == "tokenizer")
-    row["kwargs"]["data_path"] = "alternate.json"
-    fixture = tmp_path / "custom-table.json"
-    fixture.write_text(json.dumps(doc))
-    with pytest.raises(ValueError, match="custom frozen tokenizer table"):
+    change(doc)
+    path = tmp_path / "altered.json"
+    path.write_text(json.dumps(doc))
+    return path
+
+
+def test_unregistered_callable_is_refused(tmp_path):
+    fixture = _altered(tmp_path, lambda doc: doc["rows"][0].update(callable="split_everything"))
+    with pytest.raises(ValueError, match="unregistered"):
         runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_every_registered_primitive_needs_a_row(tmp_path):
+    fixture = _altered(tmp_path, lambda doc: doc.update(rows=[r for r in doc["rows"] if r["callable"] != "_normws"]))
+    with pytest.raises(ValueError, match="lacks characterization: _normws"):
+        runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_bytes_arguments_must_be_hex_objects(tmp_path):
+    def change(doc):
+        row = next(r for r in doc["rows"] if r["callable"] == "_analysis")
+        row["args"] = ["plain text"]
+    with pytest.raises(ValueError, match="closed hex object"):
+        runner.run(_altered(tmp_path, change), os.environ["TEXTPRIMS_PUNKT_DATA"])
