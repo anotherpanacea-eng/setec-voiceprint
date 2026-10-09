@@ -220,16 +220,18 @@ def test_public_output_requires_explicit_override(tmp_path):
     assert exc.value.code == 2
 
 
-def test_records_name_the_html_extractor_that_produced_their_text(tmp_path):
+
+@pytest.mark.parametrize("extractor", ["bs4", "stdlib"])
+def test_record_label_matches_the_text_it_labels(tmp_path, monkeypatch, extractor):
+    if extractor == "bs4":
+        pytest.importorskip("bs4")
+    monkeypatch.setattr(se, "HTML_EXTRACTOR", extractor)
     dump = make_dump(tmp_path / "dump")
     users = se.load_users(dump, "philosophy.stackexchange.com")
-    rows = list(se.iter_posts(dump, "philosophy.stackexchange.com", users,
-                              post_types=("1", "2"), keep_body_html=False))
-    assert rows and {row["html_extractor"] for row in rows} == {se.HTML_EXTRACTOR}
-
-
-def test_stdlib_extractor_is_the_one_recorded_when_bs4_is_absent(monkeypatch):
-    # The two paths read inline markup differently; the recorded name must be
-    # the path body_to_text actually took.
-    monkeypatch.setattr(se, "HTML_EXTRACTOR", "stdlib")
-    assert se.body_to_text("<p>This is <em>very</em> good.</p>") == "This is very good."
+    row = next(row for row in se.iter_posts(
+        dump, "philosophy.stackexchange.com", users,
+        post_types=("1", "2"), keep_body_html=False) if row["post_id"] == "10")
+    # The question body is "<p>Alpha &amp; beta.</p><script>…</script><pre>code sample</pre>";
+    # the two paths separate its blocks differently.
+    expected = {"bs4": "Alpha & beta.\ncode sample", "stdlib": "Alpha & beta.\n\ncode sample"}
+    assert (row["html_extractor"], row["text"]) == (extractor, expected[extractor])

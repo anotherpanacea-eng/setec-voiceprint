@@ -172,8 +172,9 @@ def body_to_text(body_html: str) -> str:
     """Convert a post body to plain text.
 
     Uses BeautifulSoup when it is installed and the stdlib parser otherwise.
-    The two give different text for inline markup, so every record carries
-    ``html_extractor`` naming the path that produced its ``text``.
+    The two separate blocks and inline tags differently and treat escaped
+    markup differently, so every record carries ``html_extractor`` naming the
+    path that produced its ``text``.
     """
     if not body_html:
         return ""
@@ -548,6 +549,7 @@ def main(argv=None) -> int:
         "created_before": args.created_before,
         "effective_before": args.effective_before,
         "keep_body_html": args.keep_body_html,
+        "html_extractor": HTML_EXTRACTOR,
     }
     if args.out and not args.dry_run:
         args.out.parent.mkdir(parents=True, exist_ok=True)
