@@ -1148,8 +1148,8 @@ def append_manifest_entry(
 def normalize_extracted_whitespace(text: str) -> str:
     """Collapse whitespace in text pulled out of HTML; keep paragraph breaks.
 
-    Shared by every HTML extraction path so their cleaned text, and therefore
-    their content hashes and dedupe keys, stay byte-identical.
+    Shared by html_to_text, the trafilatura path and the CRS historical
+    extractor so this whitespace tail cannot drift between them.
     """
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n[ \t]+", "\n", text)
