@@ -395,6 +395,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "general_imposters",
         "agency_abstraction_audit",
         "stance_modality_audit",
+        "confounder_audit",
         "idiolect_detector",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
@@ -759,8 +760,8 @@ def test_guard_binding_without_a_call_does_not_satisfy_the_obligation(tmp_path):
     assert not _calls_guard(src)
 
 
-@pytest.mark.parametrize("module_name", ("agency_abstraction_audit", "stance_modality_audit"))
-def test_agency_stance_implementation_cannot_hide_an_unclassified_loader(monkeypatch, module_name):
+@pytest.mark.parametrize("module_name", ("agency_abstraction_audit", "stance_modality_audit", "confounder_audit"))
+def test_relocated_surface_implementation_cannot_hide_an_unclassified_loader(monkeypatch, module_name):
     """The executing implementation must remain inside corpus closure sweeps."""
     import importlib
     implementation = Path(importlib.import_module(module_name).__file__).resolve()
