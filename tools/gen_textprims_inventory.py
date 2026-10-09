@@ -84,8 +84,8 @@ def word_set(node: ast.AST) -> frozenset | None:
 
 def check(root: Path = ROOT) -> list[str]:
     errors: list[str] = []
-    functions: dict[str, tuple[str, str]] = {}   # fingerprint -> (name, owner file)
-    sets: dict[frozenset, tuple[str, str]] = {}
+    functions: dict[str, tuple[str, str, int, int]] = {}   # fingerprint -> (name, owner file, definition line, column)
+    sets: dict[frozenset, tuple[str, str, int, int]] = {}
     for name, owner in registry(root).items():
         path = module_path(root, owner)
         if not path.is_file():
@@ -96,12 +96,12 @@ def check(root: Path = ROOT) -> list[str]:
         found = False
         for node in tree.body:
             if isinstance(node, ast.FunctionDef) and node.name == name:
-                functions[fingerprint(node, module_globals)] = (name, path.relative_to(root).as_posix())
+                functions[fingerprint(node, module_globals)] = (name, path.relative_to(root).as_posix(), node.lineno, node.col_offset)
                 found = True
             elif isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
                 words = word_set(node.value)
                 if words is not None:
-                    sets[words] = (name, path.relative_to(root).as_posix())
+                    sets[words] = (name, path.relative_to(root).as_posix(), node.lineno, node.col_offset)
                 found = True
         if not found:
             errors.append(f"registered owner does not define {name}: {owner}")
@@ -119,7 +119,8 @@ def check(root: Path = ROOT) -> list[str]:
                 hit = sets.get(words) if words is not None else None
             else:
                 continue
-            if hit and hit[1] != relative:
+            # Exempt only the actual registered definition, not its whole file.
+            if hit and hit[1:] != (relative, node.lineno, node.col_offset):
                 errors.append(f"copy of registered primitive {hit[0]} at {relative}:{node.lineno}; import it from setec.core.textprims")
     return errors
 

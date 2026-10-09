@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[4]
 spec = importlib.util.spec_from_file_location("textprims_lint", ROOT / "tools/gen_textprims_inventory.py")
 lint = importlib.util.module_from_spec(spec)
@@ -61,3 +63,40 @@ def test_copy_with_renamed_unannotated_parameter_is_reported(tmp_path):
     errors = _tree(tmp_path, {"d.py": 'import re\n_WORD_RE = re.compile(r"[A-Za-z\']+")\n\ndef _count(s):\n    return len(_WORD_RE.findall(s))\n'})
     assert errors == ["copy of registered primitive count_words_alpha at plugins/setec-voiceprint/scripts/d.py:4; import it from setec.core.textprims"]
 
+
+
+@pytest.mark.parametrize("kind,primitive", [
+    ("renamed-function", "count_words_alpha"),
+    ("nested-function", "count_words_alpha"),
+    ("same-name-function", "count_words_alpha"),
+    ("top-level-set", "WORDS"),
+    ("nested-set", "WORDS"),
+    ("same-line-set", "WORDS"),
+])
+def test_same_owner_copies_are_reported(tmp_path, kind, primitive):
+    # One canonical definition is allowed, not every matching node in its file.
+    additions = {
+        "renamed-function": "\n\ndef copied(s):\n    return len(_WORD_RE.findall(s))\n",
+        "nested-function": "\n\ndef outer():\n    def copied(s):\n        return len(_WORD_RE.findall(s))\n    return copied\n",
+        "same-name-function": "\n\ndef count_words_alpha(text):\n    return len(_WORD_RE.findall(text))\n",
+        "top-level-set": "\nCOPY = {\"the\", \"a\", \"and\"}\n",
+        "nested-set": "\n\ndef outer():\n    WORDS = {\"the\", \"a\", \"and\"}\n    return WORDS\n",
+    }
+    if kind == "same-line-set":
+        owner = REGISTRY.replace('WORDS = {"a", "and", "the"}',
+                                 'WORDS = {"a", "and", "the"}; COPY = {"the", "a", "and"}')
+    else:
+        owner = REGISTRY + additions[kind]
+    errors = _tree(tmp_path, {"setec/core/textprims.py": owner})
+    assert len(errors) == 1
+    assert f"copy of registered primitive {primitive} at plugins/setec-voiceprint/scripts/setec/core/textprims.py:" in errors[0]
+
+
+def test_owner_canonical_definitions_and_aliases_are_allowed(tmp_path):
+    owner = REGISTRY + "\nword_alias = WORDS\ncount_alias = count_words_alpha\n"
+    assert _tree(tmp_path, {"setec/core/textprims.py": owner}) == []
+
+
+def test_owner_different_body_is_not_a_copy(tmp_path):
+    owner = REGISTRY + "\n\ndef other_count(text):\n    return len(text.split())\n"
+    assert _tree(tmp_path, {"setec/core/textprims.py": owner}) == []
