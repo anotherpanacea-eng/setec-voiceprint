@@ -8,7 +8,8 @@
   "consumers": [],
   "dependencies": {
     "python": [
-      "bs4"
+      "bs4",
+      "lxml"
     ]
   },
   "do_not_use_when": [

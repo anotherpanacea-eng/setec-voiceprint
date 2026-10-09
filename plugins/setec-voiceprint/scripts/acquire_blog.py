@@ -842,10 +842,7 @@ def discover_post_links(
     except ImportError as e:  # pragma: no cover
         raise RuntimeError("beautifulsoup4 required") from e
 
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(html, "lxml")
     pat = re.compile(link_pattern) if link_pattern else re.compile(
         r"(?:/\d{4}/\d{2}/|/posts/|/p/|/essays?/|/blog/)[a-zA-Z0-9_-]+"
     )

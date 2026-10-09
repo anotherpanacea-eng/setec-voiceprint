@@ -710,7 +710,8 @@ def test_capabilities_entry_present():
     assert compute["length_floor_words"] == 50
     assert "cost_note" in compute and compute["cost_note"]
     deps = entry["dependencies"]["python"]
-    assert "transformers" in deps and "torch" in deps and "spacy" in deps
+    assert "transformers" in deps and "torch" in deps
+    assert "spacy" not in deps
 
 
 # ============================================================
