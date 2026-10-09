@@ -799,9 +799,15 @@ def pin_directory_chain(path: Path, *, writable_final: bool = True) -> tuple[int
     absolute = Path(path).absolute()
     if ".." in absolute.parts or not absolute.drive or not absolute.name:
         raise OSError("private root path is not an absolute drive path")
-    drive_root = absolute.anchor.rstrip("\\/") + "\\"
+    anchor = absolute.anchor
+    if anchor.startswith("\\\\?\\"):
+        drive_root = anchor.rstrip("\\/") + "\\"
+    elif anchor.startswith("\\\\"):
+        drive_root = "\\\\?\\UNC\\" + anchor.lstrip("\\").rstrip("\\/") + "\\"
+    else:
+        drive_root = "\\\\?\\" + anchor.rstrip("\\/") + "\\"
     root = kernel32.CreateFileW(
-        "\\\\?\\" + drive_root, 0x80000000,
+        drive_root, 0x80000000,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         None, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, None,
     )

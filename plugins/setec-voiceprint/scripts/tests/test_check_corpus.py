@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 from check_corpus import (
@@ -298,3 +300,52 @@ def test_records_cache_collect_stripped_change_invalidates(tmp_path: Path) -> No
     with mock.patch.object(cc_mod, "check_path", wraps=cc_mod.check_path) as spy:
         check_corpus_paths([CONTAMINATED], cache_path=cache, collect_stripped=True)
     assert spy.call_count == 1
+
+
+
+def test_non_utf8_bytes_are_replaced_and_counted(tmp_path: Path) -> None:
+    import check_corpus as cc_mod
+
+    genuine = tmp_path / "genuine.txt"
+    genuine.write_bytes("A sentence with a real \ufffd in it.\n".encode("utf-8"))
+    bad = tmp_path / "bad.txt"
+    bad.write_bytes(b"A sentence \xff\xfe with bad bytes.\n")
+    assert cc_mod.check_path(genuine)["decode_replacements"] == 0
+    record = cc_mod.check_path(bad)
+    assert record["decode_replacements"] == 2
+    # The replacements form a token the strip rules see; ignoring them gave 5.
+    assert record["input_tokens_before"] == 6
+    assert record["status"] == "warning"
+    assert cc_mod.check_path(genuine)["status"] == "clean"
+    summary = cc_mod._summarize_hygiene_records(
+        [record, cc_mod.check_path(genuine)], warn_threshold=0.01, fail_threshold=0.05,
+    )
+    assert summary["decode_replacements"] == 2 and summary["status"] == "warning"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_valid_front_matter_keeps_universal_newline_behavior(tmp_path: Path, newline: str) -> None:
+    import check_corpus as cc_mod
+
+    text = "---\ntitle: Example\n---\nOne ordinary sentence follows.\n"
+    path = tmp_path / "front-matter.txt"
+    path.write_bytes(text.encode("utf-8"))
+    expected = cc_mod.check_path(path, collect_stripped=True)
+    assert expected["status"] == "fail"
+    assert expected["dominant_rule"] == "yaml_front_matter"
+    path.write_bytes(text.replace("\n", newline).encode("utf-8"))
+    assert cc_mod.check_path(path, collect_stripped=True) == expected
+
+
+def test_replacements_dilute_the_ratio_but_still_warn(tmp_path: Path) -> None:
+    import check_corpus as cc_mod
+
+    path = tmp_path / "mixed.txt"
+    path.write_bytes(b"---\ntitle: Example\n---\nOne ordinary sentence follows.\n")
+    assert cc_mod.check_path(path)["status"] == "fail"
+    path.write_bytes(path.read_bytes() + b"\xff " * 500)
+    record = cc_mod.check_path(path)
+    assert record["decode_replacements"] == 500
+    assert record["dominant_rule"] == "yaml_front_matter"
+    assert record["strip_ratio"] < cc_mod.DEFAULT_WARN_THRESHOLD
+    assert record["status"] == "warning"

@@ -345,26 +345,6 @@ def render_durable_voiceprint(inputs: ReportInputs) -> list[str]:
 # --------------- Idiolectic vocabulary ---------------------------
 
 
-_FUNCTION_WORD_PREFIXES = {
-    "the ", "a ", "an ", "of ", "to ", "in ", "for ", "is ", "on ",
-    "that ", "with ", "by ", "and ", "but ", "or ", "as ", "at ",
-}
-
-
-def _is_likely_function_word_phrase(phrase: str) -> bool:
-    """Heuristic to drop function-word-only phrases from topic tables.
-
-    The idiolect detector already filters function words by default,
-    but an LLM-edited fixture or a user-supplied JSON may contain
-    rows where the lead word is a function word. We don't make the
-    decision; we surface as a hint.
-    """
-    if not phrase:
-        return True
-    phrase_l = phrase.strip().lower()
-    return any(phrase_l.startswith(p) for p in _FUNCTION_WORD_PREFIXES)
-
-
 def _collect_idiolect_rows(
     *jsons: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
