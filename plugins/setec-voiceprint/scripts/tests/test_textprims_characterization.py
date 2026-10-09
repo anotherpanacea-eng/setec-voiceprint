@@ -158,3 +158,19 @@ def test_alpha_word_token_consumers_share_function_and_pattern(module_name, publ
     # These regex methods are consumed publicly, with original case intact.
     assert module.WORD_RE.findall("AbC café don't") == ["AbC", "caf", "don't"]
     assert module.WORD_RE.sub(lambda m: m.group(0).upper(), "AbC café don't") == "ABC CAFé DON'T"
+
+
+
+@pytest.mark.parametrize("module_name, public_name", [
+    ("agency_abstraction_audit", "_word_count"),
+    ("discourse_move_signature", "_word_count"),
+    ("paragraph_audit", "word_count"),
+    ("punctuation_cadence_audit", "_word_count"),
+    ("stance_modality_audit", "_word_count"),
+])
+def test_unicode_plain_counters_share_function_and_pattern(module_name, public_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert getattr(module, public_name) is textprims.count_words_unicode
+    assert module._WORD_RE is textprims._WORD_UNICODE_RE

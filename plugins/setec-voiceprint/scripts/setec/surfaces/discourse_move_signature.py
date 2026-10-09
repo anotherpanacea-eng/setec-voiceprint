@@ -334,7 +334,7 @@ _RELATION_ENTROPY_MAX_BITS = math.log2(len(RELATION_BUCKETS))  # 2.0 for 4 bucke
 
 
 _SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
-_WORD_RE = re.compile(r"\b\w+\b")
+from setec.core.textprims import _WORD_UNICODE_RE as _WORD_RE
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -345,8 +345,7 @@ def _split_sentences(text: str) -> list[str]:
     ]
 
 
-def _word_count(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode as _word_count
 
 
 def _content_fingerprint(cleaned_text: str) -> str:

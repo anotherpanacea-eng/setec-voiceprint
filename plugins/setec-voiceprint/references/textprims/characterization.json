@@ -4356,6 +4356,278 @@
           "extraword"
         ]
       }
+    },
+    {
+      "case_id": "count_words_unicode-empty",
+      "callable": "count_words_unicode",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode-whitespace",
+      "callable": "count_words_unicode",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " \t\r\n  EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode-digits",
+      "callable": "count_words_unicode",
+      "args": [
+        "42 １２３ alpha2beta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "42 １２３ alpha2beta EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode-underscores",
+      "callable": "count_words_unicode",
+      "args": [
+        "_under_score _ __"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "_under_score _ __ EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode-hyphens",
+      "callable": "count_words_unicode",
+      "args": [
+        "one-two two--words --- edge-"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "one-two two--words --- edge- EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode-straight-apostrophes",
+      "callable": "count_words_unicode",
+      "args": [
+        "can't 'quote' rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 6,
+      "mutant": {
+        "args": [
+          "can't 'quote' rock'n'roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 7
+      }
+    },
+    {
+      "case_id": "count_words_unicode-curly-apostrophes",
+      "callable": "count_words_unicode",
+      "args": [
+        "can’t rock’n’roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "can’t rock’n’roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode-apostrophe-only",
+      "callable": "count_words_unicode",
+      "args": [
+        "' '' '''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "' '' ''' EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode-nfc-nfd",
+      "callable": "count_words_unicode",
+      "args": [
+        "caféday caféday"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "caféday caféday EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode-unicode-scripts",
+      "callable": "count_words_unicode",
+      "args": [
+        "中文 Ελληνικά русский عربي"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "中文 Ελληνικά русский عربي EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode-unicode-case",
+      "callable": "count_words_unicode",
+      "args": [
+        "İ ſ K I S K"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 6,
+      "mutant": {
+        "args": [
+          "İ ſ K I S K EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 7
+      }
+    },
+    {
+      "case_id": "count_words_unicode-zero-and-nul",
+      "callable": "count_words_unicode",
+      "args": [
+        "one​two\u0000three\nFOUR"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "one​two\u0000three\nFOUR EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode-invalid-argument",
+      "callable": "count_words_unicode",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_unicode-keyword",
+      "callable": "count_words_unicode",
+      "args": [],
+      "kwargs": {
+        "text": "café one-two"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "café one-two EXTRAWORD"
+        },
+        "result_path": [],
+        "expected": 4
+      }
     }
   ]
 }
