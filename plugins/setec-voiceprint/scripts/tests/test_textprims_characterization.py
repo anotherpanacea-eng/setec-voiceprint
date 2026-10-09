@@ -187,3 +187,19 @@ def test_token_count_consumers_preserve_tokenizer_binding(module_name, monkeypat
     assert textprims.count_words_alpha("123 456") == 0
     monkeypatch.setattr(textprims, "word_tokens_alpha", lambda text: ["a", "b", "c"])
     assert legacy._word_count("anything") == 3
+
+
+
+@pytest.mark.parametrize("module_name, public_name", [
+    ("function_word_grammar_audit", "_sentences"), ("discourse_move_signature", "_split_sentences"),
+])
+def test_uppercase_sentence_consumers_share_function_and_pattern(module_name, public_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert getattr(module, public_name) is textprims.split_sentences_uppercase
+    assert module._SENTENCE_TERMINATORS is textprims._SENTENCE_TERMINATORS
+    if module_name == "function_word_grammar_audit":
+        # Run segmentation is deliberately different and remains local.
+        assert module._SENT_SPLIT_RE.pattern == r"[.!?]+|\n{2,}"
+        assert module.function_word_runs("in the. of the") == [["in", "the"], ["of", "the"]]

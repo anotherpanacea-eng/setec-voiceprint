@@ -131,6 +131,17 @@ def count_words_alpha_tokens(text: str) -> int:
     return len(word_tokens_alpha(text))
 
 
+_SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
+
+
+def split_sentences_uppercase(text: str) -> list[str]:
+    return [
+        s.strip()
+        for s in _SENTENCE_TERMINATORS.split(text)
+        if s.strip()
+    ]
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -143,6 +154,7 @@ PRIMITIVES = _MappingProxyType({
     "DIALOGUE_FUNCTION_WORDS": "setec.core.textprims",
     "split_sentences_punkt": "setec.core.textprims",
     "split_sentences_regex": "setec.core.textprims",
+    "split_sentences_uppercase": "setec.core.textprims",
     "_normws": "setec.core.textprims",
     "count_words_alpha": "setec.core.textprims",
     "count_words_alnum": "setec.core.textprims",
