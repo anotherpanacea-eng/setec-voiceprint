@@ -64,6 +64,13 @@ def _normws(s: str) -> str:
     return " ".join(s.split())
 
 
+_WORD_RE = re.compile(r"[A-Za-z']+")
+
+
+def count_words_alpha(text: str) -> int:
+    return len(_WORD_RE.findall(text))
+
+
 # Closed rows bind final defining source and referenced pattern declaration.
 from types import MappingProxyType as _MappingProxyType
 

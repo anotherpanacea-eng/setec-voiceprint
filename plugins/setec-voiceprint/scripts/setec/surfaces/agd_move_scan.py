@@ -46,6 +46,7 @@ from setec.core.agd_move_scan_judge import (  # type: ignore
     fingerprint_prompt,
 )
 from setec.contract.claim_license import ClaimLicense  # type: ignore
+from setec.core.textprims import count_words_alpha as count_words
 from setec.contract.output_schema import build_error_output, build_output  # type: ignore
 
 TASK_SURFACE = "agd_move_scan"
@@ -84,17 +85,12 @@ DEFAULT_DOES_NOT_LICENSE = (
     "not substitute for the audit reading the argument in context."
 )
 
-_WORD_RE = re.compile(r"[A-Za-z']+")
 _ARGUMENT_MARKERS = re.compile(
     r"\b(because|therefore|thus|hence|since|however|moreover|furthermore|"
     r"consequently|nevertheless|whereas|although|so that|in conclusion|"
     r"for example|on the other hand|it follows)\b",
     re.IGNORECASE,
 )
-
-
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
 
 
 def split_paragraphs(text: str) -> list[str]:
