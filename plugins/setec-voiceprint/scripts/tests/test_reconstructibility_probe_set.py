@@ -6,6 +6,7 @@ import ast
 import hashlib
 import json
 import os
+import random
 import subprocess
 import sys
 from pathlib import Path
@@ -814,6 +815,47 @@ def test_anchor_search_tokenizes_linearly_in_document_length(
     # small multiple of the window; the quadratic form tokenized
     # ~len(anchors) * len(text) characters (~400x here).
     assert tokenized_chars <= 2 * (2 + 2) * len(text)
+
+
+def test_anchor_masks_exclude_exactly_the_intersecting_windows() -> None:
+    # Masked anchors must be the unmasked anchors minus those whose prompt or
+    # continuation window overlaps any mask (half-open; touching is allowed).
+    text = " ".join(f"w{i}" for i in range(60))
+    plan = _plan(prompt_words=3, suffix_words=2)
+    unmasked = probe.valid_anchors(
+        _row("masks", "qualification"), text, plan, plan_sha256=_digest("plan")
+    )
+    rng = random.Random(20261008)
+    boundaries = sorted({0, len(text)} | {i for i, ch in enumerate(text) if ch == " "})
+    mask_sets: list[list[list[int]]] = [[[0, 1]], [[len(text) - 1, len(text)]]]
+    for _ in range(40):
+        points = sorted(rng.sample(range(len(text) + 1), rng.choice([2, 4, 8, 16])))
+        mask_sets.append([points[i:i + 2] for i in range(0, len(points), 2)])
+        points = sorted(rng.sample(boundaries, 6))
+        mask_sets.append([points[i:i + 2] for i in range(0, len(points), 2)])
+        # Overlapping and unordered masks: validation refuses them, but the
+        # anchor check itself must not depend on that.
+        starts = rng.sample(range(len(text)), 3)
+        mask_sets.append([[s, min(len(text), s + rng.randint(1, 60))] for s in starts])
+
+    def overlaps(start: int, end: int, masks: list[list[int]]) -> bool:
+        return any(start < mask_end and mask_start < end for mask_start, mask_end in masks)
+
+    excluded_some = 0
+    for masks in mask_sets:
+        row = _row("masks", "qualification", masks=masks)
+        expected = [
+            a for a in unmasked
+            if not overlaps(a["prompt_char_start"], a["prompt_char_end"], masks)
+            and not overlaps(
+                a["minimum_continuation_char_start"],
+                a["minimum_continuation_char_end"],
+                masks,
+            )
+        ]
+        assert probe.valid_anchors(row, text, plan, plan_sha256=_digest("plan")) == expected
+        excluded_some += 0 < len(expected) < len(unmasked)
+    assert excluded_some > 40
 
 
 def test_score_population_matches_direct_leave_one_out() -> None:

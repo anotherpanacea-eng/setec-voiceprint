@@ -15,11 +15,13 @@ remain portable and testable.
 from __future__ import annotations
 
 import argparse
+import bisect
 import ctypes
 import ctypes.util
 import errno
 import hashlib
 import importlib.util
+import itertools
 import json
 import math
 import os
@@ -522,8 +524,22 @@ def lower_to_source_matches(text: str) -> tuple[str, list[TokenCoordinate]]:
     return lowered, result
 
 
-def _interval_intersects(start: int, end: int, masks: Sequence[Sequence[int]]) -> bool:
-    return any(start < mask_end and mask_start < end for mask_start, mask_end in masks)
+def _mask_index(masks: Sequence[Sequence[int]]) -> tuple[list[int], list[int]]:
+    """Mask starts in order with the running maximum mask end, for O(log m) queries."""
+    ordered = sorted((mask_start, mask_end) for mask_start, mask_end in masks)
+    starts = [mask_start for mask_start, _ in ordered]
+    max_ends = list(itertools.accumulate((mask_end for _, mask_end in ordered), max))
+    return starts, max_ends
+
+
+def _interval_intersects(
+    start: int, end: int, index: tuple[list[int], list[int]]
+) -> bool:
+    # Some mask has mask_start < end and mask_end > start iff the largest end
+    # among the masks starting before `end` exceeds `start`.
+    starts, max_ends = index
+    count = bisect.bisect_left(starts, end)
+    return count > 0 and max_ends[count - 1] > start
 
 
 def valid_anchors(
@@ -539,6 +555,7 @@ def valid_anchors(
     suffix_words = plan["minimum_suffix_words"]
     limit = len(matches) - prompt_words - suffix_words + 1
     tokens = _tokens(text)
+    mask_index = _mask_index(row["loss_mask_intervals"])
     anchors: list[dict[str, Any]] = []
     for start_token in range(max(0, limit)):
         prompt_start = matches[start_token].source_start
@@ -546,10 +563,9 @@ def valid_anchors(
         continuation_end = matches[
             start_token + prompt_words + suffix_words - 1
         ].source_end
-        masks = row["loss_mask_intervals"]
-        if _interval_intersects(prompt_start, prompt_end, masks) or _interval_intersects(
-            prompt_end, continuation_end, masks
-        ):
+        if _interval_intersects(
+            prompt_start, prompt_end, mask_index
+        ) or _interval_intersects(prompt_end, continuation_end, mask_index):
             continue
         prompt = text[prompt_start:prompt_end]
         continuation = text[prompt_end:continuation_end]
