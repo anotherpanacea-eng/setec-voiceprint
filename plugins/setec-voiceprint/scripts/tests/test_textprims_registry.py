@@ -75,3 +75,13 @@ def test_paragraph_parser_registry_reexports_the_owner_objects():
         assert row["implementation_ref"] == "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:" + symbol
         assert (row["case_policy"], row["unicode_normalization"], row["allowed_backends"]) == ("preserve", "none", ())
         assert row["pattern_sha256"] == hashlib.sha256(pattern.pattern.encode("utf-8")).hexdigest()
+
+
+def test_preflight_analysis_is_lazy_and_importing_the_registry_does_not_load_preflight():
+    import subprocess
+    import sys
+    from pathlib import Path
+    scripts = Path(textprims.__file__).parents[2]
+    code = "import sys; sys.path.insert(0, sys.argv[1]); from setec.core import textprims; assert not [m for m in sys.modules if m.startswith('setec.preflight')]; from setec.preflight import common; assert textprims._analysis is common._analysis"
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", code, str(scripts)], text=True, capture_output=True, timeout=30)
+    assert result.returncode == 0, result.stderr

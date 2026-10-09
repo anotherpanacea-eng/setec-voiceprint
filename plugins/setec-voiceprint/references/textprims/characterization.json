@@ -2627,6 +2627,434 @@
           "Wait... what?! yes"
         ]
       }
+    },
+    {
+      "case_id": "preflight_analysis-nfc_cafe",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "436166c3a9"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "Café",
+        "77670d0673f7e835535758c5d2b4a6c0aef89f75a4ebda608183f7392883f85d"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "43616665"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Cafe",
+          "7d05d417c9d076ff3f0035e3adfdb1324995b0f1826bbef3049357da9057a45b"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-nfd_cafe",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "43616665cc81"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "Café",
+        "77670d0673f7e835535758c5d2b4a6c0aef89f75a4ebda608183f7392883f85d"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "43414645cc81"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "CAFÉ",
+          "2ef7e251017aedb235a595f7d5ae3f0be103f9d408a0fda7efbed78c036b1cfd"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-crlf_folds_before_cr",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "610d0a62"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "a\nb",
+        "f3255fc813341213743e2aa8b7126a5cb3283cfea6e7b66ff972421476340aa7"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "610a0d62"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "a\n\nb",
+          "b0e070329a24250760c5f0db5f75fe6c87fb355252755c860a64d672a1fae2bb"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-lone_cr_folds",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "610d62"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "a\nb",
+        "f3255fc813341213743e2aa8b7126a5cb3283cfea6e7b66ff972421476340aa7"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "610d0d0a62"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "a\n\nb",
+          "b0e070329a24250760c5f0db5f75fe6c87fb355252755c860a64d672a1fae2bb"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-kelvin_sign_nfc",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "32373320e284aa"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "273 K",
+        "39567521905f49fdde6e80e60d6857c00a0996ee01fbf8a3340f22650bd9c85b"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "323733206b"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "273 k",
+          "e15aef56a64072d810237b84d9a6abfb07dd12f5ae433923551c5b28b4ac3086"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-case_kept",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "414243"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "ABC",
+        "160d79ce9265617da06fcf270bb3420be13a1d82a3cce2003069e7a99087e044"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "616263"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "abc",
+          "f4abef7aa7d6eee5bc80d742d4c8e3660e758e0a8049f18b55c6475f94476efa"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-tab_kept",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "610962"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": [
+        "a\tb",
+        "451fe822ab6895c0f3a6102207962b989a254923313addbafb518c05406b9793"
+      ],
+      "mutant": {
+        "args": [
+          {
+            "hex": "612062"
+          }
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "a b",
+          "c2eef7dd2bec86df939555146119acf0fab28c67ec989d3ac6e225913c1dd2c8"
+        ]
+      }
+    },
+    {
+      "case_id": "preflight_analysis-refuse_bom",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "efbbbf616263"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "setec.preflight.common.Refusal",
+        "message": "input_contract"
+      },
+      "mutant": {
+        "args": [
+          {
+            "hex": "efbbbf616263"
+          }
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "_analysis() got an unexpected keyword argument 'unexpected'"
+        }
+      }
+    },
+    {
+      "case_id": "preflight_analysis-refuse_nul",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "610062"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "setec.preflight.common.Refusal",
+        "message": "input_contract"
+      },
+      "mutant": {
+        "args": [
+          {
+            "hex": "610062"
+          }
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "_analysis() got an unexpected keyword argument 'unexpected'"
+        }
+      }
+    },
+    {
+      "case_id": "preflight_analysis-refuse_invalid_utf8",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "636166e9"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "setec.preflight.common.Refusal",
+        "message": "input_contract"
+      },
+      "mutant": {
+        "args": [
+          {
+            "hex": "636166e9"
+          }
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "_analysis() got an unexpected keyword argument 'unexpected'"
+        }
+      }
+    },
+    {
+      "case_id": "preflight_analysis-refuse_c0_control",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "610162"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "setec.preflight.common.Refusal",
+        "message": "input_contract"
+      },
+      "mutant": {
+        "args": [
+          {
+            "hex": "610162"
+          }
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "_analysis() got an unexpected keyword argument 'unexpected'"
+        }
+      }
+    },
+    {
+      "case_id": "preflight_analysis-refuse_c1_control",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "61c28562"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "setec.preflight.common.Refusal",
+        "message": "input_contract"
+      },
+      "mutant": {
+        "args": [
+          {
+            "hex": "61c28562"
+          }
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "_analysis() got an unexpected keyword argument 'unexpected'"
+        }
+      }
+    },
+    {
+      "case_id": "preflight_analysis-refuse_whitespace_only",
+      "family": "fingerprint",
+      "registry_id": "fingerprint-96e05e279fab-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis",
+      "args": [
+        {
+          "hex": "20090d0a"
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "setec.preflight.common.Refusal",
+        "message": "input_contract"
+      },
+      "mutant": {
+        "args": [
+          {
+            "hex": "20090d0a"
+          }
+        ],
+        "kwargs": {
+          "unexpected": true
+        },
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "_analysis() got an unexpected keyword argument 'unexpected'"
+        }
+      }
     }
   ]
 }

@@ -21,19 +21,26 @@ TOKENIZER_OWNER = "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer
 TOKENIZER_DATA = "plugins/setec-voiceprint/scripts/passage_tokenizer_data_v1.json"
 VERBATIM_OWNER = "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py"
 PARAGRAPH_OWNER = "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py"
-EXTERNAL = (TOKENIZER_OWNER, TOKENIZER_DATA, VERBATIM_OWNER, PARAGRAPH_OWNER)
+PREFLIGHT_OWNER = "plugins/setec-voiceprint/scripts/setec/preflight/common.py"
+EXTERNAL = (TOKENIZER_OWNER, TOKENIZER_DATA, VERBATIM_OWNER, PARAGRAPH_OWNER, PREFLIGHT_OWNER)
 # Owner-module rows: family and the ordered owner-module bindings each behavior digest covers.
 VERBATIM_ROWS = {"_tokens": ("tokenizer", ("_tokens", "_TOKEN")), "_content_fingerprint": ("fingerprint", ("_content_fingerprint", "_FP_SEP", "_tokens", "_TOKEN"))}
 PARAGRAPH_ROWS = {"split_paragraphs": ("paragraph_splitter", ("split_paragraphs", "_PARAGRAPH_SPLIT")), "split_sentences": ("sentence_splitter", ("split_sentences", "_SENTENCE_END"))}
+PREFLIGHT_ROWS = {"_analysis": ("fingerprint", ("_analysis", "text_rule_violation", "domain_hash"))}
 # Cohorts minted in place at an existing owner: rows, case policy, sole plain
-# module imports, the registry's one direct import, and each row's pattern binding.
+# module imports, the registry's one direct import (None: exposed lazily by the
+# pinned __getattr__, whose branch is the row's import site), each row's pattern
+# binding, bound dependencies that are defining functions, and normalization.
 OWNED = {
     VERBATIM_OWNER: {"label": "verbatim-cover", "module": "setec.core.verbatim_cover", "rows": VERBATIM_ROWS, "case_policy": "lower", "modules": ("re", "hashlib"), "import": "from setec.core.verbatim_cover import _content_fingerprint, _tokens", "patterns": {"_tokens": "_TOKEN"}},
     PARAGRAPH_OWNER: {"label": "paragraph-parser", "module": "setec.core.paragraph_parser", "rows": PARAGRAPH_ROWS, "case_policy": "preserve", "modules": ("re",), "import": "from setec.core.paragraph_parser import split_paragraphs, split_sentences", "patterns": {"split_paragraphs": "_PARAGRAPH_SPLIT", "split_sentences": "_SENTENCE_END"}},
+    PREFLIGHT_OWNER: {"label": "preflight-analysis", "module": "setec.preflight.common", "rows": PREFLIGHT_ROWS, "case_policy": "preserve", "modules": ("hashlib", "unicodedata"), "import": None, "patterns": {}, "functions": ("text_rule_violation", "domain_hash"), "normalization": "NFC"},
 }
 OWNED_ROWS = {symbol: path for path, cohort in OWNED.items() for symbol in cohort["rows"]}
 # External rows are identified by import resolution to their owner, never by bare name.
 IMPORT_RESOLVED = {"tokenize"} | set(OWNED_ROWS)
+# Rows the registry exposes through its one module __getattr__, in branch order.
+LAZY = {"tokenize": "setec.core.passage_tokenizer_v1", "_analysis": "setec.preflight.common"}
 MAPS = {"TOKENIZERS", "SENTENCE_SPLITTERS", "PARAGRAPH_SPLITTERS", "FUNCTION_WORD_SETS", "QUANTILES", "FINGERPRINTS", "PREPROCESSORS"}
 FIELDS = {"id", "family", "implementation_ref", "pattern_sha256", "case_policy", "unicode_normalization", "allowed_backends", "behavior_sha256"}
 REGEX_CALLS = {"compile", "split", "findall", "finditer", "sub", "subn", "search", "match", "fullmatch"}
@@ -49,6 +56,20 @@ def binding_nodes(tree, name):
     return writes
 
 
+def lazy_getter(symbols):
+    """The pinned registry __getattr__ for the lazily exposed rows present."""
+    branches = "".join(f'    if name == "{s}":\n        from {m} import {s}\n        return {s}\n' for s, m in LAZY.items() if s in symbols)
+    return ast.parse("def __getattr__(name):\n" + branches + "    raise AttributeError(name)\n").body[0]
+
+
+def absolute(module, node):
+    """The absolute module an ImportFrom names, resolving relative levels against the importer's package."""
+    if not node.level:
+        return node.module
+    package = module.rsplit(".", node.level)[0]
+    return package + "." + node.module if node.module else package
+
+
 def owner_bindings(text, cohort):
     """Top-level defining nodes of an owner-module cohort, plus single-binding errors."""
     tree = ast.parse(text)
@@ -60,7 +81,7 @@ def owner_bindings(text, cohort):
             errors.append(label + " owner binding not unique: " + name)
             continue
         node = writes[0]
-        if name in rows:
+        if name in rows or name in cohort.get("functions", ()):
             if not isinstance(node, ast.FunctionDef) or node not in tree.body:
                 errors.append(label + " callable must be a top-level function: " + name)
                 continue
@@ -164,8 +185,10 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
     if source(pattern, candidate) != source(old_pattern, baseline):
         errors.append("compiled pattern declaration changed during ownership-only increment")
     protected = set(rows) | {"_SENT_RE"}
-    if "tokenize" in rows:
+    if set(LAZY) & set(rows):
         protected.add("__getattr__")
+    getters = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "__getattr__"]
+    lazy_pinned = len(getters) == 1 and ast.dump(getters[0]) == ast.dump(lazy_getter(rows))
     for name in protected:
         if len(binding_nodes(tree, name)) != 1:
             errors.append("registered owner or dependency rebound: " + name)
@@ -181,9 +204,11 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
         for name, node in owner_nodes.items():
             if name not in baseline_nodes or source(node, owner_text) != source(baseline_nodes[name], baseline_text):
                 errors.append(cohort["label"] + " bound source changed: " + name)
-        expected_import = ast.dump(ast.parse(cohort["import"]).body[0])
-        if [ast.dump(n) for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == cohort["module"]] != [expected_import]:
+        expected_imports = [ast.dump(ast.parse(cohort["import"]).body[0])] if cohort["import"] else []
+        if [ast.dump(n) for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == cohort["module"]] != expected_imports:
             errors.append("registry must directly import its " + cohort["label"] + " callables")
+        if cohort["import"] is None and not lazy_pinned:
+            errors.append("registry must lazily import its " + cohort["label"] + " callables")
         owned[path] = (owner_text, owner_nodes)
     seen = set()
     for symbol, row in rows.items():
@@ -200,9 +225,7 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
             for path in (TOKENIZER_OWNER, TOKENIZER_DATA):
                 if external_bytes[path] != baseline_external_bytes[path]:
                     errors.append("frozen tokenizer dependency changed: " + path)
-            lazy = ast.parse('def __getattr__(name):\n    if name == "tokenize":\n        from setec.core.passage_tokenizer_v1 import tokenize\n        return tokenize\n    raise AttributeError(name)\n').body[0]
-            getters = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "__getattr__"]
-            if len(getters) != 1 or ast.dump(getters[0]) != ast.dump(lazy):
+            if not lazy_pinned:
                 errors.append("frozen tokenizer must lazily reexport its native object")
             if row["pattern_sha256"] != hashlib.sha256(external_bytes[TOKENIZER_DATA]).hexdigest():
                 errors.append("frozen tokenizer table digest mismatch")
@@ -217,7 +240,7 @@ def verify_rows(candidate, baseline, external_bytes=None, baseline_external_byte
         if symbol in OWNED_ROWS and row["implementation_ref"] == OWNED_ROWS[symbol] + ":" + symbol:
             cohort = OWNED[OWNED_ROWS[symbol]]
             owner_text, owner_nodes = owned[OWNED_ROWS[symbol]]
-            if row["family"] != cohort["rows"][symbol][0] or row["case_policy"] != cohort["case_policy"] or row["unicode_normalization"] != "none" or row["allowed_backends"] != ():
+            if row["family"] != cohort["rows"][symbol][0] or row["case_policy"] != cohort["case_policy"] or row["unicode_normalization"] != cohort.get("normalization", "none") or row["allowed_backends"] != ():
                 errors.append("invalid " + cohort["label"] + " policy: " + symbol)
             if not all(name in owner_nodes for name in cohort["rows"][symbol][1]):
                 continue
@@ -435,10 +458,10 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
             return resolve(alias[0], name, (*seen, (module, name)))
         matches = []
         for node in tree.body:
-            if isinstance(node, ast.ImportFrom) and not node.level:
+            if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     if (alias.asname or alias.name) == name:
-                        matches.append(resolve(node.module, alias.name, (*seen, (module, name))))
+                        matches.append(resolve(absolute(module, node), alias.name, (*seen, (module, name))))
         return matches[0] if len(matches) == 1 else None
 
     for module, (relative, tree) in modules_by_name.items():
@@ -448,7 +471,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                     imports[(relative, symbol)] = symbol
 
     mutators = {"add", "clear", "discard", "pop", "remove", "update", "difference_update", "intersection_update", "symmetric_difference_update"}
-    for relative, tree in modules_by_name.values():
+    for module, (relative, tree) in modules_by_name.items():
         imported, owner_modules, external_modules, all_imports, owned_modules = {}, {}, {}, [], {}
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -456,7 +479,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                     local = alias.asname or alias.name.split(".")[0]
                     all_imports.append((local, node))
                     if isinstance(node, ast.ImportFrom):
-                        symbol = None if node.level else resolve(node.module, alias.name)
+                        symbol = resolve(absolute(module, node), alias.name)
                         if symbol is not None or (alias.name in symbols and alias.name not in IMPORT_RESOLVED):
                             if symbol is None:
                                 errors.append(f"unresolved registered import: {relative}:{node.lineno}")
@@ -467,7 +490,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                         prefix = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
                         external_modules[local] = prefix
                         imports[(relative, prefix + ".tokenize")] = "tokenize"
-                    module_name = alias.name if isinstance(node, ast.Import) else (None if node.level else node.module + "." + alias.name)
+                    module_name = alias.name if isinstance(node, ast.Import) else absolute(module, node) + "." + alias.name
                     if module_name and any(resolve(module_name, name) == name for name in OWNED_ROWS if name in symbols):
                         external_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
                         owned_modules[external_modules[local]] = module_name
@@ -560,7 +583,9 @@ def check(root, base):
     rows, errors = verify_rows((root / OWNER).read_text(encoding="utf-8"), baseline, external_bytes, baseline_external_bytes)
     imports, binding_errors = bindings(root, set(rows), {symbol for symbol, row in rows.items() if row["family"] == "function_words"})
     errors.extend(binding_errors)
-    for symbol in sorted(set(rows) - {symbol for (path, _local), symbol in imports.items() if path != OWNER}):
+    # A lazily exposed row's import site is the registry's pinned __getattr__ branch.
+    lazy_rows = {symbol for cohort in OWNED.values() if cohort["import"] is None for symbol in cohort["rows"]}
+    for symbol in sorted(set(rows) - {symbol for (path, _local), symbol in imports.items() if path != OWNER or symbol in lazy_rows}):
         errors.append("registered row never imported: " + symbol)
     fixture = json.loads((root / "references/textprims/characterization.json").read_text(encoding="utf-8"))
     fixture_ids = {row["registry_id"] for row in fixture["rows"]}

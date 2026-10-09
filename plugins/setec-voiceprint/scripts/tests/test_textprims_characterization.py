@@ -100,7 +100,7 @@ def test_frozen_tokenizer_custom_table_argument_is_refused(tmp_path):
         runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
 
 
-@pytest.mark.parametrize("symbol, label", [("_tokens", "verbatim-cover"), ("_content_fingerprint", "verbatim-cover"), ("split_paragraphs", "paragraph-parser"), ("split_sentences", "paragraph-parser")])
+@pytest.mark.parametrize("symbol, label", [("_tokens", "verbatim-cover"), ("_content_fingerprint", "verbatim-cover"), ("split_paragraphs", "paragraph-parser"), ("split_sentences", "paragraph-parser"), ("_analysis", "preflight-analysis")])
 def test_owner_module_registry_wrapper_is_refused(monkeypatch, symbol, label):
     from setec.core import textprims
     native = getattr(textprims, symbol)
@@ -117,4 +117,14 @@ def test_owner_module_legacy_callable_must_name_the_owner(tmp_path, prefix, owne
     fixture = tmp_path / "other-owner.json"
     fixture.write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(ValueError, match="must name its final owner"):
+        runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+def test_preflight_analysis_args_must_be_hex_objects(tmp_path):
+    doc = json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))
+    row = next(row for row in doc["rows"] if row["case_id"].startswith("preflight_analysis-"))
+    row["args"] = [bytes.fromhex(row["args"][0]["hex"]).decode("utf-8")]
+    fixture = tmp_path / "plain-args.json"
+    fixture.write_text(json.dumps(doc), encoding="utf-8")
+    with pytest.raises(ValueError, match="closed hex object required"):
         runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])

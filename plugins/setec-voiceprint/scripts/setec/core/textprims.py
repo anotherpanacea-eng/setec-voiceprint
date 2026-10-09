@@ -92,6 +92,9 @@ def __getattr__(name):
     if name == "tokenize":
         from setec.core.passage_tokenizer_v1 import tokenize
         return tokenize
+    if name == "_analysis":
+        from setec.preflight.common import _analysis
+        return _analysis
     raise AttributeError(name)
 
 
@@ -154,5 +157,13 @@ FINGERPRINTS = _MappingProxyType({
  'unicode_normalization': 'none',
  'allowed_backends': (),
  'behavior_sha256': '4a8b28690b9a6078f7b81e2b54607745a25f8e180a53a939203bcb1a382829b4'}),
+    "_analysis": _MappingProxyType({'id': 'fingerprint-96e05e279fab-v1',
+ 'family': 'fingerprint',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis',
+ 'pattern_sha256': None,
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'NFC',
+ 'allowed_backends': (),
+ 'behavior_sha256': '96e05e279fab37b5a4817e350cbf79b7ddf9fa6a7a540ef2f8c1061c488ffb6d'}),
 })
 PREPROCESSORS = _MappingProxyType({})

@@ -17,7 +17,10 @@ TOKENIZER_OWNER = "plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer
 OWNED = {
     "plugins/setec-voiceprint/scripts/setec/core/verbatim_cover.py": ("setec.core.verbatim_cover", {"_tokens", "_content_fingerprint"}, "verbatim-cover"),
     "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py": ("setec.core.paragraph_parser", {"split_paragraphs", "split_sentences"}, "paragraph-parser"),
+    "plugins/setec-voiceprint/scripts/setec/preflight/common.py": ("setec.preflight.common", {"_analysis"}, "preflight-analysis"),
 }
+# Bytes-taking callables: each args element is a bytes_hex_exact object decoded before the call.
+HEX_ARGS = {"plugins/setec-voiceprint/scripts/setec/preflight/common.py:_analysis"}
 OWNER = "plugins/setec-voiceprint/scripts/setec/core/textprims.py"
 FIELDS = {"case_id", "family", "registry_id", "legacy_callable", "registered_callable", "args", "kwargs", "result_path", "comparator", "expected", "mutant"}
 COMPARATORS = {"json_exact", "sequence_exact", "set_exact", "bytes_hex_exact", "float_hex_exact", "exception_exact"}
@@ -186,6 +189,7 @@ def _run(fixture):
         mutant = row["mutant"]
         if set(mutant) != {"args", "kwargs", "result_path", "expected"}:
             raise ValueError("invalid mutant")
+        cases = []
         for case in (row, mutant):
             if type(case["args"]) is not list or type(case["kwargs"]) is not dict or type(case["result_path"]) is not list or any(type(v) not in (str, int) for v in case["result_path"]):
                 raise ValueError("invalid call arguments or selectors")
@@ -193,12 +197,15 @@ def _run(fixture):
                 raise ValueError("custom frozen tokenizer table is forbidden")
             if table_row and (len(case["args"]) != 1 or type(case["args"][0]) is not str or case["kwargs"] or case["result_path"]):
                 raise ValueError("table membership requires one word query")
+            if entry["implementation_ref"] in HEX_ARGS:
+                case = {**case, "args": [bytes.fromhex(encode(arg, "bytes_hex_exact")["hex"]) for arg in case["args"]]}
+            cases.append(case)
         primary = encode(row["expected"], row["comparator"])
         secondary = encode(mutant["expected"], row["comparator"])
         if primary == secondary:
             raise ValueError("mutant has no teeth")
         for fn in functions:
-            if invoke(fn, row, row["comparator"]) != primary or invoke(fn, mutant, row["comparator"]) != secondary:
+            if invoke(fn, cases[0], row["comparator"]) != primary or invoke(fn, cases[1], row["comparator"]) != secondary:
                 raise ValueError("characterization mismatch: " + row["case_id"])
         covered.add(row["registry_id"])
     if covered != set(registry):

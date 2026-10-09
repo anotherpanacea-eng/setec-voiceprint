@@ -150,6 +150,8 @@ def test_new_registered_rows_need_a_production_import(tmp_path):
     report = inventory.check(tmp_path, "HEAD")
     assert "registered row never imported: split_sentences_punkt" in report["errors"]
     assert "registered row never imported: split_sentences_regex" in report["errors"]
+    # The registry's pinned lazy __getattr__ branch is the preflight analysis row's import site.
+    assert "registered row never imported: _analysis" not in report["errors"]
     consumer = owner.parents[2] / "consumer.py"
     consumer.write_text("from setec.core.textprims import " + ", ".join(inventory.registry(owner.read_text())) + "\n")
     report = inventory.check(tmp_path, "HEAD")
@@ -583,3 +585,68 @@ def test_same_named_independent_splitters_are_not_registered_objects(tmp_path):
     }, inventory.PARAGRAPH_ROWS)
     assert not errors
     assert not imports
+
+
+def _preflight_rows(owner_text):
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    original = (ROOT / inventory.PREFLIGHT_OWNER).read_bytes()
+    return inventory.verify_rows(registry, registry, {inventory.PREFLIGHT_OWNER: owner_text.encode("utf-8")}, {inventory.PREFLIGHT_OWNER: original})
+
+
+@pytest.mark.parametrize("old", [
+    "def _analysis(data: bytes) -> tuple[str, str]:\n",
+    "def text_rule_violation(data: bytes) -> str | None:\n",
+    "def domain_hash(domain: str, payload: bytes) -> str:\n",
+])
+def test_preflight_analysis_bound_source_change_is_rejected(old):
+    text = (ROOT / inventory.PREFLIGHT_OWNER).read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    _, errors = _preflight_rows(text.replace(old, old.rstrip("\n") + "  # changed\n"))
+    assert any("preflight-analysis bound source changed" in error for error in errors)
+    assert any("preflight-analysis behavior digest mismatch" in error for error in errors)
+
+
+@pytest.mark.parametrize("change, error", [
+    (lambda text: text.replace("\ndef domain_hash(", "\n@decorator\ndef domain_hash(", 1), "preflight-analysis callable decorated: domain_hash"),
+    (lambda text: text + "\ntext_rule_violation = replacement\n", "preflight-analysis owner binding not unique: text_rule_violation"),
+    (lambda text: text + "\nfrom os import path as unicodedata\n", "preflight-analysis module binding must be one plain import: unicodedata"),
+])
+def test_preflight_analysis_owner_bindings_are_single_undecorated_and_plain(change, error):
+    _, errors = _preflight_rows(change((ROOT / inventory.PREFLIGHT_OWNER).read_text(encoding="utf-8")))
+    assert error in errors
+
+
+def test_preflight_analysis_normalization_is_bound():
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    old = "'unicode_normalization': 'NFC'"
+    assert registry.count(old) == 1
+    _, errors = inventory.verify_rows(registry.replace(old, "'unicode_normalization': 'none'"), registry)
+    assert "invalid preflight-analysis policy: _analysis" in errors
+
+
+def test_registry_must_expose_preflight_analysis_lazily():
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    branch = '    if name == "_analysis":\n        from setec.preflight.common import _analysis\n        return _analysis\n'
+    assert registry.count(branch) == 1
+    eager = registry.replace(branch, "") + "\nfrom setec.preflight.common import _analysis\n"
+    _, errors = inventory.verify_rows(eager, registry)
+    assert "registry must lazily import its preflight-analysis callables" in errors
+
+
+def test_relative_preflight_imports_resolve_to_the_owner(tmp_path):
+    user = "from .common import _analysis\nfrom . import common\ndef run(data):\n    return _analysis(data), common._analysis(data)\n"
+    imports, errors = _scripts(tmp_path, {"setec/preflight/__init__.py": "", "setec/preflight/user.py": user, "consumer.py": "from setec.preflight.user import _analysis as analysis\n"}, inventory.PREFLIGHT_ROWS)
+    assert not errors
+    path = "plugins/setec-voiceprint/scripts/setec/preflight/user.py"
+    assert imports[(path, "_analysis")] == imports[(path, "common._analysis")] == "_analysis"
+    assert imports[("plugins/setec-voiceprint/scripts/consumer.py", "analysis")] == "_analysis"
+
+
+@pytest.mark.parametrize("source", [
+    "from . import common\ncommon._analysis = len\n",
+    "from . import common\nowner = common\n",
+    "from . import common\nprint(common)\n",
+])
+def test_storing_aliasing_or_passing_a_relative_preflight_owner_module_fails(tmp_path, source):
+    _, errors = _scripts(tmp_path, {"setec/preflight/__init__.py": "", "setec/preflight/user.py": source}, inventory.PREFLIGHT_ROWS)
+    assert errors
