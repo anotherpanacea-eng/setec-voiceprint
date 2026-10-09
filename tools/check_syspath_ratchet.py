@@ -87,6 +87,8 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # All sites remain counted and over-ceiling regression checks remain unchanged.
 # Reviewed register-diagnostics no-main permanent alias needs one foreign-cwd
 # runpy bootstrap; frozen implementation has none: 207 -> 208 once both land, no exclusions.
+# The two whole bigram implementations have no old bootstrap to replace;
+# their reviewed permanent launchers add two counted sites (206 -> 208).
 PINNED_CEILING = 208
 
 

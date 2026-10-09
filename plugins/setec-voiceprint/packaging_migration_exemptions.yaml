@@ -1041,6 +1041,20 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/bigram_diff.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 455b8d171c26d39092b9604cd691bf13a5dbbbf5
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 455b8d171c26d39092b9604cd691bf13a5dbbbf5
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/confounder_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -3101,7 +3115,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/bigram_diff.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/bigram_diff.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3875,7 +3889,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/manuscript_bigram_diff.py
   to_path: plugins/setec-voiceprint/scripts/bigram_diff.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3888,7 +3902,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/manuscript_bigram_diff.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5206,4 +5220,20 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: c7741bb2c1832249e2fa7e9ba8a305615e287f2d
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/bigram_diff.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/bigram_diff.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 455b8d171c26d39092b9604cd691bf13a5dbbbf5
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/manuscript_bigram_diff.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 455b8d171c26d39092b9604cd691bf13a5dbbbf5
   removal_phase: not-applicable
