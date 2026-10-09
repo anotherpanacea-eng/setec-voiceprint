@@ -476,7 +476,8 @@ def _claim_license(
             "preservation does not require sentence-level "
             "structural equivalence; a cosplay revision that "
             "preserves the phrase but breaks the surrounding "
-            "syntax will read as preserved here.",
+            "syntax will read as preserved here. It can differ from "
+            "confounder_audit, whose survival check uses substring matching.",
             "The audit composes with `before_after_restoration` "
             "(metric-gaming detection), `surface_disagreement_"
             "resolver` (cross-surface meta-interpretation), and "
