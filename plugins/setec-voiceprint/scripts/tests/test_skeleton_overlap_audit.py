@@ -23,6 +23,21 @@ import pytest
 import skeleton_overlap_audit as soa  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+def test_multiword_opener_accepts_whitespace(separator):
+    single = '"On the other hand, the evidence needs careful review."'
+    wrapped = '"' + separator.join("On the other hand".split()) + ', the evidence needs careful review."'
+    assert soa._marker_bucket(single) == "contrast"
+    assert soa._marker_bucket(wrapped) == "contrast"
+    assert soa.skeleton_for(wrapped) == soa.skeleton_for(single)
+
+
+@pytest.mark.parametrize("text", ["On the other handheld, the evidence matters.", "Onthe other hand, the evidence matters."])
+def test_multiword_opener_keeps_word_boundaries(text):
+    assert soa._marker_bucket(text) == "none"
+
+
 # Two docs sharing an ORDERED discourse template (sequence / contrast / cause / sequence) with
 # MATCHED per-sentence word counts but entirely different content words — the topic-invariance case.
 # (Matched lengths keep the length-tercile dimension equal so the skeleton is byte-identical; the

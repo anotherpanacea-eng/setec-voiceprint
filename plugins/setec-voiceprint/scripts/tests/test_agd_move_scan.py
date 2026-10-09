@@ -18,6 +18,16 @@ import pytest
 import agd_move_scan  # type: ignore
 import agd_move_scan_judge  # type: ignore
 
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+@pytest.mark.parametrize("phrase", ["so that", "in conclusion", "for example", "on the other hand", "it follows"])
+def test_multiword_register_marker_accepts_whitespace(separator, phrase):
+    single = phrase + ", the evidence needs careful review."
+    wrapped = separator.join(phrase.split()) + ", the evidence needs careful review."
+    assert agd_move_scan.register_warnings(single, agd_move_scan.MIN_WORDS) == []
+    assert agd_move_scan.register_warnings(wrapped, agd_move_scan.MIN_WORDS) == []
+
+
 SAMPLE = (
     "The council may want to reconsider the crossing-guard budget. Studies have "
     "shown that guarded crossings reduce injuries, and some parents report "

@@ -90,8 +90,8 @@ _WORD_RE = re.compile(r"[A-Za-z']+")
 # removed in review).
 _ARGUMENT_MARKERS = re.compile(
     r"\b(because|therefore|thus|hence|since|however|moreover|furthermore|"
-    r"consequently|nevertheless|whereas|although|so that|in conclusion|"
-    r"for example|on the other hand|it follows)\b",
+    r"consequently|nevertheless|whereas|although|so\s+that|in\s+conclusion|"
+    r"for\s+example|on\s+the\s+other\s+hand|it\s+follows)\b",
     re.IGNORECASE,
 )
 

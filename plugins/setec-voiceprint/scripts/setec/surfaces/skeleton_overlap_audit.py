@@ -72,7 +72,8 @@ _TERMINAL_CODE = {".": "d", "?": "q", "!": "x", "": "o"}  # declarative / questi
 
 def _marker_bucket(unit: str) -> str:
     """Leading-discourse-marker bucket for a unit (content-word-free). Longest phrase wins."""
-    head = unit.strip().lower()
+    # Normalize only the matching head; retain the original discourse unit elsewhere.
+    head = " ".join(unit.lower().split())
     # Strip a leading quote/paren so a quoted opener still classifies on its first word.
     head = head.lstrip("\"'(“‘ ")
     best: tuple[int, str] | None = None  # (phrase_len_words, bucket)

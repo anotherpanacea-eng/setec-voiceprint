@@ -78,31 +78,31 @@ SCRIPT_VERSION = "1.0"
 _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "contrast": (
         re.compile(r"\b(?:however|but|yet|still|nevertheless|nonetheless)\b", re.I),
-        re.compile(r"\b(?:on the other hand|in contrast|conversely|by contrast|whereas)\b", re.I),
+        re.compile(r"\b(?:on\s+the\s+other\s+hand|in\s+contrast|conversely|by\s+contrast|whereas)\b", re.I),
     ),
     "concession": (
-        re.compile(r"\b(?:admittedly|granted|of course|to be sure|certainly|true)\b,", re.I),
-        re.compile(r"\b(?:although|though|while|despite|in spite of|even though|even if)\b", re.I),
+        re.compile(r"\b(?:admittedly|granted|of\s+course|to\s+be\s+sure|certainly|true)\b,", re.I),
+        re.compile(r"\b(?:although|though|while|despite|in\s+spite\s+of|even\s+though|even\s+if)\b", re.I),
     ),
     "consequence": (
         re.compile(r"\b(?:therefore|thus|hence|consequently|accordingly)\b", re.I),
-        re.compile(r"\b(?:as a result|so that|for that reason|that is why|which is why)\b", re.I),
+        re.compile(r"\b(?:as\s+a\s+result|so\s+that|for\s+that\s+reason|that\s+is\s+why|which\s+is\s+why)\b", re.I),
     ),
     "elaboration": (
-        re.compile(r"\b(?:in other words|that is|namely|specifically|in particular)\b", re.I),
-        re.compile(r"\b(?:more (?:precisely|specifically|formally)|put (?:another|differently))\b", re.I),
+        re.compile(r"\b(?:in\s+other\s+words|that\s+is|namely|specifically|in\s+particular)\b", re.I),
+        re.compile(r"\b(?:more\s+(?:precisely|specifically|formally)|put\s+(?:another|differently))\b", re.I),
     ),
     "exemplification": (
-        re.compile(r"\b(?:for example|for instance|e\.?g\.?|such as|including|like)\b", re.I),
+        re.compile(r"\b(?:for\s+example|for\s+instance|e\.?g\.?|such\s+as|including|like)\b", re.I),
         re.compile(r"\b(?:consider|take|imagine)\s+(?:the|a|an)\s+\w+", re.I),
     ),
     "sequencing": (
         re.compile(r"\b(?:first(?:ly)?|second(?:ly)?|third(?:ly)?|finally|lastly)\b,?", re.I),
-        re.compile(r"\b(?:next|then|subsequently|afterwards|meanwhile|in turn)\b", re.I),
+        re.compile(r"\b(?:next|then|subsequently|afterwards|meanwhile|in\s+turn)\b", re.I),
     ),
     "reframing": (
-        re.compile(r"\b(?:the (?:better|deeper|real|right) question is)\b", re.I),
-        re.compile(r"\b(?:what matters is|the point is|more (?:importantly|to the point))\b", re.I),
+        re.compile(r"\b(?:the\s+(?:better|deeper|real|right)\s+question\s+is)\b", re.I),
+        re.compile(r"\b(?:what\s+matters\s+is|the\s+point\s+is|more\s+(?:importantly|to\s+the\s+point))\b", re.I),
     ),
     "epistemic_stance": (
         re.compile(r"\b(?:maybe|perhaps|possibly|likely|apparently|presumably|supposedly)\b", re.I),
@@ -111,20 +111,20 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     "boosting": (
         re.compile(r"\b(?:clearly|obviously|definitely|certainly|undeniably|indeed)\b", re.I),
-        re.compile(r"\b(?:of course|without (?:doubt|question)|as everyone knows)\b", re.I),
+        re.compile(r"\b(?:of\s+course|without\s+(?:doubt|question)|as\s+everyone\s+knows)\b", re.I),
     ),
     "hedging": (
-        re.compile(r"\b(?:somewhat|sort of|kind of|more or less|to some extent|arguably)\b", re.I),
-        re.compile(r"\b(?:in (?:some|certain) (?:sense|ways|cases)|to a (?:degree|certain extent))\b", re.I),
+        re.compile(r"\b(?:somewhat|sort\s+of|kind\s+of|more\s+or\s+less|to\s+some\s+extent|arguably)\b", re.I),
+        re.compile(r"\b(?:in\s+(?:some|certain)\s+(?:sense|ways|cases)|to\s+a\s+(?:degree|certain\s+extent))\b", re.I),
     ),
     "self_correction": (
-        re.compile(r"\b(?:or rather|or more (?:accurately|precisely)|to put it (?:differently|another way))\b", re.I),
-        re.compile(r"\b(?:not (?:exactly|quite)|better:?\s+|let me rephrase)\b", re.I),
+        re.compile(r"\b(?:or\s+rather|or\s+more\s+(?:accurately|precisely)|to\s+put\s+it\s+(?:differently|another\s+way))\b", re.I),
+        re.compile(r"\b(?:not\s+(?:exactly|quite)|better:?\s+|let\s+me\s+rephrase)\b", re.I),
     ),
     "metadiscourse": (
-        re.compile(r"\b(?:as (?:discussed|noted|argued|shown) (?:above|earlier|previously|before))\b", re.I),
-        re.compile(r"\b(?:in this (?:section|chapter|essay|piece)|returning to|coming back to)\b", re.I),
-        re.compile(r"\b(?:as I (?:mentioned|said) (?:above|earlier|before))\b", re.I),
+        re.compile(r"\b(?:as\s+(?:discussed|noted|argued|shown)\s+(?:above|earlier|previously|before))\b", re.I),
+        re.compile(r"\b(?:in\s+this\s+(?:section|chapter|essay|piece)|returning\s+to|coming\s+back\s+to)\b", re.I),
+        re.compile(r"\b(?:as\s+I\s+(?:mentioned|said)\s+(?:above|earlier|before))\b", re.I),
     ),
 }
 
