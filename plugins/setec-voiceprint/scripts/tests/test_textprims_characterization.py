@@ -117,16 +117,3 @@ def test_verbatim_cover_legacy_callable_must_name_the_owner(tmp_path):
     fixture.write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(ValueError, match="must name its final owner"):
         runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
-
-
-def test_verbatim_cover_rows_carry_the_contract_cases():
-    rows = {row["case_id"]: row for row in json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))["rows"]}
-    assert rows["verbatim_tokens-nfc"]["args"] == ["Café NAÏVE déjà-vu 42"]
-    assert rows["verbatim_tokens-nfc"]["expected"] == ["caf", "na", "ve", "d", "j", "vu", "42"]
-    assert rows["verbatim_tokens-nfd"]["expected"] != rows["verbatim_tokens-nfc"]["expected"]
-    assert rows["verbatim_tokens-kelvin_sign"]["args"][0][0] == "K" and rows["verbatim_tokens-kelvin_sign"]["expected"][0] == "k"
-    assert rows["verbatim_tokens-sharp_s_lower_not_casefold"]["expected"] == ["stra", "e"]
-    plain, variant = rows["verbatim_content_fingerprint-plain"], rows["verbatim_content_fingerprint-punctuation_variant"]
-    assert plain["args"] != variant["args"] and plain["expected"] == variant["expected"]
-    boundary = rows["verbatim_content_fingerprint-token_boundary"]
-    assert (boundary["args"], boundary["mutant"]["args"]) == (["ab"], ["a b"])

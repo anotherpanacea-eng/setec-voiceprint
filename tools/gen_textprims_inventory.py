@@ -321,8 +321,6 @@ def discover(root):
             relative = path.relative_to(root).as_posix()
             recognized = relative == OWNER and (owner == "split_sentences_regex" or (operation == "regex.compile" and source(node, text).strip().startswith("_SENT_RE =")))
             reason = "existing sentence-splitter owner" if recognized else "input/output provenance and static binding not yet proved"
-            if relative == VERBATIM_OWNER and (relative + ":" + owner in registered_refs or (relative + ":_tokens" in registered_refs and operation == "regex.compile" and source(node, text).strip().startswith("_TOKEN ="))):
-                recognized, reason = True, "registered verbatim-cover owner"
             pattern = None
             if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id in compiled:
                 pattern = compiled[node.func.value.id]
@@ -454,6 +452,9 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                         prefix = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
                         external_modules[local] = prefix
                         imports[(relative, prefix + ".tokenize")] = "tokenize"
+                    module_name = alias.name if isinstance(node, ast.Import) else (None if node.level else node.module + "." + alias.name)
+                    if module_name and any(resolve(module_name, name) == name for name in VERBATIM_ROWS if name in symbols):
+                        external_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
                     if (isinstance(node, ast.Import) and alias.name == "setec.core.textprims") or (isinstance(node, ast.ImportFrom) and node.module == "setec.core" and alias.name == "textprims" and not node.level):
                         owner_modules[local] = (alias.asname or alias.name) if isinstance(node, ast.Import) else local
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in symbols - IMPORT_RESOLVED and relative != OWNER:
@@ -507,7 +508,7 @@ def bindings(root, symbols, table_symbols=(), source_texts=None):
                     errors.append(f"unresolved registered table argument: {relative}:{node.lineno}")
             if (isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in tracked) or (isinstance(node, ast.arg) and node.arg in tracked) or (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in tracked):
                 errors.append(f"rebound registered import: {relative}:{node.lineno}")
-            if isinstance(node, ast.Attribute) and node.attr in symbols and isinstance(node.ctx, (ast.Store, ast.Del)):
+            if isinstance(node, ast.Attribute) and node.attr in symbols and isinstance(node.ctx, (ast.Store, ast.Del)) and (node.attr not in IMPORT_RESOLVED or ast.unparse(node.value) in owner_modules.values()):
                 errors.append(f"registered attribute replacement: {relative}:{node.lineno}")
             if isinstance(node, ast.Attribute) and is_table(node.value) and node.attr in mutators:
                 errors.append(f"registered table mutation: {relative}:{node.lineno}")

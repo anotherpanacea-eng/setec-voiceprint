@@ -439,9 +439,24 @@ def test_same_named_independent_definitions_are_not_registered_objects(tmp_path)
     imports, errors = _scripts(tmp_path, {
         "independent.py": 'import hashlib\nimport re\n_TOKEN = re.compile(r"[a-z]+")\ndef _tokens(text):\n    return _TOKEN.findall(text.lower())\ndef _content_fingerprint(text):\n    return hashlib.sha256(text.encode()).hexdigest()\n',
         "consumer.py": "from independent import _tokens, _content_fingerprint\n",
+        "stream.py": "class Stream:\n    def __init__(self, text):\n        self._tokens = text.split()\n        self._content_fingerprint = None\n",
     })
     assert not errors
     assert not imports
+
+
+@pytest.mark.parametrize("source", [
+    "from setec.core import verbatim_cover as vc\nsetattr(vc, '_tokens', len)\n",
+    "import setec.core.verbatim_cover as vc\nvc._content_fingerprint = len\n",
+    "import setec.core.verbatim_cover as vc\nowner = vc\n",
+    "import setec.surfaces.audit\nsetec.surfaces.audit._tokens = len\n",
+])
+def test_replacing_through_an_owner_module_object_fails(tmp_path, source):
+    _, errors = _scripts(tmp_path, {
+        "setec/surfaces/audit.py": "from setec.core.verbatim_cover import _content_fingerprint, _tokens\n",
+        "consumer.py": source,
+    })
+    assert errors
 
 
 def test_inline_token_pattern_use_stays_an_unresolved_candidate(tmp_path):
@@ -450,25 +465,6 @@ def test_inline_token_pattern_use_stays_an_unresolved_candidate(tmp_path):
     assert not errors
     inline = next(row for row in inventory.discover(tmp_path) if row["operation"] == "possible_compiled_pattern.findall")
     assert inline["outcome"] == "unresolved"
-
-
-def test_verbatim_cover_definition_sites_are_recognized_only_when_registered(tmp_path):
-    import shutil
-    for path in (inventory.OWNER, inventory.VERBATIM_OWNER):
-        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / path, tmp_path / path)
-    def outcomes():
-        return {(row["owner"], row["operation"]): row["outcome"] for row in inventory.discover(tmp_path) if row["path"] == inventory.VERBATIM_OWNER}
-    found = outcomes()
-    for key in [("_tokens", "named_primitive_candidate"), ("_content_fingerprint", "named_primitive_candidate"), ("<module>", "regex.compile"), ("_tokens", "possible_compiled_pattern.findall"), ("_content_fingerprint", "possible_primitive.sha256")]:
-        assert found[key] == "recognized_primitive"
-    assert found[("_load_reference_dir", "possible_primitive.lower")] == "unresolved"
-    registry = (tmp_path / inventory.OWNER).read_text(encoding="utf-8")
-    start = registry.index('    "_tokens": _MappingProxyType(')
-    (tmp_path / inventory.OWNER).write_text(registry[:start] + registry[registry.index("}),\n", start) + 4:], encoding="utf-8")
-    found = outcomes()
-    assert found[("<module>", "regex.compile")] == found[("_tokens", "named_primitive_candidate")] == "unresolved"
-    assert found[("_content_fingerprint", "named_primitive_candidate")] == "recognized_primitive"
 
 
 @pytest.mark.parametrize("old, new, error", [
