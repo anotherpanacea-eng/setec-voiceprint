@@ -58,9 +58,6 @@ entries:
     python:
     - transformers
     - torch
-    - spacy
-    python_optional:
-    - en_core_web_sm
   examples:
   - description: Score with the planned M2 scorer by full HF id (the gpt_neo_2_7b
       alias is added to MODEL_ALIASES behind the CPU-first gate; --scorer is required,

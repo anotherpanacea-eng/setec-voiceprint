@@ -41,11 +41,7 @@
   "dependencies": {
     "python": [
       "transformers",
-      "torch",
-      "spacy"
-    ],
-    "python_optional": [
-      "en_core_web_sm"
+      "torch"
     ]
   },
   "examples": [
