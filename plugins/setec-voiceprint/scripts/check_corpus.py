@@ -271,6 +271,9 @@ def check_path(
     # Bytes that are not UTF-8 become U+FFFD so the strip ratio sees
     # them; the record counts the replacements (genuine U+FFFD excluded).
     text = data.decode("utf-8", errors="replace")
+    # Preserve read_text's universal-newline behavior for valid UTF-8 too;
+    # rules such as YAML front matter intentionally match LF newlines.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     decode_replacements = text.count("\ufffd") - data.count("\ufffd".encode("utf-8"))
     try:
         _cleaned, meta = strip_non_prose(
