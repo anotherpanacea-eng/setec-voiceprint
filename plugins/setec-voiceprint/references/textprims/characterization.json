@@ -5677,6 +5677,363 @@
         "result_path": [],
         "expected": 1
       }
+    },
+    {
+      "case_id": "number_paragraphs-empty",
+      "callable": "number_paragraphs",
+      "args": [
+        []
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "",
+      "mutant": {
+        "args": [
+          [
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-one-empty",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          ""
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] ",
+      "mutant": {
+        "args": [
+          [
+            "",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] \n\n[1] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-two-empty",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "",
+          ""
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] \n\n[1] ",
+      "mutant": {
+        "args": [
+          [
+            "",
+            "",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] \n\n[1] \n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-ascii",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "One.",
+          "Two!"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] One.\n\n[1] Two!",
+      "mutant": {
+        "args": [
+          [
+            "One.",
+            "Two!",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] One.\n\n[1] Two!\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-whitespace",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          " \t ",
+          "\r\n"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0]  \t \n\n[1] \r\n",
+      "mutant": {
+        "args": [
+          [
+            " \t ",
+            "\r\n",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0]  \t \n\n[1] \r\n\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-multiline",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "one\n\ntwo",
+          "three\rfour"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] one\n\ntwo\n\n[1] three\rfour",
+      "mutant": {
+        "args": [
+          [
+            "one\n\ntwo",
+            "three\rfour",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] one\n\ntwo\n\n[1] three\rfour\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-brackets",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "[99] literal",
+          "[0] repeated"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] [99] literal\n\n[1] [0] repeated",
+      "mutant": {
+        "args": [
+          [
+            "[99] literal",
+            "[0] repeated",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] [99] literal\n\n[1] [0] repeated\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-unicode",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "café",
+          "café",
+          "中文"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] café\n\n[1] café\n\n[2] 中文",
+      "mutant": {
+        "args": [
+          [
+            "café",
+            "café",
+            "中文",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] café\n\n[1] café\n\n[2] 中文\n\n[3] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-controls",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "a\u0000b",
+          " ​"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] a\u0000b\n\n[1]  ​",
+      "mutant": {
+        "args": [
+          [
+            "a\u0000b",
+            " ​",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] a\u0000b\n\n[1]  ​\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-nonstring-members",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          null,
+          42,
+          true,
+          {
+            "x": "y"
+          }
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] None\n\n[1] 42\n\n[2] True\n\n[3] {'x': 'y'}",
+      "mutant": {
+        "args": [
+          [
+            null,
+            42,
+            true,
+            {
+              "x": "y"
+            },
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] None\n\n[1] 42\n\n[2] True\n\n[3] {'x': 'y'}\n\n[4] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-string-iterable",
+      "callable": "number_paragraphs",
+      "args": [
+        "ab"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] a\n\n[1] b",
+      "mutant": {
+        "args": [
+          [
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-mapping-iterable",
+      "callable": "number_paragraphs",
+      "args": [
+        {
+          "first": 1,
+          "second": 2
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] first\n\n[1] second",
+      "mutant": {
+        "args": [
+          [
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-invalid",
+      "callable": "number_paragraphs",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "'NoneType' object is not iterable"
+      },
+      "mutant": {
+        "args": [
+          42
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "'int' object is not iterable"
+        }
+      }
+    },
+    {
+      "case_id": "number_paragraphs-keyword",
+      "callable": "number_paragraphs",
+      "args": [],
+      "kwargs": {
+        "paragraphs": [
+          "",
+          "second"
+        ]
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] \n\n[1] second",
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "paragraphs": [
+            "second"
+          ]
+        },
+        "result_path": [],
+        "expected": "[0] second"
+      }
     }
   ]
 }
