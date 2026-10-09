@@ -17,16 +17,12 @@ def test_json_exact_distinguishes_scalar_types():
     assert runner.encode(1, "json_exact") != runner.encode(1.0, "json_exact")
 
 
-def test_order_and_set_comparators_have_distinct_contracts():
+def test_sequence_comparator_is_order_sensitive():
     assert runner.encode([1, 2], "sequence_exact") != runner.encode([2, 1], "sequence_exact")
-    assert runner.encode([1, 2], "set_exact") == runner.encode([2, 1], "set_exact")
-    with pytest.raises(ValueError):
-        runner.encode([1, 1], "set_exact")
 
 
-def test_exact_bytes_float_and_exception_encodings():
+def test_exact_bytes_and_exception_encodings():
     assert runner.encode(b"\x00\xff", "bytes_hex_exact") == {"hex": "00ff"}
-    assert runner.encode(-0.0, "float_hex_exact") != runner.encode(0.0, "float_hex_exact")
     with pytest.raises(ValueError):
         runner.encode({"hex": "FF"}, "bytes_hex_exact")
     with pytest.raises(ValueError):

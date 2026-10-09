@@ -55,3 +55,9 @@ def test_copied_word_set_is_reported(tmp_path):
 def test_registered_name_missing_from_its_owner_is_reported(tmp_path):
     errors = _tree(tmp_path, {"setec/core/textprims.py": REGISTRY.replace('"WORDS": "setec.core.textprims"', '"WORDS": "setec.core.other"')})
     assert errors == ["registered owner missing: WORDS -> setec.core.other"]
+
+
+def test_copy_with_renamed_unannotated_parameter_is_reported(tmp_path):
+    errors = _tree(tmp_path, {"d.py": 'import re\n_WORD_RE = re.compile(r"[A-Za-z\']+")\n\ndef _count(s):\n    return len(_WORD_RE.findall(s))\n'})
+    assert errors == ["copy of registered primitive count_words_alpha at plugins/setec-voiceprint/scripts/d.py:4; import it from setec.core.textprims"]
+

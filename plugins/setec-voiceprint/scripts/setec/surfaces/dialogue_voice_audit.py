@@ -68,6 +68,7 @@ from output_schema import (  # type: ignore
 )
 from setec.core.textprims import (  # type: ignore
     DIALOGUE_FUNCTION_WORDS as FUNCTION_WORDS,
+    count_words_alpha as _count_words,
 )
 
 # spaCy is loaded lazily and tolerantly. The model is only needed to
@@ -266,10 +267,6 @@ class CharacterProfile:
     # Feature vector used for the divergence matrix (scalar features +
     # function-word relative frequencies in a shared space).
     feature_vector: dict[str, float] = field(default_factory=dict)
-
-
-def _count_words(s: str) -> int:
-    return len(_WORD_RE.findall(s))
 
 
 # ASCII unit / record separators: bound the serialized turn stream so distinct field/turn boundaries

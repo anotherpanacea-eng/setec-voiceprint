@@ -28,18 +28,18 @@ case_id: unique string
 callable: a PRIMITIVES name, or "<word-set name>.__contains__"
 args, kwargs: JSON passed to the call (for `_analysis`, each arg is {"hex": "..."} decoded to bytes)
 result_path: selectors applied to the return value
-comparator: json_exact | sequence_exact | set_exact | bytes_hex_exact | float_hex_exact | exception_exact
+comparator: json_exact | sequence_exact | bytes_hex_exact | exception_exact
 expected: comparator-specific JSON value
 mutant: {args, kwargs, result_path, expected}
 ```
 
-`tools/run_textprims_characterization.py` resolves each callable through `setec.core.textprims`, proves the primary case and the mutant both match, and refuses a mutant whose expectation equals the primary's. Every `PRIMITIVES` name needs at least one row. Rows are generated from live calls, not typed by hand, and cover the inputs where a primitive's behavior is easy to get wrong: empty input, digits, hyphens, straight and curly apostrophes, non-ASCII letters, NFC versus NFD forms, abbreviations, ellipses, and paragraph or line boundaries where they apply.
+`tools/run_textprims_characterization.py` resolves each callable through `setec.core.textprims`, proves the primary case and the mutant both match, and refuses a mutant whose expectation equals the primary's. Every `PRIMITIVES` name needs at least one row. The runner checks every expectation against a live call. Rows cover the inputs where a primitive's behavior is easy to get wrong: empty input, digits, hyphens, straight and curly apostrophes, non-ASCII letters, NFC versus NFD forms, abbreviations, ellipses, and paragraph or line boundaries where they apply.
 
 Native Punkt rows read only NLTK 3.9.4 and the four English `punkt_tab` files from `nltk_data` revision `550b6625bcef1f2abff2ff770a5a0d272c9c6b2a`, provisioned by `tools/prepare_punkt_characterization.py` into an isolated root. Characterization never downloads and fails rather than skips when the data is missing.
 
 ## 3. Copy lint
 
-`tools/gen_textprims_inventory.py --check` (the existing CI step) fails when a function anywhere in the plugin's production source has the same arguments and body as a registered primitive (ignoring its name and docstring) and reads module-level names with the same values. It also fails on a module-level word-set literal equal to a registered set, and on a `PRIMITIVES` entry whose owner module does not define it. Same-named functions with different code are unrelated and are not reported. The fix for a reported copy is to import the registered primitive.
+`tools/gen_textprims_inventory.py --check` (the existing CI step) fails when a function anywhere in the plugin's production source has the same body and parameters as a registered primitive, up to renaming the parameters (ignoring its name, annotations and docstring), and reads module-level names with the same values. It also fails on a word-set literal equal to a registered set, and on a `PRIMITIVES` entry whose owner module does not define it. Same-named functions with different code are unrelated and are not reported. The fix for a reported copy is to import the registered primitive.
 
 ## Out of scope
 

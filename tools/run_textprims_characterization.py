@@ -13,7 +13,7 @@ SCRIPTS = ROOT / "plugins/setec-voiceprint/scripts"
 FIELDS = {"case_id", "callable", "args", "kwargs", "result_path", "comparator", "expected", "mutant"}
 # Callables that take bytes: their args are written as {"hex": "..."}.
 BYTES_ARGS = {"_analysis"}
-COMPARATORS = {"json_exact", "sequence_exact", "set_exact", "bytes_hex_exact", "float_hex_exact", "exception_exact"}
+COMPARATORS = {"json_exact", "sequence_exact", "bytes_hex_exact", "exception_exact"}
 
 
 def canonical(value):
@@ -27,15 +27,6 @@ def encode(value, comparator):
         if not isinstance(value, (list, tuple)):
             raise ValueError("sequence required")
         return tuple(canonical(v) for v in value)
-    if comparator == "set_exact":
-        if not isinstance(value, (list, set, frozenset)):
-            raise ValueError("set required")
-        if any(type(v) not in (str, int, float, bool, type(None)) for v in value):
-            raise ValueError("set scalars required")
-        encoded = [canonical(v) for v in value]
-        if len(set(encoded)) != len(encoded):
-            raise ValueError("duplicate set scalar")
-        return tuple(sorted(encoded))
     if comparator == "bytes_hex_exact":
         if isinstance(value, bytes):
             return {"hex": value.hex()}
@@ -44,12 +35,6 @@ def encode(value, comparator):
         h = value["hex"]
         if type(h) is not str or len(h) % 2 or any(c not in "0123456789abcdef" for c in h):
             raise ValueError("lowercase even hex required")
-        return value
-    if comparator == "float_hex_exact":
-        if type(value) is float:
-            return value.hex()
-        if type(value) is not str or float.fromhex(value).hex() != value:
-            raise ValueError("canonical float hex required")
         return value
     if comparator == "exception_exact":
         if type(value) is not dict or set(value) != {"type", "message"} or any(type(v) is not str for v in value.values()):

@@ -3,7 +3,8 @@
 
 `setec.core.textprims.PRIMITIVES` names the one owner module of each shared
 text primitive. A function defined anywhere else in the plugin with the same
-code (same arguments and body, ignoring its name and docstring, and the same
+code (same body and parameters up to renaming, ignoring its name, annotations
+and docstring, and the same
 values for the module-level names it reads) is a copy that should import the
 registered one instead. Likewise a module-level set literal equal to a
 registered word set. Same-named functions with different code are unrelated
@@ -52,12 +53,27 @@ def _globals(tree: ast.Module) -> dict[str, str]:
     return out
 
 
+class _Rename(ast.NodeTransformer):
+    def __init__(self, names: dict[str, str]):
+        self.names = names
+
+    def visit_Name(self, node: ast.Name) -> ast.Name:
+        return ast.copy_location(ast.Name(self.names.get(node.id, node.id), node.ctx), node)
+
+
 def fingerprint(func: ast.FunctionDef, module_globals: dict[str, str]) -> str:
+    """Same code up to parameter names, annotations, the function name and docstring."""
     body = func.body
     if body and isinstance(body[0], ast.Expr) and isinstance(getattr(body[0], "value", None), ast.Constant) and isinstance(body[0].value.value, str):
         body = body[1:]
+    a = func.args
+    params = [*a.posonlyargs, *a.args, *([a.vararg] if a.vararg else []), *a.kwonlyargs, *([a.kwarg] if a.kwarg else [])]
+    names = {p.arg: f"_p{i}" for i, p in enumerate(params)}
+    body = [_Rename(names).visit(ast.parse(ast.unparse(stmt)).body[0]) for stmt in body]
     reads = sorted({n.id for n in ast.walk(ast.Module(body=body, type_ignores=[])) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load) and n.id in module_globals})
-    return json.dumps([ast.dump(func.args), [ast.dump(s) for s in body], [(r, module_globals[r]) for r in reads]])
+    signature = [len(a.posonlyargs), len(a.args), bool(a.vararg), len(a.kwonlyargs), bool(a.kwarg),
+                 [ast.dump(d) for d in a.defaults], [ast.dump(d) if d else None for d in a.kw_defaults]]
+    return json.dumps([signature, [ast.dump(s) for s in body], [(r, module_globals[r]) for r in reads]])
 
 
 def word_set(node: ast.AST) -> frozenset | None:
