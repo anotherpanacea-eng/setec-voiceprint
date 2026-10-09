@@ -924,12 +924,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
-  symbol: SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `SCRIPTS_DIR` at line 83 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested launcher bootstrap; foreign-cwd runpy needs
+    the stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py
   symbol: CALIB
   reason: pending relocation (P4); anchor `CALIB` at line 75 not yet converted to
@@ -3351,7 +3351,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/pan_replay.py
   to_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3364,7 +3364,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/pan_replay.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5094,4 +5094,12 @@ layer_exemptions:
     section 2).
   owner: packaging
   introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
+  to_path: plugins/setec-voiceprint/scripts/setec/calibration/pan_replay.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x nested launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
