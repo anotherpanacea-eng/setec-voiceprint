@@ -137,3 +137,18 @@ def test_unicode_counters_share_function_and_pattern(module_name):
     assert legacy is packaged
     assert legacy.count_words is textprims.count_words_unicode_hyphen
     assert legacy._WORD_RE is textprims._WORD_UNICODE_HYPHEN_RE
+
+
+
+@pytest.mark.parametrize("module_name, public_name", [
+    ("stylometry_core", "word_tokens"),
+])
+def test_alpha_word_token_consumers_share_function_and_pattern(module_name, public_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert getattr(module, public_name) is textprims.word_tokens_alpha
+    assert module.WORD_RE is textprims.WORD_RE
+    # These regex methods are consumed publicly, with original case intact.
+    assert module.WORD_RE.findall("AbC café don't") == ["AbC", "caf", "don't"]
+    assert module.WORD_RE.sub(lambda m: m.group(0).upper(), "AbC café don't") == "ABC CAFé DON'T"

@@ -3943,6 +3943,419 @@
         "result_path": [],
         "expected": 3
       }
+    },
+    {
+      "case_id": "word_tokens_alpha-empty",
+      "callable": "word_tokens_alpha",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-whitespace",
+      "callable": "word_tokens_alpha",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\r\n  EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-digits",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "42 １２３ alpha2beta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "alpha",
+        "beta"
+      ],
+      "mutant": {
+        "args": [
+          "42 １２３ alpha2beta EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "alpha",
+          "beta",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-underscores",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "_under_score"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "under",
+        "score"
+      ],
+      "mutant": {
+        "args": [
+          "_under_score EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "under",
+          "score",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-hyphens",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "one-two two--words --- edge-"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two",
+        "two",
+        "words",
+        "edge"
+      ],
+      "mutant": {
+        "args": [
+          "one-two two--words --- edge- EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "two",
+          "words",
+          "edge",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-straight-apostrophes",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "can't 'quote' rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "can't",
+        "'quote'",
+        "rock'n'roll"
+      ],
+      "mutant": {
+        "args": [
+          "can't 'quote' rock'n'roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "can't",
+          "'quote'",
+          "rock'n'roll",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-curly-apostrophes",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "can’t rock’n’roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "can",
+        "t",
+        "rock",
+        "n",
+        "roll"
+      ],
+      "mutant": {
+        "args": [
+          "can’t rock’n’roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "can",
+          "t",
+          "rock",
+          "n",
+          "roll",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-apostrophe-only",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "' '' '''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "'",
+        "''",
+        "'''"
+      ],
+      "mutant": {
+        "args": [
+          "' '' ''' EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "'",
+          "''",
+          "'''",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-nfc-nfd",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "caféday caféday"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "caf",
+        "day",
+        "cafe",
+        "day"
+      ],
+      "mutant": {
+        "args": [
+          "caféday caféday EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "caf",
+          "day",
+          "cafe",
+          "day",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-unicode-case",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "İ ſ K I S K 中文 Ελληνικά"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "i",
+        "s",
+        "k"
+      ],
+      "mutant": {
+        "args": [
+          "İ ſ K I S K 中文 Ελληνικά EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "i",
+          "s",
+          "k",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-case",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "AbC THE Cat"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "abc",
+        "the",
+        "cat"
+      ],
+      "mutant": {
+        "args": [
+          "AbC THE Cat EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "abc",
+          "the",
+          "cat",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-punctuation",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "one...two;three—four/five"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two",
+        "three",
+        "four",
+        "five"
+      ],
+      "mutant": {
+        "args": [
+          "one...two;three—four/five EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "three",
+          "four",
+          "five",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-zero-and-nul",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "one​two\u0000three\nFOUR"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two",
+        "three",
+        "four"
+      ],
+      "mutant": {
+        "args": [
+          "one​two\u0000three\nFOUR EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "three",
+          "four",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-invalid-argument",
+      "callable": "word_tokens_alpha",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-keyword",
+      "callable": "word_tokens_alpha",
+      "args": [],
+      "kwargs": {
+        "text": "AbC café"
+      },
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "abc",
+        "caf"
+      ],
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "AbC café EXTRAWORD"
+        },
+        "result_path": [],
+        "expected": [
+          "abc",
+          "caf",
+          "extraword"
+        ]
+      }
     }
   ]
 }
