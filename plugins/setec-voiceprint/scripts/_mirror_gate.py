@@ -513,16 +513,6 @@ _TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_'’\-])(?:[A-Z][A-Za-z0-9]*[0-9][A-Za-z
 _CONNECTIVES = {"Another", "But", "However", "Now", "So", "Take", "Then", "Therefore", "Thus", "Yet"}
 
 
-def _initial(text: str, start: int) -> bool:
-    prefix = text[:start]
-    if not prefix.strip():
-        return True
-    line = prefix.rsplit("\n", 1)[-1]
-    if not line.strip():
-        return True
-    return prefix.rstrip().endswith((".", "!", "?"))
-
-
 def _initial_flags(text: str, matches: Sequence[re.Match[str]]) -> dict[int, bool]:
     """Classify every candidate start in one left-to-right text scan."""
     flags: dict[int, bool] = {}

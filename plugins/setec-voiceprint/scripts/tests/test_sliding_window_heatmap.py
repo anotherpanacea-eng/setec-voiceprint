@@ -81,25 +81,18 @@ def _make_windows_block(windows: list[dict]) -> dict:
 # ------------------- Loading -----------------------------------
 
 
-def _current_envelope(windows, monkeypatch):
-    # The producer's optional tokenizer initialization must not fetch data.
-    try:
-        import nltk
-    except ImportError:
-        pass
-    else:
-        monkeypatch.setattr(nltk, "download", lambda *args, **kwargs: False)
+def _current_envelope(windows):
     import variance_audit as va
     return va.build_audit_payload({"windows": windows}, target_path="synthetic.txt")
 
 
 class TestLoading:
-    def test_load_current_variance_envelope(self, monkeypatch):
+    def test_load_current_variance_envelope(self):
         windows = _make_windows_block([
             _make_window(start_word=0, end_word=500,
                          band="Lightly smoothed", fraction=0.10),
         ])
-        envelope = _current_envelope(windows, monkeypatch)
+        envelope = _current_envelope(windows)
         assert swh.load_windows_block(envelope) == windows
 
     @pytest.mark.parametrize("results", [None, [], "invalid", {}, {"windows": None}, {"windows": []}])

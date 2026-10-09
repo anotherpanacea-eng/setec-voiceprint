@@ -124,3 +124,30 @@ def test_self_test_passes_with_an_installed_dataset(tmp_path, monkeypatch):
         assert amp.run_self_test() == 0
     finally:
         concreteness._load_concreteness_dict.cache_clear()
+
+
+def test_agd_densities_share_the_published_word_count():
+    # Hyphens, digits and apostrophes make the AGD word pattern and the
+    # stance audit's \b\w+\b count disagree on this text.
+    text = ("However, the state-of-the-art 2024 result isn't settled. "
+            "Therefore we act, although critics object. " * 20)
+    vec = amp.argmove_vector(text)
+    n = vec["_n_words"]
+    assert n != amp._n_words(text)  # the two units really differ here
+    assert vec["agd.discounting_per_1k"] == round(
+        1000.0 * len(amp._DISCOUNTING.findall(text)) / n, 4)
+
+
+def test_profile_band_stays_inside_observed_values(tmp_path):
+    words = " ".join(["plain"] * amp.MIN_WORDS)
+    texts = {"a.txt": "However " + words + ".",
+             "b.txt": words + ". Therefore it holds."}
+    for name, text in texts.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    vecs = [amp.argmove_vector(text) for text in texts.values()]
+    prof = amp.profile_corpus(tmp_path)
+    key = "agd.discounting_per_1k"
+    lo, hi = prof["signals"][key]["band_p10_p90"]
+    values = [v[key] for v in vecs]
+    assert values[0] != values[1]
+    assert min(values) <= lo <= hi <= max(values)

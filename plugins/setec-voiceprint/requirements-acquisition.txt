@@ -37,8 +37,8 @@ requests>=2.31
 feedparser>=6.0
 
 # HTML parsing for blog and magazine post bodies. lxml is the parser
-# backend BeautifulSoup uses for production HTML; faster and more
-# tolerant than the stdlib `html.parser` fallback.
+# backend required by BeautifulSoup for production HTML; no alternate
+# parser is selected when it is missing.
 beautifulsoup4>=4.12
 lxml>=4.9
 

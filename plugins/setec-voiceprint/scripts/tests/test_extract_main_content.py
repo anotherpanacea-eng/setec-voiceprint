@@ -28,11 +28,12 @@ import acquisition_core as ac  # type: ignore  # noqa: E402
 
 # The fallback path needs BeautifulSoup; skip the module cleanly when the
 # acquisition tier isn't installed (core CI).
-_bs4_available = True
+_html_parser_available = True
 try:
     import bs4  # type: ignore  # noqa: F401
+    import lxml  # type: ignore  # noqa: F401
 except ImportError as _e:  # pragma: no cover
-    _bs4_available = False
+    _html_parser_available = False
 
 # trafilatura is optional within the acquisition tier — its presence gates
 # only the primary-path assertions, not the fallback ones.
@@ -42,9 +43,9 @@ try:
 except ImportError:  # pragma: no cover
     _trafilatura_available = False
 
-if pytest is not None and not _bs4_available:  # pragma: no cover
+if pytest is not None and not _html_parser_available:  # pragma: no cover
     pytestmark = pytest.mark.skip(
-        reason="acquisition deps missing (bs4); install "
+        reason="acquisition deps missing (bs4/lxml); install "
         "requirements-acquisition.txt"
     )
 

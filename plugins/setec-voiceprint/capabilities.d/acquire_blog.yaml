@@ -28,6 +28,7 @@ entries:
   dependencies:
     python:
     - bs4
+    - lxml
     - feedparser
   examples: []
   references: []

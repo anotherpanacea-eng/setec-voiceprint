@@ -1145,6 +1145,18 @@ def append_manifest_entry(
 # --------------- HTML extraction helpers --------------------------
 
 
+def normalize_extracted_whitespace(text: str) -> str:
+    """Collapse whitespace in text pulled out of HTML; keep paragraph breaks.
+
+    Shared by html_to_text, the trafilatura path and the CRS historical
+    extractor so this whitespace tail cannot drift between them.
+    """
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def html_to_text(
     html: str,
     *,
@@ -1154,7 +1166,7 @@ def html_to_text(
     """Extract plain text from an HTML document.
 
     Pipeline:
-      1. Parse with BeautifulSoup (lxml backend if available).
+      1. Parse with BeautifulSoup (lxml backend, which is required).
       2. Drop noise elements globally: ``<script>``, ``<style>``,
          ``<noscript>``, ``<svg>``, ``<form>``, ``<nav>``, ``<aside>``,
          ``<footer>``, anything in ``strip_selectors``.
@@ -1176,12 +1188,10 @@ def html_to_text(
             "pip install -r requirements-acquisition.txt"
         ) from e
 
-    # Try lxml first; fall back to the stdlib parser if lxml isn't
-    # installed.
-    try:
-        soup = BeautifulSoup(html, "lxml")
-    except Exception:
-        soup = BeautifulSoup(html, "html.parser")
+    # lxml only (pinned in requirements-acquisition.txt). The old html.parser
+    # fallback produced different text on malformed markup, so the stored
+    # text and content hash depended on whether lxml happened to be installed.
+    soup = BeautifulSoup(html, "lxml")
 
     title = None
     if soup.title and soup.title.string:
@@ -1209,11 +1219,7 @@ def html_to_text(
         container = soup.body or soup
 
     text = container.get_text(separator="\n")
-    # Collapse runs of whitespace; preserve paragraph breaks.
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n[ \t]+", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip(), title
+    return normalize_extracted_whitespace(text), title
 
 
 def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
@@ -1227,8 +1233,9 @@ def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
     hands trafilatura an already-de-chromed document, so the primary path
     keeps the site-specific cleanliness the selector-based fallback had.
 
-    Best-effort: if bs4 is unavailable or parsing fails, return ``html``
-    unchanged (trafilatura still runs on the raw document).
+    Best-effort: if bs4 is unavailable or a selector fails, return ``html``
+    unchanged (trafilatura still runs on the raw document). A missing lxml
+    parser raises ``bs4.FeatureNotFound``.
     """
     if not strip_selectors:
         return html
@@ -1236,11 +1243,10 @@ def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
         from bs4 import BeautifulSoup  # type: ignore
     except Exception:
         return html
+    # lxml is required (requirements-acquisition.txt): a missing parser must
+    # fail loudly, not silently skip the strip.
+    soup = BeautifulSoup(html, "lxml")
     try:
-        try:
-            soup = BeautifulSoup(html, "lxml")
-        except Exception:
-            soup = BeautifulSoup(html, "html.parser")
         for sel in strip_selectors:
             for tag in soup.select(sel):
                 tag.decompose()
@@ -1301,13 +1307,7 @@ def _trafilatura_extract(
             title = str(meta.title).strip() or None
     except Exception:
         title = None
-    # Normalize whitespace to match the html_to_text contract (collapse
-    # intra-line runs, cap blank-line runs at one) so downstream
-    # preprocessing + hashing see the same shape from either path.
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n[ \t]+", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip(), title
+    return normalize_extracted_whitespace(text), title
 
 
 def extract_main_content(
