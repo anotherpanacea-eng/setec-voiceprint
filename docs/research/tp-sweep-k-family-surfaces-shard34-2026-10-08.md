@@ -43,7 +43,7 @@ Each file declares `_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)` and
 
 The `count_words` bodies (docstring removed, `ast.dump` sha256 prefix
 `30588de63813`) and the pattern arguments are identical in all seven K
-modules: `crosslingual_voice_distance` (shard 2, the K owner),
+modules: `crosslingual_voice_distance` (shard 4, the K owner),
 `reference_ecology_audit` (shard 22), `narratorial_distance_audit` (shard 30)
 and these four. Shard 22 fuzzed one copy against K at 0 differences; identical
 bodies over identical pattern bytes and flags need no further probe.
@@ -68,8 +68,9 @@ tokens (no punctuation) and K's counter (`Don't` and `it's` whole).
 ### Cohort BR: `sound_texture_audit._alpha_words` (tokenizer, in place)
 
 `_ALPHA_WORD_RE = [^\W\d_]+` (Unicode), each match lowercased (`:45`, `:74`
-×2; 3 sites). Letters only: digits and underscores split or drop words
-(`snake_case` gives `snake`, `case`; `2024` is dropped). The pattern appears
+×2; 3 sites). Unicode word characters excluding decimal digits and underscores
+(`snake_case` gives `snake`, `case`; `2024` is dropped). Nondecimal numeric
+word characters survive: `"A² Ⅳ ½ 2024"` gives `["a²", "ⅳ", "½"]`. The pattern appears
 nowhere else in production.
 
 **Both are single-copy units.** Each is defined once, used by one function and
@@ -115,5 +116,5 @@ tokenizers, BQ and BR. No sentence or paragraph splitter.
 ## Not verified
 
 - BQ and BR were not fuzzed against every earlier tokenizer; they differ from
-  the nearest units by construction (punctuation tokens, and letters-only
-  matching), which the fixed probe shows.
+  the nearest units by construction (punctuation tokens, and Unicode word matching excluding decimal digits
+  and underscores), which the fixed probe shows.
