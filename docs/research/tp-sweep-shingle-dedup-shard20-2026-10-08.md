@@ -48,7 +48,7 @@ minted in place.
 | Proposed row | Family | Evidence |
 |---|---|---|
 | `shingle_dedup._tokens` | tokenizer | `[part.lower() for part in WORD_RE.findall(text)]` (`:154-155`), `WORD_RE = re.compile(r"\w+", re.UNICODE)` (`:66`). Case lower; normalization none; no backend. |
-| `shingle_dedup._shingle_digests` | fingerprint | The set of sha256 digests of each overlapping 8-token window joined by `\x1f` (`:158-162`); empty below 8 tokens. It tokenizes first, so it is in scope under the Q1 ruling. |
+| `shingle_dedup._shingle_digests` | fingerprint | The set of sha256 digests of each overlapping 8-token window joined by `\x1f` (`:158-162`); empty below 8 tokens. Its caller tokenizes first; this helper hashes the supplied token windows, so it is a text-derived fingerprint candidate. |
 
 Register: 6 (`:66`, `:154`, `:155` ×2 for the tokenizer; `:161` ×2 for the
 digest).
@@ -61,8 +61,9 @@ ZWSP and NBSP). The source is separate: each module compiles its own
 `\w+` pattern. In the probe, `shingle_dedup.WORD_RE is near_dup_dedup._WORD_RE`
 was `True`, but only because `re.compile` caches identical pattern and flags;
 neither module imports the other. Spec 71 isolates this module on purpose, so
-joining AA by importing its object is not proposed. One row per module, with the
-same behavior hash, is the honest record.
+joining AA by importing its object is not proposed. Separate final-owner rows record the equal observed outputs. Their behavior
+hashes are owner-specific: the spec binds `implementation_ref` and defining
+source bytes, so equal token lists do not imply equal registry digests.
 
 **The digest is a new unit.** It differs from `near_dup_dedup.shingles` (Cohort
 AA's `shingles` uses) in three ways, each probed:
@@ -76,11 +77,14 @@ AA's `shingles` uses) in three ways, each probed:
 It is also distinct from Cohort B's `_content_fingerprint`, which hashes the
 whole `[a-z0-9]+` token stream, not windows of `\w+` tokens.
 
-**Deletion test.** Drift would not be silent: the index records `tokenizer_id`
-and `unicodedata.unidata_version` (`:336`, `:512`), and spec 71 requires a query
-runtime with a different Unicode version to refuse the index. A registry row
-adds characterization but little protection. Admit AO late, after cohorts that
-replace real duplication.
+**Existing protection and its limit.** The index records the literal
+`tokenizer_id` and `unicodedata.unidata_version` (`:336`, `:512`), and spec 71
+requires a query runtime with a different Unicode version to refuse the index.
+Those pins detect an identity or Unicode-version mismatch; they do not detect
+a tokenizer implementation edit that preserves both values. A registry row
+adds an explicit source/behavior commitment and characterization for that gap.
+AO may still follow cohorts that replace real duplication, but its protection
+is not redundant with the existing version checks.
 
 ## Local (75)
 
