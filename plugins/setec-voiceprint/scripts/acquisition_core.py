@@ -1145,6 +1145,18 @@ def append_manifest_entry(
 # --------------- HTML extraction helpers --------------------------
 
 
+def normalize_extracted_whitespace(text: str) -> str:
+    """Collapse whitespace in text pulled out of HTML; keep paragraph breaks.
+
+    Shared by html_to_text, the trafilatura path and the CRS historical
+    extractor so this whitespace tail cannot drift between them.
+    """
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def html_to_text(
     html: str,
     *,
@@ -1207,11 +1219,7 @@ def html_to_text(
         container = soup.body or soup
 
     text = container.get_text(separator="\n")
-    # Collapse runs of whitespace; preserve paragraph breaks.
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n[ \t]+", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip(), title
+    return normalize_extracted_whitespace(text), title
 
 
 def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
@@ -1299,13 +1307,7 @@ def _trafilatura_extract(
             title = str(meta.title).strip() or None
     except Exception:
         title = None
-    # Normalize whitespace to match the html_to_text contract (collapse
-    # intra-line runs, cap blank-line runs at one) so downstream
-    # preprocessing + hashing see the same shape from either path.
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n[ \t]+", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip(), title
+    return normalize_extracted_whitespace(text), title
 
 
 def extract_main_content(
