@@ -218,3 +218,18 @@ def test_public_output_requires_explicit_override(tmp_path):
         se.main(["--dump", str(dump), "--site", "philosophy.stackexchange.com",
                  "--out", str(tmp_path / "posts.jsonl")])
     assert exc.value.code == 2
+
+
+def test_records_name_the_html_extractor_that_produced_their_text(tmp_path):
+    dump = make_dump(tmp_path / "dump")
+    users = se.load_users(dump, "philosophy.stackexchange.com")
+    rows = list(se.iter_posts(dump, "philosophy.stackexchange.com", users,
+                              post_types=("1", "2"), keep_body_html=False))
+    assert rows and {row["html_extractor"] for row in rows} == {se.HTML_EXTRACTOR}
+
+
+def test_stdlib_extractor_is_the_one_recorded_when_bs4_is_absent(monkeypatch):
+    # The two paths read inline markup differently; the recorded name must be
+    # the path body_to_text actually took.
+    monkeypatch.setattr(se, "HTML_EXTRACTOR", "stdlib")
+    assert se.body_to_text("<p>This is <em>very</em> good.</p>") == "This is very good."

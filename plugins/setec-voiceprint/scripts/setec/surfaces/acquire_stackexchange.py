@@ -11,8 +11,9 @@ Why JSONL rather than one ``.txt`` + ``.meta.json`` per piece: a single
 site dump holds tens of thousands of short posts (philosophy.stackexchange
 is ~74k), so the per-piece file layout used by ``acquire_blog.py`` and
 friends is the wrong shape. Records stream to one JSONL file instead.
-``compute_content_hash`` is still shared with ``acquisition_core`` so
-hashes are comparable across acquirers.
+``compute_content_hash`` is still shared with ``acquisition_core``, but this
+acquirer cleans text with its own rules, so the same HTML acquired here and
+through ``acquisition_core.html_to_text`` can hash differently.
 
 Source shape (see the dump's own ``readme.txt``):
 
@@ -89,7 +90,7 @@ from setec.core import acquisition_primitives as ac
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_stackexchange"
-SCRIPT_VERSION = "1.0.0"
+SCRIPT_VERSION = "1.1.0"
 
 # PostTypeId values that carry authored prose. 3+ are tag wikis, tag wiki
 # excerpts, moderator nominations and similar; they are not posts a person
@@ -159,26 +160,32 @@ def _normalize_ws(text: str) -> str:
     return "\n".join(out).strip()
 
 
+try:
+    from bs4 import BeautifulSoup  # type: ignore
+    HTML_EXTRACTOR = "bs4"
+except ImportError:  # pragma: no cover - depends on the host
+    BeautifulSoup = None
+    HTML_EXTRACTOR = "stdlib"
+
+
 def body_to_text(body_html: str) -> str:
     """Convert a post body to plain text.
 
-    Prefers BeautifulSoup for parity with the other acquirers, and falls
-    back to the stdlib parser when it is not installed.
+    Uses BeautifulSoup when it is installed and the stdlib parser otherwise.
+    The two give different text for inline markup, so every record carries
+    ``html_extractor`` naming the path that produced its ``text``.
     """
     if not body_html:
         return ""
-    try:
-        from bs4 import BeautifulSoup  # type: ignore
-
+    if HTML_EXTRACTOR == "bs4":
         soup = BeautifulSoup(body_html, "html.parser")
         for bad in soup(["script", "style"]):
             bad.decompose()
         return _normalize_ws(soup.get_text(separator="\n"))
-    except ImportError:
-        parser = _FragmentTextParser()
-        parser.feed(html.unescape(body_html) if "&lt;" in body_html else body_html)
-        parser.close()
-        return _normalize_ws(parser.text())
+    parser = _FragmentTextParser()
+    parser.feed(html.unescape(body_html) if "&lt;" in body_html else body_html)
+    parser.close()
+    return _normalize_ws(parser.text())
 
 
 # --------------------------------------------------------------- dump ----
@@ -315,6 +322,7 @@ def iter_posts(
             "text": text,
             "content_hash": ac.compute_content_hash(text),
             "word_count": len(text.split()),
+            "html_extractor": HTML_EXTRACTOR,
         }
         if keep_body_html:
             record["body_html"] = a.get("Body", "")
