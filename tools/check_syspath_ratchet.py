@@ -82,7 +82,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # The whole idiolect relocation adds one required permanent alias (199 -> 200);
 # the complete acquisition family's fifteen aliases replace nine old
 # implementation bootstraps (+6): 206; no exclusions.
-PINNED_CEILING = 206
+# The two whole bigram implementations have no old bootstrap to replace;
+# their reviewed permanent launchers add two counted sites (206 -> 208).
+PINNED_CEILING = 208
 
 
 def find_runtime_scripts() -> list[Path]:
