@@ -393,6 +393,8 @@ def _source_path(scope: Path, module: str) -> Path:
         "lambdag_audit",
         "pov_voice_profile",
         "general_imposters",
+        "agency_abstraction_audit",
+        "stance_modality_audit",
         "idiolect_detector",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
@@ -755,6 +757,24 @@ def test_guard_binding_without_a_call_does_not_satisfy_the_obligation(tmp_path):
     src = p.read_text(encoding="utf-8")
     assert "A" in _sweep_hits(src)
     assert not _calls_guard(src)
+
+
+@pytest.mark.parametrize("module_name", ("agency_abstraction_audit", "stance_modality_audit"))
+def test_agency_stance_implementation_cannot_hide_an_unclassified_loader(monkeypatch, module_name):
+    """The executing implementation must remain inside corpus closure sweeps."""
+    import importlib
+    implementation = Path(importlib.import_module(module_name).__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match=module_name):
+        test_sweep_is_closed("D", "defines a pool loader")
 
 
 if __name__ == "__main__":  # pragma: no cover
