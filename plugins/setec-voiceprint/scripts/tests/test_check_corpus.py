@@ -298,3 +298,18 @@ def test_records_cache_collect_stripped_change_invalidates(tmp_path: Path) -> No
     with mock.patch.object(cc_mod, "check_path", wraps=cc_mod.check_path) as spy:
         check_corpus_paths([CONTAMINATED], cache_path=cache, collect_stripped=True)
     assert spy.call_count == 1
+
+
+
+def test_non_utf8_bytes_are_replaced_and_counted(tmp_path: Path) -> None:
+    import check_corpus as cc_mod
+
+    genuine = tmp_path / "genuine.txt"
+    genuine.write_bytes("A sentence with a real \ufffd in it.\n".encode("utf-8"))
+    bad = tmp_path / "bad.txt"
+    bad.write_bytes(b"A sentence \xff\xfe with bad bytes.\n")
+    assert cc_mod.check_path(genuine)["decode_replacements"] == 0
+    record = cc_mod.check_path(bad)
+    assert record["decode_replacements"] == 2
+    # The replacements form a token the strip rules see; ignoring them gave 5.
+    assert record["input_tokens_before"] == 6

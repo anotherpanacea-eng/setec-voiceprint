@@ -255,7 +255,7 @@ def check_path(
     fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
 ) -> dict[str, Any]:
     try:
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        data = path.read_bytes()
     except OSError as exc:
         return {
             "path": str(path),
@@ -268,6 +268,10 @@ def check_path(
             "strip_ratio": 0.0,
             "dominant_rule": None,
         }
+    # Bytes that are not UTF-8 become U+FFFD so the strip ratio sees
+    # them; the record counts the replacements (genuine U+FFFD excluded).
+    text = data.decode("utf-8", errors="replace")
+    decode_replacements = text.count("\ufffd") - data.count("\ufffd".encode("utf-8"))
     try:
         _cleaned, meta = strip_non_prose(
             text,
@@ -291,6 +295,7 @@ def check_path(
     meta["path"] = str(path)
     meta["status"] = classify_file(ratio, warn_threshold, fail_threshold)
     meta["error"] = None
+    meta["decode_replacements"] = decode_replacements
     return meta
 
 
@@ -479,7 +484,8 @@ def _summarize_hygiene_records(
 _RECORDS_CACHE_TOOL = "check_corpus"
 # 1.1: cache payload now carries per-file content fingerprints. Bumping the
 # version invalidates pre-fingerprint (1.0) caches, forcing a safe rescore.
-_RECORDS_CACHE_VERSION = "1.1"
+# 1.2: records decode bad bytes as U+FFFD and carry `decode_replacements`.
+_RECORDS_CACHE_VERSION = "1.2"
 
 
 def _records_cache_meta(
