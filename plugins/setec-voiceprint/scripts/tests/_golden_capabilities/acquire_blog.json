@@ -9,6 +9,7 @@
   "dependencies": {
     "python": [
       "bs4",
+      "lxml",
       "feedparser"
     ]
   },

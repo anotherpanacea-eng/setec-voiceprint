@@ -164,9 +164,9 @@ _Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readi
 | `manifest_validator` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `dependency_check` | Heuristic (uncalibrated) | Yes | nothing (introspects your local environment) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | — |
 | `acquire_courtlistener` | Operational tooling (calibration N/A) | Yes | CourtListener v4 REST API (Token header auth) (required) | req: requests | CPU + network | 3000 |
-| `acquire_everycrsreport` | Operational tooling (calibration N/A) | Yes | EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv) (required) | req: bs4, requests | CPU + network | 1500 |
-| `acquire_gmail_sent` | Operational tooling (calibration N/A) | Yes | local Google Takeout mail export (.mbox); selection is From == --own-address AND X-Gmail-Labels carries the --sent-label-token (required) | req: bs4 | CPU + local I/O | 40 |
-| `acquire_govinfo_chrg` | Operational tooling (calibration N/A) | Yes | GovInfo published service (collection CHRG) via the api.data.gov API (required) | req: bs4, requests | CPU + network | 1500 |
+| `acquire_everycrsreport` | Operational tooling (calibration N/A) | Yes | EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv) (required) | req: bs4, lxml, requests | CPU + network | 1500 |
+| `acquire_gmail_sent` | Operational tooling (calibration N/A) | Yes | local Google Takeout mail export (.mbox); selection is From == --own-address AND X-Gmail-Labels carries the --sent-label-token (required) | req: bs4, lxml | CPU + local I/O | 40 |
+| `acquire_govinfo_chrg` | Operational tooling (calibration N/A) | Yes | GovInfo published service (collection CHRG) via the api.data.gov API (required) | req: bs4, lxml, requests | CPU + network | 1500 |
 | `acquire_imessage_sent` | Operational tooling (calibration N/A) | Yes | local macOS Messages SQLite database (~/Library/Messages/chat.db), read-only; requires Full Disk Access for the invoking process (required) | stdlib | CPU + local I/O | 150 |
 | `acquire_mirrulations` | Operational tooling (calibration N/A) | Yes | the public Mirrulations AWS Open Data S3 bucket (anonymous access) (required) | req: boto3 | CPU + network | 1000 |
 | `acquire_openalex_core` | Operational tooling (calibration N/A) | Yes | OpenAlex works API (keyless) + CORE v3 search API (keyed) (required) | req: requests | CPU + network | 3000 |

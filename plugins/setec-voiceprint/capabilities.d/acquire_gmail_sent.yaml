@@ -39,6 +39,7 @@ entries:
   dependencies:
     python:
     - bs4
+    - lxml
   examples: []
   references:
   - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
