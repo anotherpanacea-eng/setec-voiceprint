@@ -66,6 +66,7 @@ from register_taxonomy import (  # type: ignore
     assert_personal_register_isolated,
 )
 from stylometry_core import (  # type: ignore
+    FUNCTION_WORDS,  # noqa: F401 - text-primitives compatibility binding (inventory gate)
     load_entries,
     read_text,
     word_tokens,
