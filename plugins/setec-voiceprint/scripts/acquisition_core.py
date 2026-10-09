@@ -1154,7 +1154,7 @@ def html_to_text(
     """Extract plain text from an HTML document.
 
     Pipeline:
-      1. Parse with BeautifulSoup (lxml backend if available).
+      1. Parse with BeautifulSoup (lxml backend, which is required).
       2. Drop noise elements globally: ``<script>``, ``<style>``,
          ``<noscript>``, ``<svg>``, ``<form>``, ``<nav>``, ``<aside>``,
          ``<footer>``, anything in ``strip_selectors``.

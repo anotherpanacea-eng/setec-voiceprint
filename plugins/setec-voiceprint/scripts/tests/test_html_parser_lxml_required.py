@@ -7,26 +7,17 @@ check that a missing lxml parser fails loudly instead of degrading.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-import acquisition_core as ac  # type: ignore  # noqa: E402
+import acquisition_core as ac  # type: ignore
 
 bs4 = pytest.importorskip("bs4")
 pytest.importorskip("lxml")
 
 
-def _text(result):
-    return result[0] if isinstance(result, tuple) else result
-
-
 def test_malformed_markup_reads_the_lxml_way():
     # html.parser gave "a\nb" here; lxml drops the stray close tag.
-    assert _text(ac.html_to_text("<p>a</div>b</p>")) == "ab"
+    assert ac.html_to_text("<p>a</div>b</p>")[0] == "ab"
 
 
 def test_missing_lxml_fails_loudly(monkeypatch):
