@@ -151,7 +151,7 @@ def _strip_markdown(text: str) -> str:
         ln = _MD_HEADING.sub("", ln)                       # heading markers
         ln = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", ln)       # images
         ln = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", ln)   # links -> text
-        ln = re.sub(r"\*{1,3}([^*_]+)\*{1,3}", r"\1", ln)  # asterisk emphasis
+        ln = re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", ln)   # asterisk emphasis
         # Underscore runs inside identifiers are content, not delimiters.
         ln = _UNDERSCORE_EMPHASIS.sub(r"\2", ln)
         ln = re.sub(r"^\s{0,3}>\s?", "", ln)               # blockquote

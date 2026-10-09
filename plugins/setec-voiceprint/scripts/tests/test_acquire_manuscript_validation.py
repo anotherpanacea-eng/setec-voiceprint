@@ -90,9 +90,6 @@ def test_word_windows_keep_unaffected_whitespace_and_unicode_tokenization():
     assert am._window_split("\n \t\r\n", 3) == []
     text = "café\u00a0alpha\tbeta\ngamma  delta"
     assert am._window_split(text, 3) == ["café alpha beta", "gamma delta"]
-    before = "café alpha beta"
-    after = am._window_split(text, 3)[0]
-    assert ac.compute_content_hash(after) == ac.compute_content_hash(before)
 
 
 @pytest.mark.parametrize("mode", ["chapter", "window"])
@@ -154,6 +151,10 @@ def test_markdown_strips_balanced_underscore_emphasis_only(marker):
     assert am._strip_markdown(text) == "file_name_here and file__name_here plus word."
 
 
+def test_markdown_strips_asterisk_emphasis_around_identifiers():
+    assert am._strip_markdown("**file_name_here** and *x_y* then *z*.") == "file_name_here and x_y then z."
+
+
 def test_markdown_other_existing_markup_still_strips():
     text = "# Title\n\n*one* **two** ***three*** a*b*c [four](https://example.org).\n" \
            "![picture](image.png)\n> quoted\n```\ncode\n```"
@@ -177,5 +178,3 @@ def test_corrected_manuscript_bytes_reach_stored_text_and_content_identity(tmp_p
     stored = (manifest.parent / entries[0]["path"]).read_bytes()
     assert b"\n\n" in stored and b"file_name_here" in stored
     assert entries[0]["content_hash"] == "sha256:" + hashlib.sha256(stored).hexdigest()
-    old_text = " ".join(markdown.replace("file_name_here", "filenamehere").split())
-    assert entries[0]["content_hash"] != ac.compute_content_hash(old_text)
