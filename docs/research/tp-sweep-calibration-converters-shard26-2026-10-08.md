@@ -349,5 +349,7 @@ another module. `calibrate_thresholds` reaches `validation_harness` and
   punctuation segments, which would decide whether `_join_text`'s
   reconstruction differs from the source text.
 - The 50,000-string word-count fuzz used a fixed alphabet. It did not include
-  the `\x1c` to `\x1f` separators, where `str.split()` and `\S+` are known to
-  differ.
+  the `\x1c` to `\x1f` separators. A separate review probe on
+  `"a" + chr(n) + "b"`, for n from 28 through 31, confirmed that default
+  Unicode `str.split()` and `re.findall(r"\S+", text)` both return
+  `["a", "b"]` for all four; the original fuzz made no claim about them.
