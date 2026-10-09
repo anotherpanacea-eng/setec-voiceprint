@@ -127,6 +127,10 @@ def count_words_unicode(text: str) -> int:
     return len(_WORD_UNICODE_RE.findall(text))
 
 
+def count_words_alpha_tokens(text: str) -> int:
+    return len(word_tokens_alpha(text))
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -144,6 +148,7 @@ PRIMITIVES = _MappingProxyType({
     "count_words_alnum": "setec.core.textprims",
     "count_words_unicode_hyphen": "setec.core.textprims",
     "word_tokens_alpha": "setec.core.textprims",
+    "count_words_alpha_tokens": "setec.core.textprims",
     "count_words_unicode": "setec.core.textprims",
     "split_sentences_enthymeme": "setec.core.textprims",
     "content_tokens_enthymeme": "setec.core.textprims",

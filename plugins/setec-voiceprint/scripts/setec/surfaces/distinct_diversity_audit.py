@@ -134,8 +134,7 @@ def _load_dir(root: Path, suffixes=(".txt", ".md")) -> list[tuple[str, str]]:
 
 # ---- M1 lexical-near-dup lens (stdlib, model-free, deterministic) ------------
 
-def _word_count(text: str) -> int:
-    return len(word_tokens(text))
+from setec.core.textprims import count_words_alpha_tokens as _word_count
 
 
 def word_shingles(text: str, k: int) -> frozenset[tuple[str, ...]]:
