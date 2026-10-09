@@ -147,6 +147,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/variance_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/manuscript_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/register_classifier.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/construction_signature_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/bigram_diff.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/confounder_audit.py", "_SCRIPT_DIR"),

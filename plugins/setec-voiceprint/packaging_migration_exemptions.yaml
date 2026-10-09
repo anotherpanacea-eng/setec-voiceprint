@@ -1063,12 +1063,12 @@ exemptions:
   introduced_sha: c7741bb2c1832249e2fa7e9ba8a305615e287f2d
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 72 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 81797c5bc589fb0c2d37c08fe7e655e90f9917c1
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/controls_audit.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 58 not yet converted
@@ -3486,7 +3486,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/construction_signature_audit.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5236,4 +5236,12 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: 455b8d171c26d39092b9604cd691bf13a5dbbbf5
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/construction_signature_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 81797c5bc589fb0c2d37c08fe7e655e90f9917c1
   removal_phase: not-applicable
