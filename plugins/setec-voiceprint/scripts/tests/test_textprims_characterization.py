@@ -121,3 +121,19 @@ def test_argument_audits_share_blankline_splitter(module_name):
     packaged = importlib.import_module("setec.surfaces." + module_name)
     assert legacy is packaged
     assert legacy.split_paragraphs is textprims.split_paragraphs_blanklines
+
+
+@pytest.mark.parametrize("module_name", [
+    "crosslingual_voice_distance", "document_layout_audit", "formulaicity_audit",
+    "narratorial_distance_audit", "reference_ecology_audit",
+    "rewriting_invariance_audit", "sound_texture_audit",
+])
+def test_unicode_counters_share_function_and_pattern(module_name):
+    # Preserve existing public names and the compiled-pattern compatibility alias.
+    import importlib
+    from setec.core import textprims
+    legacy = importlib.import_module(module_name)
+    packaged = importlib.import_module("setec.surfaces." + module_name)
+    assert legacy is packaged
+    assert legacy.count_words is textprims.count_words_unicode_hyphen
+    assert legacy._WORD_RE is textprims._WORD_UNICODE_HYPHEN_RE

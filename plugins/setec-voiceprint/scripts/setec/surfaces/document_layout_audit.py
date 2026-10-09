@@ -58,7 +58,7 @@ TOOL_NAME = "document_layout_audit"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 300
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
+from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 _ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
 _UL_ITEM_RE = re.compile(r"^\s*([-*+])\s+\S")
 _OL_ITEM_RE = re.compile(r"^\s*\d+[.)]\s+\S")
@@ -70,8 +70,7 @@ _BARE_URL_RE = re.compile(r"(?<!\()\bhttps?://[^\s)]+")
 _TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _per_1k(n: int, words: int) -> float:

@@ -106,6 +106,13 @@ def split_paragraphs_blanklines(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
+_WORD_UNICODE_HYPHEN_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
+
+
+def count_words_unicode_hyphen(text: str) -> int:
+    return len(_WORD_UNICODE_HYPHEN_RE.findall(text))
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -121,6 +128,7 @@ PRIMITIVES = _MappingProxyType({
     "_normws": "setec.core.textprims",
     "count_words_alpha": "setec.core.textprims",
     "count_words_alnum": "setec.core.textprims",
+    "count_words_unicode_hyphen": "setec.core.textprims",
     "split_sentences_enthymeme": "setec.core.textprims",
     "content_tokens_enthymeme": "setec.core.textprims",
     "tokenize": "setec.core.passage_tokenizer_v1",
