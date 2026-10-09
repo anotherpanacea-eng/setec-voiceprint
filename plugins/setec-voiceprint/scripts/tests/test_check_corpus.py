@@ -315,6 +315,12 @@ def test_non_utf8_bytes_are_replaced_and_counted(tmp_path: Path) -> None:
     assert record["decode_replacements"] == 2
     # The replacements form a token the strip rules see; ignoring them gave 5.
     assert record["input_tokens_before"] == 6
+    assert record["status"] == "warning"
+    assert cc_mod.check_path(genuine)["status"] == "clean"
+    summary = cc_mod._summarize_hygiene_records(
+        [record, cc_mod.check_path(genuine)], warn_threshold=0.01, fail_threshold=0.05,
+    )
+    assert summary["decode_replacements"] == 2 and summary["status"] == "warning"
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
@@ -331,7 +337,7 @@ def test_valid_front_matter_keeps_universal_newline_behavior(tmp_path: Path, new
     assert cc_mod.check_path(path, collect_stripped=True) == expected
 
 
-def test_replacements_can_change_ratio_without_changing_thresholds(tmp_path: Path) -> None:
+def test_replacements_dilute_the_ratio_but_still_warn(tmp_path: Path) -> None:
     import check_corpus as cc_mod
 
     path = tmp_path / "mixed.txt"
@@ -342,4 +348,4 @@ def test_replacements_can_change_ratio_without_changing_thresholds(tmp_path: Pat
     assert record["decode_replacements"] == 500
     assert record["dominant_rule"] == "yaml_front_matter"
     assert record["strip_ratio"] < cc_mod.DEFAULT_WARN_THRESHOLD
-    assert record["status"] == "clean"
+    assert record["status"] == "warning"

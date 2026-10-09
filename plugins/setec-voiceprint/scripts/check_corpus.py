@@ -297,6 +297,8 @@ def check_path(
     ratio = float(meta.get("strip_ratio", 0.0) or 0.0)
     meta["path"] = str(path)
     meta["status"] = classify_file(ratio, warn_threshold, fail_threshold)
+    if decode_replacements and meta["status"] == "clean":
+        meta["status"] = "warning"  # bytes that aren't UTF-8 are contamination
     meta["error"] = None
     meta["decode_replacements"] = decode_replacements
     return meta
@@ -467,6 +469,9 @@ def _summarize_hygiene_records(
         "strip_ratio": (stripped / tokens_before) if tokens_before else 0.0,
         "tokens_stripped_by_rule": dict(by_rule),
         "dominant_rule": dominant_rule,
+        "decode_replacements": sum(
+            int(r.get("decode_replacements", 0) or 0) for r in records
+        ),
     }
 
 
@@ -488,7 +493,8 @@ _RECORDS_CACHE_TOOL = "check_corpus"
 # 1.1: cache payload now carries per-file content fingerprints. Bumping the
 # version invalidates pre-fingerprint (1.0) caches, forcing a safe rescore.
 # 1.2: records decode bad bytes as U+FFFD and carry `decode_replacements`.
-_RECORDS_CACHE_VERSION = "1.2"
+# 1.3: a file with replacements is at least a warning.
+_RECORDS_CACHE_VERSION = "1.3"
 
 
 def _records_cache_meta(
@@ -668,6 +674,11 @@ def render_report(result: dict[str, Any]) -> str:
         f"**Counts:** {result['n_clean']} clean, {result['n_warning']} warning, "
         f"{result['n_fail']} fail, {result['n_error']} error"
     )
+    if result.get("decode_replacements"):
+        lines.append(
+            f"**Non-UTF-8 bytes:** {result['decode_replacements']} "
+            "replacement character(s); affected files are at least a warning"
+        )
     lines.append(
         f"**Aggregate stripped:** {result['tokens_stripped']} / "
         f"{result['input_tokens_before']} tokens "
@@ -856,7 +867,7 @@ def build_audit_payload(
         "input_tokens_before", "input_tokens_after",
         "tokens_stripped", "strip_ratio",
         "tokens_stripped_by_rule", "dominant_rule",
-        "files",
+        "decode_replacements", "files",
     ):
         if k in result:
             results_payload[k] = result[k]
