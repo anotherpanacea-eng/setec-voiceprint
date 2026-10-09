@@ -269,7 +269,12 @@ def _topology_repo(
         "land refusal contract",
     )
     landed = _git(path, "rev-parse", "HEAD")
-    _git(path, "commit", "-q", "--allow-empty", "-m", "consumer head")
+    # The consumer head keeps historical commits intact and relocates only
+    # current classifier authority to the frozen package implementation.
+    _write_fixture(path, GATE.CURRENT_CLASSIFIER_PATH,
+                   _show_bytes(ROOT, source_roles["refusal_implementation_review"], GATE.CLASSIFIER_PATH))
+    _write_fixture(path, GATE.CLASSIFIER_PATH, (ROOT / GATE.CLASSIFIER_PATH).read_bytes())
+    _git(path, "commit", "-q", "-m", "consumer head")
     head = _git(path, "rev-parse", "HEAD")
 
     receipt = copy.deepcopy(source_receipt)
@@ -608,6 +613,14 @@ def test_role_artifact_lookups_are_exact_and_offline(
         ),
     ]
     assert lookups[: len(role_sequence)] == role_sequence
+    assert lookups[len(role_sequence):len(role_sequence) + 6] == [
+        (receipt["landed_commit"], GATE.SPEC37_PATH),
+        (receipt["landed_commit"], GATE.SPEC76_PATH),
+        (receipt["landed_commit"], GATE.CLASSIFIER_PATH),
+        (HEAD, GATE.SPEC37_PATH),
+        (HEAD, GATE.SPEC76_PATH),
+        (HEAD, GATE.CURRENT_CLASSIFIER_PATH),
+    ]
     assert all(
         command[0]
         in {
@@ -1177,3 +1190,33 @@ def test_cli_misuse_has_fixed_non_disclosing_output(capsys: pytest.CaptureFixtur
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == "register sweep H1 gate: REFUSED\n"
+
+
+@pytest.mark.parametrize("shape", ["missing", "mutated"])
+def test_current_package_classifier_refuses_before_execution(monkeypatch, shape):
+    """A launcher or stale current artifact cannot replace frozen source authority."""
+    if IS_SHALLOW:
+        pytest.skip("historical role graph is intentionally unavailable in shallow clones")
+    original_git = GATE.Git
+    original_load = GATE._load_classifier
+    poisoned = (ROOT / GATE.CURRENT_CLASSIFIER_PATH).read_bytes() + b"\nraise RuntimeError('must never execute')\n"
+    observed = []
+
+    class CurrentArtifactGit(original_git):
+        def show_file(self, commit, path, ceiling):
+            if commit == HEAD and path == GATE.CURRENT_CLASSIFIER_PATH:
+                observed.append(path)
+                if shape == "missing":
+                    raise GATE.Refusal()
+                return poisoned
+            return super().show_file(commit, path, ceiling)
+
+    def load_verified(raw, expected):
+        assert raw != poisoned
+        return original_load(raw, expected)
+
+    monkeypatch.setattr(GATE, "Git", CurrentArtifactGit)
+    monkeypatch.setattr(GATE, "_load_classifier", load_verified)
+    with pytest.raises(GATE.Refusal):
+        GATE._verify_git(_receipt(), HEAD, ROOT)
+    assert observed == [GATE.CURRENT_CLASSIFIER_PATH]

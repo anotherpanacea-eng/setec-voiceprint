@@ -8188,3 +8188,26 @@ def test_non_terminator_carriage_returns_still_refuse(
         mv.project_register_sweep_manifest_bytes(
             payload, manifest_path=tmp_path / "manifest.jsonl"
         )
+
+
+def test_default_h1_paths_bind_frozen_implementation_not_launcher(monkeypatch):
+    """Current binding must use frozen source bytes before execution."""
+    from setec.surfaces import register_classifier as packaged
+
+    receipt_path, classifier_path = rs.default_h1_paths()
+    assert classifier_path == Path(packaged.__file__)
+    assert hashlib.sha256(classifier_path.read_bytes()).hexdigest() == rs.H1_FINAL_CLASSIFIER_SHA256
+    observed = []
+    original = rs._execute_classifier
+
+    def execute_verified(source, path):
+        assert hashlib.sha256(source).hexdigest() == rs.H1_FINAL_CLASSIFIER_SHA256
+        observed.append(Path(path))
+        return original(source, path)
+
+    monkeypatch.setattr(rs, "_execute_classifier", execute_verified)
+    rs.load_h1_binding(receipt_path=receipt_path, classifier_path=classifier_path)
+    assert observed == [classifier_path]
+    with pytest.raises(rs.PolicyRefused):
+        rs.load_h1_binding(receipt_path=receipt_path, classifier_path=SCRIPTS / "register_classifier.py")
+    assert observed == [classifier_path]

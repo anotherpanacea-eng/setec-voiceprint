@@ -82,7 +82,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # The whole idiolect relocation adds one required permanent alias (199 -> 200);
 # the complete acquisition family's fifteen aliases replace nine old
 # implementation bootstraps (+6): 206; no exclusions.
-PINNED_CEILING = 206
+# Reviewed register-diagnostics no-main permanent alias needs one foreign-cwd
+# runpy bootstrap; frozen implementation has none: 206 -> 207, no exclusions.
+PINNED_CEILING = 207
 
 
 def find_runtime_scripts() -> list[Path]:
