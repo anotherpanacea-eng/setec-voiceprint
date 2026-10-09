@@ -117,11 +117,7 @@ DEFAULT_DOES_NOT_LICENSE = (
 
 # ---------- paragraph splitting + signal computation ----------------
 
-def split_paragraphs(text: str) -> list[str]:
-    """Split on blank lines; strip; drop empties. The judge labels exactly
-    these paragraphs (aligned by index)."""
-    parts = re.split(r"\n\s*\n", text.strip())
-    return [p.strip() for p in parts if p.strip()]
+from setec.core.textprims import split_paragraphs_blanklines as split_paragraphs
 
 
 def compute_arc_signals(labels: list[dict[str, Any]]) -> dict[str, float | None]:

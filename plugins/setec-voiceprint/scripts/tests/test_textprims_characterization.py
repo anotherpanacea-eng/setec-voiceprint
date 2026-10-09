@@ -107,3 +107,17 @@ def test_bytes_arguments_must_be_hex_objects(tmp_path):
         row["args"] = ["plain text"]
     with pytest.raises(ValueError, match="closed hex object"):
         runner.run(_altered(tmp_path, change), os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+@pytest.mark.parametrize("module_name", [
+    "agd_move_scan", "argquality_dimension_profile", "argument_decision_audit",
+    "enthymeme_gapflag", "fallacy_scan", "warrant_probe",
+])
+def test_argument_audits_share_blankline_splitter(module_name):
+    # The one-owner contract keeps the established public aliases on one object.
+    import importlib
+    from setec.core import textprims
+    legacy = importlib.import_module(module_name)
+    packaged = importlib.import_module("setec.surfaces." + module_name)
+    assert legacy is packaged
+    assert legacy.split_paragraphs is textprims.split_paragraphs_blanklines

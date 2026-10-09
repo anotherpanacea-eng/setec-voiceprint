@@ -101,6 +101,11 @@ def content_tokens_enthymeme(text: str) -> set[str]:
     return {t for t in _WORD_ALNUM_RE.findall(text.lower()) if t not in _ENTHYMEME_STOPWORDS}
 
 
+def split_paragraphs_blanklines(text: str) -> list[str]:
+    parts = re.split(r"\n\s*\n", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -121,6 +126,7 @@ PRIMITIVES = _MappingProxyType({
     "tokenize": "setec.core.passage_tokenizer_v1",
     "_tokens": "setec.core.verbatim_cover",
     "_content_fingerprint": "setec.core.verbatim_cover",
+    "split_paragraphs_blanklines": "setec.core.textprims",
     "split_paragraphs": "setec.core.paragraph_parser",
     "split_sentences": "setec.core.paragraph_parser",
     "_analysis": "setec.preflight.common",

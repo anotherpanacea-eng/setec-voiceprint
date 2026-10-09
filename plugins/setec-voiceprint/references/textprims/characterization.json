@@ -3400,6 +3400,277 @@
           "cat"
         ]
       }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-empty",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-whitespace",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\r\n \n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-single-line-break",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one\ntwo"
+      ],
+      "mutant": {
+        "args": [
+          "one\ntwo\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one\ntwo",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-blank-lines",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\n\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\n\ntwo\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-crlf",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\r\n\r\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\r\n\r\ntwo\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-tabs-and-spaces",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\n \t\n two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\n \t\n two\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-unicode-blank-line",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\n \n two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\n \n two\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-repeated-separators",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "\n\n one\n\n\n\n two\n\n"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "\n\n one\n\n\n\n two\n\n\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-unicode-line-separator",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one  two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one  two"
+      ],
+      "mutant": {
+        "args": [
+          "one  two\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one  two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-nfc-nfd-and-punctuation",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "café 42.\n\ncafé can’t — go."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "café 42.",
+        "café can’t — go."
+      ],
+      "mutant": {
+        "args": [
+          "café 42.\n\ncafé can’t — go.\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "café 42.",
+          "café can’t — go.",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-invalid-argument",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.AttributeError",
+        "message": "'NoneType' object has no attribute 'strip'"
+      },
+      "mutant": {
+        "args": [
+          42
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.AttributeError",
+          "message": "'int' object has no attribute 'strip'"
+        }
+      }
     }
   ]
 }
