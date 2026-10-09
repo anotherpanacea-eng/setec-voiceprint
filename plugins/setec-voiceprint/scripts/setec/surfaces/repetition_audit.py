@@ -73,7 +73,7 @@ DEFAULT_FUNCTION_WORDS = {
     "little", "long", "short", "high", "low", "real", "maybe",
 }
 
-WORD_RE = re.compile(r"[A-Za-z']+")
+from setec.core.textprims import WORD_RE
 
 
 # See variance_audit.TASK_SURFACE for the contract. Vocabulary
@@ -84,8 +84,7 @@ TOOL_NAME = "repetition_audit"
 SCRIPT_VERSION = "1.0"
 
 
-def tokenize(text: str) -> list[str]:
-    return [w.lower() for w in WORD_RE.findall(text)]
+from setec.core.textprims import word_tokens_alpha as tokenize
 
 
 def load_anchors(path: str | None) -> set[str]:
