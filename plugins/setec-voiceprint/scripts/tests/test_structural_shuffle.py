@@ -740,14 +740,14 @@ def _imported_module_roots(py_path: Path) -> set[str]:
 
 
 def test_separation_guard():
-    roots = _imported_module_roots(_SCRIPTS / "structural_shuffle_audit.py")
+    roots = _imported_module_roots(Path(ss.__file__))
     leaked = roots & _SEPARATION_SET
     assert not leaked, f"structural_shuffle_audit imports separation-set modules: {leaked}"
 
 
 def test_orthogonal_to_binoculars():
     # Imports nothing from binoculars_audit.
-    roots = _imported_module_roots(_SCRIPTS / "structural_shuffle_audit.py")
+    roots = _imported_module_roots(Path(ss.__file__))
     assert "binoculars_audit" not in roots
     # No Binoculars / cross-perplexity field leaks into results.
     results = ss.audit(
