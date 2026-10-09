@@ -142,6 +142,10 @@ def split_sentences_uppercase(text: str) -> list[str]:
     ]
 
 
+def count_words_alpha_lower(text: str) -> int:
+    return len(_WORD_RE.findall(text.lower()))
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -157,6 +161,7 @@ PRIMITIVES = _MappingProxyType({
     "split_sentences_uppercase": "setec.core.textprims",
     "_normws": "setec.core.textprims",
     "count_words_alpha": "setec.core.textprims",
+    "count_words_alpha_lower": "setec.core.textprims",
     "count_words_alnum": "setec.core.textprims",
     "count_words_unicode_hyphen": "setec.core.textprims",
     "word_tokens_alpha": "setec.core.textprims",

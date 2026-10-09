@@ -75,11 +75,10 @@ LENGTH_FLOOR_WORDS = 100
 DEFAULT_BASE_MODEL = "roberta-large"
 DEFAULT_BASE_MODEL_LICENSE = "MIT"
 
-_WORD_RE = re.compile(r"[A-Za-z']+")
+from setec.core.textprims import _WORD_RE
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text.lower()))
+from setec.core.textprims import count_words_alpha_lower as count_words
 
 
 # --------------------------------------------------------------------------

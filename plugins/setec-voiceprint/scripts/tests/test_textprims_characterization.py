@@ -203,3 +203,25 @@ def test_uppercase_sentence_consumers_share_function_and_pattern(module_name, pu
         # Run segmentation is deliberately different and remains local.
         assert module._SENT_SPLIT_RE.pattern == r"[.!?]+|\n{2,}"
         assert module.function_word_runs("in the. of the") == [["in", "the"], ["of", "the"]]
+
+
+
+@pytest.mark.parametrize("module_name", [
+    "specdetect_audit", "structural_shuffle_audit", "binoculars_audit",
+    "edit_magnitude_audit", "fast_detect_curvature", "intrinsic_dimension_audit",
+])
+def test_alpha_lower_counter_consumers_share_function_and_pattern(module_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert module.count_words is textprims.count_words_alpha_lower
+    assert module._WORD_RE is textprims._WORD_RE
+    # Lowercasing before the ASCII regex has distinct Unicode behavior.
+    assert module.count_words(text="\u212a") == 1
+    assert module.count_words(text="\u0130abc") == 2
+    assert module.count_words(text="A\u212aB") == 1
+    assert module._WORD_RE.findall("A\u212aB") == ["A", "B"]
+    with pytest.raises(AttributeError):
+        module.count_words(None)
+    with pytest.raises(TypeError):
+        module.count_words(b"AbC")

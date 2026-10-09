@@ -5348,6 +5348,335 @@
           "One. two."
         ]
       }
+    },
+    {
+      "case_id": "count_words_alpha_lower-empty",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-whitespace",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " \t\r\n  extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-ascii",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "AbC XYZ"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "AbC XYZ extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-apostrophe",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "don't ' ''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "don't ' '' extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-hyphen",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a-b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a-b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-curly-apostrophe",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a’b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a’b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-digits-underscore",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "42x a_b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "42x a_b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-accent",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "café extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-decomposed",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "café extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-kelvin",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "K"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "K extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-dotted-i",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "İabc"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "İabc extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-kelvin-join",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "AKB"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "AKB extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-nul",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a\u0000b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a\u0000b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-unicode-space",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-non-latin",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "中文"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "中文 extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-invalid",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.AttributeError",
+        "message": "'NoneType' object has no attribute 'lower'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.AttributeError",
+          "message": "'list' object has no attribute 'lower'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-keyword",
+      "callable": "count_words_alpha_lower",
+      "args": [],
+      "kwargs": {
+        "text": "İabc"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "iabc"
+        },
+        "result_path": [],
+        "expected": 1
+      }
     }
   ]
 }
