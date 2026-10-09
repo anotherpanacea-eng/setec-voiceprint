@@ -74,15 +74,10 @@ try:
 except ImportError:
     HAS_TEXTSTAT = False
 
+# Punkt data is explicit setup (see requirements.txt), never fetched at
+# import; split_sentences falls back to regex when it is missing.
 try:
-    import nltk  # type: ignore
-    try:
-        nltk.data.find("tokenizers/punkt")
-    except LookupError:
-        try:
-            nltk.download("punkt", quiet=True)
-        except Exception:
-            pass
+    import nltk  # type: ignore  # noqa: F401
     HAS_NLTK = True
 except ImportError:
     HAS_NLTK = False
