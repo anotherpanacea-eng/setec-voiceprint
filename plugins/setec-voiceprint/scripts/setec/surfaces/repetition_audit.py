@@ -80,7 +80,6 @@ DEFAULT_FUNCTION_WORDS = {
 # not segmented. Tokens fold U+2019 to "'" (so "don’t" and "don't" are one
 # word) and drop apostrophes at their ends (closing quotes). Anchors get the
 # same folding.
-WORD_RE = re.compile(r"(?:[^\W\d_]|['\u2019])+")
 
 
 # See variance_audit.TASK_SURFACE for the contract. Vocabulary
@@ -93,7 +92,10 @@ SCRIPT_VERSION = "1.0"
 
 def tokenize(text: str) -> list[str]:
     text = unicodedata.normalize("NFC", text)
-    words = (w.lower().replace("\u2019", "'").strip("'") for w in WORD_RE.findall(text))
+    # Unicode \w also includes nondecimal numbers (such as superscripts and
+    # fractions); use letters explicitly so they cannot join adjacent words.
+    text = "".join(c if c.isalpha() or c in "'\u2019" else " " for c in text)
+    words = (w.lower().replace("\u2019", "'").strip("'") for w in text.split())
     return [w for w in words if w]
 
 
