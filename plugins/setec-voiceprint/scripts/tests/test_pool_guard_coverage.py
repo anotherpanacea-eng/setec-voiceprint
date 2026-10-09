@@ -202,6 +202,8 @@ def _source_path(scope: Path, module: str) -> Path:
         "house_style_decomposition",
         "pov_voice_profile",
         "general_imposters",
+        "manuscript_audit",
+        "variance_audit",
         "near_dup_dedup",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
@@ -515,6 +517,42 @@ def test_pool_guard_is_pure_stdlib():
                 assert a.name.split(".")[0] not in third_party, a.name
         elif isinstance(node, ast.ImportFrom) and node.module:
             assert node.module.split(".")[0] not in third_party, node.module
+
+
+def test_variance_audit_implementation_cannot_hide_an_unclassified_loader(monkeypatch):
+    """The executing implementation must remain inside corpus closure sweeps."""
+    import variance_audit
+
+    implementation = Path(variance_audit.__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match="variance_audit"):
+        test_loader_definer_sweep_is_closed()
+
+
+def test_manuscript_audit_implementation_cannot_hide_an_unclassified_loader(monkeypatch):
+    """The executing implementation must remain inside corpus closure sweeps."""
+    import manuscript_audit
+
+    implementation = Path(manuscript_audit.__file__).resolve()
+    original_read = Path.read_text
+
+    def read_with_loader(path, *args, **kwargs):
+        source = original_read(path, *args, **kwargs)
+        if path.resolve() == implementation:
+            source += "\n\ndef _load_manifest(path):\n    return []\n"
+        return source
+
+    monkeypatch.setattr(Path, "read_text", read_with_loader)
+    with pytest.raises(AssertionError, match="manuscript_audit"):
+        test_loader_definer_sweep_is_closed()
 
 
 if __name__ == "__main__":  # pragma: no cover

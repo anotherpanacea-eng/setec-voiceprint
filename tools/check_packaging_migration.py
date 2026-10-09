@@ -68,13 +68,7 @@ from _console import enable_utf8_stdio  # noqa: E402
 # gate's purpose.
 _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 _RESOLVER_REL_PATH = Path("setec/paths.py")
-# Existing protected module: two byte-preserved bootstraps bind the same name.
-# Claim-license guard forbids changing that module in P1, so pin the exact
-# occurrence pair instead of letting a generic (path, symbol) row cover more.
-_KNOWN_DUPLICATE_ANCHORS = {
-    ("plugins/setec-voiceprint/scripts/manuscript_audit.py", "SCRIPT_DIR"):
-        (31, 47),
-}
+_KNOWN_DUPLICATE_ANCHORS = {}
 
 # Removal-phase classification, per specs/svp-packaging-conversion.md's
 # phase table. Anything not explicitly listed defaults to P4 (whole-surface
@@ -142,6 +136,8 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/variance_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/manuscript_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/idiolect_detector.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/style_vectorizer.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/corpus_novelty_audit.py", "_SCRIPT_DIR"),
