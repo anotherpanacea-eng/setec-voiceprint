@@ -133,7 +133,9 @@ def _phrase_hits(
 ) -> tuple[int, int, list[str], list[str]]:
     """Return ``(n_unique_matched, n_total_occurrences,
     matched_phrases, missing_phrases)`` over case-insensitive
-    substring search.
+    whole-phrase search on ``[A-Za-z']`` word boundaries: a phrase
+    does not match inside a longer word (``"the"`` does not hit
+    ``"other"``).
 
     ``n_unique_matched`` counts each preservation-list phrase at
     most once and is the right value for the survival-rate
@@ -157,11 +159,10 @@ def _phrase_hits(
     for p in phrases:
         if not p:
             continue
-        # Count case-insensitive non-overlapping occurrences in
-        # the target. Falls back to substring `count()` which
-        # is sufficient for word-boundary phrase matches in
-        # natural prose (overlapping idiolect phrases are rare).
-        count = text_lower.count(p.lower())
+        # Case-insensitive non-overlapping occurrences, bounded by
+        # the word class `idiolect_detector` builds phrases from.
+        pattern = r"(?<![A-Za-z'])" + re.escape(p.lower()) + r"(?![A-Za-z'])"
+        count = len(re.findall(pattern, text_lower))
         if count > 0:
             matched.append(p)
             n_total_occurrences += count
@@ -459,8 +460,8 @@ def _claim_license(
             "1k, 2.0× over-preservation factor) are documented "
             "defaults, not labeled-corpus-validated values.",
             "Idiolect-phrase survival is computed by case-"
-            "insensitive substring match, mirroring the "
-            "convention `confounder_audit` uses. Phrase "
+            "insensitive whole-phrase match on the same "
+            "[A-Za-z'] word class `idiolect_detector` uses. Phrase "
             "preservation does not require sentence-level "
             "structural equivalence; a cosplay revision that "
             "preserves the phrase but breaks the surrounding "
