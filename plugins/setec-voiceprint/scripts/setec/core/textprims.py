@@ -79,6 +79,14 @@ SENTENCE_SPLITTERS = _MappingProxyType({
      'unicode_normalization': 'none',
      'allowed_backends': (),
      'behavior_sha256': 'bace7d2ce7a5a225448442f1d7fa355b718bb18f398ac27267cc58c8a03554f5'}),
+    "split_sentences": _MappingProxyType({'id': 'sentence_splitter-1fddf3b798ac-v1',
+ 'family': 'sentence_splitter',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences',
+ 'pattern_sha256': '321db9c338b83143e55c62803cc0ab884d70a6892b437dc130cf5d5db4722289',
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '1fddf3b798ac2259dc5cef158f1f43a28bfd3db00c5741956b1b9b2712c2fa93'}),
 })
 def __getattr__(name):
     if name == "tokenize":
@@ -88,6 +96,7 @@ def __getattr__(name):
 
 
 from setec.core.verbatim_cover import _content_fingerprint, _tokens
+from setec.core.paragraph_parser import split_paragraphs, split_sentences
 
 TOKENIZERS = _MappingProxyType({
     "tokenize": _MappingProxyType({'id': 'tokenizer-d6e53cf12864-v1',
@@ -107,7 +116,16 @@ TOKENIZERS = _MappingProxyType({
  'allowed_backends': (),
  'behavior_sha256': '7dd59b96051dbc53519e422f9e7093b29b7dfc590690377b5c295fd0ebacabcf'}),
 })
-PARAGRAPH_SPLITTERS = _MappingProxyType({})
+PARAGRAPH_SPLITTERS = _MappingProxyType({
+    "split_paragraphs": _MappingProxyType({'id': 'paragraph_splitter-772269f90411-v1',
+ 'family': 'paragraph_splitter',
+ 'implementation_ref': 'plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs',
+ 'pattern_sha256': 'fd111b0036776b9ec1d7bb65d7e38b609b99a8d8d8376013978d755199f743f7',
+ 'case_policy': 'preserve',
+ 'unicode_normalization': 'none',
+ 'allowed_backends': (),
+ 'behavior_sha256': '772269f904116c8e49436dab0049102b1525cbe55444e3eff222aceb3271a560'}),
+})
 FUNCTION_WORD_SETS = _MappingProxyType({
     'FUNCTION_WORDS': _MappingProxyType({'id': 'function_words-297455e23b54-v1',
  'family': 'function_words',

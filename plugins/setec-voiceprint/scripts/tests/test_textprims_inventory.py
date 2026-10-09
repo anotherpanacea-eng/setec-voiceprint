@@ -411,12 +411,12 @@ def test_registry_cannot_rebind_a_verbatim_cover_callable():
     assert "registered owner or dependency rebound: _content_fingerprint" in errors
 
 
-def _scripts(tmp_path, files):
+def _scripts(tmp_path, files, rows=inventory.VERBATIM_ROWS):
     scripts = tmp_path / "plugins/setec-voiceprint/scripts"
     for name, text in files.items():
         (scripts / name).parent.mkdir(parents=True, exist_ok=True)
         (scripts / name).write_text(text, encoding="utf-8")
-    return inventory.bindings(tmp_path, set(inventory.VERBATIM_ROWS))
+    return inventory.bindings(tmp_path, set(rows))
 
 
 def test_verbatim_cover_reexport_chain_resolves_to_the_owner(tmp_path):
@@ -477,3 +477,109 @@ def test_verbatim_cover_row_fields_are_bound(old, new, error):
     assert registry.count(old) == 1
     _, errors = inventory.verify_rows(registry.replace(old, new), registry)
     assert error in errors
+
+
+def _paragraph_rows(owner_text):
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    original = (ROOT / inventory.PARAGRAPH_OWNER).read_bytes()
+    return inventory.verify_rows(registry, registry, {inventory.PARAGRAPH_OWNER: owner_text.encode("utf-8")}, {inventory.PARAGRAPH_OWNER: original})
+
+
+def test_paragraph_parser_rows_verify_against_the_live_owner():
+    rows, errors = _paragraph_rows((ROOT / inventory.PARAGRAPH_OWNER).read_text(encoding="utf-8"))
+    assert not errors
+    assert rows["split_paragraphs"]["family"] == "paragraph_splitter" and rows["split_sentences"]["family"] == "sentence_splitter"
+
+
+@pytest.mark.parametrize("old, new", [
+    ("def split_paragraphs(text: str) -> list[str]:\n", "def split_paragraphs(text: str) -> list[str]:  # changed\n"),
+    ("_PARAGRAPH_SPLIT = re.compile(", "_PARAGRAPH_SPLIT = re.compile( "),
+    ("def split_sentences(paragraph: str) -> list[str]:\n", "def split_sentences(paragraph: str) -> list[str]:  # changed\n"),
+    ("_SENTENCE_END = re.compile(", "_SENTENCE_END = re.compile( "),
+])
+def test_paragraph_parser_bound_source_change_is_rejected(old, new):
+    text = (ROOT / inventory.PARAGRAPH_OWNER).read_text(encoding="utf-8")
+    assert text.count(old) == 1
+    _, errors = _paragraph_rows(text.replace(old, new))
+    assert any("paragraph-parser bound source changed" in error for error in errors)
+    assert any("paragraph-parser behavior digest mismatch" in error for error in errors)
+
+
+def test_paragraph_parser_digest_ignores_unbound_owner_code():
+    text = (ROOT / inventory.PARAGRAPH_OWNER).read_text(encoding="utf-8")
+    old = "def paragraph_count(text: str) -> int:\n"
+    assert text.count(old) == 1
+    _, errors = _paragraph_rows(text.replace(old, old + "    # stats edit outside this cohort\n"))
+    assert not errors
+
+
+@pytest.mark.parametrize("name", ["split_paragraphs", "split_sentences", "_PARAGRAPH_SPLIT", "_SENTENCE_END"])
+def test_paragraph_parser_second_owner_binding_is_rejected(name):
+    text = (ROOT / inventory.PARAGRAPH_OWNER).read_text(encoding="utf-8")
+    _, errors = _paragraph_rows(text + "\n" + name + " = replacement\n")
+    assert "paragraph-parser owner binding not unique: " + name in errors
+
+
+def test_paragraph_parser_decorated_callable_is_rejected():
+    text = (ROOT / inventory.PARAGRAPH_OWNER).read_text(encoding="utf-8")
+    _, errors = _paragraph_rows(text.replace("\ndef split_sentences(", "\n@decorator\ndef split_sentences(", 1))
+    assert "paragraph-parser callable decorated: split_sentences" in errors
+
+
+def test_paragraph_parser_re_must_be_the_sole_plain_import():
+    text = (ROOT / inventory.PARAGRAPH_OWNER).read_text(encoding="utf-8")
+    _, errors = _paragraph_rows(text + "\nfrom regex import compile as re\n")
+    assert "paragraph-parser module binding must be one plain import: re" in errors
+
+
+def test_registry_must_import_paragraph_parser_callables_directly():
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    old = "from setec.core.paragraph_parser import split_paragraphs, split_sentences\n"
+    assert registry.count(old) == 1
+    _, errors = inventory.verify_rows(registry.replace(old, "from setec.core.paragraph_parser import split_paragraphs\nfrom setec.core.paragraph_parser import split_sentences\n"), registry)
+    assert "registry must directly import its paragraph-parser callables" in errors
+
+
+@pytest.mark.parametrize("old, new, error", [
+    ("'pattern_sha256': 'fd111b0036776b9ec1d7bb65d7e38b609b99a8d8d8376013978d755199f743f7'", "'pattern_sha256': '321db9c338b83143e55c62803cc0ab884d70a6892b437dc130cf5d5db4722289'", "paragraph-parser pattern digest mismatch: split_paragraphs"),
+    ("'pattern_sha256': '321db9c338b83143e55c62803cc0ab884d70a6892b437dc130cf5d5db4722289',\n 'case_policy': 'preserve'", "'pattern_sha256': '321db9c338b83143e55c62803cc0ab884d70a6892b437dc130cf5d5db4722289',\n 'case_policy': 'lower'", "invalid paragraph-parser policy: split_sentences"),
+])
+def test_paragraph_parser_row_fields_are_bound(old, new, error):
+    registry = (ROOT / inventory.OWNER).read_text(encoding="utf-8")
+    assert registry.count(old) == 1
+    _, errors = inventory.verify_rows(registry.replace(old, new), registry)
+    assert error in errors
+
+
+def _paragraph_scripts(tmp_path, consumer):
+    launcher = (ROOT / "plugins/setec-voiceprint/scripts/paragraph_parser.py").read_text(encoding="utf-8")
+    return _scripts(tmp_path, {"paragraph_parser.py": launcher, "consumer.py": consumer}, inventory.PARAGRAPH_ROWS)
+
+
+def test_registered_reads_through_the_flat_launcher_resolve_to_the_owner(tmp_path):
+    imports, errors = _paragraph_scripts(tmp_path, "import paragraph_parser\nfrom setec.core import paragraph_parser as core\ndef run(text):\n    return [paragraph_parser.split_sentences(p) for p in core.split_paragraphs(text)], paragraph_parser.parse_document(text)\n")
+    assert not errors
+    consumer = "plugins/setec-voiceprint/scripts/consumer.py"
+    assert imports[(consumer, "paragraph_parser.split_sentences")] == "split_sentences"
+    assert imports[(consumer, "core.split_paragraphs")] == "split_paragraphs"
+    assert (consumer, "paragraph_parser.parse_document") not in imports
+
+
+@pytest.mark.parametrize("source", [
+    "import paragraph_parser\nparagraph_parser.split_sentences = len\n",
+    "import paragraph_parser\nparagraph_parser.unregistered = None\n",
+    "from setec.core import paragraph_parser as core\nsetattr(core, 'split_paragraphs', len)\n",
+    "import paragraph_parser\nowner = paragraph_parser\n",
+])
+def test_replacing_or_aliasing_a_paragraph_parser_module_object_fails(tmp_path, source):
+    _, errors = _paragraph_scripts(tmp_path, source)
+    assert errors
+
+
+def test_same_named_independent_splitters_are_not_registered_objects(tmp_path):
+    imports, errors = _scripts(tmp_path, {
+        "independent.py": "def split_paragraphs(text):\n    return text.split('\\n\\n')\ndef split_sentences(text):\n    return text.split('. ')\n",
+        "consumer.py": "from independent import split_paragraphs, split_sentences\n",
+    }, inventory.PARAGRAPH_ROWS)
+    assert not errors
+    assert not imports

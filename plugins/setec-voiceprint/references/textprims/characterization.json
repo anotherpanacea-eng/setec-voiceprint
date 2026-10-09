@@ -2144,6 +2144,731 @@
         "result_path": [],
         "expected": "d4bbc1dddab73cbd9625ed48d52234a9be2a89eea638e4d92e76f4cfe98019e5"
       }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-empty",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "Alpha"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-whitespace_only",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        " \t\n\n \t"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\nAlpha\n\n \t"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-blank_line_pair",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Alpha\n\nbeta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Alpha",
+        "beta"
+      ],
+      "mutant": {
+        "args": [
+          "Alpha\nbeta"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha\nbeta"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-crlf_blank_line",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Alpha\r\n\r\nbeta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Alpha",
+        "beta"
+      ],
+      "mutant": {
+        "args": [
+          "Alpha\r\nbeta"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha\r\nbeta"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-space_tab_separator_lines",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Alpha\n \t\n\t \n\nbeta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Alpha",
+        "beta"
+      ],
+      "mutant": {
+        "args": [
+          "Alpha\n \t beta"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha\n \t beta"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-single_newline_kept",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Alpha\nbeta\ngamma"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Alpha\nbeta\ngamma"
+      ],
+      "mutant": {
+        "args": [
+          "Alpha\nbeta\n\ngamma"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha\nbeta",
+          "gamma"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-digits",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Item 3.5 costs 12.\n\nItem 4 follows."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Item 3.5 costs 12.",
+        "Item 4 follows."
+      ],
+      "mutant": {
+        "args": [
+          "Item 3.5 costs 12.\nItem 4 follows."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Item 3.5 costs 12.\nItem 4 follows."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-hyphens",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "A well-known plan.\n\nA long-term view."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A well-known plan.",
+        "A long-term view."
+      ],
+      "mutant": {
+        "args": [
+          "A well-known plan.\n-\nA long-term view."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A well-known plan.\n-\nA long-term view."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-straight_apostrophe",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "It's ready.\n\nShe's waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It's ready.",
+        "She's waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It's ready.\n'\nShe's waiting."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It's ready.\n'\nShe's waiting."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-curly_apostrophe",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "It’s ready.\n\nShe’s waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It’s ready.",
+        "She’s waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It’s ready.\n’\nShe’s waiting."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It’s ready.\n’\nShe’s waiting."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-nfc",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Café arrived.\n\nNext paragraph."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next paragraph."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived.\nNext paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived.\nNext paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-nfd",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Café arrived.\n\nNext paragraph."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next paragraph."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived.\nNext paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived.\nNext paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-abbreviation",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Dr. Hale arrived.\n\nHe waited."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr. Hale arrived.",
+        "He waited."
+      ],
+      "mutant": {
+        "args": [
+          "Dr. Hale arrived.\nHe waited."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr. Hale arrived.\nHe waited."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_paragraphs-ellipsis",
+      "family": "paragraph_splitter",
+      "registry_id": "paragraph_splitter-772269f90411-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
+      "args": [
+        "Some words...\n\nMore words."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Some words...",
+        "More words."
+      ],
+      "mutant": {
+        "args": [
+          "Some words...\nMore words."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Some words...\nMore words."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-empty",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "Alpha."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-digits",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "A number: 3.5. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A number: 3.5.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "A number: 3. 5 next."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A number: 3. 5 next."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-hyphens",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "A well-known plan. Another plan."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "A well-known plan.",
+        "Another plan."
+      ],
+      "mutant": {
+        "args": [
+          "A well-known plan. another plan."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A well-known plan. another plan."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-straight_apostrophe",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "It's ready. She's waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It's ready.",
+        "She's waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It's ready. she's waiting."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It's ready. she's waiting."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-curly_apostrophe",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "It’s ready. She’s waiting."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "It’s ready.",
+        "She’s waiting."
+      ],
+      "mutant": {
+        "args": [
+          "It’s ready. ’Tis late."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "It’s ready. ’Tis late."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-nfc",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "Café arrived. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived. next sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived. next sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-nfd",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "Café arrived. Next sentence."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café arrived.",
+        "Next sentence."
+      ],
+      "mutant": {
+        "args": [
+          "Café arrived. next sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café arrived. next sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-paragraph_boundary_not_split",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "Alpha\n\nbeta. Gamma"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Alpha\n\nbeta.",
+        "Gamma"
+      ],
+      "mutant": {
+        "args": [
+          "Alpha.\n\nBeta. Gamma"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Alpha.",
+          "Beta.",
+          "Gamma"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-ascii_quote_splits_curly_does_not",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "He said. \"Go now.\""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "He said.",
+        "\"Go now.\""
+      ],
+      "mutant": {
+        "args": [
+          "He said. “Go now.”"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "He said. “Go now.”"
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-lowercase_word_not_split",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "See e.g. this. And that."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "See e.g. this.",
+        "And that."
+      ],
+      "mutant": {
+        "args": [
+          "See e.g. This. And that."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "See e.g.",
+          "This.",
+          "And that."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-abbreviation_split_unguarded",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "Dr. Smith left."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr.",
+        "Smith left."
+      ],
+      "mutant": {
+        "args": [
+          "Dr. smith left."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr. smith left."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-non_ascii_capital_not_split",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "Café. Élan vital."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Café. Élan vital."
+      ],
+      "mutant": {
+        "args": [
+          "Café. Elan vital."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Café.",
+          "Elan vital."
+        ]
+      }
+    },
+    {
+      "case_id": "paragraph_split_sentences-ellipsis_and_mixed_terminal",
+      "family": "sentence_splitter",
+      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
+      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
+      "args": [
+        "Wait... What?! Yes"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Wait...",
+        "What?!",
+        "Yes"
+      ],
+      "mutant": {
+        "args": [
+          "Wait... what?! yes"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Wait... what?! yes"
+        ]
+      }
     }
   ]
 }

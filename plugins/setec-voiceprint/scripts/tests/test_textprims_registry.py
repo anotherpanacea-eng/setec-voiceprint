@@ -38,8 +38,9 @@ def test_function_word_import_does_not_load_plugin_dependent_tokenizer(tmp_path)
     core = scripts / "setec/core"
     core.mkdir(parents=True)
     shutil.copyfile(Path(textprims.__file__), core / "textprims.py")
-    # The registry's direct verbatim-cover import is pure stdlib and travels with it.
-    shutil.copyfile(Path(textprims.__file__).with_name("verbatim_cover.py"), core / "verbatim_cover.py")
+    # The registry's direct verbatim-cover and paragraph-parser imports are pure stdlib and travel with it.
+    for owner in ("verbatim_cover.py", "paragraph_parser.py"):
+        shutil.copyfile(Path(textprims.__file__).with_name(owner), core / owner)
     # No marker, tokenizer module or data is present: pure table imports must work.
     code = "import sys; sys.path.insert(0, sys.argv[1]); from setec.core.textprims import FUNCTION_WORDS; assert 'and' in FUNCTION_WORDS; assert 'setec.core.passage_tokenizer_v1' not in sys.modules"
     result = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", code, str(scripts)], cwd=tmp_path, text=True, capture_output=True, timeout=30)
@@ -60,3 +61,17 @@ def test_verbatim_cover_registry_reexports_the_owner_objects():
         assert (row["case_policy"], row["unicode_normalization"], row["allowed_backends"]) == ("lower", "none", ())
     assert textprims.TOKENIZERS["_tokens"]["pattern_sha256"] == hashlib.sha256(verbatim_cover._TOKEN.pattern.encode("utf-8")).hexdigest()
     assert textprims.FINGERPRINTS["_content_fingerprint"]["pattern_sha256"] is None
+
+
+def test_paragraph_parser_registry_reexports_the_owner_objects():
+    import hashlib
+    import paragraph_parser as launcher
+    from setec.core import paragraph_parser
+    for symbol, registry, pattern in (("split_paragraphs", textprims.PARAGRAPH_SPLITTERS, paragraph_parser._PARAGRAPH_SPLIT), ("split_sentences", textprims.SENTENCE_SPLITTERS, paragraph_parser._SENTENCE_END)):
+        owner = getattr(paragraph_parser, symbol)
+        assert getattr(textprims, symbol) is owner
+        assert getattr(launcher, symbol) is owner
+        row = registry[symbol]
+        assert row["implementation_ref"] == "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:" + symbol
+        assert (row["case_policy"], row["unicode_normalization"], row["allowed_backends"]) == ("preserve", "none", ())
+        assert row["pattern_sha256"] == hashlib.sha256(pattern.pattern.encode("utf-8")).hexdigest()

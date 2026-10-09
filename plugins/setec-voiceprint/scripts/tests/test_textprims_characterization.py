@@ -100,19 +100,20 @@ def test_frozen_tokenizer_custom_table_argument_is_refused(tmp_path):
         runner.run(fixture, os.environ["TEXTPRIMS_PUNKT_DATA"])
 
 
-@pytest.mark.parametrize("symbol", ["_tokens", "_content_fingerprint"])
-def test_verbatim_cover_registry_wrapper_is_refused(monkeypatch, symbol):
+@pytest.mark.parametrize("symbol, label", [("_tokens", "verbatim-cover"), ("_content_fingerprint", "verbatim-cover"), ("split_paragraphs", "paragraph-parser"), ("split_sentences", "paragraph-parser")])
+def test_owner_module_registry_wrapper_is_refused(monkeypatch, symbol, label):
     from setec.core import textprims
     native = getattr(textprims, symbol)
     monkeypatch.setattr(textprims, symbol, lambda *args, **kwargs: native(*args, **kwargs))
-    with pytest.raises(ValueError, match="verbatim-cover registry identity changed"):
+    with pytest.raises(ValueError, match=label + " registry identity changed"):
         runner.run(ROOT / "references/textprims/characterization.json", os.environ["TEXTPRIMS_PUNKT_DATA"])
 
 
-def test_verbatim_cover_legacy_callable_must_name_the_owner(tmp_path):
+@pytest.mark.parametrize("prefix, owner", [("verbatim_tokens-", "verbatim_cover.py:"), ("paragraph_split_sentences-", "paragraph_parser.py:")])
+def test_owner_module_legacy_callable_must_name_the_owner(tmp_path, prefix, owner):
     doc = json.loads((ROOT / "references/textprims/characterization.json").read_text(encoding="utf-8"))
-    row = next(row for row in doc["rows"] if row["case_id"].startswith("verbatim_tokens-"))
-    row["legacy_callable"] = row["legacy_callable"].replace("verbatim_cover.py:", "textprims.py:")
+    row = next(row for row in doc["rows"] if row["case_id"].startswith(prefix))
+    row["legacy_callable"] = row["legacy_callable"].replace(owner, "textprims.py:")
     fixture = tmp_path / "other-owner.json"
     fixture.write_text(json.dumps(doc), encoding="utf-8")
     with pytest.raises(ValueError, match="must name its final owner"):
