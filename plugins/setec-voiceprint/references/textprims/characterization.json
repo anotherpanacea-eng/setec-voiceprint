@@ -4628,6 +4628,278 @@
         "result_path": [],
         "expected": 4
       }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-empty",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "abc"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-whitespace",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "abc"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-digits",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "123 １２３"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "abc １２３"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-apostrophe-only",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "' '' '''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "' ''"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-straight-curly",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "don't rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "don’t rock’n’roll"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-hyphens",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "one-two ---"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "one ---"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-underscores",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "_under_score"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "_under_"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-unicode-only",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "中文 Ελληνικά"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "中文 abc"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-nfc-nfd",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "éclair"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "éclair"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-case",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "ABC lower"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "ABC"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-punctuation",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "one...two—three/four"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "one...two—three"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-zero-nul",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        "one​two\u0000three"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "one​two"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-invalid",
+      "callable": "count_words_alpha_tokens",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_alpha_tokens-keyword",
+      "callable": "count_words_alpha_tokens",
+      "args": [],
+      "kwargs": {
+        "text": "one two"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "one"
+        },
+        "result_path": [],
+        "expected": 1
+      }
     }
   ]
 }
