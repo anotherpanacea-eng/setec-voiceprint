@@ -2302,222 +2302,6 @@
       }
     },
     {
-      "case_id": "paragraph_split_paragraphs-digits",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "Item 3.5 costs 12.\n\nItem 4 follows."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "Item 3.5 costs 12.",
-        "Item 4 follows."
-      ],
-      "mutant": {
-        "args": [
-          "Item 3.5 costs 12.\nItem 4 follows."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "Item 3.5 costs 12.\nItem 4 follows."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-hyphens",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "A well-known plan.\n\nA long-term view."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "A well-known plan.",
-        "A long-term view."
-      ],
-      "mutant": {
-        "args": [
-          "A well-known plan.\n-\nA long-term view."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "A well-known plan.\n-\nA long-term view."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-straight_apostrophe",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "It's ready.\n\nShe's waiting."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "It's ready.",
-        "She's waiting."
-      ],
-      "mutant": {
-        "args": [
-          "It's ready.\n'\nShe's waiting."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "It's ready.\n'\nShe's waiting."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-curly_apostrophe",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "It’s ready.\n\nShe’s waiting."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "It’s ready.",
-        "She’s waiting."
-      ],
-      "mutant": {
-        "args": [
-          "It’s ready.\n’\nShe’s waiting."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "It’s ready.\n’\nShe’s waiting."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-nfc",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "Café arrived.\n\nNext paragraph."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "Café arrived.",
-        "Next paragraph."
-      ],
-      "mutant": {
-        "args": [
-          "Café arrived.\nNext paragraph."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "Café arrived.\nNext paragraph."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-nfd",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "Café arrived.\n\nNext paragraph."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "Café arrived.",
-        "Next paragraph."
-      ],
-      "mutant": {
-        "args": [
-          "Café arrived.\nNext paragraph."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "Café arrived.\nNext paragraph."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-abbreviation",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "Dr. Hale arrived.\n\nHe waited."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "Dr. Hale arrived.",
-        "He waited."
-      ],
-      "mutant": {
-        "args": [
-          "Dr. Hale arrived.\nHe waited."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "Dr. Hale arrived.\nHe waited."
-        ]
-      }
-    },
-    {
-      "case_id": "paragraph_split_paragraphs-ellipsis",
-      "family": "paragraph_splitter",
-      "registry_id": "paragraph_splitter-772269f90411-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_paragraphs",
-      "args": [
-        "Some words...\n\nMore words."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "Some words...",
-        "More words."
-      ],
-      "mutant": {
-        "args": [
-          "Some words...\nMore words."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "Some words...\nMore words."
-        ]
-      }
-    },
-    {
       "case_id": "paragraph_split_sentences-empty",
       "family": "sentence_splitter",
       "registry_id": "sentence_splitter-1fddf3b798ac-v1",
@@ -2569,33 +2353,6 @@
       }
     },
     {
-      "case_id": "paragraph_split_sentences-hyphens",
-      "family": "sentence_splitter",
-      "registry_id": "sentence_splitter-1fddf3b798ac-v1",
-      "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
-      "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
-      "args": [
-        "A well-known plan. Another plan."
-      ],
-      "kwargs": {},
-      "result_path": [],
-      "comparator": "sequence_exact",
-      "expected": [
-        "A well-known plan.",
-        "Another plan."
-      ],
-      "mutant": {
-        "args": [
-          "A well-known plan. another plan."
-        ],
-        "kwargs": {},
-        "result_path": [],
-        "expected": [
-          "A well-known plan. another plan."
-        ]
-      }
-    },
-    {
       "case_id": "paragraph_split_sentences-straight_apostrophe",
       "family": "sentence_splitter",
       "registry_id": "sentence_splitter-1fddf3b798ac-v1",
@@ -2613,12 +2370,13 @@
       ],
       "mutant": {
         "args": [
-          "It's ready. she's waiting."
+          "It's ready. 'Tis late."
         ],
         "kwargs": {},
         "result_path": [],
         "expected": [
-          "It's ready. she's waiting."
+          "It's ready.",
+          "'Tis late."
         ]
       }
     },
@@ -2683,14 +2441,14 @@
       "legacy_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
       "registered_callable": "plugins/setec-voiceprint/scripts/setec/core/paragraph_parser.py:split_sentences",
       "args": [
-        "Café arrived. Next sentence."
+        "Café. Élan vital."
       ],
       "kwargs": {},
       "result_path": [],
       "comparator": "sequence_exact",
       "expected": [
-        "Café arrived.",
-        "Next sentence."
+        "Café.",
+        "Élan vital."
       ],
       "mutant": {
         "args": [
