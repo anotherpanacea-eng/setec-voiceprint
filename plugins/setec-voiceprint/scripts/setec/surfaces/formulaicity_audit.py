@@ -70,11 +70,10 @@ BUILTIN_PHRASES: dict[str, list[str]] = {
     ],
 }
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
+from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _per_1k(n: int, words: int) -> float:

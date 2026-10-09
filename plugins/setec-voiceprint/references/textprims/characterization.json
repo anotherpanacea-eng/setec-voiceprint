@@ -3671,6 +3671,278 @@
           "message": "'int' object has no attribute 'strip'"
         }
       }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-empty",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-whitespace",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " \t\r\n  uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-digits-and-underscores",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "42 １２３ _under_score"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "42 １２３ _under_score uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-hyphens",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one-two two--words --- edge-"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "one-two two--words --- edge- uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-straight-apostrophes",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "can't 'quote' rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "can't 'quote' rock'n'roll uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-curly-apostrophes",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "can’t rock’n’roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "can’t rock’n’roll uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-nfc-nfd",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "caféday caféday"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "caféday caféday uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-scripts",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "中文 Ελληνικά русский عربي"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "中文 Ελληνικά русский عربي uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-case",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "THE cat K İ I"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "THE cat K İ I uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-punctuation",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one...two;three—four/five"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "one...two;three—four/five uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-zero-width",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one​two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "one​two uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-nul-and-lines",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one\u0000two\nthree\r\nfour"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "one\u0000two\nthree\r\nfour uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-invalid-argument",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-keyword",
+      "callable": "count_words_unicode_hyphen",
+      "args": [],
+      "kwargs": {
+        "text": "café one-two"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "café one-two extra"
+        },
+        "result_path": [],
+        "expected": 3
+      }
     }
   ]
 }
