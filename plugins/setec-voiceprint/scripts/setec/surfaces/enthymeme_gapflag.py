@@ -112,9 +112,7 @@ def _norm(text: str) -> str:
     return text.lower()
 
 
-def split_paragraphs(text: str) -> list[str]:
-    parts = re.split(r"\n\s*\n", text.strip())
-    return [p.strip() for p in parts if p.strip()]
+from setec.core.textprims import split_paragraphs_blanklines as split_paragraphs
 
 
 def segment_sentences(text: str) -> list[dict[str, Any]]:
