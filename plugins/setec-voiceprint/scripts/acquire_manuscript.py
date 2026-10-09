@@ -130,6 +130,11 @@ def _docx_paragraphs(path: Path) -> list[tuple[str, bool]]:
 
 
 _MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s+")
+_UNDERSCORE_EMPHASIS = re.compile(
+    r"(?<!\w)(_{1,3})(?!_)(?=\S)"
+    r"((?:[^_]|(?<=[^\W_])_+(?=[^\W_]))+?)(?<=\S)\1(?!\w)"
+)
+_PARAGRAPH_BREAK = re.compile(r"\n[^\S\r\n]*\r?\n")
 
 
 def _strip_markdown(text: str) -> str:
@@ -146,17 +151,29 @@ def _strip_markdown(text: str) -> str:
         ln = _MD_HEADING.sub("", ln)                       # heading markers
         ln = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", ln)       # images
         ln = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", ln)   # links -> text
-        ln = re.sub(r"[*_]{1,3}([^*_]+)[*_]{1,3}", r"\1", ln)  # emphasis
+        ln = re.sub(r"\*{1,3}([^*_]+)\*{1,3}", r"\1", ln)  # asterisk emphasis
+        # Underscore runs inside identifiers are content, not delimiters.
+        ln = _UNDERSCORE_EMPHASIS.sub(r"\2", ln)
         ln = re.sub(r"^\s{0,3}>\s?", "", ln)               # blockquote
         out.append(ln)
     return "\n".join(out)
 
 
 def _window_split(text: str, n_words: int) -> list[str]:
-    words = text.split()
+    """Keep fixed word slices, retaining blank-line boundaries within each slice."""
+    words = list(re.finditer(r"\S+", text))
     if not words:
         return []
-    chunks = [" ".join(words[i:i + n_words]) for i in range(0, len(words), n_words)]
+    chunks: list[str] = []
+    for i in range(0, len(words), n_words):
+        window = words[i:i + n_words]
+        parts = [window[0].group()]
+        for left, right in zip(window, window[1:]):
+            separator = "\n\n" if _PARAGRAPH_BREAK.search(
+                text, left.end(), right.start()
+            ) else " "
+            parts.extend((separator, right.group()))
+        chunks.append("".join(parts))
     return chunks
 
 
@@ -203,7 +220,7 @@ def _segment_docx(path: Path, segment: str, window_words: int) -> list[str]:
         joined = ["\n".join(s) for s in segs]
         if len(joined) >= 2:
             return joined
-    whole = "\n".join(t for t, _ in paras if t)
+    whole = "\n\n".join(t for t, _ in paras if t)
     return _window_split(whole, window_words)
 
 

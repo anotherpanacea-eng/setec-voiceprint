@@ -8,9 +8,12 @@ in test_acquire_manuscript.py, which skip without bs4."""
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import sys
+import zipfile
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 
@@ -67,3 +70,112 @@ def test_since_until_flags_removed():
     with pytest.raises(SystemExit):
         am.build_arg_parser().parse_args(
             ["src.txt", "--persona", "p", "--register", "r", "--since", "2020"])
+
+
+@pytest.mark.parametrize("gap", ["\n\n", "\r\n\r\n", "\n \t\n", "\n\n\n\n"])
+def test_word_windows_preserve_paragraphs_without_moving_word_cuts(gap):
+    text = f"  one\ttwo{gap}three\nfour five{gap}six seven  "
+    for size in (1, 2, 3, 5, 7, 10):
+        windows = am._window_split(text, size)
+        words = text.split()
+        assert [window.split() for window in windows] == [
+            words[i:i + size] for i in range(0, len(words), size)
+        ]
+        assert all(window and window == window.strip() for window in windows)
+    assert am._window_split(text, 3) == ["one two\n\nthree", "four five\n\nsix", "seven"]
+    assert am._window_split(text, 2) == ["one two", "three four", "five\n\nsix", "seven"]
+
+
+def test_word_windows_keep_unaffected_whitespace_and_unicode_tokenization():
+    assert am._window_split("\n \t\r\n", 3) == []
+    text = "café\u00a0alpha\tbeta\ngamma  delta"
+    assert am._window_split(text, 3) == ["café alpha beta", "gamma delta"]
+    before = "café alpha beta"
+    after = am._window_split(text, 3)[0]
+    assert ac.compute_content_hash(after) == ac.compute_content_hash(before)
+
+
+@pytest.mark.parametrize("mode", ["chapter", "window"])
+@pytest.mark.parametrize("heading", ["", "# One\n\n"])
+def test_markdown_fallback_and_plaintext_keep_paragraph_boundaries(mode, heading):
+    assert am._segment_markdown(heading + "one two\n\nthree four", mode, 10) == [
+        heading.replace("# ", "").strip() + "\n\none two\n\nthree four"
+        if heading else "one two\n\nthree four"
+    ]
+
+
+def test_plaintext_work_and_genuine_markdown_chapters_keep_existing_output():
+    text = " one two\n\nthree four "
+    for mode in ("chapter", "window"):
+        assert am._segment_plaintext(text, mode, 10) == [text.strip()]
+    assert am._segment_plaintext(text, "work", 10) == [text]
+    chapters = "# First\n\nOne paragraph.\n\n# Second\n\nAnother paragraph."
+    assert am._segment_markdown(chapters, "chapter", 10) == [
+        "First\n\nOne paragraph.", "Second\n\nAnother paragraph."
+    ]
+
+
+def test_docx_windows_keep_semantic_paragraphs_without_changing_other_modes(tmp_path):
+    paragraphs = [("First", True), ("one two", False), ("three four", False),
+                  ("Second", True), ("five six", False)]
+    body = "".join(
+        '<w:p>' + ('<w:pPr><w:pStyle w:val="Heading1"/></w:pPr>' if heading else '')
+        + '<w:r><w:t>' + escape(text) + '</w:t></w:r></w:p>'
+        for text, heading in paragraphs
+    )
+    path = tmp_path / "synthetic.docx"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("word/document.xml", '<w:document xmlns:w="'
+                         'http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                         '<w:body>' + body + '</w:body></w:document>')
+    assert am._segment_docx(path, "window", 4) == [
+        "First\n\none two\n\nthree", "four\n\nSecond\n\nfive six"
+    ]
+    assert am._segment_docx(path, "work", 4) == ["First\none two\nthree four\nSecond\nfive six"]
+    assert am._segment_docx(path, "chapter", 4) == ["First\none two\nthree four", "Second\nfive six"]
+    # A single real heading retains the existing fallback to word windows.
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("word/document.xml", '<document><p><t>one two</t></p>'
+                         '<p><t>three four</t></p></document>')
+    assert am._segment_docx(path, "chapter", 10) == ["one two\n\nthree four"]
+
+
+@pytest.mark.parametrize("text", [
+    "file_name_here", "file__name__here", "file___name___here", "α_β_γ", "1_2_3",
+    "_unfinished", "unfinished_", "_one__ and __two_", "____word____",
+])
+def test_markdown_keeps_literal_and_unbalanced_underscore_runs(text):
+    assert am._strip_markdown(text) == text
+
+
+@pytest.mark.parametrize("marker", ["_", "__", "___"])
+def test_markdown_strips_balanced_underscore_emphasis_only(marker):
+    text = f"file_name_here and {marker}file__name_here{marker} plus {marker}word{marker}."
+    assert am._strip_markdown(text) == "file_name_here and file__name_here plus word."
+
+
+def test_markdown_other_existing_markup_still_strips():
+    text = "# Title\n\n*one* **two** ***three*** a*b*c [four](https://example.org).\n" \
+           "![picture](image.png)\n> quoted\n```\ncode\n```"
+    assert am._strip_markdown(text) == "Title\n\none two three abc four.\n\nquoted"
+
+
+def test_corrected_manuscript_bytes_reach_stored_text_and_content_identity(tmp_path):
+    paragraph = "She opened file_name_here and watched the rain beyond the window. " * 5
+    markdown = paragraph.strip() + "\n\n" + paragraph.strip()
+    source = tmp_path / "synthetic.md"
+    source.write_text(markdown, encoding="utf-8")
+    output = tmp_path / "identity"
+    manifest = output / "manifest.jsonl"
+    assert am.main([str(source), "--persona", "synthetic_writer", "--author", "Synthetic",
+                    "--register", "literary_fiction", "--consent-status", "author_consent",
+                    "--ai-status", "ai_assisted", "--segment", "chapter", "--min-words", "10",
+                    "--output-dir", str(output), "--emit-manifest", str(manifest),
+                    "--allow-public-output"]) == 0
+    entries = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()]
+    assert len(entries) == 1
+    stored = (manifest.parent / entries[0]["path"]).read_bytes()
+    assert b"\n\n" in stored and b"file_name_here" in stored
+    assert entries[0]["content_hash"] == "sha256:" + hashlib.sha256(stored).hexdigest()
+    old_text = " ".join(markdown.replace("file_name_here", "filenamehere").split())
+    assert entries[0]["content_hash"] != ac.compute_content_hash(old_text)
