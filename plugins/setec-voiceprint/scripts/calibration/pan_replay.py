@@ -94,7 +94,6 @@ from adversarial_robustness_card import (  # type: ignore
 from variance_audit import (  # type: ignore
     audit_text,
     classify_compression,
-    split_words,
 )
 
 TASK_SURFACE = "validation"

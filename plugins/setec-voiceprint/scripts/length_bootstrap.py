@@ -62,27 +62,6 @@ TASK_SURFACE = "smoothing_diagnosis"
 _WORD_BOUNDARY = re.compile(r"\S+")
 
 
-def word_boundary_slice(text: str, start_word: int, n_words: int) -> str:
-    """Return the slice of ``text`` covering ``n_words`` whitespace-
-    delimited tokens starting at the ``start_word``-th token. Preserves
-    in-window punctuation, paragraph breaks, and quoted spans because the
-    slice is taken from the original string between word boundaries
-    rather than from a re-joined token list.
-
-    Returns the empty string if ``start_word`` is past the end of the
-    text or ``n_words`` is non-positive.
-    """
-    if n_words <= 0:
-        return ""
-    matches = list(_WORD_BOUNDARY.finditer(text))
-    if start_word >= len(matches):
-        return ""
-    end_word = min(start_word + n_words, len(matches))
-    s = matches[start_word].start()
-    e = matches[end_word - 1].end()
-    return text[s:e]
-
-
 def sample_window_slices(
     text: str,
     n_words: int,

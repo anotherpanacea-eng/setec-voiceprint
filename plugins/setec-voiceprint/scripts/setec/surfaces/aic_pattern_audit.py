@@ -76,14 +76,7 @@ from pathlib import Path
 from typing import Any
 
 # Reuse spaCy loader and tokenizer from variance_audit
-try:
-    from variance_audit import HAS_SPACY, _NLP, split_sentences  # type: ignore
-except ImportError:
-    HAS_SPACY = False
-    _NLP = None
-    def split_sentences(text: str) -> list[str]:  # type: ignore
-        # Fallback if running without the framework on path
-        return re.split(r"(?<=[.!?])\s+", text.strip())
+from variance_audit import split_sentences  # type: ignore
 
 from claim_license import ClaimLicense  # type: ignore
 from output_schema import build_baseline_metadata, build_output  # type: ignore
