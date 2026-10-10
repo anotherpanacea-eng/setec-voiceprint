@@ -27,6 +27,7 @@ No real filesystem assumptions: every test uses ``tmp_path``.
 from __future__ import annotations
 
 import json
+from functools import partial
 import sys
 from pathlib import Path
 
@@ -36,6 +37,18 @@ import baseline_discovery as bd  # type: ignore
 
 
 # --------------- Helpers ----------------------------------------
+
+
+def _fake_script(root: Path) -> Path:
+    return root / "repo" / "plugins" / "setec-voiceprint" / "scripts" / "baseline_discovery.py"
+
+
+@pytest.fixture(autouse=True)
+def isolate_discovery_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Keep real discovery inside this test's synthetic layout."""
+    monkeypatch.delenv(bd.ENV_VAR, raising=False)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(bd, "discover", partial(bd.discover, script_path=_fake_script(tmp_path)))
 
 
 def _make_baseline(
@@ -81,11 +94,11 @@ def test_env_var_pointing_to_existing_folder_is_discovered(tmp_path: Path):
     """A configured env var should always surface in the candidate list,
     even when filesystem scanning finds nothing else."""
     base = _make_baseline(tmp_path / "obsidian-sync", manifest_entries=5)
-    # Use a non-existent script path so the repo_sibling probe misses.
-    fake_script = tmp_path / "no-such" / "script.py"
+    # A realistic absent repo keeps the sibling probe inside tmp_path.
+    fake_script = _fake_script(tmp_path)
     candidates = bd.discover(
         script_path=fake_script,
-        max_depth=0,  # disable filesystem scan
+        max_depth=0,  # Inspect only immediate entries in each search root.
         env_value=str(base),
     )
     assert len(candidates) >= 1
@@ -100,7 +113,7 @@ def test_env_var_pointing_to_missing_path_is_recorded_but_not_recommended(
 ):
     """If the env var points nowhere real, we still report it (so the
     user sees the configuration error) but we never recommend it."""
-    fake_script = tmp_path / "no-such" / "script.py"
+    fake_script = _fake_script(tmp_path)
     candidates = bd.discover(
         script_path=fake_script,
         max_depth=0,
@@ -126,7 +139,7 @@ def test_env_var_pointing_to_wrong_named_folder_is_not_recommended(
     (wrong / "manifest.jsonl").write_text(
         '{"text_id":"x"}\n', encoding="utf-8",
     )
-    fake_script = tmp_path / "no-such" / "script.py"
+    fake_script = _fake_script(tmp_path)
     candidates = bd.discover(
         script_path=fake_script,
         max_depth=0,
@@ -156,7 +169,7 @@ def test_env_var_invalid_but_other_valid_folder_present_recommends_other(
     right = _make_baseline(tmp_path / "Documents", manifest_entries=5)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=4,
         env_value=str(wrong),
     )
@@ -183,7 +196,7 @@ def test_render_text_warns_when_env_var_points_at_wrong_named_folder(
     wrong = tmp_path / "my-baselines"
     wrong.mkdir()
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=0,
         env_value=str(wrong),
     )
@@ -213,7 +226,7 @@ def test_recommended_is_the_folder_with_most_manifest_entries(
     # Point HOME at tmp_path so the scanner finds both.
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=4,
         env_value=None,
     )
@@ -241,7 +254,7 @@ def test_ranking_falls_back_to_impostor_count_when_manifest_ties(
     )
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=4,
         env_value=None,
     )
@@ -328,7 +341,7 @@ def test_validate_rejects_wrong_directory_name(tmp_path: Path):
 def test_render_text_marks_recommended_and_shows_export_line(tmp_path: Path):
     base = _make_baseline(tmp_path / "vault", manifest_entries=3)
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=0,
         env_value=str(base),
     )
@@ -351,7 +364,7 @@ def test_render_text_when_nothing_found(tmp_path: Path):
 def test_render_json_payload_shape(tmp_path: Path):
     base = _make_baseline(tmp_path / "vault", manifest_entries=1)
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=0,
         env_value=str(base),
     )
@@ -377,7 +390,7 @@ def test_render_text_lists_duplicate_existing_folders(
     stale = _make_baseline(tmp_path / "Documents" / "old", manifest_entries=0)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     candidates = bd.discover(
-        script_path=tmp_path / "no-such" / "script.py",
+        script_path=_fake_script(tmp_path),
         max_depth=4,
         env_value=None,
     )
@@ -400,10 +413,6 @@ def test_main_exits_zero_when_env_var_resolves(
     base = _make_baseline(tmp_path / "vault", manifest_entries=1)
     monkeypatch.setenv(bd.ENV_VAR, str(base))
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "empty"))
-    # Isolate from the real repo sibling so the test stays
-    # deterministic on a developer machine that has its own baseline.
-    monkeypatch.setattr(bd, "_repo_sibling", lambda script_path: None)
-    monkeypatch.setattr(bd, "_candidate_dirs", lambda: [])
     rc = bd.main(["--json", "--max-depth", "0"])
     assert rc == 0
     captured = capsys.readouterr()
@@ -421,8 +430,6 @@ def test_main_exits_one_when_nothing_exists(
     empty_home = tmp_path / "empty"
     empty_home.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: empty_home))
-    monkeypatch.setattr(bd, "_repo_sibling", lambda script_path: None)
-    monkeypatch.setattr(bd, "_candidate_dirs", lambda: [])
     rc = bd.main(["--json", "--max-depth", "1"])
     assert rc == 1
 
@@ -442,3 +449,15 @@ def test_main_validate_path_returns_zero_on_good_path(
     folder = _make_baseline(tmp_path)
     rc = bd.main(["--validate", str(folder)])
     assert rc == 0
+
+
+def test_realistic_fixture_discovers_repo_sibling(tmp_path: Path):
+    """Fixture isolation retains the real repo-sibling discovery route."""
+    baseline = _make_baseline(tmp_path, manifest_entries=11)
+    candidates = bd.discover(script_path=_fake_script(tmp_path), max_depth=0)
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.path == str(baseline)
+    assert candidate.source == "repo_sibling"
+    assert candidate.manifest_entries == 11
+    assert candidate.is_recommended is True
