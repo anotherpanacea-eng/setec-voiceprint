@@ -336,7 +336,7 @@ def test_pool_guard_does_not_creep_onto_this_comparison_pool(tmp_path):
     tgt.write_text(_GUARD_MARKED_ROWS[0]["text"], encoding="utf-8")
     rc, env = _envelope(["--target", str(tgt), "--manifest", str(m), "--json"])
     assert rc == 0 and env["available"] is True
-    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env, ensure_ascii=False)
 
 
 def test_duplicate_pool_members_are_idempotent_for_coverage(tmp_path):
