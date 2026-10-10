@@ -133,12 +133,28 @@ DISPLAY_ORDER = [
 # load_manifest is imported from capabilities (canonical dir-aware loader).
 
 
+# A baseline *corpus* (the writer's own prose): `--baseline-dir`, or prose that
+# names a baseline directory / corpus. A bare "baseline" is not enough: value
+# flags such as kicker_density's `--baseline` (a density rate) or a baseline
+# JSON are not a personal corpus.
+_BASELINE_CORPUS_RE = re.compile(
+    r"--baseline-dir\b|baseline[ _-](?:dir|directory|corpus|corpora)\b"
+)
+
+
 def _friendly_input(raw: str) -> str:
-    """Map a manifest input string to a user-facing 'what you supply' label."""
+    """Map a manifest input string to a user-facing 'what you supply' label.
+
+    Anything not recognised as a corpus is returned as written. In particular
+    a leading CLI flag is kept: it is how the user supplies the input, so
+    dropping it ("--signals to restrict reported signals" -> "to restrict
+    reported signals") leaves the reader without the flag to pass.
+    """
     low = raw.lower()
-    if "baseline" in low and ("reference-manifest" in low or "reference manifest" in low):
+    names_baseline_corpus = bool(_BASELINE_CORPUS_RE.search(low))
+    if names_baseline_corpus and ("reference-manifest" in low or "reference manifest" in low):
         return "register-matched personal baseline (or a reference manifest)"
-    if "baseline" in low:
+    if names_baseline_corpus:
         return "register-matched personal baseline corpus"
     if "reference-manifest" in low or "reference manifest" in low:
         return "reference corpus manifest"
@@ -148,9 +164,7 @@ def _friendly_input(raw: str) -> str:
         return "diagnostic JSON from a prior Surface 1/2 run"
     if "corpus_manifest" in low or "corpus manifest" in low:
         return "valid `corpus_manifest.jsonl`"
-    # strip leading CLI flag noise and trailing parentheticals for prose use
-    cleaned = re.sub(r"^-+\S+\s*", "", raw).strip()
-    return cleaned or raw.strip()
+    return raw.strip()
 
 
 def _baseline_size_hint(use_when: list[str]) -> str | None:

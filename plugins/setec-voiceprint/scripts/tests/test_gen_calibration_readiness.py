@@ -114,7 +114,7 @@ def test_curated_acquisition_rows_show_real_source_and_locality():
     shingle = gcr.derive(_entry("shingle_dedup"))
     assert shingle["supplies"] == [
         "Mode-specific local inputs: explicit staged-descriptor JSONL for build-index; exact-pinned local index plus a named query document and query id for query-doc; exact-pinned local index for batch-report. (required)",
-        "for a compatible immutable checkpoint directory (optional)",
+        "--resume for a compatible immutable checkpoint directory (optional)",
     ]
 
     pipeline = gcr.derive(_entry("gmail_author_pipeline"))
@@ -153,3 +153,31 @@ def test_replace_region_round_trip():
 def test_replace_region_requires_markers():
     with pytest.raises(ValueError):
         gcr.replace_region("no markers here", "x")
+
+
+def test_leading_flag_is_kept_in_the_supplies_label():
+    # Regression: the label used to strip the leading flag token, leaving
+    # "to restrict reported signals" with no flag for the reader to pass.
+    row = gcr.derive(_entry("pan_replay"))
+    assert "--signals to restrict reported signals (optional)" in row["supplies"]
+    assert "--classes to restrict obfuscation classes (optional)" in row["supplies"]
+
+
+def test_value_baseline_flag_is_not_labelled_a_personal_corpus():
+    # Regression: any "baseline" mention became a personal baseline corpus,
+    # which is wrong for a value flag such as kicker_density's --baseline rate.
+    item = "optional flags --word-limit, --baseline, --baseline-source, --out (see --help)"
+    entry = {
+        "id": "value_baseline_probe",
+        "status": "heuristic",
+        "surface": "smoothing_diagnosis",
+        "inputs": {"target": "a prose draft", "required": ["input"], "optional": [item]},
+    }
+    supplies = gcr.derive(entry)["supplies"]
+    assert f"{item} (optional)" in supplies
+    assert not any("personal baseline" in s for s in supplies)
+
+
+def test_baseline_directory_is_still_a_personal_corpus():
+    supplies = gcr.derive(_entry("aic_pattern_audit"))["supplies"]
+    assert any(s.startswith("register-matched personal baseline corpus") for s in supplies)
