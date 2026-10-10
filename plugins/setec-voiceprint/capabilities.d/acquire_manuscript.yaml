@@ -2,31 +2,55 @@ entries:
 - id: acquire_manuscript
   script_path: plugins/setec-voiceprint/scripts/acquire_manuscript.py
   surface: voice_coherence_acquisition
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: structural_only
   handoff: none
   consumers: []
-  family: TODO
-  purpose: ingest local .docx/.md/.txt manuscripts as identity-baseline (or impostor)
-    entries.
+  family: acquisition
+  purpose: ingest local .docx / .md / .markdown / .txt manuscripts as
+    identity-baseline entries (the writer's own voice, the corpus a draft is
+    compared against) or, with --corpus-role impostor, as impostor entries;
+    segments by chapter heading, fixed word window, or whole work.
   use_when:
-  - TODO
+  - building your own identity baseline from manuscripts on disk before running
+    voice_profile, voice_distance or general_imposters
+  - adding a local manuscript collection to the impostor pool (--corpus-role
+    impostor with --impostor-for)
   do_not_use_when:
-  - TODO
+  - the source is EPUB (use acquire_epub) or PDF (use pdf_inventory then
+    pdf_extract)
+  - the files mix several authors under one --persona; each run writes one
+    persona
   inputs:
-    target: TODO
+    target: a .docx/.md/.txt file, or a directory of them
+    required:
+    - source
+    - --persona
+    - --register
+    optional:
+    - optional flags --corpus-role, --use, --ai-status, --consent-status, --era, --impostor-for,
+      --segment, --window-words, --min-words, --dry-run, --output-dir,
+      --emit-manifest, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - .txt + .meta.json under ai-prose-baselines-private/identity/<register>/<persona>/
+      (or impostors/... with --corpus-role impostor)
+    - draft_manifest.jsonl
+    - optional JSON run summary (--out)
   compute:
     tier: core
-    cost_note: TODO
-    length_floor_words: null
+    cost_note: local, offline, stdlib only (DOCX read as zipped XML); no network
+    length_floor_words: 300
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Build a personal identity baseline from a novel manuscript
+    cmd: python3 plugins/setec-voiceprint/scripts/acquire_manuscript.py my_novel.md
+      --persona my_pen_name_fiction --register literary_horror --consent-status author_consent
+      --ai-status pre_ai_human --segment chapter --min-words 300
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
   _seeded_at: '2026-06-02'
