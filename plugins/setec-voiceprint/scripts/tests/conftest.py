@@ -65,7 +65,7 @@ def make_fixture_fetcher(fetcher_type, fixture_dir, default_url_map, url_map=Non
     )
 
 
-def write_marked_pool_manifest(tmp_path, texts, name, dumps):
+def write_marked_pool_manifest(tmp_path, texts, name):
     """Write the caller's synthetic pool with passage-dedup markers."""
     p = tmp_path / name
     rows = [
@@ -73,16 +73,16 @@ def write_marked_pool_manifest(tmp_path, texts, name, dumps):
          "passage_dedup": {"source_doc_id": f"doc{i}", "ordinal": 0}}
         for i in range(12)
     ]
-    p.write_text("\n".join(dumps(r) for r in rows) + "\n", encoding="utf-8")
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     return p
 
 
-def write_clean_pool_manifest(tmp_path, texts, name, dumps):
+def write_clean_pool_manifest(tmp_path, texts, name):
     """Write the caller's synthetic pool without passage-dedup markers."""
     p = tmp_path / name
     rows = [
         {"id": f"doc{i}", "text": texts[i % len(texts)]}
         for i in range(12)
     ]
-    p.write_text("\n".join(dumps(r) for r in rows) + "\n", encoding="utf-8")
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     return p

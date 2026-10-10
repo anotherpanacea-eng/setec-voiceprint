@@ -879,11 +879,11 @@ import pool_guard  # type: ignore  # noqa: E402
 
 
 def _marked_manifest_cdnp(tmp_path, name='marked.jsonl'):
-    return write_marked_pool_manifest(tmp_path, _GUARD_TEXTS, name, json.dumps)
+    return write_marked_pool_manifest(tmp_path, _GUARD_TEXTS, name)
 
 
 def _clean_manifest_cdnp(tmp_path, name='clean.jsonl'):
-    return write_clean_pool_manifest(tmp_path, _GUARD_TEXTS, name, json.dumps)
+    return write_clean_pool_manifest(tmp_path, _GUARD_TEXTS, name)
 
 
 def _guard_target(tmp_path):
