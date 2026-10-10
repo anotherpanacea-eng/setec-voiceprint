@@ -24,7 +24,7 @@
   "id": "acquire_manuscript",
   "inputs": {
     "optional": [
-      "--corpus-role, --use, --ai-status, --consent-status, --era, --impostor-for, --segment, --window-words, --min-words, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
+      "optional flags --corpus-role, --use, --ai-status, --consent-status, --era, --impostor-for, --segment, --window-words, --min-words, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
     ],
     "required": [
       "source",

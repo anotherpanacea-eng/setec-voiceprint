@@ -27,7 +27,7 @@
   "id": "acquire_blogger_takeout",
   "inputs": {
     "optional": [
-      "--since/--until, --min-words, --max-posts, --include-comments, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
+      "optional flags --since/--until, --min-words, --max-posts, --include-comments, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
     ],
     "required": [
       "takeout_path",

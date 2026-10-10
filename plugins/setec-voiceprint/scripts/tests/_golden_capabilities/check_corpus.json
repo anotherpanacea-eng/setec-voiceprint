@@ -29,7 +29,7 @@
   "id": "check_corpus",
   "inputs": {
     "optional": [
-      "--filter, --warn-threshold, --fail-threshold, --strip-rules, --strip-aggressive, --show-stripped, --json, --out, --records-cache (see --help)"
+      "optional flags --filter, --warn-threshold, --fail-threshold, --strip-rules, --strip-aggressive, --show-stripped, --json, --out, --records-cache (see --help)"
     ],
     "required": [
       "at least one of --path, --dir, --manifest"

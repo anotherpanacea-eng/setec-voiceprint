@@ -26,7 +26,7 @@ entries:
     - --root
     - --output
     optional:
-    - --include-glob, --exclude-glob, --max-files, --workers, --max-file-bytes,
+    - optional flags --include-glob, --exclude-glob, --max-files, --workers, --max-file-bytes,
       --no-incremental-cache, --refresh-partial (see --help)
   outputs:
     schema_version: '1.0'

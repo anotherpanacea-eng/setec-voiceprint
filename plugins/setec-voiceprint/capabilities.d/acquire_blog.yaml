@@ -28,10 +28,10 @@ entries:
     required:
     - url
     - --register
-    - --impostor-for and --consent-status in the default impostor bucket (enforced
+    - supply --impostor-for and --consent-status in the default impostor bucket (enforced
       after parsing, before any fetch; not needed with --bucket validation)
     optional:
-    - --substack / --wordpress / --html-archive / --wayback, --archive-pattern,
+    - optional flags --substack / --wordpress / --html-archive / --wayback, --archive-pattern,
       --content-selector, --persona, --author, --register-match, --topic-match,
       --era, --bucket, --ai-status, --notes-composite, --notes-description,
       --since/--until, --max-posts, --rate-limit, --user-agent, --dry-run,

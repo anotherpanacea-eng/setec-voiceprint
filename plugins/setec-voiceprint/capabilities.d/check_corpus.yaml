@@ -33,7 +33,7 @@ entries:
     required:
     - at least one of --path, --dir, --manifest
     optional:
-    - --filter, --warn-threshold, --fail-threshold, --strip-rules, --strip-aggressive,
+    - optional flags --filter, --warn-threshold, --fail-threshold, --strip-rules, --strip-aggressive,
       --show-stripped, --json, --out, --records-cache (see --help)
   outputs:
     schema_version: '1.0'

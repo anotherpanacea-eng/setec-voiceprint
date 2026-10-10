@@ -27,7 +27,7 @@ entries:
     - --persona
     - --register
     optional:
-    - --corpus-role, --use, --ai-status, --consent-status, --era, --impostor-for,
+    - optional flags --corpus-role, --use, --ai-status, --consent-status, --era, --impostor-for,
       --segment, --window-words, --min-words, --dry-run, --output-dir,
       --emit-manifest, --out (see --help)
   outputs:

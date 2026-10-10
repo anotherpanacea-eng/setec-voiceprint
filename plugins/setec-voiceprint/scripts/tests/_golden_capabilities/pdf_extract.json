@@ -33,7 +33,7 @@
   "id": "pdf_extract",
   "inputs": {
     "optional": [
-      "--emit-manifest, --workers, --ocr-language, --ocr-dpi, --skip-ocr, --dry-run, --out (see --help)"
+      "optional flags --emit-manifest, --workers, --ocr-language, --ocr-dpi, --skip-ocr, --dry-run, --out (see --help)"
     ],
     "required": [
       "--inventory",

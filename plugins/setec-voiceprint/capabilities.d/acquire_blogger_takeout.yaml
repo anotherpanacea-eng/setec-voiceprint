@@ -31,7 +31,7 @@ entries:
     - --register
     - --consent-status
     optional:
-    - --since/--until, --min-words, --max-posts, --include-comments, --dry-run,
+    - optional flags --since/--until, --min-words, --max-posts, --include-comments, --dry-run,
       --output-dir, --emit-manifest, --out (see --help)
   outputs:
     schema_version: '1.0'

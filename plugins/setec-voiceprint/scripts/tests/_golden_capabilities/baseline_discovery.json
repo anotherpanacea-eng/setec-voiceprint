@@ -28,7 +28,7 @@
   "id": "baseline_discovery",
   "inputs": {
     "optional": [
-      "--json, --validate, --max-depth (see --help)"
+      "optional flags --json, --validate, --max-depth (see --help)"
     ],
     "target": "none (scans common filesystem locations); --validate PATH checks one path"
   },

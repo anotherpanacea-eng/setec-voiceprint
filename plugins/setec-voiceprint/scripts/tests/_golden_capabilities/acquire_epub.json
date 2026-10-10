@@ -27,13 +27,13 @@
   "id": "acquire_epub",
   "inputs": {
     "optional": [
-      "--persona, --impostor-for, --corpus-role, --ai-status, --segment, --min-words, --languages, --since/--until, --max-items, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
+      "optional flags --persona, --impostor-for, --corpus-role, --ai-status, --segment, --min-words, --languages, --since/--until, --max-items, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
     ],
     "required": [
       "source",
       "--register",
       "--consent-status",
-      "--impostor-for (impostor mode) or --persona (identity_baseline mode)"
+      "supply --impostor-for (impostor mode) or --persona (identity_baseline mode)"
     ],
     "target": "directory of .epub files, or a single .epub"
   },

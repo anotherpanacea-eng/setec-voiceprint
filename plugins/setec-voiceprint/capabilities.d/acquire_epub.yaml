@@ -25,9 +25,9 @@ entries:
     - source
     - --register
     - --consent-status
-    - --impostor-for (impostor mode) or --persona (identity_baseline mode)
+    - supply --impostor-for (impostor mode) or --persona (identity_baseline mode)
     optional:
-    - --persona, --impostor-for, --corpus-role, --ai-status, --segment,
+    - optional flags --persona, --impostor-for, --corpus-role, --ai-status, --segment,
       --min-words, --languages, --since/--until, --max-items, --dry-run,
       --output-dir, --emit-manifest, --out (see --help)
   outputs:

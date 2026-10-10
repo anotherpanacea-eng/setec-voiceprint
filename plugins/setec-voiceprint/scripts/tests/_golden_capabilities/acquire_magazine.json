@@ -28,14 +28,14 @@
   "id": "acquire_magazine",
   "inputs": {
     "optional": [
-      "--filter-author, --since/--until, --max-stories, --rate-limit, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
+      "optional flags --filter-author, --since/--until, --max-stories, --rate-limit, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
     ],
     "required": [
       "--magazine",
       "--register",
       "--consent-status",
       "--impostor-for",
-      "--persona or --persona-from-author"
+      "supply --persona or --persona-from-author"
     ],
     "target": "a supported magazine slug (--magazine nightmare or the_dark)"
   },
