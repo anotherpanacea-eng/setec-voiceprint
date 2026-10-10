@@ -857,6 +857,16 @@ def _find_refusal_reasons(node):
     return None
 
 
+def test_legacy_classifier_alias_preserves_public_monkeypatch(monkeypatch):
+    """Permanent legacy import and package import share their public API object."""
+    from setec.surfaces import register_classifier as packaged
+
+    assert rc is packaged
+    sentinel = {"synthetic": True}
+    monkeypatch.setattr(rc, "classify_register", lambda text: sentinel)
+    assert packaged.classify_register("synthetic text") is sentinel
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

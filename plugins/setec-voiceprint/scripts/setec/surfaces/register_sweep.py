@@ -1599,11 +1599,11 @@ def default_h1_paths() -> tuple[Path, Path]:
     """Return ``(receipt_path, classifier_path)`` for this script's plugin.
 
     The receipt is the plugin's ``references/`` copy; the classifier is the
-    sibling module in ``scripts/``. The return order matches the keyword order
-    of :func:`load_h1_binding`.
+    fixed implementation module in ``scripts/setec/surfaces/``. The return order
+    matches the keyword order of :func:`load_h1_binding`.
     """
     scripts = scripts_dir()
-    classifier = scripts / CLASSIFIER_FILENAME
+    classifier = scripts / "setec" / "surfaces" / CLASSIFIER_FILENAME
     receipt = references_dir() / RECEIPT_FILENAME
     return receipt, classifier
 

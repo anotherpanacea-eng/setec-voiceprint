@@ -68,13 +68,7 @@ from _console import enable_utf8_stdio  # noqa: E402
 # gate's purpose.
 _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 _RESOLVER_REL_PATH = Path("setec/paths.py")
-# Existing protected module: two byte-preserved bootstraps bind the same name.
-# Claim-license guard forbids changing that module in P1, so pin the exact
-# occurrence pair instead of letting a generic (path, symbol) row cover more.
-_KNOWN_DUPLICATE_ANCHORS = {
-    ("plugins/setec-voiceprint/scripts/manuscript_audit.py", "SCRIPT_DIR"):
-        (31, 47),
-}
+_KNOWN_DUPLICATE_ANCHORS = {}
 
 # Removal-phase classification, per specs/svp-packaging-conversion.md's
 # phase table. Anything not explicitly listed defaults to P4 (whole-surface
@@ -142,6 +136,17 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/gecscore_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/specdetect_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/structural_shuffle_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/sliding_window_heatmap.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_verifier.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_fingerprint.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/author_corpus_export.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/calibration/pan_replay.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/variance_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/manuscript_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/register_classifier.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/idiolect_detector.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/style_vectorizer.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/corpus_novelty_audit.py", "_SCRIPT_DIR"),
@@ -230,6 +235,7 @@ _P4_BOOTSTRAP_ANCHORS = {
 }
 # Exact intrinsic producer-byte anchors authorized by the acquisition amendment.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'blob'),
@@ -267,6 +273,7 @@ def _phase_for(rel_path: str) -> str:
 # with impossible removal plans ... give each an honest reason and a real
 # disposition").
 _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"): {"removal_phase": "not-applicable", "reason": 'Actual executing package bytes are the exporter producer revision; stale receipt, smoke, and configuration bindings remain refused.'},
     ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"): {
         "removal_phase": "not-applicable",
         "reason": (
