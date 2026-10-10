@@ -441,19 +441,12 @@ exemptions:
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/baseline_discovery.py
-  symbol: script_path
-  reason: pending relocation (P4); anchor `script_path` at line 338 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/baseline_discovery.py
-  symbol: sib
-  reason: pending relocation (P4); anchor `sib` at line 356 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: d3a3fc416327e7cc376598a3dbb70b48eb9097b9
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/before_after_restoration.py
   symbol: ROOT
   reason: pending relocation (P4); anchor `ROOT` at line 69 not yet converted to setec.paths
@@ -5244,4 +5237,12 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: 81797c5bc589fb0c2d37c08fe7e655e90f9917c1
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/baseline_discovery.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/baseline_discovery.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: d3a3fc416327e7cc376598a3dbb70b48eb9097b9
   removal_phase: not-applicable

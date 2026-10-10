@@ -89,7 +89,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # runpy bootstrap; frozen implementation has none: 207 -> 208 once both land, no exclusions.
 # The two whole bigram implementations have no old bootstrap to replace;
 # their reviewed permanent launchers add two counted sites (206 -> 208).
-PINNED_CEILING = 208
+# The whole baseline-discovery utility adds one required permanent launcher
+# with no old implementation bootstrap to replace (208 -> 209); no exclusions.
+PINNED_CEILING = 209
 
 
 def find_runtime_scripts() -> list[Path]:
