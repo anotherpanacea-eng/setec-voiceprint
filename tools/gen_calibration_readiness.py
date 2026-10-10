@@ -138,7 +138,7 @@ DISPLAY_ORDER = [
 # flags such as kicker_density's `--baseline` (a density rate) or a baseline
 # JSON are not a personal corpus.
 _BASELINE_CORPUS_RE = re.compile(
-    r"--baseline-dir\b|baseline[ _-](?:dir|directory|corpus|corpora)\b"
+    r"--baseline-dir\b|baseline[ _-](?:dirs?|director(?:y|ies)|corpus|corpora)\b"
 )
 
 

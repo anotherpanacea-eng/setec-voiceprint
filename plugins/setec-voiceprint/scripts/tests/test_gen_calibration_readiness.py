@@ -181,3 +181,21 @@ def test_value_baseline_flag_is_not_labelled_a_personal_corpus():
 def test_baseline_directory_is_still_a_personal_corpus():
     supplies = gcr.derive(_entry("aic_pattern_audit"))["supplies"]
     assert any(s.startswith("register-matched personal baseline corpus") for s in supplies)
+
+
+@pytest.mark.parametrize("wording", [
+    "writer-specific baseline directory",
+    "writer-specific baseline directories (one per register)",
+    "prior baseline dirs",
+    "baseline corpora for each register",
+])
+def test_baseline_directory_wording_singular_and_plural_is_a_personal_corpus(wording):
+    # Regression: plural "baseline directories" fell through to raw text.
+    entry = {
+        "id": "baseline_wording_probe",
+        "status": "heuristic",
+        "surface": "voice_coherence",
+        "inputs": {"target": "a prose draft", "required": [wording], "optional": []},
+    }
+    supplies = gcr.derive(entry)["supplies"]
+    assert any(s.startswith("register-matched personal baseline corpus") for s in supplies)
