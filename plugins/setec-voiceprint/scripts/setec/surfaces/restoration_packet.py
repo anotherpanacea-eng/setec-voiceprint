@@ -52,7 +52,7 @@ from typing import Any, Sequence
 from setec.paths import find_plugin_root
 
 from claim_license import ClaimLicense, from_legacy  # type: ignore
-from output_schema import build_output  # type: ignore
+from output_schema import build_output, unwrap_envelope  # type: ignore
 
 
 TASK_SURFACE = "craft_restoration"
@@ -914,6 +914,13 @@ def build_packets(
     max_targets: int,
     targetability_filter: set[str] | None,
 ) -> list[Packet]:
+    # Accept each producer's schema 1.0 ``--json`` envelope as well as
+    # the legacy bare payload; the readers below look at top-level keys.
+    variance = unwrap_envelope(variance)
+    bigram = unwrap_envelope(bigram)
+    voice = unwrap_envelope(voice)
+    idiolect = unwrap_envelope(idiolect)
+    aic = unwrap_envelope(aic)
     all_packets: list[Packet] = []
     if variance:
         all_packets.extend(packets_from_variance(variance))

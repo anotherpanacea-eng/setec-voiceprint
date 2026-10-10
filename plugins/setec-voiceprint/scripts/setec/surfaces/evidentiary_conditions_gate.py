@@ -66,7 +66,7 @@ from setec.paths import scripts_dir
 SCRIPT_DIR = scripts_dir()
 
 from claim_license import ClaimLicense  # type: ignore
-from output_schema import build_output  # type: ignore
+from output_schema import build_output, unwrap_envelope  # type: ignore
 
 TASK_SURFACE = "validation"
 TOOL_NAME = "evidentiary_conditions_gate"
@@ -114,6 +114,15 @@ POSTURE_LABELS: dict[str, str] = {
 # --- Evidence indicators ---------------------------------------
 
 
+def _envelope_block(audit: dict[str, Any], key: str) -> dict[str, Any]:
+    """Return a schema 1.0 envelope metadata block (``target`` or
+    ``baseline``) when it is a dict, else ``{}``. Legacy payloads
+    that use the same key for something else (a path string) fall
+    through to ``{}``."""
+    block = audit.get(key)
+    return block if isinstance(block, dict) else {}
+
+
 def _read_target_length(
     target_text: str | None,
     variance: dict[str, Any] | None,
@@ -127,6 +136,8 @@ def _read_target_length(
             n = (
                 (src.get("audit") or {}).get("summary", {}).get("n_words")
                 or src.get("n_words")
+                # schema 1.0 envelope: word count lives in target.words
+                or _envelope_block(src, "target").get("words")
             )
             if isinstance(n, int):
                 return n
@@ -177,7 +188,10 @@ def _read_baseline_size(
         if isinstance(n, int):
             candidates.append(n)
     if voice_distance and voice_distance.get("available") is not False:
-        bs = voice_distance.get("baseline_summary") or {}
+        bs = (
+            voice_distance.get("baseline_summary")
+            or _envelope_block(voice_distance, "baseline")
+        )
         n = bs.get("n_files")
         if isinstance(n, int):
             candidates.append(n)
@@ -189,7 +203,10 @@ def _read_baseline_size(
             continue
         if audit.get("available") is False:
             continue
-        block = audit.get("baseline_block") or {}
+        block = (
+            audit.get("baseline_block")
+            or _envelope_block(audit, "baseline")
+        )
         n = block.get("n_files")
         if isinstance(n, int):
             candidates.append(n)
@@ -222,7 +239,12 @@ def _read_strip_ratio(
         return None
     if variance.get("available") is False:
         return None
-    prep = variance.get("preprocessing") or {}
+    prep = (
+        variance.get("preprocessing")
+        # schema 1.0 envelope: preprocessing lives in target
+        or _envelope_block(variance, "target").get("preprocessing")
+        or {}
+    )
     if isinstance(prep, dict):
         ratio = prep.get("strip_ratio")
         if isinstance(ratio, (int, float)):
@@ -644,6 +666,20 @@ def gate(
     declared_use_case: str | None = None,
 ) -> dict[str, Any]:
     """Read inputs, evaluate posture, return structured report."""
+    # Accept each producer's schema 1.0 ``--json`` envelope as well as
+    # the legacy bare payload. The usability checks and readers look
+    # at top-level keys (``compression``, ``ranked_confounders``, ...)
+    # that the envelope nests under ``results``.
+    variance = unwrap_envelope(variance)
+    voice_distance = unwrap_envelope(voice_distance)
+    paragraph = unwrap_envelope(paragraph)
+    discourse = unwrap_envelope(discourse)
+    agency = unwrap_envelope(agency)
+    punctuation = unwrap_envelope(punctuation)
+    stance = unwrap_envelope(stance)
+    function_grammar = unwrap_envelope(function_grammar)
+    confounder = unwrap_envelope(confounder)
+    gi = unwrap_envelope(gi)
     target_length = _read_target_length(target_text, variance, paragraph)
     baseline_size = _read_baseline_size(
         variance=variance,

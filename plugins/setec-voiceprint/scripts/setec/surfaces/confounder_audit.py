@@ -60,7 +60,7 @@ from claim_license import (  # type: ignore
     ClaimLicense,
     with_state_caveats,
 )
-from output_schema import build_output  # type: ignore
+from output_schema import build_output, unwrap_envelope  # type: ignore
 
 TASK_SURFACE = "validation"
 TOOL_NAME = "confounder_audit"
@@ -336,6 +336,17 @@ def extract_observations(
     present and numeric — previously a missing key defaulted to
     0.0 and emitted "low" without any evidence.
     """
+    # Accept each producer's schema 1.0 ``--json`` envelope as well as
+    # the legacy bare payload; the readers below look at top-level keys
+    # (``densities_per_1k``, ``compression``, ...) that the envelope
+    # nests under ``results``.
+    variance = unwrap_envelope(variance)
+    voice_distance = unwrap_envelope(voice_distance)
+    paragraph = unwrap_envelope(paragraph)
+    discourse = unwrap_envelope(discourse)
+    aic = unwrap_envelope(aic)
+    agency = unwrap_envelope(agency)
+    idiolect = unwrap_envelope(idiolect)
     obs: dict[str, str] = {}
 
     # Variance audit ----------------------------------------------
