@@ -1,167 +1,48 @@
-# SVP Text-Primitives Registry — byte-identical ownership and imports
+# SVP Text-Primitives Registry — one owner per primitive
 
-**Status:** BUILD-READY (v5, exact-head independent-review findings folded) · **Date:** 2026-08-05 · **Repo:** `setec-voiceprint`
-**Provenance:** modularization audit, two adversarial six-lens reviews, and two exact-head independent reviews. This revision keeps only registry, inventory, narrow characterization, and import consolidation.
-**Round-5 check:** completeness, dependency, scope/overlap, firewall, mechanizability, and hostile-review passes each completed separately after the final repair; no remaining P1/P2 within the authorized increment.
-**v6 amendment:** Per the owner's 2026-10-04 decision, discovery covers all production source but CI enforces only cumulative registered cohorts; remaining sites go to independent review. Declares the native Punkt test dependency. The v5 reviews above do not cover this amendment.
-**Depends on:** `specs/svp-packaging-conversion.md` for the `scripts/setec` package home and for the final relocation of each primitive owner before its ID is minted.
+**Status:** BUILT (v7) · **Date:** 2026-10-09 · **Repo:** `setec-voiceprint`
+**v7 (owner direction, 2026-10-09):** simplified to consolidate + characterize + a copy lint. Earlier versions (v5, 2026-08-05; v6, 2026-10-04) minted source-hash IDs per row, required merge-base byte equality and per-cohort contracts, and gated on a 3,442-site discovery inventory. Nothing outside that checker read the IDs, and the characterization oracle already pins behavior, so v7 drops that machinery. The text of v5 and v6 is in this file's history.
 
-## Outcome and cut line
+## Outcome
 
-Create one registry for voiceprint tokenizers, splitters, function-word sets, quantiles, fingerprints, and preprocessing rules; characterize pure primitive calls; and consolidate duplicate imports without changing primitive outputs.
+Voiceprint audits share basic text primitives: word counters, tokenizers, sentence and paragraph splitters, function-word sets, whitespace normalizers and fingerprints. When several modules carry their own copy, the copies drift, and two audits disagree for reasons unrelated to the prose. This spec keeps exactly one owner for each shared primitive, pins each primitive's behavior with synthetic cases, and refuses new copies.
 
-This increment adds **no output-envelope field**, stamp, collector, usage token, policy state machine, consumer schema change, seal admission, evidence re-banking, threshold change, or recalibration artifact. Existing output builders and their success/error extensions remain under their existing contract tests. S5/G1, author-corpus, and register-sweep envelopes and hashes are untouched because this spec never edits their shape.
+It changes no primitive's output and adds no output-envelope field, stamp, policy state, consumer schema change or recalibration artifact.
 
-The complete new machinery is one registry module, one inventory/check tool, and one characterization fixture. No second ID ledger, signal graph, receipt format, per-output policy file, or cross-repository implementation is authorized.
+## 1. One owner, one import point
 
-## Verified constraints at fetched `origin/main`
+`plugins/setec-voiceprint/scripts/setec/core/textprims.py` holds `PRIMITIVES`, an immutable map from each registered name to its owner module. A primitive used by several modules either already has a single owner, which stays in place (`passage_tokenizer_v1.tokenize`, `verbatim_cover._tokens` and `_content_fingerprint`, `paragraph_parser.split_paragraphs` and `split_sentences`, `preflight.common._analysis`), or moves into `textprims.py` byte-for-byte and the old modules import it under their established names (the function-word sets, the two sentence splitters, `_normws`, `count_words_alpha`).
 
-- `plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py` exists with frozen data and tests.
-- Voicewright S5/G1, voicewright author-corpus ingestion, and producer register sweep close and/or hash their evidence shapes. They are context for the no-envelope-change boundary, not implementation targets.
-- Producer `s5_distance._implementation_sha256` binds that surface's source bytes; this increment does not edit it.
-- `preprocessing.strip_non_prose` changes input before tokenization, so primitive equivalence does not imply whole-surface equivalence.
-- `stylometry_core.py` imports function words, splitting, and spaCy backend state from `variance_audit.py`. This spec can remove the function-word/splitter ownership collision, but packaging keeps `stylometry_core` in L2 until the independent spaCy dependency is inverted.
-- `output_schema.build_output` permits surface-specific top-level extensions and `build_error_output` adds structured-error keys. The generic output builder is not a twelve-key universal identity surface and is outside this spec.
+Every registered name is importable from `setec.core.textprims`. Names owned elsewhere resolve lazily through the module's `__getattr__`, so importing the registry loads none of their owner modules (no plugin data, model stack or preflight package).
 
-## Firewall rule
+A moved function keeps its body. When a registry name has to differ from the original (for example `count_words_alpha`, chosen because many unrelated functions are called `count_words`), consumers import it under their old name: `from setec.core.textprims import count_words_alpha as count_words`.
 
-Every change is ownership-only. For a migrated primitive, the legacy callable and the registry callable must return exactly the same value or exception on every committed characterization row. A result difference, changed regex/table byte, changed case or Unicode policy, or newly selected backend is out of scope and fails with no exemption.
+Registering a new primitive means adding its `PRIMITIVES` entry, consolidating its copies, and adding characterization rows, all in one PR, with no separate contract amendment.
 
-Finite characterization is not offered as proof that arbitrary regexes are equivalent. The structural rule supplies that proof: the registry initially references or re-exports the exact existing function, compiled pattern, or table object. Registry maps and rows are immutable; the existing function-word sets retain their types and mutability. Reimplementation and cleanup are later behavior-change work.
+## 2. Characterization
 
-## 1. Final ownership before identity
-
-The new scripts/setec/core/textprims.py module is the single registry home. A primitive receives its final owning module and symbol before any registry ID is minted:
-
-1. the packaging phase that owns a module relocation lands first;
-2. this spec moves a shared primitive's exact existing function/pattern/table object to the new registry module where ownership consolidation is needed;
-3. old modules import and re-export that final object under their established names;
-4. only then does the registry inventory the final implementation_ref field and mint the ID.
-
-No ID contains or digests a temporary compatibility-launcher path. A compatibility re-export may move later without changing the ID because it is not the owner; the defining module/symbol may not move after minting in this increment. A future owner relocation must first specify a location-independent behavior digest or mint a new versioned ID. This spec chooses final-move-before-mint and does not leave that decision to the builder.
-
-Resolved ownership:
-
-- `passage_tokenizer_v1.py` and its frozen data remain canonical; the registry imports and registers that final object without reimplementation.
-- `shingle_dedup.py` retains its logical-seal identity, and `near_dup_dedup.split_passages` retains offset-preserving passage ownership; the registry points to them but does not move or rewrite them.
-- `preprocessing.py` owns prose transformations and its `r"\S+"` corpus-hygiene unit. Preprocessing is a separate family; its token count is not treated as interchangeable with an analysis tokenizer.
-- Voiceprint function-word data and sentence splitting currently exposed by `variance_audit`/`dialogue_voice_audit` move byte-for-byte to the registry module; those modules re-export the established objects. `variance_audit.split_sentences` becomes only a branch selector over the same existing punkt and regex-fallback implementations. Punkt and fallback remain distinct registry rows.
-- `stylometry_core` imports the final function-word/splitter objects from the registry but remains L2 until its separate spaCy-state edge is inverted. Voicewright's function-word set remains independent and is not part of this registry.
-
-## 2. Registry and live inventory
-
-The immutable registry exposes closed maps `TOKENIZERS`, `SENTENCE_SPLITTERS`, `PARAGRAPH_SPLITTERS`, `FUNCTION_WORD_SETS`, `QUANTILES`, `FINGERPRINTS`, and `PREPROCESSORS`. Each row has exactly:
-
-```text
-id
-family: tokenizer | sentence_splitter | paragraph_splitter |
-        function_words | quantile | fingerprint | preprocessor
-implementation_ref: final repo-relative module:symbol
-pattern_sha256: sha256 of exact pattern/table bytes, or null
-case_policy: preserve | lower | casefold | not_applicable
-unicode_normalization: none | NFC | NFKC | frozen_table | not_applicable
-allowed_backends: closed list, empty for deterministic rows
-behavior_sha256: sha256 of the canonical preceding behavior fields plus defining source/table bytes
-```
-
-`tools/gen_textprims_inventory.py --check` AST-scans all voiceprint production source for candidate primitive sites: compiled and inline word/sentence/paragraph patterns, lexical word/phrase matching against prose (including patterns built from literal tables such as `variance_audit.CONNECTIVES`), function-word tables and re-exports, quantile functions, text-derived fingerprints (analyzed content and prompt text, e.g. `stance_modality_audit._content_fingerprint` and `voice_verifier.fingerprint_prompt`), preprocessing calls, and imports of registered symbols. It reports each discovery next to the live registry as recognized, proved nonprimitive, or unresolved, and writes no second inventory artifact. Only source evidence proves a site nonprimitive (for example, a hash that consumes only nontext metadata); mixed text/metadata hashes stay included, and names alone prove nothing. Dynamic construction, rebinding or unresolved aliases stay unresolved, never silently excluded.
-
-CI enforcement is cumulative: every merge-base registry row plus every candidate addition. For those obligations it rejects a missing or duplicate row, site or ID, changed behavior, an unresolved implementation_ref or import, a row never imported or characterized, a legacy implementation still reachable after its cohort migrates, and an unresolved site that could rebind or bypass a registered primitive. Removing a candidate row does not remove an obligation. Unregistered candidates outside those obligations are reported, not failed; independent review of the report admits each cohort, and full R2 completion requires every discovery reconciled. No pending-ID registry, exemption file or cohort ledger.
-
-The first R2 cohort is exactly `plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_punkt` and `plugins/setec-voiceprint/scripts/setec/core/textprims.py:split_sentences_regex`; both need native characterization rows.
-
-IDs use `<family>-<12-hex-behavior-prefix>-v1`. Because IDs are minted only after final ownership, `behavior_sha256` can bind the final defining source/table bytes without confusing a planned relocation with behavior change. Candidate rows are compared with the merge-base row of the same ID; a changed behavior digest requires a new versioned ID and is outside this no-change increment.
-
-For the frozen passage-tokenizer cohort, `implementation_ref` is `plugins/setec-voiceprint/scripts/setec/core/passage_tokenizer_v1.py:tokenize`; the registry imports the same object without moving or wrapping it. Its `pattern_sha256` hashes the exact committed `plugins/setec-voiceprint/scripts/passage_tokenizer_data_v1.json` bytes. Its behavior payload is the canonical JSON row fields excluding `id` and `behavior_sha256` (backend tuple encoded as a JSON array), followed by one LF byte, the exact UTF-8 bytes of the entire canonical defining module, one LF byte, and the exact committed data bytes. Hashing the whole module binds the loader and validation helpers as well as `tokenize`. Both module and table must match the merge-base bytes. `case_policy=lower` and `unicode_normalization=frozen_table` describe table-driven mapping; they do not imply NFC or NFKC normalization. Existing consumer module imports, `__file__`, `DATA_FILE`, arguments, and Spec-80 commitments remain unchanged.
-
-## 3. Narrow pure-primitive characterization
-
-`references/textprims/characterization.json` is a deterministic pure-call oracle. It does not invoke output builders, normalized envelopes, consumers, user corpora, generative models, model services, or network services. Native Punkt characterization may read only its declared test dependency: NLTK 3.9.4 and the four English `punkt_tab` files from `nltk_data` revision `550b6625bcef1f2abff2ff770a5a0d272c9c6b2a` (archive SHA256 `e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106`), extracted by test setup into an isolated root to which `nltk.data.path` is restricted. Characterization never downloads, and fails rather than skips when the dependency is missing. Production imports and backend selection are unchanged. The frozen passage-tokenizer characterization may also read only its exact committed default `passage_tokenizer_data_v1.json` table, verified against the registered table digest before calls; it never supplies a custom `data_path`. The native callable, registry re-export, and legacy callable must be the same object at the external final owner. The top level is exactly `{schema,license,rows}`; each row is exactly:
+`plugins/setec-voiceprint/references/textprims/characterization.json` (schema `textprims-characterization/2`) is a pure-call oracle. Each row is exactly:
 
 ```text
 case_id: unique string
-family: closed registry family
-registry_id: existing row id
-legacy_callable: repo-relative module:symbol
-registered_callable: repo-relative module:symbol
-args: JSON array passed positionally
-kwargs: JSON object passed by name
-result_path: JSON array of string/integer selectors, empty for the whole return
-comparator: json_exact | sequence_exact | set_exact | bytes_hex_exact |
-            float_hex_exact | exception_exact
+callable: a PRIMITIVES name, or "<word-set name>.__contains__"
+args, kwargs: JSON passed to the call (for `_analysis`, each arg is {"hex": "..."} decoded to bytes)
+result_path: selectors applied to the return value
+comparator: json_exact | sequence_exact | bytes_hex_exact | exception_exact
 expected: comparator-specific JSON value
-mutant:
-  args: JSON array
-  kwargs: JSON object
-  result_path: JSON array of string/integer selectors
-  expected: comparator-specific JSON value
+mutant: {args, kwargs, result_path, expected}
 ```
 
-The runner imports both named callables, calls each with fresh deep-copied `args`/`kwargs`, follows `result_path`, and applies the named comparator. The JSON encoding of `expected` is closed:
+`tools/run_textprims_characterization.py` resolves each callable through `setec.core.textprims`, proves the primary case and the mutant both match, and refuses a mutant whose expectation equals the primary's. Every `PRIMITIVES` name needs at least one row. The runner checks every expectation against a live call. Rows cover the inputs where a primitive's behavior is easy to get wrong: empty input, digits, hyphens, straight and curly apostrophes, non-ASCII letters, NFC versus NFD forms, abbreviations, ellipses, and paragraph or line boundaries where they apply.
 
-- `json_exact`: any valid JSON value; compare exact canonical bytes from `json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)` so scalar types remain distinct;
-- `sequence_exact`: a JSON array in exact order, with each element compared by `json_exact`;
-- `set_exact`: a JSON array of unique JSON scalars, sorted lexicographically by each scalar's canonical JSON encoding;
-- `bytes_hex_exact`: the exact one-key object `{ "hex": "..." }`, whose value is a lowercase, even-length hexadecimal string;
-- `float_hex_exact`: the exact string returned by `float.hex()`;
-- `exception_exact`: the exact object `{ "type": "module.QualName", "message": "exact str(exception)" }` with no additional keys.
+Native Punkt rows read only NLTK 3.9.4 and the four English `punkt_tab` files from `nltk_data` revision `550b6625bcef1f2abff2ff770a5a0d272c9c6b2a`, provisioned by `tools/prepare_punkt_characterization.py` into an isolated root. Characterization never downloads and fails rather than skips when the data is missing.
 
-The same comparator-specific encoding applies to `mutant.expected`. No implicit coercion, numeric tolerance, omitted default argument, environment-derived input, or free-form comparator is allowed.
+## 3. Copy lint
 
-`mutant` is a second explicit input case chosen so at least one output or exception differs from the primary row. The runner first proves both implementations equal `expected`, then proves both equal the mutant expectation and that the comparator distinguishes primary from mutant. This establishes that the row has teeth without inventing a replacement algorithm or coupling characterization to envelope fields.
-
-Function-word table rows may characterize the existing bound `__contains__` method. Their `implementation_ref` names the table; `legacy_callable` and `registered_callable` append `.__contains__` to their respective table references. This exception is limited to the `function_words` family: each method’s `__self__` must be the exact referenced table, and legacy and registered table objects must be identical. Present/absent word queries use `json_exact` boolean expectations and the existing primary/mutant rule. The table’s unchanged defining assignment bytes, encoded as UTF-8, supply its `pattern_sha256` and the defining bytes in its behavior digest. No wrapper, table conversion, added method, or fixture field is permitted.
-
-Rows cover every migrated registry callable and project-authored cases for empty text, digits, hyphens, straight/curly apostrophes, non-ASCII normalization forms, abbreviations, ellipses, and paragraph boundaries where applicable. The fixture carries its synthetic-text license statement. Output-schema and claim-license behavior remain exclusively in existing contract/golden tests.
-
-## 4. Import consolidation
-
-One cohort migrates per PR. A cohort may change only the final ownership import/re-export, the registry row minted after that move, characterization rows for that exact callable, and tests/check wiring. The implementation object or table bytes are moved, not transcribed. Call sites adopt the registered object without changing arguments, preprocessing order, backend selection, or return handling.
-
-The inventory checker records the exact legacy sites for the cohort from the merge base and requires that set to shrink to zero in the candidate, except for a direct import-and-re-export of the registered object under an established public name. The checker recognizes that syntax mechanically; there is no exemption file, size threshold, or cross-repository literal sweep.
-
-Calibrated and hash-bound primitives remain behavior-pinned. Quantile imports retain each existing site's empty-input and interpolation semantics. Any proposed convergence, splitter upgrade, preprocessing change, threshold change, or function-word-table cleanup requires a separate spec and new characterization expectations.
-
-## Cross-spec ownership and order
-
-| Boundary | This spec owns | Companion owns | Order |
-|---|---|---|---|
-| `specs/svp-packaging-conversion.md` | final primitive ownership moves, registry, inventory, characterization, compatibility re-exports | package home, launcher/module relocation, layering, pytest/bootstrap | packaging relocates an owner first; this spec consolidates its exact object and then mints the ID |
-| `fleet-coordination/specs/setec-consumer-client-contract.md` | no envelope/client work | shared client and capability contract | independent after packaging P1 at the stay-put paths; packaging P2 later relocates the same bytes; neither spec changes normalized envelopes |
-| `fleet-coordination/specs/setec-test-consolidation.md` | primitive characterization | shared pytest fixtures/parametrization/markers | consolidation may hoist a fixture only if every characterization row remains collected |
-
-## Phases
-
-- **R0 — exact-base preflight.** Fetch `origin/main`; record the SHA; derive the primitive-owner/import graph from that tree, not a stale checkout.
-- **R1 — final ownership cohort.** After the owning packaging relocation, move the exact existing object/table to its final owner where needed, leave compatibility re-exports, and prove existing focused/full tests unchanged. Mint no IDs in this commit.
-- **R2 — registry and characterization cohort.** Mint IDs against those final owners, add exact characterization rows and inventory dispositions, migrate imports without changing call arguments or behavior, and enable `gen_textprims_inventory.py --check` in CI.
-
-Each R1/R2 pair is a focused sequence for one non-overlapping cohort. There is no stamp or envelope phase.
-
-## Acceptance gates
-
-1. `gen_textprims_inventory.py --check` scans all production source, resolves every row/site/import in the cumulative registered cohorts against the candidate, refuses old-path IDs and unowned duplicates, reports remaining/unresolved candidates separately, and is wired into CI with its self-tests. A green cohort check is not full R2 completion.
-2. Every registry row names its final owner; no row is minted in the same commit that still plans a later defining-symbol move.
-3. Every migrated callable passes the exact primary and mutant characterization rows under the closed comparator rules; the legacy and registered callables are the same object after compatibility import where object identity is meaningful.
-4. The cohort's merge-base legacy-site set shrinks to zero except named re-exports. No call arguments, preprocessing order, backend branch, result extraction, pattern/table byte, or output builder changes.
-5. Existing contract fixtures/goldens, `s5_distance` implementation digest, register-sweep tests, capability drift, docs freshness, calibration readiness, and the full producer suite remain unchanged/green as applicable. Regeneration is not an accepted repair for a diff.
-6. No candidate production or fixture diff adds `textprims` to a normalized envelope, edits `output_schema.py` for identity, or adds a consumer/seal artifact.
-
-## Risks and mechanical defenses
-
-| Risk | Mechanical defense |
-|---|---|
-| An ID binds a temporary path | final ownership commit precedes ID minting; checker rejects old-path owners |
-| A copied regex/table drifts during consolidation | move/import the exact object; byte digest plus pure-call characterization |
-| Finite fixtures are mistaken for equivalence proof | structural same-object rule is primary; characterization is a regression oracle |
-| A weak fixture passes without exercising behavior | explicit mutant input and expected result must differ under the same comparator |
-| Preprocessing differences are hidden by one tokenizer name | preprocessing is its own family; call arguments/order cannot change |
-| Consolidation touches a sealed envelope | no stamps/output edits; exact existing seal/golden tests remain unchanged |
-| `stylometry_core` is misclassified as L1 | it remains L2 until the independent spaCy-state dependency is inverted |
+`tools/gen_textprims_inventory.py --check` (the existing CI step) fails when a function anywhere in the plugin's production source has the same body and parameters as a registered primitive, up to renaming the parameters (ignoring its name, annotations and docstring), and reads module-level names with the same values. It also fails on a word-set literal equal to a registered set, and on a `PRIMITIVES` entry whose owner module does not define it. Same-named functions with different code are unrelated and are not reported. The fix for a reported copy is to import the registered primitive.
 
 ## Out of scope
 
-- Envelope identity, stamps, runtime collectors, output policy, consumer admission, or evidence re-banking.
-- Numeric/token-boundary changes, threshold changes, recalibration, or convergence.
-- Voicewright primitive consolidation or schema changes.
-- Moving `s5_distance.py` or changing its implementation digest.
+- Changing any primitive's behavior. A behavior change is a separate, reviewed change that updates the characterization rows it moves.
+- Reconciling the remaining same-purpose primitives that are not byte-identical (for example the several sentence splitters that disagree on `"one. two"`). Each is a behavior decision for its own PR.
+- Envelope stamps, provenance fields, or IDs for primitives.

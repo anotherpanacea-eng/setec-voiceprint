@@ -60,6 +60,7 @@ from pathlib import Path
 from typing import Any
 
 from setec.contract.claim_license import ClaimLicense  # type: ignore
+from setec.core.textprims import count_words_alpha as count_words
 from setec.core.narrative_feature_schema import (  # type: ignore
     BUNDLE_LABELS,
     CORE_FEATURES,
@@ -340,12 +341,6 @@ def verdict_band_from_thresholds(
 
 
 # ---------- IO + envelope -------------------------------------------
-
-_WORD_RE = re.compile(r"[A-Za-z']+")
-
-
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
 
 
 def build_results_payload(

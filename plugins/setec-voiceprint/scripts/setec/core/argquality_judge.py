@@ -60,6 +60,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import judge_backends  # type: ignore
+from setec.core.textprims import _normws
 
 PROMPT_VERSION = "argquality_dimension_profile_v1"
 
@@ -215,11 +216,6 @@ def utc_now() -> str:
 
 
 # ----------------- backend: shared validation ---------------------
-def _normws(s: str) -> str:
-    """Whitespace-normalized form for a tolerant verbatim-containment check."""
-    return " ".join(s.split())
-
-
 def _normalize_spans(raw: Any, paragraphs: list[str]) -> list[str]:
     """Keep only spans that are a verbatim (whitespace-normalized) substring of
     SOME paragraph — a hallucinated span the judge did not actually quote is
