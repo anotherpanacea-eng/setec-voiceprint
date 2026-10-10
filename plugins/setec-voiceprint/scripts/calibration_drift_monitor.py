@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import platform
 import sys
 from pathlib import Path
@@ -342,6 +343,38 @@ def take_snapshot(
 # ---------- Drift detection ----------
 
 
+def _finite_number(value: Any, context: str) -> int | float:
+    """Refuse unusable numbers without changing valid numeric types."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            if math.isfinite(value):
+                return value
+        except OverflowError:
+            pass
+    raise ValueError(f"{context} must be a finite real number")
+
+
+def _validate_thresholds(
+    relative_threshold: float,
+    absolute_thresholds: dict[str, float] | None,
+) -> dict[str, float]:
+    _finite_number(relative_threshold, "Relative threshold")
+    if relative_threshold < 0:
+        raise ValueError("Relative threshold must be nonnegative")
+    floors = absolute_thresholds or _DEFAULT_NOISE_THRESHOLDS
+    for floor in floors.values():
+        _finite_number(floor, "Absolute threshold")
+        if floor < 0:
+            raise ValueError("Absolute threshold must be nonnegative")
+    return floors
+
+
+def _validate_signal_values(signals: dict[str, float], context: str) -> None:
+    for value in signals.values():
+        if value is not None:
+            _finite_number(value, context)
+
+
 def _compare_signals(
     snapshot_signals: dict[str, float],
     current_signals: dict[str, float],
@@ -350,7 +383,11 @@ def _compare_signals(
     absolute_thresholds: dict[str, float] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Compare per-signal values; return per-signal drift verdict."""
-    absolute_thresholds = absolute_thresholds or _DEFAULT_NOISE_THRESHOLDS
+    absolute_thresholds = _validate_thresholds(
+        relative_threshold, absolute_thresholds,
+    )
+    _validate_signal_values(snapshot_signals, "Snapshot signal")
+    _validate_signal_values(current_signals, "Current signal")
     out: dict[str, dict[str, Any]] = {}
     keys = sorted(set(snapshot_signals) | set(current_signals))
     for key in keys:
@@ -371,18 +408,22 @@ def _compare_signals(
             }
             continue
         delta = curr - snap
+        _finite_number(delta, "Signal delta")
         # Drift threshold: max of the per-signal absolute floor and
         # the relative-change floor.
         rel_floor = abs(snap) * relative_threshold
+        _finite_number(rel_floor, "Relative noise floor")
         abs_floor = absolute_thresholds.get(key, 0.0)
         floor = max(rel_floor, abs_floor)
+        _finite_number(floor, "Noise floor")
+        rel_change = delta / snap if abs(snap) > 1e-9 else None
+        if rel_change is not None:
+            _finite_number(rel_change, "Relative signal change")
         verdict = "drifted" if abs(delta) > floor else "stable"
         out[key] = {
             "snapshot": snap, "current": curr,
             "delta": delta,
-            "rel_change": (
-                delta / snap if abs(snap) > 1e-9 else None
-            ),
+            "rel_change": rel_change,
             "noise_floor": floor,
             "verdict": verdict,
         }
@@ -476,6 +517,7 @@ def detect_drift(
 ) -> dict[str, Any]:
     """Compare snapshot vs. current. Returns a drift report with
     per-benchmark per-signal verdicts and overall summary."""
+    _validate_thresholds(relative_threshold, absolute_thresholds)
     stack_changes = _compare_stack(
         snapshot.get("stack", {}), current.get("stack", {}),
     )
@@ -825,11 +867,21 @@ def _read_snapshot(path_str: str) -> dict[str, Any]:
             f"Snapshot file not found: {path_str}"
         )
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        def finite_json_float(token: str) -> float:
+            return _finite_number(float(token), "Snapshot JSON number")
+
+        snapshot = json.loads(
+            p.read_text(encoding="utf-8"),
+            parse_float=finite_json_float,
+            parse_constant=finite_json_float,
+        )
     except json.JSONDecodeError as exc:
         raise ValueError(
             f"Snapshot file is not valid JSON: {exc}"
         ) from exc
+    for benchmark in snapshot.get("benchmarks", {}).values():
+        _validate_signal_values(benchmark.get("signals", {}), "Snapshot signal")
+    return snapshot
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -948,6 +1000,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "check":
         try:
+            _validate_thresholds(args.relative_threshold, None)
+        except ValueError as exc:
+            sys.stderr.write(f"--relative-threshold: {exc}\n")
+            return 2
+        try:
             snapshot = _read_snapshot(args.snapshot)
         except (FileNotFoundError, ValueError) as exc:
             sys.stderr.write(f"--snapshot: {exc}\n")
@@ -963,11 +1020,15 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"--benchmark-dir: {exc}\n")
             return 2
 
-        report = detect_drift(
-            snapshot=snapshot,
-            current=current,
-            relative_threshold=args.relative_threshold,
-        )
+        try:
+            report = detect_drift(
+                snapshot=snapshot,
+                current=current,
+                relative_threshold=args.relative_threshold,
+            )
+        except ValueError as exc:
+            sys.stderr.write(f"Signal comparison: {exc}\n")
+            return 2
         out = (
             json.dumps(report, indent=2, default=str)
             if args.json else render_report(report)
