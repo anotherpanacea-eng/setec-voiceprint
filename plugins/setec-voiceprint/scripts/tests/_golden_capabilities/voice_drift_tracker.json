@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib feature extraction per document; an optional feature cache speeds reruns",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -13,31 +13,49 @@
     "python": []
   },
   "do_not_use_when": [
-    "TODO"
+    "the baseline has no dates (manifest date_written or date-prefixed filenames)",
+    "periods hold fewer than --min-docs-per-period documents (default 2); they are dropped",
+    "you want an authorship verdict"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/voice_drift_tracker.py --manifest corpus_manifest.jsonl --period-granularity year --out ai-prose-baselines-private/drift.md --json-out ai-prose-baselines-private/drift.json",
+      "description": "Year-by-year drift over a dated manifest"
+    }
+  ],
+  "family": "voice-drift",
   "handoff": "none",
   "id": "voice_drift_tracker",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --date-pattern, --use, --period-granularity, --period-boundaries, --min-docs-per-period, --top-drifting, --top-stable, --out, --json-out, --feature-cache, --allow-public-output (see --help)"
+    ],
+    "required": [
+      "one of --manifest, --baseline-dir, --periods-json"
+    ],
+    "target": "a dated corpus via --manifest, --baseline-dir (date-prefixed filenames) or --periods-json"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown drift report (--out)",
+      "JSON drift report (--json-out); file outputs must sit under ai-prose-baselines-private/ unless --allow-public-output"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "time-drift surface (cathedral #6 sub-item).",
-  "references": [],
+  "purpose": "Time-drift surface. Groups date-tagged baseline documents into periods (year, quarter, month or custom), then reports per-period voiceprint summaries, a cross-period voice-distance matrix (Burrows Delta and cosine per feature family), drifting features and stable features (the durable idiolect).",
+  "references": [
+    "plugins/setec-voiceprint/skills/voice-coherence/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/voice_drift_tracker.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "voice_coherence",
   "use_when": [
-    "TODO"
+    "deciding whether a draft's distance from the baseline is recent stylistic evolution or sudden distortion",
+    "seeing which features of your voice changed over the years and which stayed stable",
+    "producing the drift input for generate_voice_report"
   ]
 }

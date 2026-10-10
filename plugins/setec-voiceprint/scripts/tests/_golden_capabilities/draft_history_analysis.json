@@ -1,40 +1,59 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "one variance_audit pass per version; tier 1 is stdlib, --tier2 needs spaCy",
     "length_floor_words": null,
     "tier": "core"
   },
   "consumers": [],
   "dependencies": {
-    "python": []
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you have only one before/after pair (use before_after_restoration or known_editor_profile)",
+    "you want a provenance verdict for any version; the report names where signals moved, not why"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/draft_history_analysis.py --versions-json drafts.json --json --out trajectory.json",
+      "description": "Trajectory across four drafts"
+    }
+  ],
+  "family": "draft-trajectory",
   "handoff": "none",
   "id": "draft_history_analysis",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --tier2 (adds spaCy signals), --json, --out (see --help)"
+    ],
+    "required": [
+      "--versions-json"
+    ],
+    "target": "a JSON list of {label, path} draft versions in chronological order (--versions-json)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown trajectory report (stdout or --out)",
+      "JSON envelope (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "version-aware stylometric trajectory across multiple drafts (paired-release schedule Release 11, Trustworthiness Tier 3).",
-  "references": [],
+  "purpose": "Version-aware stylometric trajectory across a chronological sequence of drafts. Runs variance_audit signals on each version and reports per-version metrics, adjacent-version deltas, the inflection point per signal, and a heuristic per-signal shape (stable_throughout, gradual_drift, sudden_shift, restored_after_drift).",
+  "references": [
+    "plugins/setec-voiceprint/capabilities.d/variance_audit.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/draft_history_analysis.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "validation",
   "use_when": [
-    "TODO"
+    "you have several dated versions of one piece and want to see where in the revision arc signals moved",
+    "checking whether later edits restored what an earlier pass flattened"
   ]
 }

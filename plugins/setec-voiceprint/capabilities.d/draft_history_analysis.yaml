@@ -2,31 +2,48 @@ entries:
 - id: draft_history_analysis
   script_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
   surface: validation
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers: []
-  family: TODO
-  purpose: version-aware stylometric trajectory across multiple drafts (paired-release
-    schedule Release 11, Trustworthiness Tier 3).
+  family: draft-trajectory
+  purpose: Version-aware stylometric trajectory across a chronological sequence of drafts. Runs
+    variance_audit signals on each version and reports per-version metrics, adjacent-version
+    deltas, the inflection point per signal, and a heuristic per-signal shape (stable_throughout,
+    gradual_drift, sudden_shift, restored_after_drift).
   use_when:
-  - TODO
+  - you have several dated versions of one piece and want to see where in the revision arc signals
+    moved
+  - checking whether later edits restored what an earlier pass flattened
   do_not_use_when:
-  - TODO
+  - you have only one before/after pair (use before_after_restoration or known_editor_profile)
+  - you want a provenance verdict for any version; the report names where signals moved, not
+    why
   inputs:
-    target: TODO
+    target: a JSON list of {label, path} draft versions in chronological order (--versions-json)
+    required:
+    - --versions-json
+    optional:
+    - optional flags --tier2 (adds spaCy signals), --json, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown trajectory report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: one variance_audit pass per version; tier 1 is stdlib, --tier2 needs spaCy
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Trajectory across four drafts
+    cmd: python3 plugins/setec-voiceprint/scripts/draft_history_analysis.py --versions-json
+      drafts.json --json --out trajectory.json
+  references:
+  - plugins/setec-voiceprint/capabilities.d/variance_audit.yaml
   _seeded_at: '2026-05-28'

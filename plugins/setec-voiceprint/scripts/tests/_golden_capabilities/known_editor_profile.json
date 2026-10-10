@@ -1,40 +1,59 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "one variance_audit pass per text; tier 1 is stdlib, --tier2 needs spaCy",
     "length_floor_words": null,
     "tier": "core"
   },
   "consumers": [],
   "dependencies": {
-    "python": []
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you have fewer than two pairs (signal SDs are undefined)",
+    "you want an authorship verdict; the match only says normal editing by this editor vs a different process"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/known_editor_profile.py learn --pairs-json pairs.json --out profile.json",
+      "description": "Learn an editor profile from labeled pairs"
+    }
+  ],
+  "family": "editor-profile",
   "handoff": "none",
   "id": "known_editor_profile",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --profile-label, --tier2, --include-filenames (learn); --z-threshold, --tier2, --json, --out (match) (see --help)"
+    ],
+    "required": [
+      "mode (learn or match)",
+      "learn needs --pairs-json and --out; match needs --before, --after, --profile"
+    ],
+    "target": "learn: a pairs JSON (--pairs-json); match: --before, --after and a learned --profile"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "profile JSON (learn)",
+      "match report, Markdown or JSON (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "learn an editorial transformation profile from before/after pairs (paired-release schedule Release 10, Trustworthiness Tier 3).",
-  "references": [],
+  "purpose": "Learn an editorial transformation profile from labeled before/after pairs (learn mode: per-signal mean and SD of after-minus-before deltas), then match a new pair against it (match mode: per-signal z-scores and a matches_profile style verdict), so a known editor's ordinary pass is not mistaken for evidence about provenance.",
+  "references": [
+    "plugins/setec-voiceprint/capabilities.d/variance_audit.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/known_editor_profile.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "validation",
   "use_when": [
-    "TODO"
+    "you have several before/after pairs from the same editor and writer and want to know whether a new pass looks like that editor's normal work"
   ]
 }
