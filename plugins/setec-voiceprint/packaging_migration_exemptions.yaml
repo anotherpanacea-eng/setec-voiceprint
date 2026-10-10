@@ -1147,12 +1147,12 @@ exemptions:
   introduced_sha: 080ae001fc90508d5fc7a09ed9515026d1430592
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/evidentiary_conditions_gate.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 64 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 41c7f1940fedd5319f91e8dcdcec00b5756dc92f
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/explain.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 28 not yet converted
@@ -5157,4 +5157,12 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: d3a3fc416327e7cc376598a3dbb70b48eb9097b9
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/evidentiary_conditions_gate.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/evidentiary_conditions_gate.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 41c7f1940fedd5319f91e8dcdcec00b5756dc92f
   removal_phase: not-applicable

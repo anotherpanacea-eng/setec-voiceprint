@@ -142,6 +142,7 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/evidentiary_conditions_gate.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/baseline_discovery.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/construction_signature_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/bigram_diff.py", "_SCRIPT_DIR"),

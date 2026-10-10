@@ -209,6 +209,7 @@ def _source_path(scope: Path, module: str) -> Path:
         "manuscript_bigram_diff",
         "construction_signature_audit",
         "baseline_discovery",
+        "evidentiary_conditions_gate",
         "near_dup_dedup",
     }:
         return scope / "setec" / "surfaces" / f"{module}.py"
@@ -524,7 +525,7 @@ def test_pool_guard_is_pure_stdlib():
             assert node.module.split(".")[0] not in third_party, node.module
 
 
-@pytest.mark.parametrize("module_name", ("agency_abstraction_audit", "stance_modality_audit", "confounder_audit", "bigram_diff", "manuscript_bigram_diff", "construction_signature_audit", "baseline_discovery"))
+@pytest.mark.parametrize("module_name", ("agency_abstraction_audit", "stance_modality_audit", "confounder_audit", "bigram_diff", "manuscript_bigram_diff", "construction_signature_audit", "baseline_discovery", "evidentiary_conditions_gate"))
 def test_relocated_surface_implementation_cannot_hide_an_unclassified_loader(monkeypatch, module_name):
     """The executing implementation must remain inside corpus closure sweeps."""
     import importlib
