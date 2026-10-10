@@ -1231,12 +1231,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/gecscore_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 87 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
+    supply scripts/ on sys.path. The implementation resolves paths through setec.paths.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
   symbol: FIXTURES_DIR
   reason: pending relocation (P4); anchor `FIXTURES_DIR` at line 62 not yet converted
@@ -3573,6 +3573,14 @@ layer_exemptions:
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/gecscore_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/gecscore_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x main+TASK_SURFACE compatibility launcher to its own
+    whole-module implementation, per packaging section 2; no new surface sharing.
+  owner: packaging
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gecscore_audit.py
   to_path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
