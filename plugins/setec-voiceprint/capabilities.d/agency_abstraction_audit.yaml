@@ -18,7 +18,6 @@ entries:
     signals behind it
   - comparing a draft's abstraction profile against the writer's own baseline
     (--baseline-dir)
-  - feeding confounder_audit's institutional-prose vs AI-smoothing differential
   do_not_use_when:
   - the register is legitimately institutional (policy, legal, academic); compare
     against a register-matched baseline instead of reading the band alone
@@ -28,7 +27,7 @@ entries:
     required:
     - input
     optional:
-    - --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
+    - optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
       --allow-non-prose, --include-baseline-filenames (see --help)
   outputs:
     schema_version: '1.0'

@@ -17,8 +17,8 @@ entries:
   use_when:
   - you want predictability-uniformity evidence (DivEye-style surprisal variance)
     for a draft outside the full variance_audit --tier4 run
-  - localizing low-surprise stretches with --sliding-window (feeds
-    sliding_window_heatmap)
+  - localizing low-surprise stretches with --sliding-window (token-window
+    trajectory in the report; sliding_window_heatmap does not accept this output)
   do_not_use_when:
   - the surprisal tier (transformers + torch, about 1.5 to 2 GB) cannot be installed
   - you want an authorship or AI verdict; the evidence is about predictability, and
@@ -29,7 +29,7 @@ entries:
     required:
     - input
     optional:
-    - --model, --revision, --surprisal-dtype, --sliding-window, --window-size, --stride,
+    - optional flags --model, --revision, --surprisal-dtype, --sliding-window, --window-size, --stride,
       --top-k, --json, --out (see --help)
   outputs:
     schema_version: '1.0'
@@ -37,8 +37,9 @@ entries:
     - Markdown surprisal report, or JSON envelope with --json (stdout or --out)
   compute:
     tier: surprisal
-    cost_note: one small causal LM forward pass over the text (default TinyLlama);
-      CPU works, GPU faster; weights download on first use
+    cost_note: one small causal LM (default TinyLlama); long texts are split into
+      context-length chunks, one forward pass each; CPU works, GPU faster; weights
+      download on first use
     length_floor_words: null
   registers:
   - all_fiction

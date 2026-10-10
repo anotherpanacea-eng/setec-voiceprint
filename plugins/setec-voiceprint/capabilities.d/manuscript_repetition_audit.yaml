@@ -29,7 +29,7 @@ entries:
     - manuscript or --chapter-dir
     - --baseline-dir
     optional:
-    - --chapter-pattern, --anchors, --top-dispersed, --top-concentrated, --top-per-chapter,
+    - optional flags --chapter-pattern, --anchors, --top-dispersed, --top-concentrated, --top-per-chapter,
       --min-dispersed-chapters, --min-count, --min-word-len, --cluster-window, --min-ratio,
       --include-function-words, --json, --out (see --help)
   outputs:

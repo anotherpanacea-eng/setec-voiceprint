@@ -25,7 +25,7 @@
   "id": "chapter_distinctiveness_audit",
   "inputs": {
     "optional": [
-      "--chapter-pattern, --anchors, --top-per-chapter, --min-count, --min-word-len, --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)"
+      "optional flags --chapter-pattern, --anchors, --top-per-chapter, --min-count, --min-word-len, --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)"
     ],
     "required": [
       "manuscript or --chapter-dir"

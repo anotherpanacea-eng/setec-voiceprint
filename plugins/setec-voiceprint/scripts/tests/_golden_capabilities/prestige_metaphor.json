@@ -33,7 +33,7 @@
   "id": "prestige_metaphor",
   "inputs": {
     "optional": [
-      "--t1, --t2, --t3, --no-wordnet, --baseline, --baseline-source, --out (see --help)"
+      "optional flags --t1, --t2, --t3, --no-wordnet, --baseline, --baseline-source, --out (see --help)"
     ],
     "required": [
       "input"

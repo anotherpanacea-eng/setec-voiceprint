@@ -28,7 +28,7 @@ entries:
     required:
     - manuscript or --chapter-dir
     optional:
-    - --chapter-pattern, --anchors, --top-per-chapter, --min-count, --min-word-len,
+    - optional flags --chapter-pattern, --anchors, --top-per-chapter, --min-count, --min-word-len,
       --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)
   outputs:
     schema_version: '1.0'

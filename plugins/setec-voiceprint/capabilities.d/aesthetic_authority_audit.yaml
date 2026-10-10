@@ -23,7 +23,7 @@ entries:
     required:
     - input
     optional:
-    - --register, --kicker-baseline, --ic-baseline, --pm-baseline, --t1, --t2, --t3,
+    - optional flags --register, --kicker-baseline, --ic-baseline, --pm-baseline, --t1, --t2, --t3,
       --word-limit, --no-wordnet, --out (see --help)
   outputs:
     schema_version: '1.0'

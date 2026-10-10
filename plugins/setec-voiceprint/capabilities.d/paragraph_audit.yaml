@@ -29,7 +29,7 @@ entries:
     required:
     - input
     optional:
-    - --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
+    - optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
       --allow-non-prose, --include-baseline-filenames (see --help)
   outputs:
     schema_version: '1.0'

@@ -25,7 +25,7 @@
   "id": "manuscript_repetition_audit",
   "inputs": {
     "optional": [
-      "--chapter-pattern, --anchors, --top-dispersed, --top-concentrated, --top-per-chapter, --min-dispersed-chapters, --min-count, --min-word-len, --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)"
+      "optional flags --chapter-pattern, --anchors, --top-dispersed, --top-concentrated, --top-per-chapter, --min-dispersed-chapters, --min-count, --min-word-len, --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)"
     ],
     "required": [
       "manuscript or --chapter-dir",

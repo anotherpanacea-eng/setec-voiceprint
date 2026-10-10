@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "one spaCy tagging pass per target and comparator file; no model download beyond en_core_web_sm",
+    "cost_note": "two spaCy tagging passes per target and comparator file (bigram counts, then example token pairs); no model beyond en_core_web_sm",
     "length_floor_words": null,
     "tier": "spacy"
   },
@@ -30,18 +30,18 @@
   "id": "bigram_diff",
   "inputs": {
     "optional": [
-      "--cluster-mode, --top, --min-count, --smoothing-alpha, --json, --out (see --help)"
+      "optional flags --cluster-mode, --top, --min-count, --smoothing-alpha, --json, --out (see --help)"
     ],
     "required": [
       "target",
-      "--cluster-dir or --cluster-files"
+      "supply --cluster-dir or --cluster-files"
     ],
     "target": "one .txt/.md target plus comparator files (--cluster-dir or --cluster-files)"
   },
   "outputs": {
     "artifacts": [
       "Markdown table of top divergent POS bigrams with examples (stdout or --out)",
-      "JSON envelope (--json) consumed by restoration_packet --bigram-json"
+      "JSON envelope (--json); restoration_packet --bigram-json does not yet read this envelope (it expects top-level diffs), so do not hand it over directly"
     ],
     "schema_version": "1.0"
   },
@@ -59,7 +59,6 @@
   "surface": "smoothing_diagnosis",
   "use_when": [
     "variance_audit flagged elevated POS-bigram KL/JSD against a baseline and you want to know which bigrams drive it",
-    "preparing a metric-targeted restoration packet (restoration_packet reads this JSON)",
     "comparing one draft against a small set of the writer's own comparator texts"
   ]
 }

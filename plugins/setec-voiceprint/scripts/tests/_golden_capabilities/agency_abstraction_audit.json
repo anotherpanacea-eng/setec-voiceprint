@@ -27,7 +27,7 @@
   "id": "agency_abstraction_audit",
   "inputs": {
     "optional": [
-      "--baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking, --allow-non-prose, --include-baseline-filenames (see --help)"
+      "optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking, --allow-non-prose, --include-baseline-filenames (see --help)"
     ],
     "required": [
       "input"
@@ -54,7 +54,6 @@
   "surface": "smoothing_diagnosis",
   "use_when": [
     "a revision reads vaguer or more institutional and you want the agency-loss signals behind it",
-    "comparing a draft's abstraction profile against the writer's own baseline (--baseline-dir)",
-    "feeding confounder_audit's institutional-prose vs AI-smoothing differential"
+    "comparing a draft's abstraction profile against the writer's own baseline (--baseline-dir)"
   ]
 }

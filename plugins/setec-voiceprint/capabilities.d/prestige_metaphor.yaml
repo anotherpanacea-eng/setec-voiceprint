@@ -28,7 +28,7 @@ entries:
     required:
     - input
     optional:
-    - --t1, --t2, --t3, --no-wordnet, --baseline, --baseline-source, --out (see --help)
+    - optional flags --t1, --t2, --t3, --no-wordnet, --baseline, --baseline-source, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:

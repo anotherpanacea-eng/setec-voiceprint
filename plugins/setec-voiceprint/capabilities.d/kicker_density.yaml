@@ -27,7 +27,7 @@ entries:
     required:
     - input
     optional:
-    - --word-limit, --baseline, --baseline-source, --force-regex, --out (see --help)
+    - optional flags --word-limit, --baseline, --baseline-source, --force-regex, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:

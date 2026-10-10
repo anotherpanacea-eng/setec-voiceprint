@@ -29,7 +29,7 @@
   "id": "aesthetic_authority_audit",
   "inputs": {
     "optional": [
-      "--register, --kicker-baseline, --ic-baseline, --pm-baseline, --t1, --t2, --t3, --word-limit, --no-wordnet, --out (see --help)"
+      "optional flags --register, --kicker-baseline, --ic-baseline, --pm-baseline, --t1, --t2, --t3, --word-limit, --no-wordnet, --out (see --help)"
     ],
     "required": [
       "input"

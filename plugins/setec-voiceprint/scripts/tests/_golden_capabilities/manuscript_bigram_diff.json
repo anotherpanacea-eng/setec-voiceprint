@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "one spaCy tagging pass per file in both corpora; cost scales with total corpus size",
+    "cost_note": "two spaCy tagging passes per file in both corpora (bigram counts, then example token pairs); cost scales with total corpus size",
     "length_floor_words": null,
     "tier": "spacy"
   },
@@ -29,7 +29,7 @@
   "id": "manuscript_bigram_diff",
   "inputs": {
     "optional": [
-      "--label-a, --label-b, --aggregation, --top, --min-count, --smoothing-alpha, --json, --out (see --help)"
+      "optional flags --label-a, --label-b, --aggregation, --top, --min-count, --smoothing-alpha, --json, --out (see --help)"
     ],
     "required": [
       "corpus A (--corpus-a-dir or --corpus-a-files)",
@@ -40,7 +40,7 @@
   "outputs": {
     "artifacts": [
       "Markdown table of top divergent POS bigrams with examples (stdout or --out)",
-      "JSON envelope (--json) consumed by restoration_packet --bigram-json"
+      "JSON envelope (--json); restoration_packet --bigram-json does not yet read this envelope (it expects top-level diffs), so do not hand it over directly"
     ],
     "schema_version": "1.0"
   },
@@ -57,7 +57,6 @@
   "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "comparing the syntactic-template footprint of two of your own corpora (e.g. post-2022 vs pre-AI)",
-    "feeding a corpus-level bigram diff into restoration_packet"
+    "comparing the syntactic-template footprint of two of your own corpora (e.g. post-2022 vs pre-AI)"
   ]
 }

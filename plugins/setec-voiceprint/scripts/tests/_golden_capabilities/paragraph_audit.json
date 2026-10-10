@@ -27,7 +27,7 @@
   "id": "paragraph_audit",
   "inputs": {
     "optional": [
-      "--baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking, --allow-non-prose, --include-baseline-filenames (see --help)"
+      "optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking, --allow-non-prose, --include-baseline-filenames (see --help)"
     ],
     "required": [
       "input"
