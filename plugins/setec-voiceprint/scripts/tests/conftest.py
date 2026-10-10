@@ -22,6 +22,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from preprocessing import strip_non_prose  # type: ignore
@@ -53,6 +56,29 @@ def _results(env):
 
 def _digest(label: str) -> str:
     return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
+
+
+def write_utf8_text(tmp_path: Path, name: str, text: str) -> Path:
+    p = tmp_path / name
+    p.write_text(text, encoding="utf-8")
+    return p
+
+
+def assert_isolated_python_probe(code, scripts, cwd, *args):
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", "-B", "-c", code, str(scripts), *map(str, args)],
+        cwd=cwd, text=True, capture_output=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == result.stderr == ""
+
+
+def run_offline_python_probe(code, cwd, *args):
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
+    return subprocess.run([sys.executable, "-B", "-S", "-c", code, *map(str, args)],
+                          cwd=cwd, env=env, capture_output=True, text=True, timeout=30)
 
 
 def make_fixture_fetcher(fetcher_type, fixture_dir, default_url_map, url_map=None):
