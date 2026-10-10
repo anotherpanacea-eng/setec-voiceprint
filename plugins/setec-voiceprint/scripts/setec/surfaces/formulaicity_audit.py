@@ -70,7 +70,6 @@ BUILTIN_PHRASES: dict[str, list[str]] = {
     ],
 }
 
-from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 
 
 from setec.core.textprims import count_words_unicode_hyphen as count_words

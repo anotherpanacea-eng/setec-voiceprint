@@ -58,7 +58,6 @@ TOOL_NAME = "document_layout_audit"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 300
 
-from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 _ATX_HEADING_RE = re.compile(r"^(#{1,6})\s+\S")
 _UL_ITEM_RE = re.compile(r"^\s*([-*+])\s+\S")
 _OL_ITEM_RE = re.compile(r"^\s*\d+[.)]\s+\S")

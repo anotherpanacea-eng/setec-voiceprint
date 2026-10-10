@@ -44,7 +44,6 @@ TOOL_NAME = "crosslingual_voice_distance"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 500
 
-from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 _WS_RE = re.compile(r"\s+")
 _SENT_SPLIT_RE = re.compile(r"[.!?。！？…।]+")
 _PUNCT_SET = ".,;:!?—–-…\"'()[]«»¡¿。、！？"

@@ -83,7 +83,6 @@ except ImportError:
     _NLP = None
 
 
-from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 
 # --------------- Lexicons (defaults; --verb-lexicon overrides verbs) ---------
 

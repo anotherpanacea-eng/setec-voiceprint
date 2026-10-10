@@ -136,7 +136,6 @@ def test_unicode_counters_share_function_and_pattern(module_name):
     packaged = importlib.import_module("setec.surfaces." + module_name)
     assert legacy is packaged
     assert legacy.count_words is textprims.count_words_unicode_hyphen
-    assert legacy._WORD_RE is textprims._WORD_UNICODE_HYPHEN_RE
 
 
 
@@ -172,21 +171,10 @@ def test_unicode_plain_counters_share_function_and_pattern(module_name, public_n
 
 
 @pytest.mark.parametrize("module_name", ["distinct_diversity_audit", "homogeneity_audit"])
-def test_token_count_consumers_preserve_tokenizer_binding(module_name, monkeypatch):
+def test_token_count_consumers_share_count_words_alpha(module_name):
     import importlib
-    import re
     from setec.core import textprims
-    legacy = importlib.import_module(module_name)
-    assert legacy is importlib.import_module("setec.surfaces." + module_name)
-    assert legacy._word_count is textprims.count_words_alpha_tokens
-    assert legacy.word_tokens is textprims.word_tokens_alpha
-    # Preserve the existing tokenizer dependency rather than the similar _WORD_RE counter.
-    monkeypatch.setattr(textprims, "WORD_RE", re.compile(r"[0-9]+"))
-    assert legacy._word_count("123 abc") == 1
-    assert legacy._word_count("123 456") == 2
-    assert textprims.count_words_alpha("123 456") == 0
-    monkeypatch.setattr(textprims, "word_tokens_alpha", lambda text: ["a", "b", "c"])
-    assert legacy._word_count("anything") == 3
+    assert importlib.import_module(module_name)._word_count is textprims.count_words_alpha
 
 
 

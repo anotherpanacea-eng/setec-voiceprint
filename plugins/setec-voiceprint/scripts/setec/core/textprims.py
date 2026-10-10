@@ -113,7 +113,7 @@ def count_words_unicode_hyphen(text: str) -> int:
     return len(_WORD_UNICODE_HYPHEN_RE.findall(text))
 
 
-WORD_RE = re.compile(r"[A-Za-z']+")
+WORD_RE = _WORD_RE  # the same [A-Za-z']+ pattern; WORD_RE is the public name
 
 
 def word_tokens_alpha(text: str) -> list[str]:
@@ -126,9 +126,6 @@ _WORD_UNICODE_RE = re.compile(r"\b\w+\b")
 def count_words_unicode(text: str) -> int:
     return len(_WORD_UNICODE_RE.findall(text))
 
-
-def count_words_alpha_tokens(text: str) -> int:
-    return len(word_tokens_alpha(text))
 
 
 _SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
@@ -171,7 +168,6 @@ PRIMITIVES = _MappingProxyType({
     "count_words_alnum": "setec.core.textprims",
     "count_words_unicode_hyphen": "setec.core.textprims",
     "word_tokens_alpha": "setec.core.textprims",
-    "count_words_alpha_tokens": "setec.core.textprims",
     "count_words_unicode": "setec.core.textprims",
     "split_sentences_enthymeme": "setec.core.textprims",
     "content_tokens_enthymeme": "setec.core.textprims",

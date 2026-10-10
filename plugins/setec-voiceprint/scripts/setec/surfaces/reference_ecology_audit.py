@@ -52,7 +52,6 @@ TOOL_NAME = "reference_ecology_audit"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 300
 
-from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 _PAREN_RE = re.compile(r"\(([^)]*)\)")
 _YEAR_RE = re.compile(r"\b(1[6-9]\d\d|20\d\d)\b")
 _UPPER_RE = re.compile(r"[A-Z]")

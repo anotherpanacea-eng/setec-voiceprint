@@ -83,7 +83,6 @@ REWRITE_PROMPT = (
 # API-backed one from --judge.
 RewriteFn = Callable[..., str]
 
-from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
