@@ -44,6 +44,11 @@ from pathlib import Path
 from typing import Any
 
 from setec.paths import scripts_dir
+from setec.core.textprims import (
+    count_words_alnum as count_words,
+    split_sentences_enthymeme as _split_sentences,
+    content_tokens_enthymeme as _content_tokens,
+)
 
 SCRIPT_DIR = scripts_dir()
 
@@ -74,12 +79,6 @@ CONTENT_OVERLAP_CEILING = 0.6
 BAND_EDGES = {"low": 0.15, "high": 0.65}
 BAND_LABELS = ("sparse", "typical", "dense")
 
-_WORD_RE = re.compile(r"[A-Za-z0-9']+")
-
-# Sentence segmentation: split on terminal punctuation followed by whitespace. Deterministic and
-# stdlib; not a parser. Carries each sentence's paragraph index for human navigation.
-_SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
-
 # --- Marker lexicons: fixed, SETEC-internal, versioned (MARKER_VERSION). Markers, NOT a learned
 # classifier — presence/absence is structural, which keeps M1 deterministic + Goodhart-free. ---
 
@@ -108,35 +107,14 @@ _WARRANT_MARKERS = (
     "in light of", "by virtue of", "inasmuch as", "insofar as", "for the reason",
 )
 
-# English stopwords for the content-overlap (tautology) guard. stdlib set, fixed.
-_STOPWORDS = frozenset((
-    "a", "an", "the", "and", "or", "but", "if", "then", "so", "of", "to", "in",
-    "on", "at", "by", "for", "with", "as", "is", "are", "was", "were", "be",
-    "been", "being", "it", "its", "this", "that", "these", "those", "we", "you",
-    "they", "he", "she", "i", "not", "no", "do", "does", "did", "have", "has",
-    "had", "will", "would", "can", "could", "should", "may", "might", "must",
-    "from", "into", "than", "such", "which", "who", "what", "there", "their",
-    "them", "our", "us", "all", "any", "more", "most", "some", "very", "also",
-))
-
 
 def _norm(text: str) -> str:
     return text.lower()
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
-
-
 def split_paragraphs(text: str) -> list[str]:
     parts = re.split(r"\n\s*\n", text.strip())
     return [p.strip() for p in parts if p.strip()]
-
-
-def _split_sentences(paragraph: str) -> list[str]:
-    """Deterministic stdlib sentence split within a paragraph (not a parser)."""
-    raw = _SENT_SPLIT_RE.split(paragraph.strip())
-    return [s.strip() for s in raw if s.strip()]
 
 
 def segment_sentences(text: str) -> list[dict[str, Any]]:
@@ -153,11 +131,6 @@ def segment_sentences(text: str) -> list[dict[str, Any]]:
             })
             s_idx += 1
     return out
-
-
-def _content_tokens(text: str) -> set[str]:
-    """Stopword-filtered lowercase content tokens — the set the tautology guard compares."""
-    return {t for t in _WORD_RE.findall(text.lower()) if t not in _STOPWORDS}
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
