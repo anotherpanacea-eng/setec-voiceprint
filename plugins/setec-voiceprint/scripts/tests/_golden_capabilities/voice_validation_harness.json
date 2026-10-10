@@ -1,42 +1,60 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib pair scoring over all unordered pairs (quadratic in documents); scikit-learn adds ROC helpers when installed",
     "length_floor_words": null,
     "tier": "core"
   },
   "consumers": [],
   "dependencies": {
-    "python": [
+    "python": [],
+    "python_optional": [
       "sklearn"
     ]
   },
   "do_not_use_when": [
-    "TODO"
+    "the manifest has too few authors or documents per author for meaningful pairs",
+    "you want a claim beyond the manifest; results describe this labeled set only"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/voice_validation_harness.py --manifest scripts/test_data/federalist_voice_validation_manifest.jsonl --use voice_validation --json out.json --md out.md",
+      "description": "Federalist same-author validation"
+    }
+  ],
+  "family": "validation",
   "handoff": "none",
   "id": "voice_validation_harness",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --use, --label-by, --bootstrap-method, --bootstrap-resamples, --bootstrap-confidence, --bootstrap-seed, --fpr-target, --json, --md (see --help)"
+    ],
+    "required": [
+      "--manifest"
+    ],
+    "target": "a labeled manifest (entries with use voice_validation by default)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "JSON results (--json)",
+      "Markdown report (--md)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "Surface 2 sibling to validation_harness.py.",
-  "references": [],
+  "purpose": "Voice-distance validation harness. Scores same-author against different-author document pairs from a labeled manifest in a shared feature space and reports per-feature-family ROC AUC with bootstrap intervals and the same publication-claim guards as validation_harness.",
+  "references": [
+    "plugins/setec-voiceprint/capabilities.d/validation_harness.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/voice_validation_harness.py",
   "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "todo_reason": "Blocked by the AGENTS.md long-running-surfaces rule: voice_validation_harness.py scores every unordered document pair (quadratic in documents) and then bootstrap-resamples, with no progress output, checkpoint or --resume, so a large manifest can run for many minutes and a termination loses all work. Curated content is kept below; promote once the run is recoverable, visible and continuable.",
   "surface": "voice_coherence",
   "use_when": [
-    "TODO"
+    "measuring how well voice-distance features separate same-author from different-author pairs on your labeled corpus",
+    "checking a feature family before relying on voice_distance for a register"
   ]
 }

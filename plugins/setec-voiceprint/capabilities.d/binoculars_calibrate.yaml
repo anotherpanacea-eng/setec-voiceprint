@@ -3,32 +3,54 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
   surface: calibration
   status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  todo_reason: "Blocked by the AGENTS.md long-running-surfaces rule: binoculars_calibrate.py runs two causal-LM passes (scorer and observer) per manifest entry with no sharding, progress output, checkpoint or --resume, so a host hang loses the whole calibration run. Curated content is kept below; promote once the run is recoverable, visible and continuable."
   handoff: none
   # consumers: threshold source — emits the operating point operators pass to
   # binoculars_audit. Also surfaced by skills: setec, setup.
   consumers:
   - binoculars_audit
-  family: TODO
-  purpose: Binoculars threshold calibration.
+  family: binoculars
+  purpose: Operator-side Binoculars threshold calibration. Runs binoculars_audit over a labeled
+    manifest, derives empirical threshold-low and threshold-high values by ROC analysis at a
+    target FPR and TPR, and writes a calibration report. The framework default thresholds stay
+    unset; the output is the operator's own calibration.
   use_when:
-  - TODO
+  - you run binoculars_audit and want thresholds calibrated on your own labeled corpus instead
+    of none
+  - re-checking calibration after changing the scorer or observer model
   do_not_use_when:
-  - TODO
+  - you have no labeled manifest with ai_status positives and negatives
+  - the surprisal tier (transformers + torch, about 1.5 to 2 GB) cannot be installed
+  - you want thresholds to become framework defaults; they remain operator-side
   inputs:
-    target: TODO
+    target: a JSONL manifest with ai_status labels
+    required:
+    - manifest
+    optional:
+    - optional flags --scorer, --observer, --scorer-revision, --observer-revision, --surprisal-dtype,
+      --positive-statuses, --negative-statuses, --score-version, --fpr-target, --target-tpr,
+      --max-entries, --max-entries-seed, --out, --out-md (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - calibration report JSON (--out)
+    - Markdown calibration report (--out-md)
   compute:
-    tier: core
-    cost_note: TODO
+    tier: surprisal
+    cost_note: two causal LMs (scorer and observer) per manifest entry; GPU recommended for
+      large manifests; --max-entries subsamples
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
-    python: []
-  examples: []
-  references: []
+    python:
+    - transformers
+    - torch
+  examples:
+  - description: Calibrate Binoculars thresholds on a labeled manifest
+    cmd: python3 plugins/setec-voiceprint/scripts/binoculars_calibrate.py manifest.jsonl --fpr-target
+      0.01 --out calib.json --out-md calib.md
+  references:
+  - plugins/setec-voiceprint/skills/setup/SKILL.md
   _seeded_at: '2026-05-28'
