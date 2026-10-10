@@ -355,3 +355,25 @@ def test_conversion_releases_input_before_source_move(tmp_path: Path, monkeypatc
     assert moved.read_bytes() == original_bytes
     moved.unlink()
     assert not moved.exists()
+
+
+
+@pytest.mark.parametrize("suffix", [".xls", ".xlsb", ".zip", ""])
+def test_conversion_preserves_unsupported_filename_refusal(tmp_path: Path, suffix):
+    """A stream must not widen the path loader's accepted workbook formats."""
+    openpyxl = pytest.importorskip("openpyxl")
+    original = _write_xlsx(tmp_path / "source.xlsx", 12)
+    xlsx = original.with_suffix(suffix)
+    original.rename(xlsx)
+    source_bytes = xlsx.read_bytes()
+    csv_path = tmp_path / "table.csv"
+    previous_csv = b"word,conc_mean\ngralnet,4.60\n"
+    csv_path.write_bytes(previous_csv)
+    with pytest.raises(openpyxl.utils.exceptions.InvalidFileException, match="does not support"):
+        fb.convert_xlsx_to_csv(xlsx, csv_path, min_rows=10)
+    assert csv_path.read_bytes() == previous_csv
+    assert not list(tmp_path.glob("*.part"))
+    moved = tmp_path / "retained.xlsx"
+    xlsx.rename(moved)
+    assert moved.read_bytes() == source_bytes
+    moved.unlink()

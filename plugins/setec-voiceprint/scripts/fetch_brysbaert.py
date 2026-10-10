@@ -201,6 +201,9 @@ def convert_xlsx_to_csv(
             "openpyxl is not installed. Install with: "
             "pip install openpyxl"
         ) from exc
+    if xlsx_path.suffix.lower() not in openpyxl.reader.excel.SUPPORTED_FORMATS:
+        # Keep the path loader's format-specific refusal before opening a source.
+        openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     # Own the input handle even when a failed reader retains its traceback.
     with xlsx_path.open("rb") as xlsx_source:
         wb = openpyxl.load_workbook(xlsx_source, read_only=True, data_only=True)
