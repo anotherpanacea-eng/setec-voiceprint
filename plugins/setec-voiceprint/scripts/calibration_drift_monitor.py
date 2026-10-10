@@ -324,6 +324,7 @@ def take_snapshot(
             "measuring anything."
         )
 
+    _validate_measurements(benchmarks, "Snapshot")
     return {
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
@@ -373,6 +374,18 @@ def _validate_signal_values(signals: dict[str, float], context: str) -> None:
     for value in signals.values():
         if value is not None:
             _finite_number(value, context)
+
+
+def _validate_measurements(benchmarks: dict[str, Any], context: str) -> None:
+    """Require measured signals; failed or absent measurements are not evidence."""
+    measured = False
+    for benchmark in benchmarks.values():
+        signals = benchmark.get("signals", {})
+        _validate_signal_values(signals, f"{context} signal")
+        if "error" not in benchmark and any(value is not None for value in signals.values()):
+            measured = True
+    if not measured:
+        raise ValueError(f"{context} has no successful benchmark signal measurements")
 
 
 def _compare_signals(
@@ -518,6 +531,8 @@ def detect_drift(
     """Compare snapshot vs. current. Returns a drift report with
     per-benchmark per-signal verdicts and overall summary."""
     _validate_thresholds(relative_threshold, absolute_thresholds)
+    _validate_measurements(snapshot.get("benchmarks", {}), "Snapshot")
+    _validate_measurements(current.get("benchmarks", {}), "Current")
     stack_changes = _compare_stack(
         snapshot.get("stack", {}), current.get("stack", {}),
     )
@@ -879,8 +894,7 @@ def _read_snapshot(path_str: str) -> dict[str, Any]:
         raise ValueError(
             f"Snapshot file is not valid JSON: {exc}"
         ) from exc
-    for benchmark in snapshot.get("benchmarks", {}).values():
-        _validate_signal_values(benchmark.get("signals", {}), "Snapshot signal")
+    _validate_measurements(snapshot.get("benchmarks", {}), "Snapshot")
     return snapshot
 
 
@@ -983,7 +997,7 @@ def main(argv: list[str] | None = None) -> int:
                 do_tier2=not args.no_tier2,
                 include_filenames=args.include_filenames,
             )
-        except (FileNotFoundError, NotADirectoryError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             sys.stderr.write(f"--benchmark-dir: {exc}\n")
             return 2
         out_path = Path(args.out).expanduser()
@@ -1016,7 +1030,7 @@ def main(argv: list[str] | None = None) -> int:
                 do_tier2=not args.no_tier2,
                 include_filenames=args.include_filenames,
             )
-        except (FileNotFoundError, NotADirectoryError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             sys.stderr.write(f"--benchmark-dir: {exc}\n")
             return 2
 
