@@ -451,7 +451,7 @@ def test_copied_plugin_default_discovers_repo_sibling(tmp_path: Path):
     """Physical packaging must preserve setup's default sibling discovery."""
     from setec.paths import plugin_paths
 
-    copied = tmp_path / "repo" / "plugins" / "setec-voiceprint"
+    copied = tmp_path / "r" / "p" / "s"
     shutil.copytree(
         plugin_paths().root, copied,
         ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"),
