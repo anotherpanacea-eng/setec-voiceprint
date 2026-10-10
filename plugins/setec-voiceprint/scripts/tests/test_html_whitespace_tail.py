@@ -22,6 +22,7 @@ def test_normalizer_collapses_runs_and_keeps_paragraphs():
 
 def test_html_to_text_output():
     pytest.importorskip("bs4")
+    pytest.importorskip("lxml")
     assert ac.html_to_text(HTML)[0] == "a b\n\nc"
 
 
