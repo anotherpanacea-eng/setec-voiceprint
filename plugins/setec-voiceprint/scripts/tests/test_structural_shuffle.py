@@ -726,28 +726,49 @@ _SEPARATION_SET = frozenset({
 
 
 def _imported_module_roots(py_path: Path) -> set[str]:
-    """Top-level module names imported by a script (static AST scan)."""
+    """Imported names, including package and relative spellings of a module."""
     tree = ast.parse(py_path.read_text(encoding="utf-8"))
     roots: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for a in node.names:
-                roots.add(a.name.split(".")[0])
+                roots.update(a.name.split("."))
         elif isinstance(node, ast.ImportFrom):
-            if node.module and node.level == 0:
-                roots.add(node.module.split(".")[0])
+            if node.module:
+                roots.update(node.module.split("."))
+            for a in node.names:
+                roots.update(a.name.split("."))
     return roots
 
 
+@pytest.mark.parametrize("statement, forbidden", [
+    ("import fitness as scorer", "fitness"),
+    ("import setec.surfaces.fitness as scorer", "fitness"),
+    ("from setec.surfaces import fitness as scorer", "fitness"),
+    ("from .fitness import evaluate", "fitness"),
+    ("from . import fitness", "fitness"),
+    ("import binoculars_audit as scorer", "binoculars_audit"),
+    ("import setec.surfaces.binoculars_audit as scorer", "binoculars_audit"),
+    ("from setec.surfaces import binoculars_audit as scorer", "binoculars_audit"),
+    ("from .binoculars_audit import audit", "binoculars_audit"),
+    ("from . import binoculars_audit", "binoculars_audit"),
+])
+def test_prohibition_scan_recognizes_import_spellings(tmp_path, statement, forbidden):
+    """Package spelling must not bypass the stable separation prohibitions."""
+    source = tmp_path / "coupling.py"
+    source.write_text(statement, encoding="utf-8")
+    assert forbidden in _imported_module_roots(source)
+
+
 def test_separation_guard():
-    roots = _imported_module_roots(_SCRIPTS / "structural_shuffle_audit.py")
+    roots = _imported_module_roots(Path(ss.__file__))
     leaked = roots & _SEPARATION_SET
     assert not leaked, f"structural_shuffle_audit imports separation-set modules: {leaked}"
 
 
 def test_orthogonal_to_binoculars():
     # Imports nothing from binoculars_audit.
-    roots = _imported_module_roots(_SCRIPTS / "structural_shuffle_audit.py")
+    roots = _imported_module_roots(Path(ss.__file__))
     assert "binoculars_audit" not in roots
     # No Binoculars / cross-perplexity field leaks into results.
     results = ss.audit(
