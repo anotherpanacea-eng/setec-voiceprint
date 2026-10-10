@@ -401,4 +401,4 @@ def test_pool_guard_does_not_creep_onto_this_comparison_pool(tmp_path):
     ])
     env = json.loads(out.read_text(encoding="utf-8"))
     assert rc == 0 and env["available"] is True
-    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env, ensure_ascii=False)

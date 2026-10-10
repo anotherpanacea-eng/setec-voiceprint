@@ -907,4 +907,4 @@ def test_pool_guard_refuses_a_passage_deduped_manifest(tmp_path):
 def test_pool_guard_does_not_fire_on_a_clean_manifest(tmp_path):
     m = _clean_manifest_cdnp(tmp_path)
     _rc, env = _envelope(["--target", str(_guard_target(tmp_path)), "--reference-manifest", str(m), "--json"])
-    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env, ensure_ascii=False)
