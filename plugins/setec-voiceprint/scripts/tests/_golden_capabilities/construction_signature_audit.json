@@ -37,7 +37,7 @@
   "outputs": {
     "artifacts": [
       "Markdown construction-density report (stdout or --out)",
-      "JSON envelope with patterns.<key>.density_per_1k (--json)"
+      "JSON envelope with results.constructions.<key>.density_per_1k (--json)"
     ],
     "schema_version": "1.0"
   },

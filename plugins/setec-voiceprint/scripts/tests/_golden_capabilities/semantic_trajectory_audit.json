@@ -48,7 +48,7 @@
     ],
     "schema_version": "1.0"
   },
-  "purpose": "Semantic trajectory of a draft. Embeds paragraph, sentence or fixed-token windows with a sentence-transformers model and reports the trajectory of adjacent cosine similarities (tightness, burstiness, first-to-last drift and slope), optionally against a prior run's JSON.",
+  "purpose": "Semantic trajectory of a draft. Embeds paragraph, sentence or fixed-token windows with a sentence-transformers model and reports the trajectory of adjacent cosine similarities (tightness, burstiness, first-to-last drift and slope).",
   "references": [
     "plugins/setec-voiceprint/references/signals-glossary.md"
   ],

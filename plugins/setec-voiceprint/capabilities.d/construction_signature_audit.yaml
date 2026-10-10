@@ -29,7 +29,7 @@ entries:
     schema_version: '1.0'
     artifacts:
     - Markdown construction-density report (stdout or --out)
-    - JSON envelope with patterns.<key>.density_per_1k (--json)
+    - JSON envelope with results.constructions.<key>.density_per_1k (--json)
   compute:
     tier: core
     cost_note: regex detectors are stdlib; the three spaCy-enhanced constructions need en_core_web_sm
