@@ -1027,6 +1027,13 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/check_corpus.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -2163,6 +2170,13 @@ exemptions:
     not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
   symbol: _SCRIPT_DIR
@@ -3453,7 +3467,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/check_corpus.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/check_corpus.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5269,4 +5283,12 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: 697b728a99586a1b6a24483be4316dd6d0611b2d
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/check_corpus.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/check_corpus.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
