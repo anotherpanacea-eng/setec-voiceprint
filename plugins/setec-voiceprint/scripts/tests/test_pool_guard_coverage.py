@@ -193,22 +193,15 @@ CLASSIFICATION: dict[str, dict[str, str]] = {
 
 
 def _source_path(scope: Path, module: str) -> Path:
-    """Read relocated implementations only for the actual scripts scope."""
-    if scope == SCRIPTS and module in {
-        "cross_doc_argument_consistency", "position_pair_register",
-        "corpus_novelty_audit", "cross_doc_novelty_profile",
-        "distinct_diversity_audit", "homogeneity_audit", "originality_audit",
-        "skeleton_overlap_audit", "verbatim_mosaic_audit",
-        "house_style_decomposition",
-        "pov_voice_profile",
-        "general_imposters",
-        "near_dup_dedup",
-    }:
-        return scope / "setec" / "surfaces" / f"{module}.py"
-    if scope == SCRIPTS and module in {
-        "preprocessing", "verbatim_cover", "segmentation_feature_lens",
-    }:
-        return scope / "setec" / "core" / f"{module}.py"
+    """Read a relocated implementation, not its launcher, wherever one exists.
+
+    A flat ``<module>.py`` that moved into ``setec/surfaces`` or ``setec/core``
+    is a short launcher; scanning it would hide the real code from the sweep.
+    """
+    for package in ("surfaces", "core"):
+        relocated = scope / "setec" / package / f"{module}.py"
+        if relocated.is_file():
+            return relocated
     return scope / f"{module}.py"
 
 
@@ -424,6 +417,20 @@ def test_sweep_catches_an_unclassified_synthetic_loader(tmp_path):
     found_defs = {m for m, src in sources.items() if _defines_pool_loader(src)}
     expected = {m for m, r in CLASSIFICATION.items() if r["loader"] == "definer"}
     assert found_defs - expected == {"synthetic_pool_surface"}
+
+
+def test_sweep_reads_a_relocated_module_not_its_launcher(tmp_path):
+    """A loader planted in a relocated implementation is found even though the
+    flat ``<module>.py`` is only a launcher stub."""
+    (tmp_path / "relocated_pool_surface.py").write_text(
+        "from setec.surfaces.relocated_pool_surface import *  # launcher\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "setec" / "surfaces").mkdir(parents=True)
+    (tmp_path / "setec" / "surfaces" / "relocated_pool_surface.py").write_text(
+        "def _load_manifest(path):\n    return []\n", encoding="utf-8",
+    )
+    assert _defines_pool_loader(_module_sources(tmp_path)["relocated_pool_surface"])
 
 
 def test_sweep_ignores_a_nested_or_prefixed_definition(tmp_path):

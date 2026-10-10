@@ -383,23 +383,15 @@ TUPLE_SHAPED_LOADERS = {
 
 
 def _source_path(scope: Path, module: str) -> Path:
-    """Read relocated implementations only for the actual scripts scope."""
-    if scope == SCRIPTS and module in {
-        "cross_doc_argument_consistency", "position_pair_register",
-        "corpus_novelty_audit", "cross_doc_novelty_profile",
-        "distinct_diversity_audit", "homogeneity_audit", "originality_audit",
-        "skeleton_overlap_audit", "verbatim_mosaic_audit",
-        "house_style_decomposition",
-        "lambdag_audit",
-        "pov_voice_profile",
-        "general_imposters",
-        "idiolect_detector",
-    }:
-        return scope / "setec" / "surfaces" / f"{module}.py"
-    if scope == SCRIPTS and module in {
-        "preprocessing", "verbatim_cover", "segmentation_feature_lens",
-    }:
-        return scope / "setec" / "core" / f"{module}.py"
+    """Read a relocated implementation, not its launcher, wherever one exists.
+
+    A flat ``<module>.py`` that moved into ``setec/surfaces`` or ``setec/core``
+    is a short launcher; scanning it would hide the real code from the sweep.
+    """
+    for package in ("surfaces", "core"):
+        relocated = scope / "setec" / package / f"{module}.py"
+        if relocated.is_file():
+            return relocated
     return scope / f"{module}.py"
 
 
