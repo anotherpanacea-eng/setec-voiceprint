@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "two causal LMs (scorer and observer) per manifest entry; GPU recommended for large manifests; --max-entries subsamples",
+    "cost_note": "two causal LMs (scorer and observer) per manifest entry; GPU recommended for large manifests; --max-entries subsamples; pass --scores-cache on long runs so a crash loses at most the unflushed entries",
     "length_floor_words": null,
     "tier": "surprisal"
   },
@@ -23,6 +23,10 @@
     {
       "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_calibrate.py manifest.jsonl --fpr-target 0.01 --out calib.json --out-md calib.md",
       "description": "Calibrate Binoculars thresholds on a labeled manifest"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_calibrate.py manifest.jsonl --scores-cache calib.scores.json --resume --out calib.json --out-md calib.md",
+      "description": "Checkpoint a long run; rerunning the same command after a crash continues it"
     }
   ],
   "family": "binoculars",
@@ -30,7 +34,7 @@
   "id": "binoculars_calibrate",
   "inputs": {
     "optional": [
-      "optional flags --scorer, --observer, --scorer-revision, --observer-revision, --surprisal-dtype, --positive-statuses, --negative-statuses, --score-version, --fpr-target, --target-tpr, --max-entries, --max-entries-seed, --out, --out-md (see --help)"
+      "optional flags --scorer, --observer, --scorer-revision, --observer-revision, --surprisal-dtype, --positive-statuses, --negative-statuses, --score-version, --fpr-target, --target-tpr, --max-entries, --max-entries-seed, --out, --out-md, --scores-cache, --resume, --cache-flush-every, --progress-every (see --help)"
     ],
     "required": [
       "manifest"
@@ -40,11 +44,12 @@
   "outputs": {
     "artifacts": [
       "calibration report JSON (--out)",
-      "Markdown calibration report (--out-md)"
+      "Markdown calibration report (--out-md)",
+      "per-entry scores checkpoint (--scores-cache)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "Operator-side Binoculars threshold calibration. Runs binoculars_audit over a labeled manifest, derives empirical threshold-low and threshold-high values by ROC analysis at a target FPR and TPR, and writes a calibration report. The framework default thresholds stay unset; the output is the operator's own calibration.",
+  "purpose": "Operator-side Binoculars threshold calibration. Runs binoculars_audit over a labeled manifest, derives empirical threshold-low and threshold-high values by ROC analysis at a target FPR and TPR, and writes a calibration report. The framework default thresholds stay unset; the output is the operator's own calibration. Logs progress to stderr and, with --scores-cache, checkpoints every scored entry so a killed run continues with --resume.",
   "references": [
     "plugins/setec-voiceprint/skills/setup/SKILL.md"
   ],
@@ -53,11 +58,11 @@
     "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/binoculars_calibrate.py",
-  "status": "todo",
-  "todo_reason": "Blocked by the AGENTS.md long-running-surfaces rule: binoculars_calibrate.py runs two causal-LM passes (scorer and observer) per manifest entry with no sharding, progress output, checkpoint or --resume, so a host hang loses the whole calibration run. Curated content is kept below; promote once the run is recoverable, visible and continuable.",
+  "status": "structural_only",
   "surface": "calibration",
   "use_when": [
     "you run binoculars_audit and want thresholds calibrated on your own labeled corpus instead of none",
-    "re-checking calibration after changing the scorer or observer model"
+    "re-checking calibration after changing the scorer or observer model",
+    "resuming a calibration run that was killed or hung (--scores-cache plus --resume)"
   ]
 }
