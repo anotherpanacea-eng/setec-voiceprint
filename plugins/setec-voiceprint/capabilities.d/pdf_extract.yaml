@@ -34,8 +34,9 @@ entries:
   outputs:
     schema_version: '1.0'
     artifacts:
-    - impostor .txt + .meta.json under <output-dir>/<author_slug>/ (private path
-      required unless --allow-public-output)
+    - impostor .txt + .meta.json under <output-dir>/<persona-slug>/ (the row's
+      persona, falling back to an author-derived slug; private path required unless
+      --allow-public-output)
     - draft manifest JSONL (corpus_role impostor)
     - optional JSON run summary (--out)
   compute:

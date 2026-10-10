@@ -28,10 +28,15 @@ entries:
     required:
     - url
     - --register
+    - --impostor-for and --consent-status in the default impostor bucket (enforced
+      after parsing, before any fetch; not needed with --bucket validation)
     optional:
     - --substack / --wordpress / --html-archive / --wayback, --archive-pattern,
-      --bucket, --impostor-for, --consent-status, --since/--until, --max-posts,
-      --output-dir, --emit-manifest, --out (see --help)
+      --content-selector, --persona, --author, --register-match, --topic-match,
+      --era, --bucket, --ai-status, --notes-composite, --notes-description,
+      --since/--until, --max-posts, --rate-limit, --user-agent, --dry-run,
+      --output-dir, --emit-manifest, --out, --allow-public-output,
+      --allow-non-prose, --strip-rules, --strip-aggressive (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
