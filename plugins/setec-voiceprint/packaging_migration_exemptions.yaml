@@ -1626,12 +1626,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/phraseological_signature_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 84 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: ffb77a067b135d21c82f00f4e36c8f90750f19ee
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/position_pair_register.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -5165,4 +5165,12 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: 41c7f1940fedd5319f91e8dcdcec00b5756dc92f
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/phraseological_signature_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/phraseological_signature_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: ffb77a067b135d21c82f00f4e36c8f90750f19ee
   removal_phase: not-applicable
