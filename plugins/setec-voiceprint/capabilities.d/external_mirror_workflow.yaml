@@ -1,0 +1,69 @@
+entries:
+- id: external_mirror_workflow
+  script_path: plugins/setec-voiceprint/scripts/external_mirror/workflow.py
+  surface: external_mirror_discrimination
+  status: heuristic
+  handoff: none
+  # consumers: operator entry point for external_mirror; README and the root
+  # SKILL.md (Surface 5) route users here; drives compose_evidence_pack.
+  consumers: []
+  family: external_mirror
+  purpose: Operator harness for the external-mirror discrimination method. prepare windows a
+    target and writes ready-to-paste continuation prompts per LLM family plus a WORKFLOW.md
+    checklist; the operator pastes each family's continuations back into the run directory;
+    status reports what is present or missing; score runs ingest, pairwise continuation
+    distances and the evidence pack. The pack is uncalibrated evidence, with no verdict.
+  use_when:
+  - you want discrimination evidence for a target by comparing how several LLM families continue
+    its windows, alongside a human control
+  - you can run the prompts in your own chat sessions and paste the outputs back
+  do_not_use_when:
+  - you want an automated or binary AI verdict; the harness never calls a model and the pack
+    is uncalibrated evidence
+  - you cannot record per-family metadata and blinding status; the pack's caveats depend on
+    it
+  - sentence-transformers cannot be installed (score computes the default sbert distance and
+    stops without it)
+  inputs:
+    target: a target prose file (prepare) or a run directory (status, score)
+    required:
+    - subcommand (prepare, status or score)
+    - prepare needs the target text file; status and score need the run directory
+    optional:
+    - optional flags --runs-root, --run-id, --families, --windows, --context, --continuation,
+      --positioning, --positions, --context-grid, --genre-descriptor (prepare); --json (status);
+      --embedding-alias (score) (see each subcommand's --help)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - run directory with prompts, outputs/<family>/ slots and WORKFLOW.md (prepare)
+    - ingested.json and distances.json (score)
+    - evidence_pack.json and evidence_pack.md (score)
+  compute:
+    tier: optional
+    cost_note: prepare and status are stdlib and instant. score loads a sentence-transformers
+      embedding model (default mxbai) for the sbert distance and always adds word-set Jaccard;
+      TF-IDF is added only with scikit-learn, and the POS-bigram metrics only with spaCy plus its
+      en_core_web_sm model (unavailable metrics are recorded as skipped). The continuations come
+      from the operator's own chat sessions, so the harness makes no model calls of its own
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python:
+    - sentence_transformers
+    python_optional:
+    - sklearn
+    - spacy
+  examples:
+  - description: Prepare a run with four windows
+    cmd: python3 plugins/setec-voiceprint/scripts/external_mirror/workflow.py prepare target.txt
+      --windows 4 --context 1500 --continuation 150
+  - description: Check which family outputs are still missing
+    cmd: python3 plugins/setec-voiceprint/scripts/external_mirror/workflow.py status runs/mirror_run/
+  - description: Score the run once outputs are pasted back
+    cmd: python3 plugins/setec-voiceprint/scripts/external_mirror/workflow.py score runs/mirror_run/
+  references:
+  - plugins/setec-voiceprint/scripts/README.md
+  - plugins/setec-voiceprint/skills/setup/SKILL.md
