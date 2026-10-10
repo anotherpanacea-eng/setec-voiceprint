@@ -102,16 +102,23 @@ def test_keep_xlsx_keeps_only_a_successful_conversion(tmp_path: Path, monkeypatc
         fb.main(["--output", str(out), "--keep-xlsx"])
     assert not kept.exists()
     assert not out.exists()
+    assert not (tmp_path / "downloaded.xlsx").exists()
+
+    source_bytes = []
 
     def fake_download_ok(url=None, dest=None):
-        return _write_xlsx(tmp_path / "downloaded_ok.xlsx", n_rows=12)
+        path = _write_xlsx(tmp_path / "downloaded_ok.xlsx", n_rows=12)
+        source_bytes.append(path.read_bytes())
+        return path
 
     monkeypatch.setattr(fb, "download_xlsx", fake_download_ok)
     assert fb.main(
         ["--output", str(out), "--keep-xlsx", "--min-rows", "10"]
     ) == 0
-    assert kept.exists()
-    assert out.exists()
+    assert kept.read_bytes() == source_bytes[0]
+    assert not (tmp_path / "downloaded_ok.xlsx").exists()
+    assert c.is_available(out)
+    assert c.vocab_size(out) == 12
 
 
 def test_local_xlsx_and_csv_paths_are_both_gitignored():
@@ -265,3 +272,108 @@ def test_min_rows_override_still_works_off_the_conventional_path(
     )
     assert fb.main(["--output", str(out), "--min-rows", "10"]) == 0
     assert out.exists()
+
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["success", "short", "wrong_header", "empty", "missing_sheet",
+     "bad_rating", "interrupt", "malformed_package"],
+)
+def test_conversion_releases_input_before_source_move(tmp_path: Path, monkeypatch, case):
+    """Keeping/discarding the raw source must not depend on reader GC."""
+    import zipfile
+
+    openpyxl = pytest.importorskip("openpyxl")
+    from openpyxl.reader.excel import ExcelReader
+
+    xlsx = tmp_path / "source.xlsx"
+    if case == "malformed_package":
+        with zipfile.ZipFile(xlsx, "w") as archive:
+            archive.writestr("placeholder.xml", "<placeholder/>")
+    elif case == "bad_rating":
+        _write_xlsx_with_rating(xlsx, 12, 7.5)
+    elif case in {"empty", "wrong_header", "missing_sheet"}:
+        book = openpyxl.Workbook()
+        sheet = book.active
+        sheet.title = "Other" if case == "missing_sheet" else "Sheet1"
+        if case != "empty":
+            sheet.append(["unexpected"] if case == "wrong_header" else list(_HEADER))
+        book.save(xlsx)
+        book.close()
+    else:
+        _write_xlsx(xlsx, 3 if case == "short" else 12)
+    original_bytes = xlsx.read_bytes()
+    csv_path = tmp_path / "table.csv"
+    previous_csv = b"word,conc_mean\ngralnet,4.60\n"
+    csv_path.write_bytes(previous_csv)
+
+    # Keep actual readers alive, including one whose load fails before a
+    # workbook is returned. A transient GC pass must not conceal the leak.
+    retained_readers = []
+    real_init = ExcelReader.__init__
+
+    def retain_reader(reader, *args, **kwargs):
+        real_init(reader, *args, **kwargs)
+        retained_readers.append(reader)
+
+    monkeypatch.setattr(ExcelReader, "__init__", retain_reader)
+    retained_rows = []
+    if case == "interrupt":
+        real_load = openpyxl.load_workbook
+
+        def interrupting_load(*args, **kwargs):
+            book = real_load(*args, **kwargs)
+            sheet = book["Sheet1"]
+            real_rows = sheet.iter_rows
+
+            def interrupted_rows(*args, **kwargs):
+                rows = real_rows(*args, **kwargs)
+                retained_rows.append(rows)
+                yield next(rows)
+                yield next(rows)
+                raise KeyboardInterrupt("invented interruption with rows remaining")
+
+            monkeypatch.setattr(sheet, "iter_rows", interrupted_rows)
+            return book
+
+        monkeypatch.setattr(openpyxl, "load_workbook", interrupting_load)
+
+    if case == "success":
+        assert fb.convert_xlsx_to_csv(xlsx, csv_path, min_rows=10) == 12
+        assert c.is_available(csv_path)
+        assert c.vocab_size(csv_path) == 12
+    else:
+        expected = (KeyboardInterrupt if case == "interrupt" else
+                    KeyError if case in {"missing_sheet", "malformed_package"} else ValueError)
+        with pytest.raises(expected) as failure:
+            fb.convert_xlsx_to_csv(xlsx, csv_path, min_rows=10)
+        assert csv_path.read_bytes() == previous_csv
+    assert not list(tmp_path.glob("*.part"))
+    moved = tmp_path / "kept.xlsx"
+    xlsx.rename(moved)
+    assert moved.read_bytes() == original_bytes
+    moved.unlink()
+    assert not moved.exists()
+
+
+
+@pytest.mark.parametrize("suffix", [".xls", ".xlsb", ".zip", ""])
+def test_conversion_preserves_unsupported_filename_refusal(tmp_path: Path, suffix):
+    """A stream must not widen the path loader's accepted workbook formats."""
+    openpyxl = pytest.importorskip("openpyxl")
+    original = _write_xlsx(tmp_path / "source.xlsx", 12)
+    xlsx = original.with_suffix(suffix)
+    original.rename(xlsx)
+    source_bytes = xlsx.read_bytes()
+    csv_path = tmp_path / "table.csv"
+    previous_csv = b"word,conc_mean\ngralnet,4.60\n"
+    csv_path.write_bytes(previous_csv)
+    with pytest.raises(openpyxl.utils.exceptions.InvalidFileException, match="does not support"):
+        fb.convert_xlsx_to_csv(xlsx, csv_path, min_rows=10)
+    assert csv_path.read_bytes() == previous_csv
+    assert not list(tmp_path.glob("*.part"))
+    moved = tmp_path / "retained.xlsx"
+    xlsx.rename(moved)
+    assert moved.read_bytes() == source_bytes
+    moved.unlink()
