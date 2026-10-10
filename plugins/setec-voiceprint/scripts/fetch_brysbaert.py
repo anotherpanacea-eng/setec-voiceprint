@@ -201,86 +201,91 @@ def convert_xlsx_to_csv(
             "openpyxl is not installed. Install with: "
             "pip install openpyxl"
         ) from exc
-    wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
-    ws = wb["Sheet1"]
-    rows = ws.iter_rows(values_only=True)
-    header = next(rows, None)
-    if header is None:
-        raise ValueError(f"{xlsx_path}: Sheet1 is empty")
-    expected = (
-        "Word", "Bigram", "Conc.M", "Conc.SD", "Unknown",
-        "Total", "Percent_known", "SUBTLEX",
-    )
-    if tuple(header) != expected:
-        raise ValueError(
-            f"{xlsx_path}: unexpected header {header!r}; "
-            f"expected {expected!r}"
-        )
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(csv_path.parent), prefix=csv_path.name + ".", suffix=".part",
-    )
-    tmp_path = Path(tmp_name)
-    n_data = 0
-    usable_keys: set[str] = set()
-    try:
-        with open(fd, "w", encoding="utf-8", newline="") as f:
-            writer = csv.writer(f, lineterminator="\n")
-            writer.writerow(_OUT_HEADER)
-            for row in rows:
-                if row[0] is None:
-                    continue
-                word, bigram, conc_m, conc_sd, unk, total, pct, subtlex = row
-                if conc_m is not None:
-                    try:
-                        rating = float(conc_m)
-                    except (TypeError, ValueError):
-                        raise ValueError(
-                            f"{xlsx_path}: row for {word!r} carries a "
-                            f"non-numeric Conc.M {conc_m!r}; refusing to "
-                            f"install it at {csv_path}"
-                        ) from None
-                    if not concreteness.is_valid_rating(rating):
-                        raise ValueError(
-                            f"{xlsx_path}: row for {word!r} carries rating "
-                            f"{conc_m!r}, which is not a finite value on the "
-                            f"documented {concreteness.CONC_SCALE_MIN}-"
-                            f"{concreteness.CONC_SCALE_MAX} scale; refusing to "
-                            f"install it at {csv_path}"
-                        )
-                    key = concreteness.rating_key(str(word))
-                    if key:
-                        usable_keys.add(key)
-                writer.writerow([
-                    word,
-                    int(bigram) if bigram is not None else 0,
-                    f"{conc_m:.2f}" if conc_m is not None else "",
-                    f"{conc_sd:.2f}" if conc_sd is not None else "",
-                    int(unk) if unk is not None else "",
-                    int(total) if total is not None else "",
-                    f"{pct:.6f}" if pct is not None else "",
-                    int(subtlex) if subtlex is not None else 0,
-                ])
-                n_data += 1
-            f.flush()
-            os.fsync(f.fileno())
-        if len(usable_keys) < min_rows:
-            raise ValueError(
-                f"{xlsx_path}: converted only {len(usable_keys):,} distinct "
-                f"usable word(s) from {n_data:,} row(s) (expected at least "
-                f"{min_rows:,}); refusing to install a partial concreteness "
-                f"table at {csv_path}"
-            )
-        os.replace(tmp_path, csv_path)
-    except BaseException:
-        # Ctrl-C included: never leave the temp file, and never leave a
-        # partial table at the target path.
+    # Own the input handle even when a failed reader retains its traceback.
+    with xlsx_path.open("rb") as xlsx_source:
+        wb = openpyxl.load_workbook(xlsx_source, read_only=True, data_only=True)
         try:
-            tmp_path.unlink()
-        except OSError:
-            pass
-        raise
-    return n_data
+            ws = wb["Sheet1"]
+            rows = ws.iter_rows(values_only=True)
+            header = next(rows, None)
+            if header is None:
+                raise ValueError(f"{xlsx_path}: Sheet1 is empty")
+            expected = (
+                "Word", "Bigram", "Conc.M", "Conc.SD", "Unknown",
+                "Total", "Percent_known", "SUBTLEX",
+            )
+            if tuple(header) != expected:
+                raise ValueError(
+                    f"{xlsx_path}: unexpected header {header!r}; "
+                    f"expected {expected!r}"
+                )
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(
+                dir=str(csv_path.parent), prefix=csv_path.name + ".", suffix=".part",
+            )
+            tmp_path = Path(tmp_name)
+            n_data = 0
+            usable_keys: set[str] = set()
+            try:
+                with open(fd, "w", encoding="utf-8", newline="") as f:
+                    writer = csv.writer(f, lineterminator="\n")
+                    writer.writerow(_OUT_HEADER)
+                    for row in rows:
+                        if row[0] is None:
+                            continue
+                        word, bigram, conc_m, conc_sd, unk, total, pct, subtlex = row
+                        if conc_m is not None:
+                            try:
+                                rating = float(conc_m)
+                            except (TypeError, ValueError):
+                                raise ValueError(
+                                    f"{xlsx_path}: row for {word!r} carries a "
+                                    f"non-numeric Conc.M {conc_m!r}; refusing to "
+                                    f"install it at {csv_path}"
+                                ) from None
+                            if not concreteness.is_valid_rating(rating):
+                                raise ValueError(
+                                    f"{xlsx_path}: row for {word!r} carries rating "
+                                    f"{conc_m!r}, which is not a finite value on the "
+                                    f"documented {concreteness.CONC_SCALE_MIN}-"
+                                    f"{concreteness.CONC_SCALE_MAX} scale; refusing to "
+                                    f"install it at {csv_path}"
+                                )
+                            key = concreteness.rating_key(str(word))
+                            if key:
+                                usable_keys.add(key)
+                        writer.writerow([
+                            word,
+                            int(bigram) if bigram is not None else 0,
+                            f"{conc_m:.2f}" if conc_m is not None else "",
+                            f"{conc_sd:.2f}" if conc_sd is not None else "",
+                            int(unk) if unk is not None else "",
+                            int(total) if total is not None else "",
+                            f"{pct:.6f}" if pct is not None else "",
+                            int(subtlex) if subtlex is not None else 0,
+                        ])
+                        n_data += 1
+                    f.flush()
+                    os.fsync(f.fileno())
+                if len(usable_keys) < min_rows:
+                    raise ValueError(
+                        f"{xlsx_path}: converted only {len(usable_keys):,} distinct "
+                        f"usable word(s) from {n_data:,} row(s) (expected at least "
+                        f"{min_rows:,}); refusing to install a partial concreteness "
+                        f"table at {csv_path}"
+                    )
+                os.replace(tmp_path, csv_path)
+            except BaseException:
+                # Ctrl-C included: never leave the temp file, and never leave a
+                # partial table at the target path.
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+                raise
+            return n_data
+        finally:
+            wb.close()
 
 
 def _is_conventional_path(output: Path) -> bool:
