@@ -616,6 +616,34 @@ class TestBaselineFilenameAnonymization:
         assert block["include_filenames"] is True
 
 
+class TestEnvelopeTargetWords:
+    """The audit dict carried no ``n_words``, so ``build_audit_payload``
+    wrote ``target.words: 0`` into every --json envelope and consumers
+    reading the envelope's word count got 0."""
+
+    def test_cli_json_envelope_reports_target_word_count(self, tmp_path):
+        in_path = tmp_path / "draft.txt"
+        in_path.write_text(_VARIED_PROSE, encoding="utf-8")
+        out_path = tmp_path / "out.json"
+        assert pa.main(["--json", "--out", str(out_path), str(in_path)]) == 0
+        payload = json.loads(out_path.read_text(encoding="utf-8"))
+        expected = pa.word_count(_VARIED_PROSE)
+        assert expected > 0
+        assert payload["target"]["words"] == expected
+
+    def test_word_count_covers_paragraphs_too_short_to_audit(self):
+        # "Wait." and "Begin again." fall under split_paragraphs'
+        # min_words floor; the target word count still includes them.
+        audit = pa.audit_paragraphs(_VARIED_PROSE)
+        assert audit["n_words"] == pa.word_count(_VARIED_PROSE)
+        assert audit["n_words"] > sum(audit["paragraph_word_counts"])
+
+    def test_unavailable_audit_still_reports_word_count(self):
+        audit = pa.audit_paragraphs("Too short.")
+        assert audit["available"] is False
+        assert audit["n_words"] == 2
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
