@@ -376,11 +376,38 @@ def _validate_signal_values(signals: dict[str, float], context: str) -> None:
             _finite_number(value, context)
 
 
+def _require_object(value: Any, context: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{context} must be an object")
+    return value
+
+
+def _validate_snapshot(snapshot: dict[str, Any], context: str) -> None:
+    _require_object(snapshot, context)
+    _require_object(snapshot.get("stack", {}), f"{context} stack")
+    constants = _require_object(
+        snapshot.get("framework_constants", {}), f"{context} framework constants"
+    )
+    heuristics = _require_object(
+        constants.get("compression_heuristics", {}), f"{context} compression heuristics"
+    )
+    for heuristic in heuristics.values():
+        if heuristic is not None:
+            _require_object(heuristic, f"{context} compression heuristic")
+    pos_bigram = constants.get("pos_bigram_kl_heuristic")
+    if pos_bigram is not None:
+        _require_object(pos_bigram, f"{context} POS bigram heuristic")
+    _validate_measurements(snapshot.get("benchmarks", {}), context)
+
+
 def _validate_measurements(benchmarks: dict[str, Any], context: str) -> None:
     """Require measured signals; failed or absent measurements are not evidence."""
+    _require_object(benchmarks, f"{context} benchmarks")
     measured = False
     for benchmark in benchmarks.values():
-        signals = benchmark.get("signals", {})
+        _require_object(benchmark, f"{context} benchmark")
+        signals = _require_object(benchmark.get("signals", {}), f"{context} signals")
+        _require_object(benchmark.get("compression", {}), f"{context} compression")
         _validate_signal_values(signals, f"{context} signal")
         if "error" not in benchmark and any(value is not None for value in signals.values()):
             measured = True
@@ -531,8 +558,8 @@ def detect_drift(
     """Compare snapshot vs. current. Returns a drift report with
     per-benchmark per-signal verdicts and overall summary."""
     _validate_thresholds(relative_threshold, absolute_thresholds)
-    _validate_measurements(snapshot.get("benchmarks", {}), "Snapshot")
-    _validate_measurements(current.get("benchmarks", {}), "Current")
+    _validate_snapshot(snapshot, "Snapshot")
+    _validate_snapshot(current, "Current")
     stack_changes = _compare_stack(
         snapshot.get("stack", {}), current.get("stack", {}),
     )
@@ -894,7 +921,7 @@ def _read_snapshot(path_str: str) -> dict[str, Any]:
         raise ValueError(
             f"Snapshot file is not valid JSON: {exc}"
         ) from exc
-    _validate_measurements(snapshot.get("benchmarks", {}), "Snapshot")
+    _validate_snapshot(snapshot, "Snapshot")
     return snapshot
 
 
