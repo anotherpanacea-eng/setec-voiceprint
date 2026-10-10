@@ -1,42 +1,63 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "one spaCy tagging pass per file in both corpora; cost scales with total corpus size",
     "length_floor_words": null,
-    "tier": "core"
+    "tier": "spacy"
   },
   "consumers": [
     "restoration_packet"
   ],
   "dependencies": {
-    "python": []
+    "python": [
+      "spacy"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you have one target document (use bigram_diff)",
+    "the corpora differ in register or genre; the diff will mostly measure that",
+    "you want an AI/human verdict on either corpus"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py --corpus-a-dir post_ai/ --label-a post-ai --corpus-b-dir pre_ai/ --label-b pre-ai --top 20 --min-count 10",
+      "description": "Post-AI vs pre-AI corpus syntactic-template diff"
+    }
+  ],
+  "family": "pos-bigram-diff",
   "handoff": "none",
   "id": "manuscript_bigram_diff",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--label-a, --label-b, --aggregation, --top, --min-count, --smoothing-alpha, --json, --out (see --help)"
+    ],
+    "required": [
+      "corpus A (--corpus-a-dir or --corpus-a-files)",
+      "corpus B (--corpus-b-dir or --corpus-b-files)"
+    ],
+    "target": "two corpora as directories (--corpus-a-dir/--corpus-b-dir) or file lists (--corpus-a-files/--corpus-b-files)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown table of top divergent POS bigrams with examples (stdout or --out)",
+      "JSON envelope (--json) consumed by restoration_packet --bigram-json"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "manuscript_bigram_diff.py Per-bigram POS-bigram diff: corpus A aggregate vs. corpus B aggregate.",
-  "references": [],
+  "purpose": "Per-bigram POS-bigram diff between two corpora at the aggregate level (per-file mean, pooled, or both). Surfaces the syntactic templates that most separate corpus A from corpus B, for register-level questions such as how an AI-collaborated cohort differs from a pre-AI archive.",
+  "references": [
+    "plugins/setec-voiceprint/skills/smoothing-diagnosis/SKILL.md",
+    "plugins/setec-voiceprint/skills/metric-targeted-restoration/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "comparing the syntactic-template footprint of two of your own corpora (e.g. post-2022 vs pre-AI)",
+    "feeding a corpus-level bigram diff into restoration_packet"
   ]
 }

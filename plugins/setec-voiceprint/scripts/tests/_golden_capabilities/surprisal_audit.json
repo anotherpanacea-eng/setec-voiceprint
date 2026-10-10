@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "one small causal LM forward pass over the text (default TinyLlama); CPU works, GPU faster; weights download on first use",
     "length_floor_words": null,
     "tier": "surprisal"
   },
@@ -10,34 +10,54 @@
     "variance_audit"
   ],
   "dependencies": {
-    "python": []
+    "python": [
+      "transformers",
+      "torch"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "the surprisal tier (transformers + torch, about 1.5 to 2 GB) cannot be installed",
+    "you want an authorship or AI verdict; the evidence is about predictability, and bands are provisional",
+    "the text may be in the scoring model's training data (memorization lowers surprisal)"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/surprisal_audit.py draft.txt --sliding-window --window-size 200 --stride 100",
+      "description": "Default-model surprisal audit with token windows"
+    }
+  ],
+  "family": "surprisal",
   "handoff": "none",
   "id": "surprisal_audit",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--model, --revision, --surprisal-dtype, --sliding-window, --window-size, --stride, --top-k, --json, --out (see --help)"
+    ],
+    "required": [
+      "input"
+    ],
+    "target": "one .txt/.md file"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown surprisal report, or JSON envelope with --json (stdout or --out)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "standalone causal-LM surprisal audit.",
-  "references": [],
+  "purpose": "Standalone causal-LM surprisal audit (default TinyLlama). Reports the per-token surprisal series summary (mean, SD/variance, lag-k autocorrelation, skew, kurtosis, position of maximum, top-k most surprising tokens) and an optional token-window trajectory. Bands are illustrative only; the ClaimLicense requires a user baseline and licenses no AI-provenance verdict.",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "plugins/setec-voiceprint/skills/setup/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/surprisal_audit.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "you want predictability-uniformity evidence (DivEye-style surprisal variance) for a draft outside the full variance_audit --tier4 run",
+    "localizing low-surprise stretches with --sliding-window (feeds sliding_window_heatmap)"
   ]
 }

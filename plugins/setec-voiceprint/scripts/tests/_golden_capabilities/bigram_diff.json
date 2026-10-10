@@ -1,43 +1,65 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "one spaCy tagging pass per target and comparator file; no model download beyond en_core_web_sm",
     "length_floor_words": null,
-    "tier": "core"
+    "tier": "spacy"
   },
   "consumers": [
     "manuscript_bigram_diff",
     "restoration_packet"
   ],
   "dependencies": {
-    "python": []
+    "python": [
+      "spacy"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you want word-level repetition (use repetition_audit or manuscript_repetition_audit)",
+    "you are comparing two whole corpora rather than one document (use manuscript_bigram_diff)",
+    "you want an AI/human verdict; a bigram contribution is a revision cue, not evidence of provenance"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/bigram_diff.py target.md --cluster-dir comparators/ --top 20 --min-count 5",
+      "description": "Top divergent POS bigrams of a draft against comparators"
+    }
+  ],
+  "family": "pos-bigram-diff",
   "handoff": "none",
   "id": "bigram_diff",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--cluster-mode, --top, --min-count, --smoothing-alpha, --json, --out (see --help)"
+    ],
+    "required": [
+      "target",
+      "--cluster-dir or --cluster-files"
+    ],
+    "target": "one .txt/.md target plus comparator files (--cluster-dir or --cluster-files)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown table of top divergent POS bigrams with examples (stdout or --out)",
+      "JSON envelope (--json) consumed by restoration_packet --bigram-json"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "bigram_diff.py Per-bigram POS-bigram diff: single target document vs. a comparison cluster.",
-  "references": [],
+  "purpose": "Per-bigram POS-bigram diff of one target document against a cluster of comparator documents. Ranks the spaCy POS bigrams by their contribution to the divergence (cluster mean, pooled, or both), with example token pairs, so a variance_audit POS-bigram KL elevation can be traced to the specific syntactic templates driving it.",
+  "references": [
+    "plugins/setec-voiceprint/skills/smoothing-diagnosis/SKILL.md",
+    "plugins/setec-voiceprint/skills/metric-targeted-restoration/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/bigram_diff.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "variance_audit flagged elevated POS-bigram KL/JSD against a baseline and you want to know which bigrams drive it",
+    "preparing a metric-targeted restoration packet (restoration_packet reads this JSON)",
+    "comparing one draft against a small set of the writer's own comparator texts"
   ]
 }

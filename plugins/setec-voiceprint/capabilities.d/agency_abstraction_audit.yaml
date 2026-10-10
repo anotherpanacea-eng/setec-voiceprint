@@ -2,32 +2,52 @@ entries:
 - id: agency_abstraction_audit
   script_path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - argmove_profile
   - confounder_audit
-  family: TODO
-  purpose: agency-loss / abstraction-drift detector.
+  family: agency-abstraction
+  purpose: Agency-loss and abstraction-drift detector. Reports nominalization
+    density, agentless passive rate, light-verb constructions, generic
+    institutional vocabulary, entity-to-action ratio and concrete-detail density,
+    with a provisional Lightly / Moderately / Heavily abstracted band and optional
+    baseline z-scores.
   use_when:
-  - TODO
+  - a revision reads vaguer or more institutional and you want the agency-loss
+    signals behind it
+  - comparing a draft's abstraction profile against the writer's own baseline
+    (--baseline-dir)
+  - feeding confounder_audit's institutional-prose vs AI-smoothing differential
   do_not_use_when:
-  - TODO
+  - the register is legitimately institutional (policy, legal, academic); compare
+    against a register-matched baseline instead of reading the band alone
+  - you want a calibrated AI/human verdict; the word lists and bands are heuristic
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
+      --allow-non-prose, --include-baseline-filenames (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown agency/abstraction report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only (regex and word lists); no spaCy, no API costs
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Agency-loss signals against a personal baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/agency_abstraction_audit.py draft.md
+      --baseline-dir baseline/ --json
+  references:
+  - plugins/setec-voiceprint/references/distributional-diagnostics.md
   _seeded_at: '2026-05-28'

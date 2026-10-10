@@ -2,33 +2,56 @@ entries:
 - id: surprisal_audit
   script_path: plugins/setec-voiceprint/scripts/surprisal_audit.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   # consumers: also surfaced by skill: setup.
   consumers:
   - diveye_signals
   - variance_audit
-  family: TODO
-  purpose: standalone causal-LM surprisal audit.
+  family: surprisal
+  purpose: Standalone causal-LM surprisal audit (default TinyLlama). Reports the
+    per-token surprisal series summary (mean, SD/variance, lag-k autocorrelation,
+    skew, kurtosis, position of maximum, top-k most surprising tokens) and an
+    optional token-window trajectory. Bands are illustrative only; the
+    ClaimLicense requires a user baseline and licenses no AI-provenance verdict.
   use_when:
-  - TODO
+  - you want predictability-uniformity evidence (DivEye-style surprisal variance)
+    for a draft outside the full variance_audit --tier4 run
+  - localizing low-surprise stretches with --sliding-window (feeds
+    sliding_window_heatmap)
   do_not_use_when:
-  - TODO
+  - the surprisal tier (transformers + torch, about 1.5 to 2 GB) cannot be installed
+  - you want an authorship or AI verdict; the evidence is about predictability, and
+    bands are provisional
+  - the text may be in the scoring model's training data (memorization lowers surprisal)
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - --model, --revision, --surprisal-dtype, --sliding-window, --window-size, --stride,
+      --top-k, --json, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown surprisal report, or JSON envelope with --json (stdout or --out)
   compute:
     tier: surprisal
-    cost_note: TODO
+    cost_note: one small causal LM forward pass over the text (default TinyLlama);
+      CPU works, GPU faster; weights download on first use
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
-    python: []
-  examples: []
-  references: []
+    python:
+    - transformers
+    - torch
+  examples:
+  - description: Default-model surprisal audit with token windows
+    cmd: python3 plugins/setec-voiceprint/scripts/surprisal_audit.py draft.txt --sliding-window
+      --window-size 200 --stride 100
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
+  - plugins/setec-voiceprint/skills/setup/SKILL.md
   _seeded_at: '2026-05-28'

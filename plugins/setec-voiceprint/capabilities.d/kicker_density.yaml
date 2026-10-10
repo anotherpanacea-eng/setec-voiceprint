@@ -2,33 +2,53 @@ entries:
 - id: kicker_density
   script_path: plugins/setec-voiceprint/scripts/kicker_density.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - aesthetic_authority_audit
   - variance_audit
-  family: TODO
-  purpose: AIC-9 (Closure Inflation) detector.
+  family: aic-8-9-aesthetic-authority
+  purpose: AIC-9 (Closure Inflation) detector. Classifies paragraph-final
+    sentences as kicker-shaped (short, declarative, generalizable, period-final)
+    with a confidence score, and reports the share of paragraphs that close on a
+    kicker, optionally against an operator-supplied baseline rate.
   use_when:
-  - TODO
+  - essayistic prose seems to end paragraphs on quotable summary lines and you want
+    the rate measured
+  - checking whether a revision pass added kicker closings (run before and after)
   do_not_use_when:
-  - TODO
+  - the writer deploys aphorism as genre (Bacon, La Rochefoucauld); a high rate is
+    then expected
+  - the text has no blank-line paragraph breaks
+  - you want a calibrated verdict; the classifier is regex-first and the baselines
+    are provisional
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - --word-limit, --baseline, --baseline-source, --force-regex, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - JSON envelope with per-paragraph kicker classifications and the density
+      (stdout or --out)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib regex classifier; uses en_core_web_sm for proper-noun checks
+      when installed, else a regex fallback
     length_floor_words: null
   registers:
-  - TODO
+  - all_nonfiction
+  - literary_fiction
   dependencies:
-    python:
+    python: []
+    python_optional:
     - spacy
-  examples: []
-  references: []
+  examples:
+  - description: Kicker density against an explicit baseline rate
+    cmd: python3 plugins/setec-voiceprint/scripts/kicker_density.py draft.md --baseline
+      0.10
+  references:
+  - baselines/register_typical.yaml
   _seeded_at: '2026-05-28'

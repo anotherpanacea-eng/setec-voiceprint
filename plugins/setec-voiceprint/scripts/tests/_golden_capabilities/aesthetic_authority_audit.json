@@ -1,40 +1,64 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "spaCy parse plus en_core_web_md or _lg word vectors; needs the locally fetched Brysbaert concreteness CSV; WordNet via NLTK optional",
     "length_floor_words": null,
-    "tier": "core"
+    "tier": "spacy"
   },
   "consumers": [],
   "dependencies": {
-    "python": []
+    "python": [
+      "spacy"
+    ],
+    "python_optional": [
+      "nltk"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "spaCy with a vectors-bearing model or the Brysbaert concreteness data is not installed; the image-conjunction and prestige blocks are then unavailable",
+    "you want a calibrated verdict; register-typical baselines are provisional"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py draft.md --register contemporary_essay",
+      "description": "Compound AIC-8/9 audit against the contemporary-essay baseline"
+    }
+  ],
+  "family": "aic-8-9-aesthetic-authority",
   "handoff": "none",
   "id": "aesthetic_authority_audit",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--register, --kicker-baseline, --ic-baseline, --pm-baseline, --t1, --t2, --t3, --word-limit, --no-wordnet, --out (see --help)"
+    ],
+    "required": [
+      "input"
+    ],
+    "target": "one .txt/.md file"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "JSON envelope with per-detector blocks and joint co-occurrence metrics (stdout or --out)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "compound AIC-8 + AIC-9 audit.",
-  "references": [],
+  "purpose": "Compound AIC-8 + AIC-9 audit. Runs kicker density, image conjunction and prestige metaphor together and reports their joint co-occurrence (paragraphs that close on a kicker and also carry an image conjunction, optionally in a prestige domain), the \"performing aesthetic authority\" signature that the single detectors cannot see, against register-typical or explicit baselines.",
+  "references": [
+    "baselines/register_typical.yaml"
+  ],
   "registers": [
-    "TODO"
+    "contemporary_essay",
+    "literary_fiction",
+    "hard_science_fiction",
+    "academic_prose",
+    "blog_post",
+    "technical_documentation"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "you want one AIC-8/9 report instead of running the three detectors separately",
+    "comparing a draft against a shipped register-typical baseline (--register)"
   ]
 }
