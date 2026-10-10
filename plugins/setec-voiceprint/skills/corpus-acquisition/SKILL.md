@@ -20,7 +20,7 @@ This skill helps the user adapt SETEC's acquisition pipeline (the pattern shared
 
 ## What this skill licenses, and what it does not
 
-- **Licenses:** reading the user's description of a new source, walking them through `references/acquire-corpus-pattern.md`, copying `scripts/acquire_corpus_template.py` to a new file, filling the four `TODO(LLM)` markers based on the source's specifics, helping the user run `--dry-run` against the source, and validating the emitted manifest.
+- **Licenses:** reading the user's description of a new source, walking them through `references/acquire-corpus-pattern.md`, copying `scripts/setec/surfaces/acquire_corpus_template.py` to a new file, filling the four `TODO(LLM)` markers based on the source's specifics, helping the user run `--dry-run` against the source, and validating the emitted manifest.
 - **Does not license:** implementing acquisition for sources without considering consent and legal posture (SETEC's manifest schema requires `consent_status`; if the user can't articulate it, neither should the new script run); auto-pushing the new script into the framework as a permanent addition (one-off scripts stay in the user's local checkout); silently updating existing acquisition scripts when "adapt" was the request.
 
 ## The framework you're working with
@@ -35,7 +35,7 @@ The first two steps are source-specific. The last four are shared in `scripts/ac
 
 The full reference: **`${CLAUDE_PLUGIN_ROOT}/references/acquire-corpus-pattern.md`**. Read it before doing anything else with the user's source — it captures all the conventions (CLI flag names, manifest field defaults, privacy posture, testing pattern) that a new script has to honor.
 
-The starting-point template: **`${CLAUDE_PLUGIN_ROOT}/scripts/acquire_corpus_template.py`**. Copy it, replace `SOURCE_NAME` and `TOOL_NAME`, fill the four `TODO(LLM)` markers, add source-specific CLI flags. The shared pipeline (preprocessing → dedupe → write → manifest emit) is already wired.
+The starting-point template: **`${CLAUDE_PLUGIN_ROOT}/scripts/setec/surfaces/acquire_corpus_template.py`**. Copy it, replace `SOURCE_NAME` and `TOOL_NAME`, fill the four `TODO(LLM)` markers, add source-specific CLI flags. The shared pipeline (preprocessing → dedupe → write → manifest emit) is already wired. (The flat `scripts/acquire_corpus_template.py` is only a compatibility launcher; copy the implementation above.)
 
 ## Workflow
 
@@ -77,7 +77,7 @@ Get the user to describe the source clearly. Ask:
 
 ### Step 2: Read the reference
 
-Open `${CLAUDE_PLUGIN_ROOT}/references/acquire-corpus-pattern.md` and `${CLAUDE_PLUGIN_ROOT}/scripts/acquire_corpus_template.py`. The reference doc is structured for LLM consumption — every section the new script needs has its own heading.
+Open `${CLAUDE_PLUGIN_ROOT}/references/acquire-corpus-pattern.md` and `${CLAUDE_PLUGIN_ROOT}/scripts/setec/surfaces/acquire_corpus_template.py`. The reference doc is structured for LLM consumption — every section the new script needs has its own heading.
 
 If you (Claude) are reading this skill, also load the worked examples:
 - `${CLAUDE_PLUGIN_ROOT}/scripts/acquire_blogger_takeout.py` — simplest local-source acquisition. Best example for archive / file-walking sources.
@@ -89,7 +89,7 @@ If you (Claude) are reading this skill, also load the worked examples:
 Copy the template to a working file. Suggested naming: `acquire_<source>.py` if reusable, or `acquire_<corpus_name>_oneoff.py` if it's a one-off.
 
 ```bash
-cp "${CLAUDE_PLUGIN_ROOT}/scripts/acquire_corpus_template.py" \
+cp "${CLAUDE_PLUGIN_ROOT}/scripts/setec/surfaces/acquire_corpus_template.py" \
    "${CLAUDE_PLUGIN_ROOT}/scripts/acquire_<source>.py"
 ```
 
