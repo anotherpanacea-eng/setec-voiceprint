@@ -2,30 +2,58 @@ entries:
 - id: acquire_epub
   script_path: plugins/setec-voiceprint/scripts/acquire_epub.py
   surface: voice_coherence_acquisition
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: structural_only
   handoff: none
   consumers: []
-  family: TODO
-  purpose: ingest EPUB ebooks into the impostor pool, one entry per spine chapter.
+  family: acquisition
+  purpose: ingest local EPUB ebooks (a directory or a single .epub) into the
+    private impostor pool, or as identity-baseline entries with --corpus-role,
+    reading OPF metadata and the reading-order spine into one entry per chapter
+    (--segment chapter) or per book; multi-author directories get one persona
+    per book author.
   use_when:
-  - TODO
+  - building a register-matched impostor pool from ebooks you hold locally
+  - ingesting your own published ebooks as an identity baseline (--corpus-role
+    identity_baseline)
   do_not_use_when:
-  - TODO
+  - the books are .mobi or .azw3 (reported and skipped; convert to EPUB first)
+  - the books span several registers; one --register applies to every book in
+    a run, so split mixed-register libraries into separate runs
   inputs:
-    target: TODO
+    target: directory of .epub files, or a single .epub
+    required:
+    - source
+    - --register
+    - --consent-status
+    - --impostor-for (impostor mode) or --persona (identity_baseline mode)
+    optional:
+    - --persona, --impostor-for, --corpus-role, --ai-status, --segment,
+      --min-words, --languages, --since/--until, --max-items, --dry-run,
+      --output-dir, --emit-manifest, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+      (or identity/<register>/... for --corpus-role identity_baseline)
+    - draft_manifest.jsonl
+    - optional JSON run summary (--out)
   compute:
-    tier: core
-    cost_note: TODO
-    length_floor_words: null
+    tier: acquisition
+    cost_note: local and offline; zip/OPF parsing plus HTML-to-text per spine
+      document; no network
+    length_floor_words: 500
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
-    python: []
-  examples: []
-  references: []
+    python:
+    - bs4
+    - lxml
+  examples:
+  - description: Chapter-level literary-horror impostor pool from a folder of ebooks
+    cmd: python3 plugins/setec-voiceprint/scripts/acquire_epub.py ebooks/ --impostor-for
+      my_fiction_persona --register literary_horror --consent-status fair_use_research
+      --segment chapter --min-words 500
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
   _seeded_at: '2026-06-02'

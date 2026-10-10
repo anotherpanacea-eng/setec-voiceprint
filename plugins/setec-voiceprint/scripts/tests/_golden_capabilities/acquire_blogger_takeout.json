@@ -1,9 +1,9 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
-    "length_floor_words": null,
-    "tier": "core"
+    "cost_note": "local and offline; Atom parsing plus HTML-to-text per post; no network",
+    "length_floor_words": 250,
+    "tier": "acquisition"
   },
   "consumers": [],
   "dependencies": {
@@ -13,31 +13,54 @@
     ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you only have the live blog URL (use acquire_blog)",
+    "you want the comment threads as the author's voice; comments are other people's prose and a different register"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py Takeout/ --persona author_slug --author \"Author Name\" --impostor-for my_persona --register blog_essay --consent-status author_consent --dry-run",
+      "description": "Dry-run a Takeout Blogger export before writing the impostor pool"
+    }
+  ],
+  "family": "acquisition",
   "handoff": "none",
   "id": "acquire_blogger_takeout",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--since/--until, --min-words, --max-posts, --include-comments, --dry-run, --output-dir, --emit-manifest, --out (see --help)"
+    ],
+    "required": [
+      "takeout_path",
+      "--persona",
+      "--author",
+      "--impostor-for",
+      "--register",
+      "--consent-status"
+    ],
+    "target": "Google Takeout Blogger directory or a single Blogger feed.atom file"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+      "draft_manifest.jsonl (corpus_role impostor)",
+      "optional JSON run summary (--out)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "import Google Takeout Blogger exports.",
-  "references": [],
+  "purpose": "import a Google Takeout Blogger export (a Takeout directory or a single feed.atom) offline into the private impostor pool, one cleaned .txt + .meta.json per post plus a draft manifest; comment feeds are skipped unless --include-comments.",
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/skills/corpus-acquisition/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "blog_essay",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
-    "TODO"
+    "the author shared a Google Takeout Blogger export and you want the full archive without scraping the public site",
+    "building a register-matched impostor pool from a Blogger blog you hold an export of"
   ]
 }

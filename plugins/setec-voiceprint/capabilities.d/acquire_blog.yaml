@@ -2,34 +2,63 @@ entries:
 - id: acquire_blog
   script_path: plugins/setec-voiceprint/scripts/acquire_blog.py
   surface: voice_coherence_acquisition
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: structural_only
   handoff: none
   # consumers: no code importer; surfaced by skills: corpus-acquisition, setup.
   consumers: []
-  family: TODO
-  purpose: pull a single author's blog or Substack archive.
+  family: acquisition
+  purpose: pull one author's blog or Substack archive (Substack, WordPress/Ghost
+    feed, generic HTML archive, or Wayback Machine CDX snapshots) into the
+    private impostor pool, or into the validation bucket with --bucket
+    validation, writing cleaned .txt + .meta.json pairs and a draft manifest.
   use_when:
-  - TODO
+  - building a register-matched impostor pool from a named writer's public blog
+    or Substack archive
+  - adding your own AI-involved blog writing to the validation spine (--bucket
+    validation with --ai-status)
+  - recovering a shut-down blog through the Wayback Machine (--wayback)
   do_not_use_when:
-  - TODO
+  - you have a Google Takeout Blogger export (use acquire_blogger_takeout, which
+    reads the full archive offline)
+  - the source is not a blog-shaped feed or archive; adapt a new acquirer from the
+    corpus-acquisition pattern instead
+  - you cannot state a consent_status for the third-party prose
   inputs:
-    target: TODO
+    target: blog or Substack root URL (positional url)
+    required:
+    - url
+    - --register
+    optional:
+    - --substack / --wordpress / --html-archive / --wayback, --archive-pattern,
+      --bucket, --impostor-for, --consent-status, --since/--until, --max-posts,
+      --output-dir, --emit-manifest, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<author>/
+    - draft_manifest.jsonl for review before merging into corpus_manifest.jsonl
+    - optional JSON run summary (--out)
   compute:
     tier: acquisition
-    cost_note: TODO
+    cost_note: network-bound; robots.txt honored with a per-host rate limit; feed
+      plus archive/sitemap fetches, capped by --max-posts (default 50)
     length_floor_words: null
   registers:
-  - TODO
+  - blog_essay
+  - all_nonfiction
   dependencies:
     python:
+    - requests
+    - feedparser
     - bs4
     - lxml
-    - feedparser
-  examples: []
-  references: []
+    python_optional:
+    - trafilatura
+  examples:
+  - description: Acquire a Substack archive into a register-matched impostor pool
+    cmd: python3 plugins/setec-voiceprint/scripts/acquire_blog.py https://example.substack.com
+      --register blog_essay --impostor-for my_persona --consent-status fair_use_research
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  - plugins/setec-voiceprint/skills/corpus-acquisition/SKILL.md
   _seeded_at: '2026-05-28'

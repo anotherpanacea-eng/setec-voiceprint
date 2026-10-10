@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "local; pypdf text-layer extraction is fast; OCR via ocrmypdf is slow and needs system binaries",
     "length_floor_words": null,
     "tier": "ocr"
   },
@@ -11,36 +11,57 @@
   ],
   "dependencies": {
     "python": [
-      "ocrmypdf",
       "pypdf"
+    ],
+    "python_optional": [
+      "ocrmypdf"
     ]
   },
   "do_not_use_when": [
-    "TODO"
+    "the inventory rows lack the impostor fields the manifest validator requires",
+    "the PDFs are remote URLs (use acquire_pdf_urls)",
+    "image-only PDFs matter and the OCR layer (ocrmypdf plus tesseract, ghostscript, qpdf) is not installed; those rows are skipped"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/pdf_extract.py --inventory filtered_inventory.jsonl --output-dir ai-prose-baselines-private/impostors/academic_philosophy/ --skip-ocr",
+      "description": "Text-layer-only first pass over a filtered inventory"
+    }
+  ],
+  "family": "acquisition",
   "handoff": "none",
   "id": "pdf_extract",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "--emit-manifest, --workers, --ocr-language, --ocr-dpi, --skip-ocr, --dry-run, --out (see --help)"
+    ],
+    "required": [
+      "--inventory",
+      "--output-dir"
+    ],
+    "target": "filtered pdf_inventory JSONL (--inventory)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "impostor .txt + .meta.json under <output-dir>/<author_slug>/ (private path required unless --allow-public-output)",
+      "draft manifest JSONL (corpus_role impostor)",
+      "optional JSON run summary (--out)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "extract plain text from a filtered PDF inventory.",
-  "references": [],
+  "purpose": "extract plain text from a user-filtered pdf_inventory JSONL into the private impostor pool (pypdf text layer, or ocrmypdf for image-only and mixed PDFs unless --skip-ocr), writing .txt + .meta.json per PDF and draft manifest entries with corpus_role impostor.",
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/skills/corpus-acquisition/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/pdf_extract.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
-    "TODO"
+    "you ran pdf_inventory, kept the rows that should join the pool, and annotated them with persona, register, register_match, topic_match, consent_status, era and impostor_for",
+    "building an academic or report-register impostor pool from a local PDF library"
   ]
 }
