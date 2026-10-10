@@ -39,8 +39,6 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
 
 from originality_audit import (  # noqa: E402
     DEFAULT_MIN_NGRAM,

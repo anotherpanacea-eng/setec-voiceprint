@@ -728,7 +728,6 @@ def preprocess_text(
     """
     # Imported lazily so that test code paths that don't exercise
     # preprocessing don't depend on this module's full surface.
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
         import preprocessing  # type: ignore
     finally:
@@ -1406,7 +1405,6 @@ def pdf_text_from_bytes(
         return ""
     import os
     import tempfile
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
         import pdf_extract  # type: ignore
     finally:

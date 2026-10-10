@@ -67,8 +67,6 @@ from pathlib import Path
 from typing import Any, Sequence
 
 ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 
 from claim_license import ClaimLicense, from_legacy  # type: ignore
 from output_schema import build_output  # type: ignore

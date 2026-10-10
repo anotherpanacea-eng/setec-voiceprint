@@ -91,7 +91,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # their reviewed permanent launchers add two counted sites (208 -> 210 on the train).
 # The whole baseline-discovery utility adds one required permanent launcher
 # with no old implementation bootstrap to replace (210 -> 211); no exclusions.
-PINNED_CEILING = 211
+# HL1 (2026-10-10): 34 own-directory bootstraps in top-level scripts were
+# no-ops (the script's directory is already sys.path[0]) and are deleted: 211 -> 177.
+PINNED_CEILING = 177
 
 
 def find_runtime_scripts() -> list[Path]:

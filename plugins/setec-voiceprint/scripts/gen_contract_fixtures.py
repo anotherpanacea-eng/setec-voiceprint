@@ -61,8 +61,6 @@ SCRIPTS_DIR = Path(__file__).resolve().parent
 PLUGIN_ROOT = SCRIPTS_DIR.parent
 FIXTURES_DIR = PLUGIN_ROOT / "references" / "contract_fixtures"
 
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
 
 # --------------------------------------------------------------------------

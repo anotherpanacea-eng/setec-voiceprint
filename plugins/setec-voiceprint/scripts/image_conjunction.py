@@ -65,8 +65,6 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import concreteness  # type: ignore
 import embeddings  # type: ignore

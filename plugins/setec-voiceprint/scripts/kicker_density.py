@@ -62,8 +62,6 @@ from typing import Any, Optional
 
 # Make sibling imports work whether invoked as a script or imported.
 _SCRIPTS_DIR = Path(__file__).resolve().parent
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import paragraph_parser  # type: ignore
 
