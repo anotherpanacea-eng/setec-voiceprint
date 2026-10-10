@@ -13,7 +13,7 @@ SCRIPTS = ROOT / "plugins/setec-voiceprint/scripts"
 FIELDS = {"case_id", "callable", "args", "kwargs", "result_path", "comparator", "expected", "mutant"}
 # Callables that take bytes: their args are written as {"hex": "..."}.
 BYTES_ARGS = {"_analysis"}
-COMPARATORS = {"json_exact", "sequence_exact", "bytes_hex_exact", "exception_exact"}
+COMPARATORS = {"json_exact", "sequence_exact", "set_exact", "bytes_hex_exact", "exception_exact"}
 
 
 def canonical(value):
@@ -21,6 +21,12 @@ def canonical(value):
 
 
 def encode(value, comparator):
+    if comparator == "set_exact":
+        if not isinstance(value, (list, set, frozenset)) or any(type(v) is not str for v in value):
+            raise ValueError("string set or unique string list required")
+        if len(value) != len(set(value)):
+            raise ValueError("duplicate set expectation")
+        return tuple(sorted(value))
     if comparator == "json_exact":
         return canonical(value)
     if comparator == "sequence_exact":
@@ -54,6 +60,8 @@ def invoke(fn, case, comparator):
         raise ValueError("expected exception was not raised")
     for selector in case["result_path"]:
         result = result[selector]
+    if comparator == "set_exact" and not isinstance(result, (set, frozenset)):
+        raise ValueError("set result required")
     return encode(result, comparator)
 
 
