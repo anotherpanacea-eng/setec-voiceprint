@@ -87,7 +87,11 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # All sites remain counted and over-ceiling regression checks remain unchanged.
 # Reviewed register-diagnostics no-main permanent alias needs one foreign-cwd
 # runpy bootstrap; frozen implementation has none: 207 -> 208 once both land, no exclusions.
-PINNED_CEILING = 208
+# The two whole bigram implementations have no old bootstrap to replace;
+# their reviewed permanent launchers add two counted sites (208 -> 210 on the train).
+# The whole baseline-discovery utility adds one required permanent launcher
+# with no old implementation bootstrap to replace (210 -> 211); no exclusions.
+PINNED_CEILING = 211
 
 
 def find_runtime_scripts() -> list[Path]:
