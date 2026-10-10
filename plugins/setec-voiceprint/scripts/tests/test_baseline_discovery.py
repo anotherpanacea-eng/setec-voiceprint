@@ -27,6 +27,9 @@ No real filesystem assumptions: every test uses ``tmp_path``.
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -442,3 +445,35 @@ def test_main_validate_path_returns_zero_on_good_path(
     folder = _make_baseline(tmp_path)
     rc = bd.main(["--validate", str(folder)])
     assert rc == 0
+
+
+def test_copied_plugin_default_discovers_repo_sibling(tmp_path: Path):
+    """Physical packaging must preserve setup's default sibling discovery."""
+    from setec.paths import plugin_paths
+
+    copied = tmp_path / "repo" / "plugins" / "setec-voiceprint"
+    shutil.copytree(
+        plugin_paths().root, copied,
+        ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache"),
+    )
+    baseline = _make_baseline(tmp_path, manifest_entries=2)
+    home = tmp_path / "home"
+    home.mkdir()
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
+    env.pop("SETEC_BASELINES_DIR", None)
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, "-S", str(copied / "scripts" / "baseline_discovery.py"),
+         "--json", "--max-depth", "0"],
+        cwd=home, env=env, capture_output=True, text=True, encoding="utf-8",
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["recommended_path"] == str(baseline)
+    assert len(payload["candidates"]) == 1
+    candidate = payload["candidates"][0]
+    assert candidate["path"] == str(baseline)
+    assert candidate["source"] == "repo_sibling"
+    assert candidate["manifest_entries"] == 2
+    assert candidate["is_recommended"] is True
