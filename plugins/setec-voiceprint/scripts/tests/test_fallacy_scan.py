@@ -18,6 +18,15 @@ import fallacy_judge  # type: ignore
 import fallacy_scan  # type: ignore
 from conftest import _results  # noqa: E402
 
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+@pytest.mark.parametrize("phrase", ["so that", "in conclusion", "for example", "on the other hand", "it follows"])
+def test_multiword_register_marker_accepts_whitespace(separator, phrase):
+    single = phrase + ", the evidence needs careful review."
+    wrapped = separator.join(phrase.split()) + ", the evidence needs careful review."
+    assert fallacy_scan.register_warnings(single, fallacy_scan.MIN_WORDS, 2) == []
+    assert fallacy_scan.register_warnings(wrapped, fallacy_scan.MIN_WORDS, 2) == []
+
 SAMPLE = (
     "Everyone already knows the policy works, so anyone who doubts it simply "
     "hasn't been paying attention. Because the experts all agree, there is no "

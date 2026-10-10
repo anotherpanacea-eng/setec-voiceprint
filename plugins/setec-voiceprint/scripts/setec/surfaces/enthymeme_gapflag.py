@@ -145,9 +145,9 @@ def _find_conclusion_marker(sentence: str) -> str | None:
     lexicon), or None. Word-boundaried so 'sole'/'soak' do not match the marker 'so'."""
     low = _norm(sentence)
     for marker in _CONCLUSION_MARKERS:
-        # markers may contain spaces (e.g. "it follows"); a \b-anchored search matches them
-        # without false hits inside longer words.
-        if re.search(r"(?<![A-Za-z])" + re.escape(marker) + r"(?![A-Za-z])", low):
+        # Accept wrapping between marker words without matching inside longer words.
+        pattern = r"\s+".join(re.escape(word) for word in marker.split(" "))
+        if re.search(r"(?<![A-Za-z])" + pattern + r"(?![A-Za-z])", low):
             return marker
     return None
 
@@ -157,7 +157,8 @@ def _has_warrant_bridge(window_text: str) -> bool:
     Each marker is matched word-boundaried so it cannot fire inside a longer word."""
     low = _norm(window_text)
     for marker in _WARRANT_MARKERS:
-        if re.search(r"(?<![A-Za-z])" + re.escape(marker) + r"(?![A-Za-z])", low):
+        pattern = r"\s+".join(re.escape(word) for word in marker.split(" "))
+        if re.search(r"(?<![A-Za-z])" + pattern + r"(?![A-Za-z])", low):
             return True
     return False
 
