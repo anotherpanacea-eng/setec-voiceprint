@@ -3,7 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
   surface: calibration
   status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  todo_reason: "Maintainer research tool, hidden under the 2026-10-10 owner ruling (user-facing tools only): replication/train_xgboost.py reproduces a paper's XGBoost tables (Stage C1/C2) from a released feature manifest, with the paper's hyperparameters and prompt-level splits; it is replication infrastructure, not a writer-facing diagnostic."
   handoff: none
   # consumers: replication/pipeline.py (StoryScope replication stage).
   consumers:

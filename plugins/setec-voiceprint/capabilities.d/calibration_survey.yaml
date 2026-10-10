@@ -3,7 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
   surface: smoothing_diagnosis_calibration
   status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  todo_reason: "Maintainer tool, hidden under the 2026-10-10 owner ruling (user-facing tools only): calibration_survey.py runs calibrate_thresholds over every registry signal so the maintainer can pick which signal earns the first committed framework threshold (its docstring and scripts/calibration/PROVENANCE.md); it sets framework defaults rather than serving a writer's run. Users reach sharded calibration through shard_runner."
   handoff: none
   # consumers: shard_runner's named default `task`; also surfaced by skill: setup.
   consumers:

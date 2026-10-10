@@ -2,31 +2,48 @@ entries:
 - id: voice_validation_harness
   script_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
   surface: voice_coherence
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers: []
-  family: TODO
-  purpose: Surface 2 sibling to validation_harness.py.
+  family: validation
+  purpose: Voice-distance validation harness. Scores same-author against different-author document
+    pairs from a labeled manifest in a shared feature space and reports per-feature-family ROC
+    AUC with bootstrap intervals and the same publication-claim guards as validation_harness.
   use_when:
-  - TODO
+  - measuring how well voice-distance features separate same-author from different-author pairs
+    on your labeled corpus
+  - checking a feature family before relying on voice_distance for a register
   do_not_use_when:
-  - TODO
+  - the manifest has too few authors or documents per author for meaningful pairs
+  - you want a claim beyond the manifest; results describe this labeled set only
   inputs:
-    target: TODO
+    target: a labeled manifest (entries with use voice_validation by default)
+    required:
+    - --manifest
+    optional:
+    - optional flags --use, --label-by, --bootstrap-method, --bootstrap-resamples, --bootstrap-confidence,
+      --bootstrap-seed, --json, --md (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - JSON results (--json)
+    - Markdown report (--md)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib pair scoring over all unordered pairs (quadratic in documents); scikit-learn
+      adds ROC helpers when installed
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
-    python:
+    python: []
+    python_optional:
     - sklearn
-  examples: []
-  references: []
+  examples:
+  - description: Federalist same-author validation
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_validation_harness.py --manifest scripts/test_data/federalist_voice_validation_manifest.jsonl
+      --use voice_validation --json out.json --md out.md
+  references:
+  - plugins/setec-voiceprint/capabilities.d/validation_harness.yaml
   _seeded_at: '2026-05-28'

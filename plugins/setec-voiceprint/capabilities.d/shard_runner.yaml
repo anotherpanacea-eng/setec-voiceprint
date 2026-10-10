@@ -2,33 +2,59 @@ entries:
 - id: shard_runner
   script_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
   surface: calibration
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: structural_only
   handoff: none
   # consumers: also surfaced by skill: validation.
   consumers:
   - setup_launchd
   - task_surfaces
-  family: TODO
-  purpose: sharded calibration orchestrator.
+  family: sharded-orchestration
+  purpose: Sharded orchestrator for corpus-scale runs. Splits a source manifest into deterministic
+    stratified shards, runs claim/score/done workers (optionally concurrent and time-windowed)
+    with SIGTERM-safe checkpointing in state.json, aggregates results, and supports multi-machine
+    runs through a git-synced state file. Registered tasks include corpus_hygiene (check_corpus
+    at RAID scale) and calibration_survey.
   use_when:
-  - TODO
+  - the corpus hygiene check must run over a manifest beyond about 1M files (check_corpus warns
+    at that size)
+  - a long calibration run needs checkpointing, several workers, or several machines
   do_not_use_when:
-  - TODO
+  - the manifest is small enough for check_corpus or the direct tool (sharding adds state and
+    setup overhead)
+  - you cannot keep a persistent --base-dir for state.json between sessions
   inputs:
-    target: TODO
+    target: a source JSONL manifest and a base directory for shard state
+    required:
+    - subcommand (shard, work, aggregate, status, verify, pause-all, terminate-all, kill-all,
+      sweep-stale, resolve-conflict)
+    - --run-id; shard also needs --task and --source-manifest
+    optional:
+    - optional flags --base-dir, --shard-size, --shard-count, --stratify, --shuffle-seed, --workers,
+      --time-window, --fpr-target, --no-sync-state (see each subcommand's --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - shard files and state.json under the base directory
+    - per-task aggregate results (aggregate subcommand)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: cost is the scored task's cost spread across shards and workers; RAID-scale hygiene
+      runs about 1.5 h with 8 workers versus about 13 h direct
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Shard a large manifest for the corpus hygiene task
+    cmd: python3 plugins/setec-voiceprint/scripts/calibration/shard_runner.py --base-dir $SETEC_BASELINES_DIR
+      shard --task corpus_hygiene --source-manifest manifest.jsonl --run-id hygiene_run --shard-size
+      100000
+  - description: Work the shards with eight workers
+    cmd: python3 plugins/setec-voiceprint/scripts/calibration/shard_runner.py --base-dir $SETEC_BASELINES_DIR
+      work --task corpus_hygiene --run-id hygiene_run --workers 8
+  references:
+  - plugins/setec-voiceprint/scripts/calibration/RUNBOOK_corpus_hygiene_sharded.md
+  - plugins/setec-voiceprint/skills/validation/SKILL.md
   _seeded_at: '2026-05-28'
