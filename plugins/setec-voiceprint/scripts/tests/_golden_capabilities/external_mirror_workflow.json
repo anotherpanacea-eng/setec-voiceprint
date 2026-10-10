@@ -1,0 +1,73 @@
+{
+  "compute": {
+    "cost_note": "prepare and status are stdlib and instant; score loads a sentence-transformers embedding model (default mxbai) and adds TF-IDF and POS-bigram metrics when sklearn or spaCy are installed. The continuations come from the operator's own chat sessions, so the harness makes no model calls of its own",
+    "length_floor_words": null,
+    "tier": "optional"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "sentence_transformers"
+    ],
+    "python_optional": [
+      "sklearn",
+      "spacy"
+    ]
+  },
+  "do_not_use_when": [
+    "you want an automated or binary AI verdict; the harness never calls a model and the pack is uncalibrated evidence",
+    "you cannot record per-family metadata and blinding status; the pack's caveats depend on it",
+    "sentence-transformers cannot be installed (score computes the default sbert distance and stops without it)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/external_mirror/workflow.py prepare target.txt --windows 4 --context 1500 --continuation 150",
+      "description": "Prepare a run with four windows"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/external_mirror/workflow.py status runs/mirror_run/",
+      "description": "Check which family outputs are still missing"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/external_mirror/workflow.py score runs/mirror_run/",
+      "description": "Score the run once outputs are pasted back"
+    }
+  ],
+  "family": "external_mirror",
+  "handoff": "none",
+  "id": "external_mirror_workflow",
+  "inputs": {
+    "optional": [
+      "optional flags --runs-root, --run-id, --families, --windows, --context, --continuation, --positioning, --positions, --context-grid, --genre-descriptor (prepare); --json (status); --embedding-alias (score) (see each subcommand's --help)"
+    ],
+    "required": [
+      "subcommand (prepare, status or score)",
+      "prepare needs the target text file; status and score need the run directory"
+    ],
+    "target": "a target prose file (prepare) or a run directory (status, score)"
+  },
+  "outputs": {
+    "artifacts": [
+      "run directory with prompts, outputs/<family>/ slots and WORKFLOW.md (prepare)",
+      "ingested.json and distances.json (score)",
+      "evidence_pack.json and evidence_pack.md (score)"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Operator harness for the external-mirror discrimination method. prepare windows a target and writes ready-to-paste continuation prompts per LLM family plus a WORKFLOW.md checklist; the operator pastes each family's continuations back into the run directory; status reports what is present or missing; score runs ingest, pairwise continuation distances and the evidence pack. The pack is uncalibrated evidence, with no verdict.",
+  "references": [
+    "plugins/setec-voiceprint/scripts/README.md",
+    "plugins/setec-voiceprint/skills/setup/SKILL.md"
+  ],
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/external_mirror/workflow.py",
+  "status": "heuristic",
+  "surface": "external_mirror_discrimination",
+  "use_when": [
+    "you want discrimination evidence for a target by comparing how several LLM families continue its windows, alongside a human control",
+    "you can run the prompts in your own chat sessions and paste the outputs back"
+  ]
+}
