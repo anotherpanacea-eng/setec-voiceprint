@@ -433,7 +433,17 @@ def _load_scores_cache(
             f"subsample differ); remove it or pass a fresh path."
         )
     scored = payload.get("scored")
-    return scored if isinstance(scored, dict) else {}
+    if not isinstance(scored, dict) or not all(
+        isinstance(rec, dict) and isinstance(rec.get("content_sha256"), str)
+        for rec in scored.values()
+    ):
+        # Fail closed: a damaged checkpoint must not turn --resume into a
+        # silent full re-score of work the operator believes is saved.
+        raise ScoresCacheError(
+            f"--scores-cache {path} is damaged (missing or malformed "
+            f"scored entries); remove it or pass a fresh path to start over."
+        )
+    return scored
 
 
 def _resolve_use_xppl(score_version: str) -> bool | None:

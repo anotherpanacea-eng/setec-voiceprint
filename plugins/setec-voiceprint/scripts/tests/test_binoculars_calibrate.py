@@ -948,3 +948,24 @@ def test_resume_without_a_checkpoint_starts_from_the_first_entry(tmp_path):
                         resume=True, log=io.StringIO())
     assert len(calls) == 40
     assert result == _calibrate(manifest, _scored_audit([]), log=io.StringIO())
+
+
+@pytest.mark.parametrize("damage", [
+    lambda payload: payload.pop("scored"),
+    lambda payload: payload.__setitem__("scored", ["not", "a", "map"]),
+    lambda payload: payload["scored"].__setitem__(next(iter(payload["scored"])), "x"),
+])
+def test_resume_refuses_a_damaged_checkpoint_before_rescoring(tmp_path, damage):
+    import io
+
+    manifest = _resume_fixture(tmp_path, n=20)
+    cache = tmp_path / "scores.json"
+    _calibrate(manifest, _scored_audit([]), scores_cache=cache, log=io.StringIO())
+    payload = json.loads(cache.read_text())
+    damage(payload)
+    cache.write_text(json.dumps(payload))
+    calls: list[str] = []
+    with pytest.raises(cal.ScoresCacheError, match="damaged"):
+        _calibrate(manifest, _scored_audit(calls), scores_cache=cache,
+                   resume=True, log=io.StringIO())
+    assert calls == []
