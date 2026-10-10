@@ -624,13 +624,6 @@ class TestCli:
         assert rc == 3
 
 
-if __name__ == "__main__":
-    if pytest is None:
-        sys.stderr.write("pytest not installed; cannot run tests.\n")
-        sys.exit(2)
-    sys.exit(pytest.main([__file__, "-v"]))
-
-
 # ---------- Errored benchmarks are unmeasured, never no-drift ----------
 
 
@@ -729,3 +722,10 @@ class TestErroredBenchmarksUnmeasured:
         report = json.loads(report_path.read_text(encoding="utf-8"))
         assert report["infrastructure_drift_detected"] is True
         assert report["n_benchmarks_unmeasured"] == 1
+
+
+if __name__ == "__main__":
+    if pytest is None:
+        sys.stderr.write("pytest not installed; cannot run tests.\n")
+        sys.exit(2)
+    sys.exit(pytest.main([__file__, "-v"]))
