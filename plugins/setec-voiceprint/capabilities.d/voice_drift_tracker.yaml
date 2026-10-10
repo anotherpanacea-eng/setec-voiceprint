@@ -16,7 +16,6 @@ entries:
   - deciding whether a draft's distance from the baseline is recent stylistic evolution or sudden
     distortion
   - seeing which features of your voice changed over the years and which stayed stable
-  - producing the drift input for generate_voice_report
   do_not_use_when:
   - the baseline has no dates (manifest date_written or date-prefixed filenames)
   - periods hold fewer than --min-docs-per-period documents (default 2); they are dropped

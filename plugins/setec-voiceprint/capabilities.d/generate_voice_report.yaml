@@ -2,50 +2,30 @@ entries:
 - id: generate_voice_report
   script_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
   surface: voice_coherence
-  status: heuristic
+  status: todo
+  todo_reason: "User-facing but blocked: generate_voice_report reads top-level keys (baseline_summary, families, periods) from its --voice-profile and --voice-drift inputs, while voice_profile and voice_drift_tracker now emit schema 1.0 envelopes that nest those keys under results; a current profile renders as 0 files, 0 words. Promote after the consumer unwraps the envelope (2026-10-10 owner ruling: user-facing tools only become discoverable, and this one does not yet work end to end)."
   handoff: none
   consumers: []
-  family: voice-report
-  purpose: 'Populate a voice insights report from existing voice_profile, voice_drift_tracker
-    and idiolect_detector JSON outputs, following references/templates/voice_insights_report.template.md.
-    Numerical sections are filled programmatically; interpretive sections are left as {TODO:
-    interpret: <hint>} markers for a human or LLM editor, so the script writes no prose readings.'
+  family: TODO
+  purpose: populate a voice insights report.
   use_when:
-  - you have voice_profile (and optionally drift and idiolect) JSON and want a structured report
-    draft
-  - comparing your drift against a control writer's drift (--comparison-drift)
+  - TODO
   do_not_use_when:
-  - you want the interpretation written for you; the script deliberately leaves interpretive
-    markers
-  - you have not run voice_profile yet (--voice-profile is required)
+  - TODO
   inputs:
-    target: voice_profile JSON plus optional drift and idiolect JSON
-    required:
-    - --voice-profile
-    - --author-name
-    - --corpus-label
-    optional:
-    - optional flags --voice-drift, --idiolect-n1, --idiolect-n2, --idiolect-n3, --comparison-drift,
-      --register, --ai-disclosure, --control-writer-name, --cv-ceiling, --out, --allow-public-output
-      (see --help)
+    target: TODO
   outputs:
     schema_version: '1.0'
     artifacts:
-    - Markdown voice insights report (stdout or --out; file outputs must sit under ai-prose-baselines-private/
-      unless --allow-public-output)
+    - TODO
   compute:
     tier: core
-    cost_note: stdlib only; reads existing JSON, runs no new measurement
+    cost_note: TODO
     length_floor_words: null
   registers:
-  - all_fiction
-  - all_nonfiction
+  - TODO
   dependencies:
     python: []
-  examples:
-  - description: Report from a profile plus a drift run
-    cmd: python3 plugins/setec-voiceprint/scripts/generate_voice_report.py --voice-profile profile.json
-      --voice-drift drift.json --author-name "Author" --corpus-label blog --out ai-prose-baselines-private/voice_report.md
-  references:
-  - plugins/setec-voiceprint/references/templates/voice_insights_report.template.md
+  examples: []
+  references: []
   _seeded_at: '2026-05-28'

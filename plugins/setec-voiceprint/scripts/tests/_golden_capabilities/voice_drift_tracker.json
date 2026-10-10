@@ -55,7 +55,6 @@
   "surface": "voice_coherence",
   "use_when": [
     "deciding whether a draft's distance from the baseline is recent stylistic evolution or sudden distortion",
-    "seeing which features of your voice changed over the years and which stayed stable",
-    "producing the drift input for generate_voice_report"
+    "seeing which features of your voice changed over the years and which stayed stable"
   ]
 }

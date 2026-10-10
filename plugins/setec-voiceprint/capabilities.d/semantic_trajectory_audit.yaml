@@ -14,9 +14,10 @@ entries:
     JSON.
   use_when:
   - asking how the thread of meaning moves across a draft at paragraph scale
-  - comparing a revision's trajectory against a prior run (--baseline)
   do_not_use_when:
   - sentence-transformers (and torch) cannot be installed
+  - you need the --baseline prior-run comparison; it reads a top-level trajectory
+    key that the saved JSON envelope nests under results, so it comes back empty
   - you want sentence-level cohesion for smoothing diagnosis (variance_audit tier 3 covers that)
   - you want an authorship verdict
   inputs:
