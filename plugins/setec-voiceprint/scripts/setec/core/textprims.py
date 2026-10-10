@@ -101,6 +101,53 @@ def content_tokens_enthymeme(text: str) -> set[str]:
     return {t for t in _WORD_ALNUM_RE.findall(text.lower()) if t not in _ENTHYMEME_STOPWORDS}
 
 
+def split_paragraphs_blanklines(text: str) -> list[str]:
+    parts = re.split(r"\n\s*\n", text.strip())
+    return [p.strip() for p in parts if p.strip()]
+
+
+_WORD_UNICODE_HYPHEN_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
+
+
+def count_words_unicode_hyphen(text: str) -> int:
+    return len(_WORD_UNICODE_HYPHEN_RE.findall(text))
+
+
+WORD_RE = _WORD_RE  # the same [A-Za-z']+ pattern; WORD_RE is the public name
+
+
+def word_tokens_alpha(text: str) -> list[str]:
+    return [w.lower() for w in WORD_RE.findall(text)]
+
+
+_WORD_UNICODE_RE = re.compile(r"\b\w+\b")
+
+
+def count_words_unicode(text: str) -> int:
+    return len(_WORD_UNICODE_RE.findall(text))
+
+
+
+_SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
+
+
+def split_sentences_uppercase(text: str) -> list[str]:
+    return [
+        s.strip()
+        for s in _SENTENCE_TERMINATORS.split(text)
+        if s.strip()
+    ]
+
+
+def count_words_alpha_lower(text: str) -> int:
+    return len(_WORD_RE.findall(text.lower()))
+
+
+def number_paragraphs(paragraphs: list[str]) -> str:
+    """Render the numbered-paragraph block shown to an API judge."""
+    return "\n\n".join(f"[{i}] {p}" for i, p in enumerate(paragraphs))
+
+
 # The one owner module of each shared text primitive. Each is importable from
 # here; those owned elsewhere load lazily on first use, so importing this
 # module stays light. Behavior is pinned by
@@ -113,14 +160,21 @@ PRIMITIVES = _MappingProxyType({
     "DIALOGUE_FUNCTION_WORDS": "setec.core.textprims",
     "split_sentences_punkt": "setec.core.textprims",
     "split_sentences_regex": "setec.core.textprims",
+    "split_sentences_uppercase": "setec.core.textprims",
     "_normws": "setec.core.textprims",
     "count_words_alpha": "setec.core.textprims",
+    "count_words_alpha_lower": "setec.core.textprims",
+    "number_paragraphs": "setec.core.textprims",
     "count_words_alnum": "setec.core.textprims",
+    "count_words_unicode_hyphen": "setec.core.textprims",
+    "word_tokens_alpha": "setec.core.textprims",
+    "count_words_unicode": "setec.core.textprims",
     "split_sentences_enthymeme": "setec.core.textprims",
     "content_tokens_enthymeme": "setec.core.textprims",
     "tokenize": "setec.core.passage_tokenizer_v1",
     "_tokens": "setec.core.verbatim_cover",
     "_content_fingerprint": "setec.core.verbatim_cover",
+    "split_paragraphs_blanklines": "setec.core.textprims",
     "split_paragraphs": "setec.core.paragraph_parser",
     "split_sentences": "setec.core.paragraph_parser",
     "_analysis": "setec.preflight.common",

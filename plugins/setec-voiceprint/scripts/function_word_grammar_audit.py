@@ -101,7 +101,7 @@ _PRONOUNS = frozenset({
 })
 
 _WORD_RE = re.compile(r"\b\w+\b")
-_SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
+from setec.core.textprims import _SENTENCE_TERMINATORS
 
 
 def _tokens_lower(text: str) -> list[str]:
@@ -180,12 +180,7 @@ def _per_thousand(count: int, n_words: int) -> float:
     return 1000.0 * count / n_words
 
 
-def _sentences(text: str) -> list[str]:
-    return [
-        s.strip()
-        for s in _SENTENCE_TERMINATORS.split(text)
-        if s.strip()
-    ]
+from setec.core.textprims import split_sentences_uppercase as _sentences
 
 
 def audit_function_word_grammar(text: str) -> dict[str, Any]:

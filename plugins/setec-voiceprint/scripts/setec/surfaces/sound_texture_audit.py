@@ -41,7 +41,7 @@ TOOL_NAME = "sound_texture_audit"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 300
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
+from setec.core.textprims import _WORD_UNICODE_HYPHEN_RE as _WORD_RE
 _ALPHA_WORD_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 _VOWELS = frozenset("aeiou")
 
@@ -66,8 +66,7 @@ METRIC_KEYS = (
 )
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _alpha_words(text: str) -> list[str]:

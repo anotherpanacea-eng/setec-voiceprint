@@ -3400,6 +3400,2368 @@
           "cat"
         ]
       }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-empty",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          "\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-whitespace",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\r\n \n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-single-line-break",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one\ntwo"
+      ],
+      "mutant": {
+        "args": [
+          "one\ntwo\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one\ntwo",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-blank-lines",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\n\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\n\ntwo\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-crlf",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\r\n\r\ntwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\r\n\r\ntwo\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-tabs-and-spaces",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\n \t\n two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\n \t\n two\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-unicode-blank-line",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one\n \n two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "one\n \n two\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-repeated-separators",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "\n\n one\n\n\n\n two\n\n"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two"
+      ],
+      "mutant": {
+        "args": [
+          "\n\n one\n\n\n\n two\n\n\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-unicode-line-separator",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "one  two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one  two"
+      ],
+      "mutant": {
+        "args": [
+          "one  two\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one  two",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-nfc-nfd-and-punctuation",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        "café 42.\n\ncafé can’t — go."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "café 42.",
+        "café can’t — go."
+      ],
+      "mutant": {
+        "args": [
+          "café 42.\n\ncafé can’t — go.\n\nA distinct paragraph."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "café 42.",
+          "café can’t — go.",
+          "A distinct paragraph."
+        ]
+      }
+    },
+    {
+      "case_id": "split_paragraphs_blanklines-invalid-argument",
+      "callable": "split_paragraphs_blanklines",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.AttributeError",
+        "message": "'NoneType' object has no attribute 'strip'"
+      },
+      "mutant": {
+        "args": [
+          42
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.AttributeError",
+          "message": "'int' object has no attribute 'strip'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-empty",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-whitespace",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " \t\r\n  uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-digits-and-underscores",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "42 １２３ _under_score"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "42 １２３ _under_score uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-hyphens",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one-two two--words --- edge-"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "one-two two--words --- edge- uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-straight-apostrophes",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "can't 'quote' rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "can't 'quote' rock'n'roll uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-curly-apostrophes",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "can’t rock’n’roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "can’t rock’n’roll uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-nfc-nfd",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "caféday caféday"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "caféday caféday uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-scripts",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "中文 Ελληνικά русский عربي"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "中文 Ελληνικά русский عربي uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-case",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "THE cat K İ I"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "THE cat K İ I uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-punctuation",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one...two;three—four/five"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "one...two;three—four/five uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-zero-width",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one​two"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "one​two uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-nul-and-lines",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        "one\u0000two\nthree\r\nfour"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "one\u0000two\nthree\r\nfour uniqueextra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-invalid-argument",
+      "callable": "count_words_unicode_hyphen",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_unicode_hyphen-keyword",
+      "callable": "count_words_unicode_hyphen",
+      "args": [],
+      "kwargs": {
+        "text": "café one-two"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "café one-two extra"
+        },
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-empty",
+      "callable": "word_tokens_alpha",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-whitespace",
+      "callable": "word_tokens_alpha",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\r\n  EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-digits",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "42 １２３ alpha2beta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "alpha",
+        "beta"
+      ],
+      "mutant": {
+        "args": [
+          "42 １２３ alpha2beta EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "alpha",
+          "beta",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-underscores",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "_under_score"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "under",
+        "score"
+      ],
+      "mutant": {
+        "args": [
+          "_under_score EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "under",
+          "score",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-hyphens",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "one-two two--words --- edge-"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two",
+        "two",
+        "words",
+        "edge"
+      ],
+      "mutant": {
+        "args": [
+          "one-two two--words --- edge- EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "two",
+          "words",
+          "edge",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-straight-apostrophes",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "can't 'quote' rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "can't",
+        "'quote'",
+        "rock'n'roll"
+      ],
+      "mutant": {
+        "args": [
+          "can't 'quote' rock'n'roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "can't",
+          "'quote'",
+          "rock'n'roll",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-curly-apostrophes",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "can’t rock’n’roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "can",
+        "t",
+        "rock",
+        "n",
+        "roll"
+      ],
+      "mutant": {
+        "args": [
+          "can’t rock’n’roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "can",
+          "t",
+          "rock",
+          "n",
+          "roll",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-apostrophe-only",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "' '' '''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "'",
+        "''",
+        "'''"
+      ],
+      "mutant": {
+        "args": [
+          "' '' ''' EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "'",
+          "''",
+          "'''",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-nfc-nfd",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "caféday caféday"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "caf",
+        "day",
+        "cafe",
+        "day"
+      ],
+      "mutant": {
+        "args": [
+          "caféday caféday EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "caf",
+          "day",
+          "cafe",
+          "day",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-unicode-case",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "İ ſ K I S K 中文 Ελληνικά"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "i",
+        "s",
+        "k"
+      ],
+      "mutant": {
+        "args": [
+          "İ ſ K I S K 中文 Ελληνικά EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "i",
+          "s",
+          "k",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-case",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "AbC THE Cat"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "abc",
+        "the",
+        "cat"
+      ],
+      "mutant": {
+        "args": [
+          "AbC THE Cat EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "abc",
+          "the",
+          "cat",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-punctuation",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "one...two;three—four/five"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two",
+        "three",
+        "four",
+        "five"
+      ],
+      "mutant": {
+        "args": [
+          "one...two;three—four/five EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "three",
+          "four",
+          "five",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-zero-and-nul",
+      "callable": "word_tokens_alpha",
+      "args": [
+        "one​two\u0000three\nFOUR"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "one",
+        "two",
+        "three",
+        "four"
+      ],
+      "mutant": {
+        "args": [
+          "one​two\u0000three\nFOUR EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "one",
+          "two",
+          "three",
+          "four",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-invalid-argument",
+      "callable": "word_tokens_alpha",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "word_tokens_alpha-keyword",
+      "callable": "word_tokens_alpha",
+      "args": [],
+      "kwargs": {
+        "text": "AbC café"
+      },
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "abc",
+        "caf"
+      ],
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "AbC café EXTRAWORD"
+        },
+        "result_path": [],
+        "expected": [
+          "abc",
+          "caf",
+          "extraword"
+        ]
+      }
+    },
+    {
+      "case_id": "count_words_unicode-empty",
+      "callable": "count_words_unicode",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode-whitespace",
+      "callable": "count_words_unicode",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " \t\r\n  EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode-digits",
+      "callable": "count_words_unicode",
+      "args": [
+        "42 １２３ alpha2beta"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "42 １２３ alpha2beta EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode-underscores",
+      "callable": "count_words_unicode",
+      "args": [
+        "_under_score _ __"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "_under_score _ __ EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode-hyphens",
+      "callable": "count_words_unicode",
+      "args": [
+        "one-two two--words --- edge-"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "one-two two--words --- edge- EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode-straight-apostrophes",
+      "callable": "count_words_unicode",
+      "args": [
+        "can't 'quote' rock'n'roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 6,
+      "mutant": {
+        "args": [
+          "can't 'quote' rock'n'roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 7
+      }
+    },
+    {
+      "case_id": "count_words_unicode-curly-apostrophes",
+      "callable": "count_words_unicode",
+      "args": [
+        "can’t rock’n’roll"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 5,
+      "mutant": {
+        "args": [
+          "can’t rock’n’roll EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 6
+      }
+    },
+    {
+      "case_id": "count_words_unicode-apostrophe-only",
+      "callable": "count_words_unicode",
+      "args": [
+        "' '' '''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "' '' ''' EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_unicode-nfc-nfd",
+      "callable": "count_words_unicode",
+      "args": [
+        "caféday caféday"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "caféday caféday EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_unicode-unicode-scripts",
+      "callable": "count_words_unicode",
+      "args": [
+        "中文 Ελληνικά русский عربي"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "中文 Ελληνικά русский عربي EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode-unicode-case",
+      "callable": "count_words_unicode",
+      "args": [
+        "İ ſ K I S K"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 6,
+      "mutant": {
+        "args": [
+          "İ ſ K I S K EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 7
+      }
+    },
+    {
+      "case_id": "count_words_unicode-zero-and-nul",
+      "callable": "count_words_unicode",
+      "args": [
+        "one​two\u0000three\nFOUR"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 4,
+      "mutant": {
+        "args": [
+          "one​two\u0000three\nFOUR EXTRAWORD"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 5
+      }
+    },
+    {
+      "case_id": "count_words_unicode-invalid-argument",
+      "callable": "count_words_unicode",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_unicode-keyword",
+      "callable": "count_words_unicode",
+      "args": [],
+      "kwargs": {
+        "text": "café one-two"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "café one-two EXTRAWORD"
+        },
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-empty",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-whitespace",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [],
+      "mutant": {
+        "args": [
+          " \t\r\n  New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-uppercase",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. Two! Three? Four."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two!",
+        "Three?",
+        "Four."
+      ],
+      "mutant": {
+        "args": [
+          "One. Two! Three? Four. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "Two!",
+          "Three?",
+          "Four.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-lowercase",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. two! three? four."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. two! three? four."
+      ],
+      "mutant": {
+        "args": [
+          "One. two! three? four. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. two! three? four.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-straight-double",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. \"Two words.\""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "\"Two words.\""
+      ],
+      "mutant": {
+        "args": [
+          "One. \"Two words.\" New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "\"Two words.\" New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-curly-double",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. “Two words.”"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "“Two words.”"
+      ],
+      "mutant": {
+        "args": [
+          "One. “Two words.” New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "“Two words.” New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-parenthesis",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. (Two words.)"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "(Two words.)"
+      ],
+      "mutant": {
+        "args": [
+          "One. (Two words.) New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "(Two words.) New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-single-quote",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. 'Two words.'"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. 'Two words.'"
+      ],
+      "mutant": {
+        "args": [
+          "One. 'Two words.' New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. 'Two words.' New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-bracket",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. [Two words.]"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. [Two words.]"
+      ],
+      "mutant": {
+        "args": [
+          "One. [Two words.] New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. [Two words.] New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-unicode-upper",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. Éclair. Αλφα. 中文。"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One. Éclair. Αλφα. 中文。"
+      ],
+      "mutant": {
+        "args": [
+          "One. Éclair. Αλφα. 中文。 New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One. Éclair. Αλφα. 中文。 New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-blankline-only",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One\n\nTwo"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One\n\nTwo"
+      ],
+      "mutant": {
+        "args": [
+          "One\n\nTwo New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One\n\nTwo New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-abbreviation",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "Dr. Smith arrived. Next came Ms. Jones."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Dr.",
+        "Smith arrived.",
+        "Next came Ms.",
+        "Jones."
+      ],
+      "mutant": {
+        "args": [
+          "Dr. Smith arrived. Next came Ms. Jones. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Dr.",
+          "Smith arrived.",
+          "Next came Ms.",
+          "Jones.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-ellipsis",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "Wait... Then go."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "Wait...",
+        "Then go."
+      ],
+      "mutant": {
+        "args": [
+          "Wait... Then go. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "Wait...",
+          "Then go.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-unicode-space",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One. Two. Three. Four."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two.",
+        "Three.",
+        "Four."
+      ],
+      "mutant": {
+        "args": [
+          "One. Two. Three. Four. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "Two.",
+          "Three.",
+          "Four.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-trailing",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "  One. Two.  "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two."
+      ],
+      "mutant": {
+        "args": [
+          "  One. Two.   New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.",
+          "Two.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-zero-nul",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        "One.​Two.\u0000Three."
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.​Two.\u0000Three."
+      ],
+      "mutant": {
+        "args": [
+          "One.​Two.\u0000Three. New sentence."
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": [
+          "One.​Two.\u0000Three.",
+          "New sentence."
+        ]
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-invalid",
+      "callable": "split_sentences_uppercase",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "expected string or bytes-like object, got 'NoneType'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "expected string or bytes-like object, got 'list'"
+        }
+      }
+    },
+    {
+      "case_id": "split_sentences_uppercase-keyword",
+      "callable": "split_sentences_uppercase",
+      "args": [],
+      "kwargs": {
+        "text": "One. Two."
+      },
+      "result_path": [],
+      "comparator": "sequence_exact",
+      "expected": [
+        "One.",
+        "Two."
+      ],
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "One. two."
+        },
+        "result_path": [],
+        "expected": [
+          "One. two."
+        ]
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-empty",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        ""
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-whitespace",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        " \t\r\n "
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          " \t\r\n  extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-ascii",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "AbC XYZ"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "AbC XYZ extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-apostrophe",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "don't ' ''"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "don't ' '' extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-hyphen",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a-b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a-b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-curly-apostrophe",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a’b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a’b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-digits-underscore",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "42x a_b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 3,
+      "mutant": {
+        "args": [
+          "42x a_b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 4
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-accent",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "café extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-decomposed",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "café"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "café extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-kelvin",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "K"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "K extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-dotted-i",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "İabc"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "İabc extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-kelvin-join",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "AKB"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 1,
+      "mutant": {
+        "args": [
+          "AKB extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 2
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-nul",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a\u0000b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a\u0000b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-unicode-space",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "a b"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [
+          "a b extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 3
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-non-latin",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        "中文"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 0,
+      "mutant": {
+        "args": [
+          "中文 extra"
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-invalid",
+      "callable": "count_words_alpha_lower",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.AttributeError",
+        "message": "'NoneType' object has no attribute 'lower'"
+      },
+      "mutant": {
+        "args": [
+          []
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.AttributeError",
+          "message": "'list' object has no attribute 'lower'"
+        }
+      }
+    },
+    {
+      "case_id": "count_words_alpha_lower-keyword",
+      "callable": "count_words_alpha_lower",
+      "args": [],
+      "kwargs": {
+        "text": "İabc"
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": 2,
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "text": "iabc"
+        },
+        "result_path": [],
+        "expected": 1
+      }
+    },
+    {
+      "case_id": "number_paragraphs-empty",
+      "callable": "number_paragraphs",
+      "args": [
+        []
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "",
+      "mutant": {
+        "args": [
+          [
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-one-empty",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          ""
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] ",
+      "mutant": {
+        "args": [
+          [
+            "",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] \n\n[1] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-two-empty",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "",
+          ""
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] \n\n[1] ",
+      "mutant": {
+        "args": [
+          [
+            "",
+            "",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] \n\n[1] \n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-ascii",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "One.",
+          "Two!"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] One.\n\n[1] Two!",
+      "mutant": {
+        "args": [
+          [
+            "One.",
+            "Two!",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] One.\n\n[1] Two!\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-whitespace",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          " \t ",
+          "\r\n"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0]  \t \n\n[1] \r\n",
+      "mutant": {
+        "args": [
+          [
+            " \t ",
+            "\r\n",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0]  \t \n\n[1] \r\n\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-multiline",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "one\n\ntwo",
+          "three\rfour"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] one\n\ntwo\n\n[1] three\rfour",
+      "mutant": {
+        "args": [
+          [
+            "one\n\ntwo",
+            "three\rfour",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] one\n\ntwo\n\n[1] three\rfour\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-brackets",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "[99] literal",
+          "[0] repeated"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] [99] literal\n\n[1] [0] repeated",
+      "mutant": {
+        "args": [
+          [
+            "[99] literal",
+            "[0] repeated",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] [99] literal\n\n[1] [0] repeated\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-unicode",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "café",
+          "café",
+          "中文"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] café\n\n[1] café\n\n[2] 中文",
+      "mutant": {
+        "args": [
+          [
+            "café",
+            "café",
+            "中文",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] café\n\n[1] café\n\n[2] 中文\n\n[3] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-controls",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          "a\u0000b",
+          " ​"
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] a\u0000b\n\n[1]  ​",
+      "mutant": {
+        "args": [
+          [
+            "a\u0000b",
+            " ​",
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] a\u0000b\n\n[1]  ​\n\n[2] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-nonstring-members",
+      "callable": "number_paragraphs",
+      "args": [
+        [
+          null,
+          42,
+          true,
+          {
+            "x": "y"
+          }
+        ]
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] None\n\n[1] 42\n\n[2] True\n\n[3] {'x': 'y'}",
+      "mutant": {
+        "args": [
+          [
+            null,
+            42,
+            true,
+            {
+              "x": "y"
+            },
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] None\n\n[1] 42\n\n[2] True\n\n[3] {'x': 'y'}\n\n[4] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-string-iterable",
+      "callable": "number_paragraphs",
+      "args": [
+        "ab"
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] a\n\n[1] b",
+      "mutant": {
+        "args": [
+          [
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-mapping-iterable",
+      "callable": "number_paragraphs",
+      "args": [
+        {
+          "first": 1,
+          "second": 2
+        }
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] first\n\n[1] second",
+      "mutant": {
+        "args": [
+          [
+            "extra"
+          ]
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": "[0] extra"
+      }
+    },
+    {
+      "case_id": "number_paragraphs-invalid",
+      "callable": "number_paragraphs",
+      "args": [
+        null
+      ],
+      "kwargs": {},
+      "result_path": [],
+      "comparator": "exception_exact",
+      "expected": {
+        "type": "builtins.TypeError",
+        "message": "'NoneType' object is not iterable"
+      },
+      "mutant": {
+        "args": [
+          42
+        ],
+        "kwargs": {},
+        "result_path": [],
+        "expected": {
+          "type": "builtins.TypeError",
+          "message": "'int' object is not iterable"
+        }
+      }
+    },
+    {
+      "case_id": "number_paragraphs-keyword",
+      "callable": "number_paragraphs",
+      "args": [],
+      "kwargs": {
+        "paragraphs": [
+          "",
+          "second"
+        ]
+      },
+      "result_path": [],
+      "comparator": "json_exact",
+      "expected": "[0] \n\n[1] second",
+      "mutant": {
+        "args": [],
+        "kwargs": {
+          "paragraphs": [
+            "second"
+          ]
+        },
+        "result_path": [],
+        "expected": "[0] second"
+      }
     }
   ]
 }

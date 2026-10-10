@@ -112,8 +112,7 @@ def _load_dir(root: Path, suffixes=(".txt", ".md")) -> list[tuple[str, str]]:
 
 # ---- M1 local-stylometric lens (stdlib, model-free) --------------------------
 
-def _word_count(text: str) -> int:
-    return len(word_tokens(text))
+from setec.core.textprims import count_words_alpha as _word_count
 
 
 def build_vocabulary(texts: list[str]) -> dict[str, Any]:

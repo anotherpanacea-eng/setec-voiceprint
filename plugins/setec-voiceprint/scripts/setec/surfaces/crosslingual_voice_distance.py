@@ -44,14 +44,12 @@ TOOL_NAME = "crosslingual_voice_distance"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 500
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
 _WS_RE = re.compile(r"\s+")
 _SENT_SPLIT_RE = re.compile(r"[.!?。！？…।]+")
 _PUNCT_SET = ".,;:!?—–-…\"'()[]«»¡¿。、！？"
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _normalize(text: str) -> str:

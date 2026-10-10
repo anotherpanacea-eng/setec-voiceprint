@@ -52,7 +52,6 @@ TOOL_NAME = "reference_ecology_audit"
 SCRIPT_VERSION = "1.0"
 LENGTH_FLOOR_WORDS = 300
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
 _PAREN_RE = re.compile(r"\(([^)]*)\)")
 _YEAR_RE = re.compile(r"\b(1[6-9]\d\d|20\d\d)\b")
 _UPPER_RE = re.compile(r"[A-Z]")
@@ -72,8 +71,7 @@ _BARE_URL_RE = re.compile(r"(?<!\()\bhttps?://[^\s)]+")
 _NETLOC_RE = re.compile(r"https?://([^/\s)]+)", re.IGNORECASE)
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _per_1k(n: int, words: int) -> float:
