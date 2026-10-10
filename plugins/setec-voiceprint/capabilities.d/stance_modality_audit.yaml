@@ -2,31 +2,48 @@ entries:
 - id: stance_modality_audit
   script_path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
   surface: voice_coherence
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - argmove_profile
-  family: TODO
-  purpose: typed stance / modality / epistemic posture.
+  family: stance-modality
+  purpose: Typed stance and modality audit. Counts deontic and epistemic modals, hedges, boosters,
+    evidentials, first-person stance and refusal markers per 1,000 words, with a provisional
+    band over posture-shift signals (hedge-booster oscillation, booster dominance, refusal absence,
+    first-person collapse) and optional per-category baseline z-scores.
   use_when:
-  - TODO
+  - checking whether editing shifted the writer's epistemic posture (more boosters, fewer hedges
+    or refusals)
+  - comparing a draft's stance profile against the writer's own baseline (--baseline-dir)
   do_not_use_when:
-  - TODO
+  - the register legitimately requires a posture (deontic policy prose, evidential academic
+    prose); compare against a register-matched baseline
+  - you want an AI/human verdict; marker lists and bands are heuristic
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
+      --allow-non-prose, --include-baseline-filenames (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown stance/modality report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only (lexicon matching); no spaCy, no API costs
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Stance posture against a personal baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/stance_modality_audit.py draft.md --baseline-dir
+      baseline/ --json
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
   _seeded_at: '2026-05-28'

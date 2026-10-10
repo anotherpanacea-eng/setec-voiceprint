@@ -2,31 +2,49 @@ entries:
 - id: construction_signature_audit
   script_path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
   surface: voice_coherence
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers: []
-  family: TODO
-  purpose: interpretable syntactic-construction density audit (paired-release schedule
-    Release 8, Surfaces Tier 3).
+  family: syntactic-constructions
+  purpose: Interpretable syntactic-construction density audit. Names the constructions behind
+    an opaque POS-bigram KL shift (clefts, pseudo-clefts, existential there, extraposition,
+    correlatives, concessive and participial openers, fronted adverbials, parenthetical insertions;
+    plus agented and agentless passives and stacked prepositional phrases when spaCy is available)
+    and reports each one's density per 1,000 words, with top hits and optional baseline comparison.
   use_when:
-  - TODO
+  - variance_audit's POS-bigram KL moved and you want the shift in craft terms (which constructions)
+  - comparing a draft's construction habits against the writer's own baseline (--baseline-dir)
+  - checking whether a revision pass multiplied clefts, fronted adverbials or passives
   do_not_use_when:
-  - TODO
+  - you need the passive or stacked-PP constructions without spaCy (those report available false)
+  - you want an AI/human verdict; densities are descriptive and the regex detectors are heuristic
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - target
+    optional:
+    - optional flags --baseline-dir, --top, --construction, --keep-quotes, --include-baseline-filenames,
+      --json, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown construction-density report (stdout or --out)
+    - JSON envelope with results.constructions.<key>.density_per_1k (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: regex detectors are stdlib; the three spaCy-enhanced constructions need en_core_web_sm
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Construction densities against a personal baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/construction_signature_audit.py draft.md --baseline-dir
+      baseline/ --json
+  references:
+  - plugins/setec-voiceprint/capabilities.d/aic_pattern_audit.yaml
   _seeded_at: '2026-05-28'

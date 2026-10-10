@@ -2,33 +2,52 @@ entries:
 - id: semantic_trajectory_audit
   script_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
   surface: voice_coherence
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - cosine_explanation
   - voice_fingerprint
-  family: TODO
-  purpose: paired-release Release 12.
+  family: semantic-trajectory
+  purpose: Semantic trajectory of a draft. Embeds paragraph, sentence or fixed-token windows
+    with a sentence-transformers model and reports the trajectory of adjacent cosine similarities
+    (tightness, burstiness, first-to-last drift and slope).
   use_when:
-  - TODO
+  - asking how the thread of meaning moves across a draft at paragraph scale
   do_not_use_when:
-  - TODO
+  - sentence-transformers (and torch) cannot be installed
+  - you need the --baseline prior-run comparison; it reads a top-level trajectory
+    key that the saved JSON envelope nests under results, so it comes back empty
+  - you want sentence-level cohesion for smoothing diagnosis (variance_audit tier 3 covers that)
+  - you want an authorship verdict
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - source
+    optional:
+    - optional flags --model, --revision, --dtype, --device, --window-strategy, --window-size,
+      --baseline, --json, --out, --markdown-out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - JSON trajectory report (stdout or --out)
+    - Markdown report (--markdown-out)
   compute:
-    tier: core
-    cost_note: TODO
+    tier: optional
+    cost_note: one sentence-transformers encoder pass over all windows; model downloads on first
+      use; CPU works, GPU faster
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python:
+    - sentence_transformers
+    python_optional:
     - numpy
-  examples: []
-  references: []
+  examples:
+  - description: Paragraph-level semantic trajectory with a Markdown report
+    cmd: python3 plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py draft.md --window-strategy
+      paragraph --markdown-out trajectory.md
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
   _seeded_at: '2026-05-28'

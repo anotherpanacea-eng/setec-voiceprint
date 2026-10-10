@@ -1,40 +1,61 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib function-word distance; one feature pass per text and baseline file",
     "length_floor_words": null,
     "tier": "core"
   },
   "consumers": [],
   "dependencies": {
-    "python": []
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you lack trustworthy controls; mislabeled controls invert the frame",
+    "the baseline contains the questioned text or a control; overlapping entries are dropped and an emptied baseline is refused",
+    "you want a verdict that the questioned text is authentic or smoothed; the output only says which pole is nearer"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/controls_audit.py --questioned draft.md --negative-control early_draft.md --positive-control ai_edited.md --baseline-dir baseline/",
+      "description": "Questioned draft between an authentic and a smoothed control"
+    }
+  ],
+  "family": "voice-distance-controls",
   "handoff": "none",
   "id": "controls_audit",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --negative-control, --positive-control, --use, --split, --register, --persona, --ai-status, --strip-rules, --strip-aggressive, --strip-masking, --allow-non-prose, --json, --out (see --help)"
+    ],
+    "required": [
+      "--questioned",
+      "a baseline via --baseline-dir or --manifest"
+    ],
+    "target": "questioned text plus negative and/or positive control files and a baseline (--baseline-dir or --manifest)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown controls report (stdout or --out)",
+      "JSON envelope (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "negative + positive controls for voice-distance comparison.",
-  "references": [],
+  "purpose": "Negative and positive controls for voice distance. Computes the function-word distance to the same baseline for the questioned text, a known-authentic negative control and a known-smoothed positive control, and reports the three side by side with which pole the questioned text sits nearer. A comparison frame, not a classifier.",
+  "references": [
+    "plugins/setec-voiceprint/capabilities.d/voice_distance.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/controls_audit.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "voice_coherence",
   "use_when": [
-    "TODO"
+    "you have an untouched earlier text and a known AI-edited or heavily copyedited text by the same writer and want a readable comparison frame",
+    "explaining a voice_distance number to a non-technical reader"
   ]
 }

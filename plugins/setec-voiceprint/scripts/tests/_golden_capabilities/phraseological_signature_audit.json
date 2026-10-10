@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib only (n-gram counting and curated templates); no spaCy, no API costs",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -10,31 +10,47 @@
     "python": []
   },
   "do_not_use_when": [
-    "TODO"
+    "you have no baseline; lexical-bundle and hapax-survival categories need --baseline-dir",
+    "you want an authorship verdict; survival rates are descriptive"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/phraseological_signature_audit.py draft.md --baseline-dir baseline/ --json",
+      "description": "Phrase-frame survival against a personal baseline"
+    }
+  ],
+  "family": "phraseology",
   "handoff": "none",
   "id": "phraseological_signature_audit",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --baseline-dir (needed for lexical_bundles and hapax_phrase_survival), --category, --keep-quotes, --bundle-min-count, --hapax-n, --json, --out (see --help)"
+    ],
+    "required": [
+      "target"
+    ],
+    "target": "one .txt/.md target plus a baseline directory of the writer's prose"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown phraseology report (stdout or --out)",
+      "JSON envelope (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "phrase-frame mining over the writer's reusable language frames (paired-release schedule Release 11, Surfaces Tier 3).",
-  "references": [],
+  "purpose": "Phrase-frame mining over the writer's reusable language frames. Reports lexical bundles, slot frames (\"not just X but Y\"), curated idioms, hapax-phrase survival and stance/intensifier frames: per-frame counts, baseline-frame survival rate in the target, and density per 1,000 target words. The frame-level complement to idiolect_detector's word-level keyness.",
+  "references": [
+    "plugins/setec-voiceprint/capabilities.d/idiolect_detector.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/phraseological_signature_audit.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "voice_coherence",
   "use_when": [
-    "TODO"
+    "checking whether a revised draft kept the writer's recurring phrase frames",
+    "pairing with idiolect_detector for a phrase-level voice-preservation read"
   ]
 }
