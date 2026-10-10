@@ -3,7 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
   surface: smoothing_diagnosis_calibration
   status: todo
-  todo_reason: "Maintainer tool, hidden under the 2026-10-10 owner ruling (user-facing tools only): calibration_survey.py runs calibrate_thresholds over every registry signal so the maintainer can pick which signal earns the first committed framework threshold (its docstring and scripts/calibration/PROVENANCE.md); it sets framework defaults rather than serving a writer's run. Users reach sharded calibration through shard_runner."
+  todo_reason: "Maintainer tool, hidden under the 2026-10-10 owner ruling (user-facing tools only): calibration_survey.py runs calibrate_thresholds over every registry signal and writes one comparison table plus a JSON survey ledger for the maintainer to review against the selection criteria in scripts/calibration/PROVENANCE.md. It does not pick a signal or change shipped thresholds; PROVENANCE.md keeps COMPRESSION_HEURISTICS audit-only, with calibrated thresholds applied only in a user-local fork. Users reach sharded runs through shard_runner."
   handoff: none
   # consumers: shard_runner's named default `task`; also surfaced by skill: setup.
   consumers:

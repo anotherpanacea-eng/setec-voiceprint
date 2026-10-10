@@ -2,7 +2,8 @@ entries:
 - id: calibration_drift_monitor
   script_path: plugins/setec-voiceprint/scripts/calibration_drift_monitor.py
   surface: validation
-  status: structural_only
+  status: todo
+  todo_reason: "Blocked by a reproducibility bug: take_snapshot() stores a failed benchmark measurement as {\"error\": ...}, and detect_drift() then compares the absent signals and compression dictionaries without checking for that error, so a failure present at both snapshot and check is reported as no drift. Curated content is kept below; promote once errored benchmarks are refused or reported as unknown."
   handoff: none
   consumers: []
   family: reproducibility

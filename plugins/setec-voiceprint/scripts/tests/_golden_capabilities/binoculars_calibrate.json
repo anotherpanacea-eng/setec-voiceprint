@@ -53,7 +53,8 @@
     "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/binoculars_calibrate.py",
-  "status": "structural_only",
+  "status": "todo",
+  "todo_reason": "Blocked by the AGENTS.md long-running-surfaces rule: binoculars_calibrate.py runs two causal-LM passes (scorer and observer) per manifest entry with no sharding, progress output, checkpoint or --resume, so a host hang loses the whole calibration run. Curated content is kept below; promote once the run is recoverable, visible and continuable.",
   "surface": "calibration",
   "use_when": [
     "you run binoculars_audit and want thresholds calibrated on your own labeled corpus instead of none",

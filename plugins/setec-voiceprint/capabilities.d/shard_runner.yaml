@@ -27,9 +27,9 @@ entries:
     required:
     - subcommand (shard, work, aggregate, status, verify, pause-all, terminate-all, kill-all,
       sweep-stale, resolve-conflict)
-    - --run-id; shard also needs --task and --source-manifest
+    - --run-id; shard also needs --source-manifest
     optional:
-    - optional flags --base-dir, --shard-size, --shard-count, --stratify, --shuffle-seed, --workers,
+    - optional flags --task (shard defaults to calibration_survey), --base-dir, --shard-size, --shard-count, --stratify, --shuffle-seed, --workers,
       --time-window, --fpr-target, --no-sync-state (see each subcommand's --help)
   outputs:
     schema_version: '1.0'

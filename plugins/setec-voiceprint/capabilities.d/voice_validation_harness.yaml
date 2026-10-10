@@ -2,7 +2,8 @@ entries:
 - id: voice_validation_harness
   script_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
   surface: voice_coherence
-  status: heuristic
+  status: todo
+  todo_reason: "Blocked by the AGENTS.md long-running-surfaces rule: voice_validation_harness.py scores every unordered document pair (quadratic in documents) and then bootstrap-resamples, with no progress output, checkpoint or --resume, so a large manifest can run for many minutes and a termination loses all work. Curated content is kept below; promote once the run is recoverable, visible and continuable."
   handoff: none
   consumers: []
   family: validation
@@ -22,7 +23,7 @@ entries:
     - --manifest
     optional:
     - optional flags --use, --label-by, --bootstrap-method, --bootstrap-resamples, --bootstrap-confidence,
-      --bootstrap-seed, --json, --md (see --help)
+      --bootstrap-seed, --fpr-target, --json, --md (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
