@@ -24,3 +24,8 @@ plugins/setec-voiceprint/scripts/setec/surfaces/register_classifier.py text eol=
 # Keep Git from rewriting either text or binary content at checkout or check-in.
 plugins/setec-voiceprint/scripts/setec/consumer_client.py -text
 plugins/setec-voiceprint/references/contract_fixtures/** -text
+
+# The frozen tokenizer data is strict canonical JSON whose raw bytes are bound
+# by the passage authority profile. Preserve the committed bytes on checkout;
+# autocrlf conversion would make the strict loader refuse the unchanged table.
+plugins/setec-voiceprint/scripts/passage_tokenizer_data_v1.json -text
