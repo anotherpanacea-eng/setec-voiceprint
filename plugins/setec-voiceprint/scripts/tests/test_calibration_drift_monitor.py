@@ -624,6 +624,167 @@ class TestCli:
         assert rc == 3
 
 
+def _numeric_snapshot(signals):
+    return {"benchmarks": {"invented": {"signals": signals}}}
+
+
+_UNUSABLE_NUMBERS = [
+    pytest.param(float("nan"), id="nan"),
+    pytest.param(float("inf"), id="positive-infinity"),
+    pytest.param(float("-inf"), id="negative-infinity"),
+    pytest.param(True, id="true"),
+    pytest.param(False, id="false"),
+    pytest.param("1.0", id="string"),
+    pytest.param(10 ** 400, id="unrepresentable-integer"),
+]
+
+
+class TestFiniteComparisons:
+    @pytest.mark.parametrize("value", _UNUSABLE_NUMBERS)
+    @pytest.mark.parametrize("location", ["snapshot", "current", "added", "removed"])
+    def test_unusable_signal_cannot_be_reported(self, value, location):
+        snap = {"signal": value if location in {"snapshot", "removed"} else 1.0}
+        curr = {"signal": value if location in {"current", "added"} else 1.0}
+        if location == "added":
+            snap = {}
+        elif location == "removed":
+            curr = {}
+        with pytest.raises(ValueError, match="signal must be a finite real number"):
+            cdm.detect_drift(snapshot=_numeric_snapshot(snap), current=_numeric_snapshot(curr))
+
+    @pytest.mark.parametrize("value", _UNUSABLE_NUMBERS + [pytest.param(-0.1, id="negative")])
+    @pytest.mark.parametrize("kind", ["relative", "unused-absolute"])
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_invalid_tolerance_cannot_license_stability(self, value, kind, empty):
+        options = (
+            {"relative_threshold": value}
+            if kind == "relative" else {"absolute_thresholds": {"unused": value}}
+        )
+        snapshot = {} if empty else _numeric_snapshot({"signal": 1.0})
+        with pytest.raises(ValueError, match="threshold must be"):
+            cdm.detect_drift(snapshot=snapshot, current=snapshot, **options)
+
+    @pytest.mark.parametrize("snapshot,current,options,field", [
+        (-1e308, 1e308, {}, "Signal delta"),
+        (1e308, 1e307, {"relative_threshold": 2.0}, "Relative noise floor"),
+        (1e-8, 1e308, {}, "Relative signal change"),
+    ])
+    def test_finite_inputs_with_overflow_cannot_be_reported(self, snapshot, current, options, field):
+        with pytest.raises(ValueError, match=field):
+            cdm.detect_drift(
+                snapshot=_numeric_snapshot({"signal": snapshot}),
+                current=_numeric_snapshot({"signal": current}),
+                **options,
+            )
+
+    def test_none_absence_and_numeric_types_are_preserved(self):
+        diffs = cdm._compare_signals(
+            {"both": None, "added": None, "removed": 2, "paired": 1},
+            {"both": None, "added": 3.0, "removed": None, "paired": 1.0},
+        )
+        assert "both" not in diffs
+        assert diffs["added"] == {"snapshot": None, "current": 3.0, "verdict": "added"}
+        assert diffs["removed"] == {"snapshot": 2, "current": None, "verdict": "removed"}
+        assert type(diffs["paired"]["snapshot"]) is int
+        assert type(diffs["paired"]["current"]) is float
+        assert diffs["paired"]["verdict"] == "stable"
+        json.dumps(diffs, allow_nan=False)
+
+    def test_empty_absolute_mapping_keeps_default_floor_and_ties(self):
+        signal = "sentence_length.burstiness_B"
+        # A zero snapshot eliminates the relative floor; exact absolute ties are stable.
+        diffs = cdm._compare_signals({signal: 0}, {signal: 0.05}, absolute_thresholds={})
+        assert diffs[signal]["noise_floor"] == 0.05
+        assert diffs[signal]["verdict"] == "stable"
+        assert cdm._compare_signals({"signal": 1}, {"signal": 2}, relative_threshold=1)["signal"]["verdict"] == "stable"
+
+
+class TestFiniteCheckCli:
+    @staticmethod
+    def forbid_measurement(*args, **kwargs):
+        raise AssertionError("Invalid numeric input reached benchmark measurement")
+
+    @pytest.mark.parametrize("threshold", ["nan", "inf", "-inf", "1e999", "-0.1"])
+    def test_invalid_relative_threshold_refuses_before_snapshot_or_measurement(self, tmp_path, monkeypatch, capsys, threshold):
+        assert cdm.HAS_VARIANCE_AUDIT
+        monkeypatch.setattr(cdm, "take_snapshot", self.forbid_measurement)
+        monkeypatch.setattr(cdm, "_read_snapshot", self.forbid_measurement)
+        output = tmp_path / "report.json"
+        output.write_bytes(b"previous report\r\n")
+        assert cdm.main([
+            "check", "--benchmark-dir", str(tmp_path),
+            "--snapshot", str(tmp_path / "not-read.json"),
+            "--relative-threshold=" + threshold, "--json", "--out", str(output),
+        ]) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("--relative-threshold:")
+        captured.err.encode("ascii")
+        assert output.read_bytes() == b"previous report\r\n"
+
+    @pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e999", "true", '"1.0"', "1" + "0" * 400])
+    def test_invalid_snapshot_number_refuses_before_measurement(self, tmp_path, monkeypatch, capsys, token):
+        assert cdm.HAS_VARIANCE_AUDIT
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text('{"benchmarks":{"invented":{"signals":{"signal":' + token + '}}}}', encoding="utf-8")
+        monkeypatch.setattr(cdm, "take_snapshot", self.forbid_measurement)
+        output = tmp_path / "report.json"
+        assert cdm.main([
+            "check", "--benchmark-dir", str(tmp_path), "--snapshot", str(snapshot),
+            "--json", "--out", str(output),
+        ]) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("--snapshot:")
+        captured.err.encode("ascii")
+        assert not output.exists()
+
+    @pytest.mark.parametrize("value,current,threshold", [
+        (-1e308, 1e308, "0.1"),
+        (1e308, 1e307, "2.0"),
+        (1e-8, 1e308, "0.1"),
+    ])
+    @pytest.mark.parametrize("destination", ["stdout", "new", "existing"])
+    def test_derived_overflow_never_publishes_a_report(self, tmp_path, monkeypatch, capsys, value, current, threshold, destination):
+        assert cdm.HAS_VARIANCE_AUDIT
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps(_numeric_snapshot({"signal": value})), encoding="utf-8")
+        calls = []
+        def measure(*args, **kwargs):
+            calls.append(True)
+            return _numeric_snapshot({"signal": current})
+        monkeypatch.setattr(cdm, "take_snapshot", measure)
+        output = tmp_path / "report.json"
+        if destination == "existing":
+            output.write_bytes(b"previous report\r\n")
+        args = ["check", "--benchmark-dir", str(tmp_path), "--snapshot", str(snapshot), "--json", "--relative-threshold", threshold]
+        if destination != "stdout":
+            args += ["--out", str(output)]
+        assert cdm.main(args) == 2
+        assert calls == [True]
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("Signal comparison:")
+        if destination == "existing":
+            assert output.read_bytes() == b"previous report\r\n"
+        else:
+            assert not output.exists()
+
+    @pytest.mark.parametrize("current,exit_on_drift,expected", [(1.05, False, 0), (100.0, False, 0), (100.0, True, 3)])
+    def test_valid_floats_still_produce_strict_reports(self, tmp_path, monkeypatch, capsys, current, exit_on_drift, expected):
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps(_numeric_snapshot({"signal": 1.0})), encoding="utf-8")
+        monkeypatch.setattr(cdm, "take_snapshot", lambda *args, **kwargs: _numeric_snapshot({"signal": current}))
+        args = ["check", "--benchmark-dir", str(tmp_path), "--snapshot", str(snapshot), "--json"]
+        if exit_on_drift:
+            args += ["--exit-nonzero-on-drift"]
+        assert cdm.main(args) == expected
+        report = json.loads(capsys.readouterr().out)
+        assert report["infrastructure_drift_detected"] is (current == 100.0)
+        json.dumps(report, allow_nan=False)
+        assert type(report["per_benchmark"]["invented"]["signal_diffs"]["signal"]["snapshot"]) is float
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
