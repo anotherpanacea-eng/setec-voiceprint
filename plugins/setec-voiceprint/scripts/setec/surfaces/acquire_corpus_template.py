@@ -18,7 +18,10 @@ and worked examples. Read ``scripts/acquire_blog.py`` and
 
 How to use:
 
-  1. Copy this file: ``cp acquire_corpus_template.py acquire_<source>.py``
+  1. Copy this file, the implementation under ``scripts/setec/surfaces/``
+     (the flat ``scripts/acquire_corpus_template.py`` is only a
+     compatibility launcher), from the plugin root:
+     ``cp scripts/setec/surfaces/acquire_corpus_template.py scripts/acquire_<source>.py``
   2. Replace ``SOURCE_NAME`` and ``TOOL_NAME`` constants below.
   3. Fill the four ``TODO(LLM)`` markers — typically with help from
      an LLM that has read this file plus the pattern doc.
