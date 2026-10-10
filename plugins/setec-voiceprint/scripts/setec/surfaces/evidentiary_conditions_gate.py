@@ -132,7 +132,9 @@ def _read_target_length(
     if target_text:
         return len(target_text.split())
     for src in (variance, paragraph):
-        if src:
+        # An unavailable audit's word count (legacy top level or the
+        # envelope's target.words) is not evidence of target length.
+        if src and src.get("available") is not False:
             n = (
                 (src.get("audit") or {}).get("summary", {}).get("n_words")
                 or src.get("n_words")
@@ -256,6 +258,8 @@ def _read_impostor_pool_size(
     gi: dict[str, Any] | None,
 ) -> int:
     if not gi:
+        return 0
+    if gi.get("available") is False:
         return 0
     n = gi.get("n_impostors")
     return int(n) if isinstance(n, int) else 0

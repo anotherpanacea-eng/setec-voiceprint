@@ -181,3 +181,63 @@ def test_legacy_bare_payload_passes_through_unchanged():
     )
     assert unwrap_envelope(bare) is bare
     assert unwrap_envelope(None) is None
+
+
+# ---------- Explicitly unavailable audits yield no advice ----------
+
+
+def _restoration_inputs() -> dict[str, dict]:
+    def load(name: str) -> dict:
+        return json.loads((_FIXTURES / name).read_text("utf-8"))
+
+    return {
+        "variance": load("synthetic_variance.json"),
+        "bigram": load("synthetic_bigram_diff.json"),
+        "voice": {"overall_distance": 1.4, "band": "far"},
+        "idiolect": load("synthetic_idiolect.json"),
+        "aic": {"patterns": [
+            {"name": "negation_hedge", "flagged": True, "density": 3.2},
+        ]},
+    }
+
+
+def _build_one(name: str, payload: dict) -> list:
+    kwargs = {k: None for k in ("variance", "bigram", "voice",
+                                "idiolect", "aic")}
+    kwargs[name] = payload
+    return rp.build_packets(
+        **kwargs, max_targets=5, targetability_filter=None,
+    )
+
+
+def test_restoration_packet_skips_unavailable_inputs():
+    """Codex on #717: after unwrapping, an envelope marked
+    ``available: false`` that still carries partial results must not
+    produce revision advice, on any of the five input paths."""
+    for name, bare in _restoration_inputs().items():
+        assert _build_one(name, bare), f"{name} fixture yields packets"
+        envelope = {
+            "schema_version": "1.0", "available": False,
+            "results": bare,
+        }
+        assert _build_one(name, envelope) == [], name
+        assert _build_one(name, dict(bare, available=False)) == [], name
+
+
+def test_evidentiary_gate_ignores_unavailable_word_count_and_pool():
+    audit = variance_audit.audit_text(_TEXT, do_tier2=False)
+    variance_env = variance_audit.build_audit_payload(
+        {"audit": audit}, target_path="t.txt",
+    )
+    assert variance_env["target"]["words"] > 0
+    available = ecg.gate(variance=variance_env)
+    assert available["indicators"]["target_length"] > 0
+
+    variance_env["available"] = False
+    report = ecg.gate(
+        variance=variance_env,
+        gi={"schema_version": "1.0", "available": False,
+            "results": {"n_impostors": 12}},
+    )
+    assert report["indicators"]["target_length"] == 0
+    assert report["indicators"]["impostor_pool_size"] == 0

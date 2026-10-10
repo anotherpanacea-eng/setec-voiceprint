@@ -904,6 +904,13 @@ def packets_from_aic(aic: dict[str, Any]) -> list[Packet]:
 # --------------- Top-level packet assembly ------------------
 
 
+def _usable(audit: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return ``None`` for an audit flagged ``available: false``."""
+    if isinstance(audit, dict) and audit.get("available") is False:
+        return None
+    return audit
+
+
 def build_packets(
     *,
     variance: dict[str, Any] | None,
@@ -916,11 +923,15 @@ def build_packets(
 ) -> list[Packet]:
     # Accept each producer's schema 1.0 ``--json`` envelope as well as
     # the legacy bare payload; the readers below look at top-level keys.
-    variance = unwrap_envelope(variance)
-    bigram = unwrap_envelope(bigram)
-    voice = unwrap_envelope(voice)
-    idiolect = unwrap_envelope(idiolect)
-    aic = unwrap_envelope(aic)
+    # An audit that explicitly reports ``available: false`` produced
+    # no evidence, even if it still carries partial results; never
+    # build revision advice from it. Legacy payloads without the
+    # flag still pass.
+    variance = _usable(unwrap_envelope(variance))
+    bigram = _usable(unwrap_envelope(bigram))
+    voice = _usable(unwrap_envelope(voice))
+    idiolect = _usable(unwrap_envelope(idiolect))
+    aic = _usable(unwrap_envelope(aic))
     all_packets: list[Packet] = []
     if variance:
         all_packets.extend(packets_from_variance(variance))
