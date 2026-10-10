@@ -37,6 +37,8 @@ from pathlib import Path
 
 import pytest  # type: ignore
 
+from conftest import write_clean_pool_manifest, write_marked_pool_manifest
+
 SCRIPTS = Path(__file__).resolve().parents[1]
 
 import cross_doc_novelty_profile as cdnp  # type: ignore  # noqa: E402
@@ -876,25 +878,12 @@ _GUARD_TEXTS = [
 import pool_guard  # type: ignore  # noqa: E402
 
 
-def _marked_manifest_cdnp(tmp_path, name="marked.jsonl"):
-    p = tmp_path / name
-    rows = [
-        {"id": f"doc{i}#p0000", "text": _GUARD_TEXTS[i % len(_GUARD_TEXTS)],
-          "passage_dedup": {"source_doc_id": f"doc{i}", "ordinal": 0}}
-        for i in range(12)
-    ]
-    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
-    return p
+def _marked_manifest_cdnp(tmp_path, name='marked.jsonl'):
+    return write_marked_pool_manifest(tmp_path, _GUARD_TEXTS, name, json.dumps)
 
 
-def _clean_manifest_cdnp(tmp_path, name="clean.jsonl"):
-    p = tmp_path / name
-    rows = [
-        {"id": f"doc{i}", "text": _GUARD_TEXTS[i % len(_GUARD_TEXTS)]}
-        for i in range(12)
-    ]
-    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
-    return p
+def _clean_manifest_cdnp(tmp_path, name='clean.jsonl'):
+    return write_clean_pool_manifest(tmp_path, _GUARD_TEXTS, name, json.dumps)
 
 
 def _guard_target(tmp_path):
