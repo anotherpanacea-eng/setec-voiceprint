@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -230,36 +231,62 @@ def test_mimicry_fixture_pairings_are_registered():
 
 # ---- (c) fake_setec.py -------------------------------------------------
 
-def _run_fake(*args: str) -> subprocess.CompletedProcess:
+def _run_fake(*args: str, encoding: str | None = None) -> subprocess.CompletedProcess:
+    env = os.environ.copy()
+    if encoding is not None:
+        env.update(PYTHONUTF8="0", PYTHONIOENCODING=encoding)
     return subprocess.run(
-        [sys.executable, str(FIXTURES_DIR / "fake_setec.py"), *args],
-        capture_output=True, text=True,
+        [sys.executable, "-S", str(FIXTURES_DIR / "fake_setec.py"), *args],
+        capture_output=True, env=env,
     )
 
 
 def test_fake_setec_list_enumerates_surfaces():
     proc = _run_fake("--list")
     assert proc.returncode == 0
-    listed = proc.stdout.split()
+    listed = proc.stdout.decode("ascii").split()
     assert listed == ALL_SURFACES
 
 
-@pytest.mark.parametrize("surface", ["variance_audit", "narrative_decision_audit"])
-def test_fake_setec_emits_golden_json(surface):
-    """fake_setec output is parseable JSON byte-identical to the golden."""
-    proc = _run_fake(surface)
-    assert proc.returncode == 0
-    parsed = json.loads(proc.stdout)  # parseable
-    committed = json.loads((FIXTURES_DIR / f"{surface}.json").read_text())
-    assert parsed == committed
-    # Byte-identical to the committed golden (both sort_keys, indent 2).
-    assert proc.stdout == (FIXTURES_DIR / f"{surface}.json").read_text()
+@pytest.mark.parametrize("encoding", ["utf-8:strict", "cp1252:strict"])
+@pytest.mark.parametrize("surface", ALL_SURFACES)
+def test_fake_setec_emits_golden_json(surface, encoding):
+    """Consumer pipes receive the golden's UTF-8 bytes, including LF."""
+    proc = _run_fake(surface, encoding=encoding)
+    assert proc.returncode == 0, proc.stderr
+    committed = (FIXTURES_DIR / f"{surface}.json").read_bytes()
+    assert json.loads(proc.stdout.decode("utf-8")) == json.loads(committed.decode("utf-8"))
+    assert proc.stdout == committed
 
 
 def test_fake_setec_unknown_surface_exits_2():
     proc = _run_fake("does_not_exist")
     assert proc.returncode == 2
-    assert "unknown surface" in proc.stderr
+    assert b"unknown surface" in proc.stderr
+
+
+@pytest.mark.parametrize("capture_kind", ["plain", "unsupported"])
+def test_fake_setec_main_preserves_text_capture(monkeypatch, capture_kind):
+    """Calling main with text capture preserves logical Unicode JSON."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "_fake_setec_capture_test", FIXTURES_DIR / "fake_setec.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    class UnsupportedReconfigureStream(io.StringIO):
+        errors = "strict"
+
+        def reconfigure(self, **_kwargs):
+            raise OSError("synthetic unsupported reconfigure")
+
+    captured = io.StringIO() if capture_kind == "plain" else UnsupportedReconfigureStream()
+    monkeypatch.setattr(sys, "stdout", captured)
+    assert module.main(["variance_audit"]) == 0
+    assert sys.stdout is captured
+    assert captured.getvalue() == (FIXTURES_DIR / "variance_audit.json").read_text(encoding="utf-8")
 
 
 # ---- (d) drift check fails on mutation ---------------------------------
