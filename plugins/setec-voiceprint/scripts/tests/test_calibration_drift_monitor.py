@@ -625,7 +625,11 @@ class TestCli:
 
 
 def _numeric_snapshot(signals):
-    return {"benchmarks": {"invented": {"signals": signals}}}
+    # Keep numeric refusal independent of minimum-evidence admission.
+    return {"benchmarks": {
+        "invented": {"signals": signals},
+        "numeric_control": {"signals": {"control": 1.0}},
+    }}
 
 
 _UNUSABLE_NUMBERS = [
@@ -783,6 +787,187 @@ class TestFiniteCheckCli:
         assert report["infrastructure_drift_detected"] is (current == 100.0)
         json.dumps(report, allow_nan=False)
         assert type(report["per_benchmark"]["invented"]["signal_diffs"]["signal"]["snapshot"]) is float
+
+
+_ZERO_EVIDENCE = [
+    pytest.param({}, id="empty-benchmarks"),
+    pytest.param({"absent": {}}, id="missing-signals"),
+    pytest.param({"empty": {"signals": {}}}, id="empty-signals"),
+    pytest.param({"none": {"signals": {"signal": None}}}, id="none-only"),
+    pytest.param({"failed": {"error": "invented failure"}}, id="all-errors"),
+    pytest.param({"failed": {"error": None, "signals": {"signal": 1.0}}}, id="error-null"),
+    pytest.param({"failed": {"error": False, "signals": {"signal": 1.0}}}, id="error-false"),
+    pytest.param({"failed": {"error": "", "signals": {"signal": 1.0}}}, id="error-empty"),
+]
+
+
+class TestMeasuredEvidence:
+    @pytest.mark.parametrize("benchmarks", _ZERO_EVIDENCE)
+    @pytest.mark.parametrize("side", ["snapshot", "current"])
+    def test_unmeasured_side_cannot_claim_drift(self, benchmarks, side):
+        measured = _numeric_snapshot({"signal": 0})
+        unmeasured = {"benchmarks": benchmarks}
+        with pytest.raises(ValueError, match=side.capitalize() + " has no successful"):
+            cdm.detect_drift(
+                snapshot=unmeasured if side == "snapshot" else measured,
+                current=unmeasured if side == "current" else measured,
+            )
+
+    @pytest.mark.parametrize("value", [0, -2.0])
+    def test_valid_zero_negative_and_mixed_errors_remain_evidence(self, value):
+        snapshot = {"benchmarks": {
+            "good": {"signals": {"signal": value, "absent": None}},
+            "failed": {"error": "invented failure"},
+        }}
+        original = copy.deepcopy(snapshot)
+        report = cdm.detect_drift(snapshot=snapshot, current=snapshot)
+        assert snapshot == original
+        assert report["infrastructure_drift_detected"] is False
+        assert report["n_signals_stable"] == 1
+        assert report["per_benchmark"]["failed"]["signal_diffs"] == {}
+        assert "absent" not in report["per_benchmark"]["good"]["signal_diffs"]
+
+    def test_disjoint_successful_benchmarks_preserve_schema_drift(self):
+        report = cdm.detect_drift(
+            snapshot={"benchmarks": {"old": {"signals": {"signal": 0}}}},
+            current={"benchmarks": {"new": {"signals": {"signal": -2.0}}}},
+        )
+        assert report["infrastructure_drift_detected"] is True
+        assert report["n_signals_schema_changed"] == 2
+        assert report["per_benchmark"]["old"]["n_signals_removed"] == 1
+        assert report["per_benchmark"]["new"]["n_signals_added"] == 1
+
+    @pytest.mark.parametrize("value", [float("nan"), True, "1.0"])
+    @pytest.mark.parametrize("error_record", [False, True])
+    def test_later_invalid_signals_are_not_hidden_by_success(self, value, error_record):
+        bad = {"signals": {"signal": value}}
+        if error_record:
+            bad["error"] = "invented failure"
+        snapshot = {"benchmarks": {"good": {"signals": {"signal": 0}}, "later": bad}}
+        with pytest.raises(ValueError, match="Snapshot signal must be a finite real number"):
+            cdm.detect_drift(snapshot=snapshot, current=snapshot)
+
+
+class TestMeasuredSnapshot:
+    @pytest.mark.parametrize("measurement", [
+        pytest.param({"error": "invented failure"}, id="errors"),
+        pytest.param({"signals": {}}, id="empty"),
+        pytest.param({"signals": {"signal": None}}, id="none"),
+        pytest.param({"signals": {"signal": float("nan")}}, id="nonfinite"),
+    ])
+    def test_actual_files_without_measurements_refuse(self, tmp_path, monkeypatch, measurement):
+        bdir = _write_benchmarks(tmp_path)
+        calls = []
+        def measure(*args, **kwargs):
+            calls.append(True)
+            if "error" in measurement:
+                raise RuntimeError(measurement["error"])
+            return copy.deepcopy(measurement)
+        monkeypatch.setattr(cdm, "measure_benchmark", measure)
+        with pytest.raises(ValueError):
+            cdm.take_snapshot(bdir, do_tier2=False)
+        assert calls == [True, True]
+
+    def test_mixed_snapshot_preserves_success_and_error_records(self, tmp_path, monkeypatch):
+        bdir = _write_benchmarks(tmp_path)
+        calls = []
+        def measure(*args, **kwargs):
+            calls.append(True)
+            if len(calls) == 2:
+                raise RuntimeError("invented failure")
+            return {"signals": {"signal": 0}}
+        monkeypatch.setattr(cdm, "measure_benchmark", measure)
+        snapshot = cdm.take_snapshot(bdir, do_tier2=False)
+        assert calls == [True, True]
+        assert snapshot["n_benchmarks"] == 2
+        assert snapshot["benchmarks"]["benchmark_001"] == {"signals": {"signal": 0}}
+        assert snapshot["benchmarks"]["benchmark_002"] == {"error": "invented failure"}
+
+
+class TestMeasuredCli:
+    @pytest.mark.parametrize("benchmarks", _ZERO_EVIDENCE)
+    def test_recorded_evidence_refuses_before_measurement(self, tmp_path, monkeypatch, capsys, benchmarks):
+        assert cdm.HAS_VARIANCE_AUDIT
+        snapshot = tmp_path / "snapshot.json"
+        snapshot.write_text(json.dumps({"benchmarks": benchmarks}), encoding="utf-8")
+        monkeypatch.setattr(cdm, "take_snapshot", TestFiniteCheckCli.forbid_measurement)
+        output = tmp_path / "report.json"
+        output.write_bytes(b"previous report\r\n")
+        assert cdm.main([
+            "check", "--benchmark-dir", str(tmp_path), "--snapshot", str(snapshot),
+            "--json", "--out", str(output),
+        ]) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.startswith("--snapshot: Snapshot has no successful")
+        assert output.read_bytes() == b"previous report\r\n"
+
+    @pytest.mark.parametrize("mode", ["snapshot", "check"])
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_failed_current_measurements_never_publish(self, tmp_path, monkeypatch, capsys, mode, existing):
+        assert cdm.HAS_VARIANCE_AUDIT
+        bdir = _write_benchmarks(tmp_path)
+        calls = []
+        def failed_measurement(*args, **kwargs):
+            calls.append(True)
+            raise RuntimeError("invented failure")
+        monkeypatch.setattr(cdm, "measure_benchmark", failed_measurement)
+        output = tmp_path / "artifact.json"
+        if existing:
+            output.write_bytes(b"previous artifact\r\n")
+        args = [mode, "--benchmark-dir", str(bdir), "--out", str(output), "--no-tier2"]
+        if mode == "check":
+            snapshot = tmp_path / "valid-snapshot.json"
+            snapshot.write_text(json.dumps(_numeric_snapshot({"signal": 0})), encoding="utf-8")
+            args += ["--snapshot", str(snapshot), "--json", "--exit-nonzero-on-drift"]
+        assert cdm.main(args) == 2
+        assert calls == [True, True]
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "has no successful benchmark signal measurements" in captured.err
+        if existing:
+            assert output.read_bytes() == b"previous artifact\r\n"
+        else:
+            assert not output.exists()
+
+
+    def test_failed_current_measurements_do_not_emit_stdout_report(self, tmp_path, monkeypatch, capsys):
+        bdir = _write_benchmarks(tmp_path)
+        snapshot = tmp_path / "valid.json"
+        snapshot.write_text(json.dumps(_numeric_snapshot({"signal": 0})), encoding="utf-8")
+        def failed_measurement(*args, **kwargs):
+            raise RuntimeError("invented failure")
+        monkeypatch.setattr(cdm, "measure_benchmark", failed_measurement)
+        assert cdm.main([
+            "check", "--benchmark-dir", str(bdir), "--snapshot", str(snapshot),
+            "--json", "--no-tier2", "--exit-nonzero-on-drift",
+        ]) == 2
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert "has no successful benchmark signal measurements" in captured.err
+
+    def test_mixed_snapshot_check_roundtrip_keeps_error_record(self, tmp_path, monkeypatch, capsys):
+        bdir = _write_benchmarks(tmp_path)
+        calls = []
+        def measure(*args, **kwargs):
+            calls.append(True)
+            if len(calls) % 2 == 0:
+                raise RuntimeError("invented failure")
+            return {"signals": {"signal": 0}}
+        monkeypatch.setattr(cdm, "measure_benchmark", measure)
+        snapshot = tmp_path / "mixed.json"
+        assert cdm.main(["snapshot", "--benchmark-dir", str(bdir), "--out", str(snapshot), "--no-tier2"]) == 0
+        stored = json.loads(snapshot.read_text(encoding="utf-8"))
+        assert stored["benchmarks"]["benchmark_002"] == {"error": "invented failure"}
+        assert cdm.main([
+            "check", "--benchmark-dir", str(bdir), "--snapshot", str(snapshot),
+            "--json", "--no-tier2", "--exit-nonzero-on-drift",
+        ]) == 0
+        report = json.loads(capsys.readouterr().out)
+        assert calls == [True] * 4
+        assert report["infrastructure_drift_detected"] is False
+        assert report["n_signals_stable"] == 1
+        assert report["per_benchmark"]["benchmark_002"]["signal_diffs"] == {}
 
 
 if __name__ == "__main__":
