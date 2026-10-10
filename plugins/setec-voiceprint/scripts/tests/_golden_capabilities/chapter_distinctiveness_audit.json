@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib only (tokenization and counting); no spaCy, no API costs",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -10,31 +10,50 @@
     "python": []
   },
   "do_not_use_when": [
-    "TODO"
+    "you want habit vocabulary that recurs across many chapters (the leave-one-out baseline absorbs it; use manuscript_repetition_audit)",
+    "the manuscript has one chapter or the chapter markers do not match --chapter-pattern",
+    "you want a calibrated AI/human verdict; ratios are revision cues"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py novel.md --anchors anchors.txt --top-per-chapter 10 --json",
+      "description": "Chapter-distinctive words with project anchors excluded"
+    }
+  ],
+  "family": "repetition",
   "handoff": "none",
   "id": "chapter_distinctiveness_audit",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --chapter-pattern, --anchors, --top-per-chapter, --min-count, --min-word-len, --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)"
+    ],
+    "required": [
+      "manuscript or --chapter-dir"
+    ],
+    "target": "a manuscript file split by --chapter-pattern (default '^#+\\s*Chapter\\s+\\d+'), or a --chapter-dir of chapter files"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown per-chapter distinctiveness report (stdout or --out)",
+      "JSON envelope (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "chapter_distinctiveness_audit.py Chapter-aware vocabulary repetition diagnostic.",
-  "references": [],
+  "purpose": "Chapter-aware vocabulary distinctiveness. For each chapter, scores words over-represented against the rest of the manuscript (leave-one-out internal baseline) plus within-chapter clustering, surfacing thematic anchors, setting props and chapter-local habits. No external corpus required.",
+  "references": [
+    "plugins/setec-voiceprint/skills/smoothing-diagnosis/SKILL.md",
+    "plugins/setec-voiceprint/capabilities.d/repetition_audit.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "you want words distinctive to one chapter against the rest of the same manuscript",
+    "you have no external baseline corpus but want chapter-level repetition cues",
+    "pairing with manuscript_repetition_audit to separate chapter-local words from manuscript-wide habit vocabulary"
   ]
 }

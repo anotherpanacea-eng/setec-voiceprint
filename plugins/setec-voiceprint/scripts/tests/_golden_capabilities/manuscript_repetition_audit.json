@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib only (tokenization and counting); no spaCy, no API costs",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -10,31 +10,50 @@
     "python": []
   },
   "do_not_use_when": [
-    "TODO"
+    "you have no writer-specific baseline corpus (--baseline-dir is required)",
+    "you want words distinctive to one chapter against the rest of the manuscript (use chapter_distinctiveness_audit)",
+    "you want a calibrated AI/human verdict; ratios are revision cues"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py manuscript.md --baseline-dir baseline/",
+      "description": "Habit vocabulary across a manuscript against a personal baseline"
+    }
+  ],
+  "family": "repetition",
   "handoff": "none",
   "id": "manuscript_repetition_audit",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --chapter-pattern, --anchors, --top-dispersed, --top-concentrated, --top-per-chapter, --min-dispersed-chapters, --min-count, --min-word-len, --cluster-window, --min-ratio, --include-function-words, --json, --out (see --help)"
+    ],
+    "required": [
+      "manuscript or --chapter-dir",
+      "--baseline-dir"
+    ],
+    "target": "a manuscript file split by --chapter-pattern, or a --chapter-dir of chapter files"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown dashboard (dispersed, concentrated, per-chapter) (stdout or --out)",
+      "JSON envelope (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "manuscript_repetition_audit.py Manuscript-wide vocabulary repetition diagnostic.",
-  "references": [],
+  "purpose": "Manuscript-wide vocabulary repetition. Runs repetition_audit's per-chapter scoring against the writer's external baseline across every chapter, then aggregates into dispersed habit vocabulary (flagged in many chapters), concentrated repetition (one or two chapters at high ratio), and a per-chapter top-N list.",
+  "references": [
+    "plugins/setec-voiceprint/skills/smoothing-diagnosis/SKILL.md",
+    "plugins/setec-voiceprint/capabilities.d/repetition_audit.yaml"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "smoothing_diagnosis",
   "use_when": [
-    "TODO"
+    "looking for habit vocabulary that recurs at moderate ratio across many chapters, which a single-chapter audit misses",
+    "separating dispersed habits from one-off thematic spikes before a vocabulary restoration pass"
   ]
 }

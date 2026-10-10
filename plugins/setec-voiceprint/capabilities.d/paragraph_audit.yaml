@@ -2,31 +2,53 @@ entries:
 - id: paragraph_audit
   script_path: plugins/setec-voiceprint/scripts/paragraph_audit.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - confounder_audit
-  family: TODO
-  purpose: paragraph-level distributional diagnostic.
+  family: paragraph-rhythm
+  purpose: Paragraph-level distributional diagnostic for "competent rectangle"
+    paragraphing. Reports paragraph length distribution and variance, first- vs
+    body-sentence length ratio, punchy-ending and one-sentence-paragraph rates,
+    long-paragraph clustering, and opening/closing typologies, with a provisional
+    Lightly / Moderately / Heavily smoothed band and optional baseline z-scores.
+    Emits structural metrics only, no raw text.
   use_when:
-  - TODO
+  - sentence- and token-level Layer A signals look normal but the draft reads as
+    uniformly paragraphed
+  - comparing a draft's paragraph rhythm against the writer's own baseline
+    (--baseline-dir)
+  - you need a paragraph-rhythm report that is safe to share (no raw text)
   do_not_use_when:
-  - TODO
+  - the text has no blank-line paragraph breaks (lists, transcripts, single-block
+    exports)
+  - you want a calibrated AI/human verdict; the band thresholds are heuristic
+  - house style or a copyedit legitimately regularized paragraphs (see confounder_audit)
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
+      --allow-non-prose, --include-baseline-filenames (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown paragraph-rhythm report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only; one pass per target and baseline file
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Paragraph rhythm against a personal baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/paragraph_audit.py draft.md --baseline-dir
+      baseline/ --json
+  references:
+  - plugins/setec-voiceprint/references/distributional-diagnostics.md
   _seeded_at: '2026-05-28'
