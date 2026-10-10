@@ -82,7 +82,10 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # The whole idiolect relocation adds one required permanent alias (199 -> 200);
 # the complete acquisition family's fifteen aliases replace nine old
 # implementation bootstraps (+6): 206; no exclusions.
-PINNED_CEILING = 206
+# P4 llm-verifier adds one independently reviewed required alias bootstrap
+# (206 -> 207); foreign-cwd runpy previously failed to import judge_backends.
+# All sites remain counted and over-ceiling regression checks remain unchanged.
+PINNED_CEILING = 207
 
 
 def find_runtime_scripts() -> list[Path]:

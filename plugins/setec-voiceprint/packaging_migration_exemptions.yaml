@@ -2391,6 +2391,14 @@ exemptions:
   owner: packaging
   introduced_sha: 64db2f8a01076b7a12fdfe4bdb3fec15b3b42a4d
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/voice_verifier.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility launcher bootstrap; foreign-cwd runpy
+    needs the stay-put scripts directory before importing setec and judge_backends.
+  owner: packaging
+  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
+  removal_phase: not-applicable
+
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
@@ -5110,6 +5118,8 @@ layer_exemptions:
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/structural_shuffle_audit.py
 - from_path: plugins/setec-voiceprint/scripts/sliding_window_heatmap.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/sliding_window_heatmap.py
+- from_path: plugins/setec-voiceprint/scripts/voice_verifier.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_verifier.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x ordinary launcher to its own whole implementation.
   owner: packaging
