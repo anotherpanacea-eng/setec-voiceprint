@@ -17,15 +17,25 @@ CLI:
         [--fpr-target FLOAT] [--target-tpr FLOAT] \\
         [--max-entries INT] [--max-entries-seed INT] \\
         [--out PATH] [--out-md PATH] \\
-        [--surprisal-dtype auto|fp32|fp16|bf16]
+        [--surprisal-dtype auto|fp32|fp16|bf16] \\
+        [--scores-cache PATH [--resume] [--cache-flush-every INT]] \\
+        [--progress-every INT]
+
+Long runs (AGENTS.md "Long-running surfaces"): progress is always logged
+to stderr. With ``--scores-cache`` each scored entry is checkpointed
+atomically, so a killed or hung run continues with ``--resume`` and
+re-scores only the entries it had not finished.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import random
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +53,8 @@ DEFAULT_POSITIVE_STATUSES = ("ai_generated",)
 DEFAULT_NEGATIVE_STATUSES = ("pre_ai_human", "human")
 DEFAULT_FPR_TARGET = 0.01
 DEFAULT_TARGET_TPR = 0.5
+DEFAULT_CACHE_FLUSH_EVERY = 1
+DEFAULT_PROGRESS_EVERY = 10
 MIN_SAMPLE_SIZE = 30
 MIN_AUC = 0.6
 
@@ -322,6 +334,118 @@ def _label_for_status(
     return None
 
 
+# ============================================================
+# Scores checkpoint (belt / suspenders / buttons)
+# ============================================================
+#
+# Each manifest entry costs two causal-LM passes, so a calibration run over
+# a realistic manifest is a long-running surface. Following the
+# check_corpus records cache and the calibration_survey survey cache: an
+# opt-in JSON checkpoint is written atomically (tmp + os.replace) after
+# every ``cache_flush_every`` scored entries, with status in_progress and
+# then complete. ``--resume`` reuses it only when its compatibility meta
+# matches this run exactly (manifest bytes, model pair, score version,
+# label sets, subsample) and only for entries whose text is byte-identical
+# to when it was scored. FPR / TPR targets are not part of the meta: they
+# act on the finished score list, so a resumed run may change them.
+
+class ScoresCacheError(ValueError):
+    """A --scores-cache could not be used as asked (refused, not ignored)."""
+
+
+_SCORES_CACHE_TOOL = TOOL_NAME
+_SCORES_CACHE_VERSION = "1.0"
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _backend_identity(backend: Any) -> dict[str, Any]:
+    """Stable identity of a scorer / observer for the cache meta. The
+    loaded dtype is excluded because backends resolve it lazily."""
+    block = (
+        backend.identifier_block()
+        if hasattr(backend, "identifier_block") else {}
+    ) or {}
+    return {
+        "id": block.get("id", getattr(backend, "model_id", None)),
+        "revision": block.get("revision", getattr(backend, "revision", None)),
+        "alias": block.get("alias"),
+        "dtype_requested": block.get(
+            "dtype_requested", getattr(backend, "dtype", None)
+        ),
+    }
+
+
+def _scores_cache_meta(
+    *, manifest_sha256: str, scorer, observer, score_version: str,
+    positive_statuses: set[str], negative_statuses: set[str],
+    max_entries: int | None, max_entries_seed: int,
+) -> dict[str, Any]:
+    return {
+        "tool": _SCORES_CACHE_TOOL,
+        "cache_version": _SCORES_CACHE_VERSION,
+        "script_version": SCRIPT_VERSION,
+        "manifest_sha256": manifest_sha256,
+        "scorer": _backend_identity(scorer),
+        "observer": _backend_identity(observer),
+        "score_version": score_version,
+        "positive_statuses": sorted(positive_statuses),
+        "negative_statuses": sorted(negative_statuses),
+        "max_entries": max_entries,
+        "max_entries_seed": max_entries_seed,
+    }
+
+
+def _save_scores_cache(
+    path: Path, scored: dict[str, dict[str, Any]], *, status: str,
+    meta: dict[str, Any],
+) -> None:
+    """Atomic write so a crash mid-write cannot corrupt the checkpoint."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {"status": status, "meta": meta, "scored": scored}
+    tmp.write_text(json.dumps(payload, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _load_scores_cache(
+    path: Path, *, expected_meta: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Return ``{entry_key: scored}`` from a compatible checkpoint. A
+    missing file means nothing was flushed yet (start from the top); an
+    unreadable or incompatible one is refused so a resume never silently
+    re-scores from scratch or mixes runs."""
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ScoresCacheError(
+            f"--scores-cache {path} is unreadable ({exc}); remove it or "
+            f"pass a fresh path to start over."
+        ) from exc
+    if not isinstance(payload, dict) or payload.get("meta") != expected_meta:
+        raise ScoresCacheError(
+            f"--scores-cache {path} was written for a different run "
+            f"(manifest, model pair, score version, label sets or "
+            f"subsample differ); remove it or pass a fresh path."
+        )
+    scored = payload.get("scored")
+    if not isinstance(scored, dict) or not all(
+        isinstance(rec, dict) and isinstance(rec.get("content_sha256"), str)
+        for rec in scored.values()
+    ):
+        # Fail closed: a damaged checkpoint must not turn --resume into a
+        # silent full re-score of work the operator believes is saved.
+        raise ScoresCacheError(
+            f"--scores-cache {path} is damaged (missing or malformed "
+            f"scored entries); remove it or pass a fresh path to start over."
+        )
+    return scored
+
+
 def _resolve_use_xppl(score_version: str) -> bool | None:
     if score_version == "auto":
         return None
@@ -343,6 +467,11 @@ def calibrate(
     max_entries: int | None = None,
     max_entries_seed: int = 42,
     audit_fn=None,
+    scores_cache: Path | None = None,
+    resume: bool = False,
+    cache_flush_every: int = DEFAULT_CACHE_FLUSH_EVERY,
+    progress_every: int = DEFAULT_PROGRESS_EVERY,
+    log=None,
 ) -> dict[str, Any]:
     """Run calibration end-to-end. Returns the results dict for
     composition into the build_output() envelope.
@@ -359,7 +488,19 @@ def calibrate(
     e.g. ``fpr_target=2.0`` and recording it as if it were an
     operator choice would make the resulting thresholds
     methodologically indefensible.
+
+    Long-running behavior: progress goes to ``log`` (default stderr)
+    every ``progress_every`` entries. With ``scores_cache`` each scored
+    entry is checkpointed (flushed every ``cache_flush_every`` scores);
+    ``resume=True`` reuses a compatible checkpoint and scores only the
+    remaining entries. Without ``resume`` an existing checkpoint is
+    refused rather than overwritten, so finished work is never discarded
+    by accident.
     """
+    if log is None:
+        log = sys.stderr
+    if resume and scores_cache is None:
+        raise ScoresCacheError("--resume needs --scores-cache PATH")
     if not (0.0 <= fpr_target <= 1.0):
         raise ValueError(
             f"fpr_target must be in [0, 1]; got {fpr_target}. "
@@ -384,6 +525,7 @@ def calibrate(
         )
 
     entries = _load_manifest(manifest_path)
+    manifest_sha256 = _sha256_bytes(manifest_path.read_bytes())
 
     if max_entries is not None and len(entries) > max_entries:
         rng = random.Random(max_entries_seed)
@@ -391,6 +533,47 @@ def calibrate(
         entries = entries[:max_entries]
 
     use_xppl = _resolve_use_xppl(score_version)
+
+    cache_path = Path(scores_cache) if scores_cache is not None else None
+    cache_meta: dict[str, Any] | None = None
+    cached: dict[str, dict[str, Any]] = {}
+    if cache_path is not None:
+        cache_meta = _scores_cache_meta(
+            manifest_sha256=manifest_sha256,
+            scorer=scorer, observer=observer, score_version=score_version,
+            positive_statuses=positive_statuses,
+            negative_statuses=negative_statuses,
+            max_entries=max_entries, max_entries_seed=max_entries_seed,
+        )
+        if resume:
+            cached = _load_scores_cache(cache_path, expected_meta=cache_meta)
+            log.write(
+                f"{TOOL_NAME}: resuming from {cache_path} "
+                f"({len(cached)} entries already scored)\n"
+            )
+        elif cache_path.exists():
+            raise ScoresCacheError(
+                f"--scores-cache {cache_path} already exists; pass --resume "
+                f"to continue that run, or remove it to start over."
+            )
+    scored_now: dict[str, dict[str, Any]] = {}
+    flush_every = max(1, int(cache_flush_every))
+    report_every = max(1, int(progress_every))
+    since_flush = 0
+    n_total = len(entries)
+    n_reused = 0
+    n_new = 0
+    t0 = time.monotonic()
+
+    def _progress(done: int) -> None:
+        elapsed = time.monotonic() - t0
+        rate = n_new / elapsed if elapsed > 0 and n_new else 0.0
+        remaining = n_total - done
+        eta = f", eta {remaining / rate:.0f}s" if rate > 0 else ""
+        log.write(
+            f"{TOOL_NAME}: {done}/{n_total} entries "
+            f"({n_new} scored, {n_reused} resumed{eta})\n"
+        )
     scores_with_labels: list[tuple[float, int]] = []
     per_entry: list[dict[str, Any]] = []
     n_skipped_unlabelled = 0
@@ -398,7 +581,9 @@ def calibrate(
     n_skipped_score_failed = 0
     resolved_score_version: str | None = None
 
-    for entry in entries:
+    for idx, entry in enumerate(entries):
+        if idx and idx % report_every == 0:
+            _progress(idx)
         label = _label_for_status(
             entry.get("ai_status"), positive_statuses, negative_statuses,
         )
@@ -420,18 +605,43 @@ def calibrate(
             n_skipped_missing_path += 1
             continue
 
-        if audit_fn is None:
-            audit_result = bin_audit.audit(
-                text, scorer=scorer, observer=observer,
-                use_cross_perplexity=use_xppl,
-            )
+        # Position in the (subsampled) entry list plus path: stable across
+        # a resume because the manifest bytes and subsample are in the meta.
+        key = f"{idx}:{path}"
+        content_sha256 = _sha256_bytes(text.encode("utf-8"))
+        hit = cached.get(key)
+        if isinstance(hit, dict) and hit.get("content_sha256") == content_sha256:
+            ratio = hit.get("perplexity_ratio")
+            sv = hit.get("score_version")
+            scored_now[key] = hit
+            n_reused += 1
         else:
-            audit_result = audit_fn(
-                text, scorer, observer, score_version,
-            )
+            if audit_fn is None:
+                audit_result = bin_audit.audit(
+                    text, scorer=scorer, observer=observer,
+                    use_cross_perplexity=use_xppl,
+                )
+            else:
+                audit_result = audit_fn(
+                    text, scorer, observer, score_version,
+                )
+            ratio = audit_result.get("perplexity_ratio")
+            sv = audit_result.get("score_version")
+            n_new += 1
+            if cache_path is not None:
+                scored_now[key] = {
+                    "content_sha256": content_sha256,
+                    "perplexity_ratio": ratio,
+                    "score_version": sv,
+                }
+                since_flush += 1
+                if since_flush >= flush_every:
+                    _save_scores_cache(
+                        cache_path, scored_now, status="in_progress",
+                        meta=cache_meta,
+                    )
+                    since_flush = 0
 
-        ratio = audit_result.get("perplexity_ratio")
-        sv = audit_result.get("score_version")
         if resolved_score_version is None and sv is not None:
             resolved_score_version = sv
         if ratio is None:
@@ -444,6 +654,12 @@ def calibrate(
             "score": float(ratio),
             "score_version": sv,
         })
+
+    _progress(n_total)
+    if cache_path is not None:
+        _save_scores_cache(
+            cache_path, scored_now, status="complete", meta=cache_meta,
+        )
 
     pos_scores = [s for s, lab in scores_with_labels if lab == 1]
     neg_scores = [s for s, lab in scores_with_labels if lab == 0]
@@ -718,7 +934,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-entries-seed", type=int, default=42)
     parser.add_argument("--out", default=None)
     parser.add_argument("--out-md", default=None)
+    parser.add_argument(
+        "--scores-cache", default=None,
+        help=(
+            "Checkpoint path. Each scored entry is written here atomically "
+            "so a killed or hung run can continue with --resume. Recommended "
+            "for any manifest that takes more than a few minutes."
+        ),
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help=(
+            "Continue the run recorded in --scores-cache, re-scoring only "
+            "unfinished entries. Refused if the checkpoint was written for a "
+            "different manifest, model pair, score version, label sets or "
+            "subsample. With no checkpoint yet, the run starts from the "
+            "first entry, so one command both starts and continues a run."
+        ),
+    )
+    parser.add_argument(
+        "--cache-flush-every", type=int, default=DEFAULT_CACHE_FLUSH_EVERY,
+        help="Write --scores-cache every N scored entries (default 1).",
+    )
+    parser.add_argument(
+        "--progress-every", type=int, default=DEFAULT_PROGRESS_EVERY,
+        help="Log progress to stderr every N entries (default 10).",
+    )
     args = parser.parse_args(argv)
+    if args.resume and not args.scores_cache:
+        parser.error("--resume needs --scores-cache PATH")
 
     manifest_path = Path(args.manifest)
     if not manifest_path.exists():
@@ -756,6 +1000,10 @@ def main(argv: list[str] | None = None) -> int:
             target_tpr=args.target_tpr,
             max_entries=args.max_entries,
             max_entries_seed=args.max_entries_seed,
+            scores_cache=Path(args.scores_cache) if args.scores_cache else None,
+            resume=args.resume,
+            cache_flush_every=args.cache_flush_every,
+            progress_every=args.progress_every,
         )
     except (ValueError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)

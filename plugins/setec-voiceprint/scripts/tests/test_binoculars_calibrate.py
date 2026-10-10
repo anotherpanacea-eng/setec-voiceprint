@@ -825,3 +825,147 @@ def test_pool_guard_does_not_creep_onto_the_calibration_set(tmp_path):
     entries = cal._load_manifest(m)
     assert [e["id"] for e in entries] == [r["id"] for r in rows]
     assert "pool_guard" not in (Path(cal.__file__).read_text(encoding="utf-8"))
+
+
+# ============================================================
+# Long-running surface: checkpoint + --resume (AGENTS.md belt/suspenders/buttons)
+# ============================================================
+
+
+class _HostHang(Exception):
+    """Stands in for a kill or host hang partway through scoring."""
+
+
+def _resume_fixture(tmp_path: Path, n: int = 60):
+    files = _make_text_files(tmp_path, n)
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(f), "ai_status": "ai_generated" if i % 2 else "pre_ai_human"}
+        for i, f in enumerate(files)
+    ])
+    return manifest
+
+
+def _scored_audit(calls: list[str], *, hang_after: int | None = None):
+    def audit_fn(text, scorer, observer, score_version):
+        if hang_after is not None and len(calls) >= hang_after:
+            raise _HostHang()
+        calls.append(text)
+        idx = int(text.split()[2])
+        ratio = None if idx == 7 else (0.4 + 0.01 * idx if idx % 2 else 1.2 + 0.01 * idx)
+        return {"perplexity_ratio": ratio, "score_version": "perplexity_ratio_v1"}
+    return audit_fn
+
+
+def _calibrate(manifest, audit_fn, **kw):
+    return cal.calibrate(
+        manifest_path=manifest,
+        scorer=StubBackend("scorer"), observer=kw.pop("observer", StubBackend("observer")),
+        positive_statuses={"ai_generated"}, negative_statuses={"pre_ai_human"},
+        audit_fn=audit_fn, **kw,
+    )
+
+
+def test_interrupted_run_resumes_to_identical_results_without_rescoring(tmp_path):
+    import io
+
+    manifest = _resume_fixture(tmp_path)
+    reference = _calibrate(manifest, _scored_audit([]), log=io.StringIO())
+
+    cache = tmp_path / "scores.json"
+    first: list[str] = []
+    with pytest.raises(_HostHang):
+        _calibrate(manifest, _scored_audit(first, hang_after=25),
+                   scores_cache=cache, log=io.StringIO())
+    assert len(first) == 25
+
+    second: list[str] = []
+    log = io.StringIO()
+    resumed = _calibrate(manifest, _scored_audit(second),
+                         scores_cache=cache, resume=True, log=log)
+
+    assert resumed == reference
+    assert len(second) == 60 - 25
+    assert not set(second) & set(first)
+    assert "60/60 entries (35 scored, 25 resumed" in log.getvalue()
+    assert json.loads(cache.read_text())["status"] == "complete"
+
+
+def test_existing_checkpoint_is_not_overwritten_without_resume(tmp_path):
+    import io
+
+    manifest = _resume_fixture(tmp_path)
+    cache = tmp_path / "scores.json"
+    with pytest.raises(_HostHang):
+        _calibrate(manifest, _scored_audit([], hang_after=10),
+                   scores_cache=cache, log=io.StringIO())
+    before = cache.read_bytes()
+    calls: list[str] = []
+    with pytest.raises(cal.ScoresCacheError, match="--resume"):
+        _calibrate(manifest, _scored_audit(calls), scores_cache=cache,
+                   log=io.StringIO())
+    assert calls == []
+    assert cache.read_bytes() == before
+
+
+def test_resume_refuses_checkpoint_from_a_different_model_pair(tmp_path):
+    import io
+
+    manifest = _resume_fixture(tmp_path)
+    cache = tmp_path / "scores.json"
+    _calibrate(manifest, _scored_audit([]), scores_cache=cache, log=io.StringIO())
+    with pytest.raises(cal.ScoresCacheError, match="different run"):
+        _calibrate(manifest, _scored_audit([]), scores_cache=cache, resume=True,
+                   observer=StubBackend("other-observer"), log=io.StringIO())
+
+
+def test_resume_rescores_an_entry_whose_text_changed(tmp_path):
+    import io
+
+    manifest = _resume_fixture(tmp_path, n=40)
+    cache = tmp_path / "scores.json"
+    _calibrate(manifest, _scored_audit([]), scores_cache=cache, log=io.StringIO())
+    (tmp_path / "text_3.txt").write_text("text content 3 edited\n")
+    calls: list[str] = []
+    _calibrate(manifest, _scored_audit(calls), scores_cache=cache, resume=True,
+               log=io.StringIO())
+    assert calls == ["text content 3 edited\n"]
+
+
+def test_cli_resume_requires_scores_cache(tmp_path):
+    manifest = _resume_fixture(tmp_path, n=2)
+    with pytest.raises(SystemExit) as exc:
+        cal.main([str(manifest), "--resume"])
+    assert exc.value.code == 2
+
+
+def test_resume_without_a_checkpoint_starts_from_the_first_entry(tmp_path):
+    import io
+
+    manifest = _resume_fixture(tmp_path, n=40)
+    cache = tmp_path / "scores.json"
+    calls: list[str] = []
+    result = _calibrate(manifest, _scored_audit(calls), scores_cache=cache,
+                        resume=True, log=io.StringIO())
+    assert len(calls) == 40
+    assert result == _calibrate(manifest, _scored_audit([]), log=io.StringIO())
+
+
+@pytest.mark.parametrize("damage", [
+    lambda payload: payload.pop("scored"),
+    lambda payload: payload.__setitem__("scored", ["not", "a", "map"]),
+    lambda payload: payload["scored"].__setitem__(next(iter(payload["scored"])), "x"),
+])
+def test_resume_refuses_a_damaged_checkpoint_before_rescoring(tmp_path, damage):
+    import io
+
+    manifest = _resume_fixture(tmp_path, n=20)
+    cache = tmp_path / "scores.json"
+    _calibrate(manifest, _scored_audit([]), scores_cache=cache, log=io.StringIO())
+    payload = json.loads(cache.read_text())
+    damage(payload)
+    cache.write_text(json.dumps(payload))
+    calls: list[str] = []
+    with pytest.raises(cal.ScoresCacheError, match="damaged"):
+        _calibrate(manifest, _scored_audit(calls), scores_cache=cache,
+                   resume=True, log=io.StringIO())
+    assert calls == []
