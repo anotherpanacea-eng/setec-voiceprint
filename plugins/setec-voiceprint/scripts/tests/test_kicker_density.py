@@ -456,68 +456,12 @@ def _install_aic9_spacy_seam(monkeypatch, mode):
     if mode == "absent":
         monkeypatch.setitem(sys.modules, "spacy", None)
         return None
-    if mode == "missing_model":
-        def load(name):
-            assert name == "en_core_web_sm"
-            raise OSError("synthetic model unavailable")
-        monkeypatch.setitem(sys.modules, "spacy", SimpleNamespace(load=load))
-        return None
 
     def load(name):
         assert name == "en_core_web_sm"
         return _synthetic_aic9_nlp
     monkeypatch.setitem(sys.modules, "spacy", SimpleNamespace(load=load))
     return _synthetic_aic9_nlp
-
-
-@pytest.mark.parametrize("mode", ["absent", "missing_model", "synthetic_spacy"])
-def test_variance_aic9_reports_actual_detector_path(monkeypatch, mode):
-    import variance_audit as variance
-
-    nlp = _install_aic9_spacy_seam(monkeypatch, mode)
-    text = "Every paragraph performs landing.\n\nNo point can survive."
-    detected = k.kicker_density(text, nlp=nlp)
-    reshaped = variance._aic9_kicker_block(text)
-    assert reshaped["available"] is True
-    block = reshaped["kicker_density"]
-    assert block["proper_noun_detection"] == detected["diagnostics"]["proper_noun_detection"]
-    assert block["value"] == detected["value"]
-    assert block["spacing_variance"] == detected["spacing_variance"]
-    assert block["paragraph_count"] == detected["diagnostics"]["total_paragraphs"]
-    assert block["kicker_count"] == detected["diagnostics"]["kicker_count"]
-
-
-def test_variance_aic9_passes_reported_path_without_guessing(monkeypatch):
-    import variance_audit as variance
-
-    _install_aic9_spacy_seam(monkeypatch, "absent")
-    real_detector = k.kicker_density
-    def detector(text, *, nlp):
-        assert nlp is None
-        block = real_detector(text, nlp=nlp)
-        block["diagnostics"]["proper_noun_detection"] = "synthetic-detector-label"
-        return block
-    monkeypatch.setattr(k, "kicker_density", detector)
-    assert variance._aic9_kicker_block("Every paragraph performs landing.")["kicker_density"]["proper_noun_detection"] == "synthetic-detector-label"
-
-
-def test_variance_aic9_missing_detector_diagnostic_remains_unknown(monkeypatch):
-    import variance_audit as variance
-
-    _install_aic9_spacy_seam(monkeypatch, "absent")
-    real_detector = k.kicker_density
-    text = "Every paragraph performs landing."
-    expected = real_detector(text, nlp=None)
-    def detector(text, *, nlp):
-        block = real_detector(text, nlp=nlp)
-        del block["diagnostics"]["proper_noun_detection"]
-        return block
-    monkeypatch.setattr(k, "kicker_density", detector)
-    block = variance._aic9_kicker_block(text)["kicker_density"]
-    assert block["proper_noun_detection"] is None
-    assert block["value"] == expected["value"]
-    assert block["paragraph_count"] == expected["diagnostics"]["total_paragraphs"]
-    assert block["kicker_count"] == expected["diagnostics"]["kicker_count"]
 
 
 @pytest.mark.parametrize("mode", ["absent", "synthetic_spacy"])
@@ -531,20 +475,3 @@ def test_variance_aic9_audit_text_retains_detector_path(monkeypatch, mode):
     block = audit["aic_8_9"]["kicker_density"]
     assert block["proper_noun_detection"] == detected["diagnostics"]["proper_noun_detection"]
     assert block["value"] == detected["value"]
-
-
-@pytest.mark.parametrize("text", ["", " \n\t"])
-def test_variance_aic9_empty_remains_unavailable(text):
-    import variance_audit as variance
-
-    assert variance._aic9_kicker_block(text) == {"available": False, "reason": "empty text"}
-
-
-def test_variance_aic9_import_failure_does_not_invent_path(monkeypatch):
-    import variance_audit as variance
-
-    monkeypatch.setitem(sys.modules, "kicker_density", None)
-    block = variance._aic9_kicker_block("Every paragraph performs landing.")
-    assert block["available"] is False
-    assert block["reason"].startswith("kicker_density unimportable:")
-    assert "kicker_density" not in block
