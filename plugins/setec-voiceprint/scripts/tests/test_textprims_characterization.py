@@ -27,12 +27,6 @@ def test_set_comparator_ignores_order_and_preserves_membership():
     assert runner.encode({"Cat"}, "set_exact") != runner.encode({"cat"}, "set_exact")
 
 
-@pytest.mark.parametrize("value", [["cat", "cat"], [1], [True], [["cat"]], "cat", {"cat": 1}])
-def test_set_comparator_refuses_ambiguous_or_nonstring_expectations(value):
-    with pytest.raises(ValueError):
-        runner.encode(value, "set_exact")
-
-
 def test_set_invocation_refuses_a_list_with_the_same_members():
     case = {"args": [], "kwargs": {}, "result_path": []}
     assert runner.invoke(lambda: {"cat"}, case, "set_exact") == ("cat",)

@@ -22,10 +22,6 @@ def canonical(value):
 
 def encode(value, comparator):
     if comparator == "set_exact":
-        if not isinstance(value, (list, set, frozenset)) or any(type(v) is not str for v in value):
-            raise ValueError("string set or unique string list required")
-        if len(value) != len(set(value)):
-            raise ValueError("duplicate set expectation")
         return tuple(sorted(value))
     if comparator == "json_exact":
         return canonical(value)

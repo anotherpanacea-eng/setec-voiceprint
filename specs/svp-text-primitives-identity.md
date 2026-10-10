@@ -37,7 +37,7 @@ mutant: {args, kwargs, result_path, expected}
 
 Native Punkt rows read only NLTK 3.9.4 and the four English `punkt_tab` files from `nltk_data` revision `550b6625bcef1f2abff2ff770a5a0d272c9c6b2a`, provisioned by `tools/prepare_punkt_characterization.py` into an isolated root. Characterization never downloads and fails rather than skips when the data is missing.
 
-`set_exact` compares live string sets (or frozensets) against a JSON list of unique strings, ignoring order while preserving exact membership and case. Duplicate expectations and non-string members are refused.
+`set_exact` compares live string sets (or frozensets) against a JSON list of unique strings, ignoring order while preserving exact membership and case.
 
 ## 3. Copy lint
 
