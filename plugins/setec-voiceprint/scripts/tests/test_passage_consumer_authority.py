@@ -452,16 +452,18 @@ def test_default_validate_refuses_missing_reviewed_profile_before_private_root(
         def __init__(self, *_args: object, **_kwargs: object):
             raise AssertionError("private root must remain unopened")
 
+    monkeypatch.setattr(
+        consumer, "os", SimpleNamespace(**{**vars(consumer.os), "name": "posix"}),
+    )
     monkeypatch.setattr(consumer, "PinnedPrivateRoot", ForbiddenRoot)
     with pytest.raises(
         consumer.AuthorityError,
         match="^authority_profile_refused$",
     ):
-        # platform pinned: this test's subject is profile-refusal-before-
-        # private-root ordering; the platform gate that precedes it in §15
-        # order has its own test above, and the sys.platform default made
-        # this assertion host-dependent (Linux CI saw platform_refused
-        # first).
+        # Pin both platform prerequisites in this consumer only: the subject
+        # is profile-refusal-before-private-root ordering. The preceding
+        # platform gate has its own test above; the process-global OS and
+        # pathlib retain their actual host behavior.
         consumer.run(_args(tmp_path / "absent"), platform="darwin")
 
 
