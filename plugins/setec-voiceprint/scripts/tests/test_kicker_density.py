@@ -438,3 +438,40 @@ def test_cli_help_runs_cleanly():
     )
     assert result.returncode == 0
     assert "AIC-9" in result.stdout or "kicker" in result.stdout.lower()
+
+
+# Variance reshapes the detector result; keep the detector's path label.
+def _synthetic_aic9_nlp(sentence):
+    from types import SimpleNamespace
+
+    class Doc(list):
+        ents = []
+
+    return Doc([SimpleNamespace(pos_="NOUN") for _ in sentence.split()])
+
+
+def _install_aic9_spacy_seam(monkeypatch, mode):
+    from types import SimpleNamespace
+
+    if mode == "absent":
+        monkeypatch.setitem(sys.modules, "spacy", None)
+        return None
+
+    def load(name):
+        assert name == "en_core_web_sm"
+        return _synthetic_aic9_nlp
+    monkeypatch.setitem(sys.modules, "spacy", SimpleNamespace(load=load))
+    return _synthetic_aic9_nlp
+
+
+@pytest.mark.parametrize("mode", ["absent", "synthetic_spacy"])
+def test_variance_aic9_audit_text_retains_detector_path(monkeypatch, mode):
+    import variance_audit as variance
+
+    nlp = _install_aic9_spacy_seam(monkeypatch, mode)
+    text = " ".join(["ordinary"] * 51) + ".\n\nEvery paragraph performs landing."
+    detected = k.kicker_density(text, nlp=nlp)
+    audit = variance.audit_text(text, do_tier2=False, do_tier3=False, do_tier4=False, do_aic9=True)
+    block = audit["aic_8_9"]["kicker_density"]
+    assert block["proper_noun_detection"] == detected["diagnostics"]["proper_noun_detection"]
+    assert block["value"] == detected["value"]

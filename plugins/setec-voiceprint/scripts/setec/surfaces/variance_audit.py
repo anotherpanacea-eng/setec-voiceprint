@@ -1114,6 +1114,9 @@ def _aic9_kicker_block(text: str) -> dict[str, Any]:
             "kicker_count": block.get("diagnostics", {}).get(
                 "kicker_count", 0
             ),
+            "proper_noun_detection": block.get("diagnostics", {}).get(
+                "proper_noun_detection"
+            ),
         },
     }
 

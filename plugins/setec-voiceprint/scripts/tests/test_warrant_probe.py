@@ -16,6 +16,16 @@ import argument_judge  # type: ignore
 import fallacy_judge  # type: ignore
 import warrant_judge  # type: ignore
 import warrant_probe  # type: ignore
+
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+@pytest.mark.parametrize("phrase", ["so that", "in conclusion", "for example", "on the other hand", "it follows"])
+def test_multiword_register_marker_accepts_whitespace(separator, phrase):
+    single = phrase + ", the evidence needs careful review."
+    wrapped = separator.join(phrase.split()) + ", the evidence needs careful review."
+    assert warrant_probe.register_warnings(single, warrant_probe.MIN_WORDS) == []
+    assert warrant_probe.register_warnings(wrapped, warrant_probe.MIN_WORDS) == []
+
 from conftest import _results  # noqa: E402
 
 SAMPLE = (

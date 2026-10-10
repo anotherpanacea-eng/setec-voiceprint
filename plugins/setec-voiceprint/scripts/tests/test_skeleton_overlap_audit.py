@@ -20,8 +20,25 @@ from pathlib import Path
 
 import pytest
 
+from conftest import write_clean_pool_manifest, write_marked_pool_manifest
+
 import skeleton_overlap_audit as soa  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
+
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+def test_multiword_opener_accepts_whitespace(separator):
+    single = '"On the other hand, the evidence needs careful review."'
+    wrapped = '"' + separator.join("On the other hand".split()) + ', the evidence needs careful review."'
+    assert soa._marker_bucket(single) == "contrast"
+    assert soa._marker_bucket(wrapped) == "contrast"
+    assert soa.skeleton_for(wrapped) == soa.skeleton_for(single)
+
+
+@pytest.mark.parametrize("text", ["On the other handheld, the evidence matters.", "Onthe other hand, the evidence matters."])
+def test_multiword_opener_keeps_word_boundaries(text):
+    assert soa._marker_bucket(text) == "none"
+
 
 # Two docs sharing an ORDERED discourse template (sequence / contrast / cause / sequence) with
 # MATCHED per-sentence word counts but entirely different content words — the topic-invariance case.
@@ -256,25 +273,12 @@ _GUARD_TEXTS = [
 import pool_guard  # type: ignore  # noqa: E402
 
 
-def _marked_manifest_soa(tmp_path, name="marked.jsonl"):
-    p = tmp_path / name
-    rows = [
-        {"id": f"doc{i}#p0000", "text": _GUARD_TEXTS[i % len(_GUARD_TEXTS)],
-          "passage_dedup": {"source_doc_id": f"doc{i}", "ordinal": 0}}
-        for i in range(12)
-    ]
-    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
-    return p
+def _marked_manifest_soa(tmp_path, name='marked.jsonl'):
+    return write_marked_pool_manifest(tmp_path, _GUARD_TEXTS, name)
 
 
-def _clean_manifest_soa(tmp_path, name="clean.jsonl"):
-    p = tmp_path / name
-    rows = [
-        {"id": f"doc{i}", "text": _GUARD_TEXTS[i % len(_GUARD_TEXTS)]}
-        for i in range(12)
-    ]
-    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
-    return p
+def _clean_manifest_soa(tmp_path, name='clean.jsonl'):
+    return write_clean_pool_manifest(tmp_path, _GUARD_TEXTS, name)
 
 
 def test_pool_guard_refuses_a_passage_deduped_manifest(tmp_path):
@@ -292,4 +296,4 @@ def test_pool_guard_refuses_a_passage_deduped_manifest(tmp_path):
 def test_pool_guard_does_not_fire_on_a_clean_manifest(tmp_path):
     m = _clean_manifest_soa(tmp_path)
     _rc, env = _envelope(["--manifest", str(m), "--json"])
-    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env, ensure_ascii=False)
