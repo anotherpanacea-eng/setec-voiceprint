@@ -32,6 +32,7 @@ LANDED_COMMIT = "7ffabd343066585de2a80c22b4aeba25d27d5450"
 SPEC37_PATH = "specs/37-register-classifier-repair.md"
 SPEC76_PATH = "specs/76-register-classifier-refusal-reasons.md"
 CLASSIFIER_PATH = "plugins/setec-voiceprint/scripts/register_classifier.py"
+CURRENT_CLASSIFIER_PATH = "plugins/setec-voiceprint/scripts/setec/surfaces/register_classifier.py"
 WORKFLOW_PATH = ".github/workflows/tests.yml"
 SPEC37_SHA256 = "7a2eb4c6c97662415bfbe707529947d93b83635a698404d1c591aafc2da056c1"
 SPEC76_SHA256 = "5be5f74d74a8f9243d1cbeef4e24ed49ef1a14c932867ecb80cafcabfc734722"
@@ -713,11 +714,13 @@ def _verify_git(receipt: dict[str, Any], head_arg: str, root: Path) -> None:
     ):
         raise Refusal()
 
-    for commit in (landed, head_arg):
+    for commit, classifier_path in (
+        (landed, CLASSIFIER_PATH), (head_arg, CURRENT_CLASSIFIER_PATH)
+    ):
         _verify_artifact(git, commit, SPEC37_PATH, SPEC37_SHA256, MAX_RECEIPT)
         _verify_artifact(git, commit, SPEC76_PATH, SPEC76_SHA256, MAX_RECEIPT)
         raw_classifier = _verify_artifact(
-            git, commit, CLASSIFIER_PATH, FINAL_CLASSIFIER_SHA256, 1_048_576
+            git, commit, classifier_path, FINAL_CLASSIFIER_SHA256, 1_048_576
         )
         namespace = _load_classifier(raw_classifier, FINAL_CLASSIFIER_SHA256)
         if (

@@ -85,6 +85,8 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # P4 llm-verifier adds one independently reviewed required alias bootstrap
 # (206 -> 207); foreign-cwd runpy previously failed to import judge_backends.
 # All sites remain counted and over-ceiling regression checks remain unchanged.
+# Reviewed register-diagnostics no-main permanent alias needs one foreign-cwd
+# runpy bootstrap; frozen implementation has none: 206 -> 207, no exclusions.
 PINNED_CEILING = 207
 
 

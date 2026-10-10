@@ -2392,6 +2392,7 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
     stay-put scripts directory before importing setec and siblings.
+- path: plugins/setec-voiceprint/scripts/register_classifier.py
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
