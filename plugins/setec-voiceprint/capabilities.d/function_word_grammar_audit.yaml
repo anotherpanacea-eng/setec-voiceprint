@@ -2,31 +2,47 @@ entries:
 - id: function_word_grammar_audit
   script_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
   surface: voice_coherence
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - function_word_adjacency_audit
-  family: TODO
-  purpose: function-word sequence grammar.
+  family: function-word-grammar
+  purpose: 'Function-word sequence grammar. Adds the sequence layer to Burrows-Delta frequencies:
+    function-word bigrams and trigrams, preposition profile, demonstrative usage, relative-pronoun,
+    complementizer and subordinator choice, auxiliary chains and pronoun transitions, with optional
+    baseline comparison.'
   use_when:
-  - TODO
+  - voice_distance shows function-word drift and you want to know which grammatical choices
+    moved (which/that, whether/if)
+  - comparing a draft's function-word grammar against the writer's own baseline (--baseline-dir)
   do_not_use_when:
-  - TODO
+  - the target is very short; proportions over a few hundred function words are noisy
+  - you want an authorship verdict; the profile is descriptive
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - optional flags --baseline-dir, --json, --out, --strip-rules, --strip-aggressive, --strip-masking,
+      --allow-non-prose, --include-baseline-filenames (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown function-word grammar report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only (tokenization and counting); no spaCy, no API costs
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Function-word grammar against a personal baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/function_word_grammar_audit.py draft.md --baseline-dir
+      baseline/ --json
+  references:
+  - plugins/setec-voiceprint/capabilities.d/voice_distance.yaml
   _seeded_at: '2026-05-28'
