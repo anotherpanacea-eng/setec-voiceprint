@@ -814,7 +814,7 @@ class TestMeasuredEvidence:
             )
 
     @pytest.mark.parametrize("value", [0, -2.0])
-    def test_valid_zero_negative_and_mixed_errors_remain_evidence(self, value):
+    def test_valid_zero_negative_remain_evidence_beside_unmeasured_error(self, value):
         snapshot = {"benchmarks": {
             "good": {"signals": {"signal": value, "absent": None}},
             "failed": {"error": "invented failure"},
@@ -822,7 +822,9 @@ class TestMeasuredEvidence:
         original = copy.deepcopy(snapshot)
         report = cdm.detect_drift(snapshot=snapshot, current=snapshot)
         assert snapshot == original
-        assert report["infrastructure_drift_detected"] is False
+        # The errored benchmark is unmeasured, which fails closed to drift.
+        assert report["infrastructure_drift_detected"] is True
+        assert report["unmeasured_benchmarks"] == ["failed"]
         assert report["n_signals_stable"] == 1
         assert report["per_benchmark"]["failed"]["signal_diffs"] == {}
         assert "absent" not in report["per_benchmark"]["good"]["signal_diffs"]
@@ -962,10 +964,11 @@ class TestMeasuredCli:
         assert cdm.main([
             "check", "--benchmark-dir", str(bdir), "--snapshot", str(snapshot),
             "--json", "--no-tier2", "--exit-nonzero-on-drift",
-        ]) == 0
+        ]) == 3
         report = json.loads(capsys.readouterr().out)
         assert calls == [True] * 4
-        assert report["infrastructure_drift_detected"] is False
+        assert report["infrastructure_drift_detected"] is True
+        assert report["unmeasured_benchmarks"] == ["benchmark_002"]
         assert report["n_signals_stable"] == 1
         assert report["per_benchmark"]["benchmark_002"]["signal_diffs"] == {}
 
@@ -1096,6 +1099,105 @@ class TestSnapshotContainers:
         assert report["constant_changes"] == {"absent": {"verdict": "added", "current": None}}
         assert snapshot == original
         json.dumps(report, allow_nan=False)
+
+# ---------- Errored benchmarks are unmeasured, never no-drift ----------
+
+
+class TestErroredBenchmarksUnmeasured:
+    """``take_snapshot`` stores ``{"error": ...}`` for a benchmark
+    whose measurement raised. Before this fix ``detect_drift``
+    compared the absent signal dicts, so a benchmark that errored on
+    both sides came out with zero drifted signals and the report
+    said no drift for a benchmark nobody measured."""
+
+    def _errored_pair(self, tmp_path):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        bench_id = next(iter(snap["benchmarks"]))
+        snap["benchmarks"][bench_id] = {"error": "tagger failed"}
+        curr = copy.deepcopy(snap)
+        return snap, curr, bench_id
+
+    def test_error_on_both_sides_is_not_reported_as_no_drift(
+        self, tmp_path,
+    ):
+        snap, curr, bench_id = self._errored_pair(tmp_path)
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        assert report["infrastructure_drift_detected"] is True
+        assert report["unmeasured_benchmarks"] == [bench_id]
+        assert report["n_benchmarks_unmeasured"] == 1
+        info = report["per_benchmark"][bench_id]
+        assert info["unmeasured"] is True
+        assert info["errored_in"] == ["snapshot", "current"]
+        assert bench_id not in report["drifted_benchmarks"]
+
+    def test_error_on_one_side_is_unmeasured(self, tmp_path):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        bench_id = next(iter(curr["benchmarks"]))
+        curr["benchmarks"][bench_id] = {"error": "tagger failed"}
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        assert report["infrastructure_drift_detected"] is True
+        assert report["unmeasured_benchmarks"] == [bench_id]
+        assert report["per_benchmark"][bench_id]["errored_in"] == [
+            "current",
+        ]
+
+    def test_measured_benchmarks_still_compare_normally(self, tmp_path):
+        snap, curr, bench_id = self._errored_pair(tmp_path)
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        others = [b for b in report["per_benchmark"] if b != bench_id]
+        assert others
+        for other in others:
+            info = report["per_benchmark"][other]
+            assert "unmeasured" not in info
+            assert info["n_signals_stable"] > 0
+            assert info["n_signals_drifted"] == 0
+
+    def test_markdown_names_unmeasured_benchmark(self, tmp_path):
+        snap, curr, bench_id = self._errored_pair(tmp_path)
+        md = cdm.render_report(
+            cdm.detect_drift(snapshot=snap, current=curr),
+        )
+        assert "**Infrastructure drift detected:** **yes**" in md
+        assert "## Unmeasured benchmarks" in md
+        assert f"`{bench_id}`: errored in snapshot, current" in md
+        assert "tagger failed" in md
+
+    def test_cli_check_exits_nonzero_when_benchmark_errors(
+        self, tmp_path, monkeypatch,
+    ):
+        bdir = _write_benchmarks(tmp_path)
+        real_measure = cdm.measure_benchmark
+
+        def _measure(text, **kwargs):
+            if text == _SAMPLE_TEXT:
+                raise RuntimeError("tagger failed")
+            return real_measure(text, **kwargs)
+
+        monkeypatch.setattr(cdm, "measure_benchmark", _measure)
+        snap_path = tmp_path / "snap.json"
+        assert cdm.main([
+            "snapshot",
+            "--benchmark-dir", str(bdir),
+            "--out", str(snap_path),
+            "--no-tier2",
+        ]) == 0
+        report_path = tmp_path / "drift.json"
+        rc = cdm.main([
+            "check",
+            "--benchmark-dir", str(bdir),
+            "--snapshot", str(snap_path),
+            "--out", str(report_path),
+            "--json",
+            "--no-tier2",
+            "--exit-nonzero-on-drift",
+        ])
+        assert rc == 3
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert report["infrastructure_drift_detected"] is True
+        assert report["n_benchmarks_unmeasured"] == 1
 
 
 if __name__ == "__main__":
