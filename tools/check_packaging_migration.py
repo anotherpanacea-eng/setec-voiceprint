@@ -137,6 +137,9 @@ _P3_RELOCATION_ANCHORS = {
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/surprisal_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/controls_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/function_word_grammar_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/gecscore_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/specdetect_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/structural_shuffle_audit.py", "_SCRIPT_DIR"),
