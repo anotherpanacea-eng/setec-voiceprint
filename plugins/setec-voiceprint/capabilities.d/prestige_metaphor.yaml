@@ -2,33 +2,55 @@ entries:
 - id: prestige_metaphor
   script_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - aesthetic_authority_audit
   - variance_audit
-  family: TODO
-  purpose: AIC-8 prestige-metaphor detector.
+  family: aic-8-9-aesthetic-authority
+  purpose: AIC-8 prestige-metaphor detector. Builds on image-conjunction
+    detection ("the architecture of grief"), classifies each conjunction's
+    scaffolding word into a semantic domain, and flags documents whose
+    conjunctions scatter across many prestige domains (metaphor confetti) rather
+    than concentrating around one thematic commitment.
   use_when:
-  - TODO
+  - essayistic or literary prose leans on "the X of Y" image conjunctions and you
+    want to know whether they cohere or scatter
+  - checking whether a revision pass introduced prestige-domain metaphors
   do_not_use_when:
-  - TODO
+  - the optional Brysbaert concreteness data or a vectors-bearing spaCy model is
+    not installed; the audit then reports available false
+  - one sustained metaphor system is the writer's deliberate design; read scatter
+    in context
+  - you want a calibrated verdict; thresholds and baselines are provisional
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - optional flags --t1, --t2, --t3, --no-wordnet, --baseline, --baseline-source, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - JSON envelope with classified conjunctions, domain scatter entropy and density
+      (stdout or --out)
   compute:
-    tier: core
-    cost_note: TODO
+    tier: spacy
+    cost_note: spaCy parse plus en_core_web_md or _lg word vectors; needs the locally
+      fetched Brysbaert concreteness CSV (fetch_brysbaert.py); WordNet via NLTK is
+      an optional domain fallback
     length_floor_words: null
   registers:
-  - TODO
+  - all_nonfiction
+  - literary_fiction
   dependencies:
     python:
+    - spacy
+    python_optional:
     - nltk
-  examples: []
-  references: []
+  examples:
+  - description: Prestige-metaphor scatter without the WordNet fallback
+    cmd: python3 plugins/setec-voiceprint/scripts/prestige_metaphor.py draft.md --no-wordnet
+  references:
+  - baselines/register_typical.yaml
   _seeded_at: '2026-05-28'
