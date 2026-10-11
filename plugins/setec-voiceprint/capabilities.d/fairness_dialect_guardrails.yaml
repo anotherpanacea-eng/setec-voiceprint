@@ -2,32 +2,51 @@ entries:
 - id: fairness_dialect_guardrails
   script_path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
   surface: validation
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers:
   - gecscore_audit
-  family: TODO
-  purpose: linguistic-background caution surface (paired-release schedule Release
-    9, Trustworthiness Tier 1).
+  family: fairness-guardrails
+  purpose: Linguistic-background caution surface. Reports per-condition flags (nonnative English,
+    code-switching, dialect features, translation influence, speech-to-text, neurodivergent
+    patterns, educational genre, institutional template), mostly declared and with heuristic
+    code-switching detection on a target, and refuses evaluative or disciplinary use when the
+    validation set lacks comparable language backgrounds.
   use_when:
-  - TODO
+  - before reading any SETEC signal about a writer whose first language is not English, who
+    code-switches, or who writes in a dialect
+  - checking whether a baseline or validation manifest covers the writer's language background
   do_not_use_when:
-  - TODO
+  - you expect dialect detection; dialect and similar conditions must be declared (--declare),
+    they are not inferred
+  - you want the report to raise an evidentiary posture; the declared use case is informational
+    only
   inputs:
-    target: TODO
+    target: optional target text, declared conditions and a manifest describing baseline language
+      backgrounds
+    required:
+    - nothing required; supply at least --declare or --target for a useful report
+    optional:
+    - optional flags --target, --declare, --baseline-language-backgrounds, --manifest, --declared-use-case,
+      --json, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown caution report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only; no models
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Declare a nonnative-English writer and check the baseline coverage
+    cmd: python3 plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py --target draft.md
+      --declare nonnative_english --manifest corpus_manifest.jsonl
+  references:
+  - plugins/setec-voiceprint/capabilities.d/gecscore_audit.yaml
   _seeded_at: '2026-05-28'

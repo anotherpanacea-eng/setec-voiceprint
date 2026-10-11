@@ -56,6 +56,7 @@ def test_commitment_mutation_refuses(tmp_path):
         json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     with pytest.raises(tokenizer.TokenizerDataError, match="commitment mismatch"):
         tokenizer.load_data(path)

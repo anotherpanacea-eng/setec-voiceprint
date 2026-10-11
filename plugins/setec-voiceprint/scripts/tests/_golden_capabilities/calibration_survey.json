@@ -37,7 +37,7 @@
   ],
   "script_path": "plugins/setec-voiceprint/scripts/calibration/calibration_survey.py",
   "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "todo_reason": "Maintainer tool, hidden under the 2026-10-10 owner ruling (user-facing tools only): calibration_survey.py runs calibrate_thresholds over every registry signal and writes one comparison table plus a JSON survey ledger for the maintainer to review against the selection criteria in scripts/calibration/PROVENANCE.md. It does not pick a signal or change shipped thresholds; PROVENANCE.md keeps COMPRESSION_HEURISTICS audit-only, with calibrated thresholds applied only in a user-local fork. Users reach sharded runs through shard_runner.",
   "surface": "smoothing_diagnosis_calibration",
   "use_when": [
     "TODO"

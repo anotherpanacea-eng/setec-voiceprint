@@ -2,31 +2,51 @@ entries:
 - id: baseline_discovery
   script_path: plugins/setec-voiceprint/scripts/baseline_discovery.py
   surface: setup
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: structural_only
   handoff: none
   # consumers: no code importer; surfaced by skill: setup.
   consumers: []
-  family: TODO
-  purpose: locate the user's existing baselines folder.
+  family: setup
+  purpose: Locate the user's existing ai-prose-baselines-private/ folder before a
+    fresh SETEC instance creates an empty duplicate. Searches common locations
+    (repo sibling, ~/Documents, Obsidian / Dropbox / Google Drive / OneDrive /
+    iCloud roots, home), summarizes each candidate (manifest entries, impostor
+    personas, last modified), recommends one, and prints the SETEC_BASELINES_DIR
+    export line. Read-only.
   use_when:
-  - TODO
+  - first-run setup, or a new machine or git worktree, before any script writes
+    baselines
+  - SETEC appears to be writing into an empty baselines folder instead of your
+    synced one
+  - checking whether a specific path is a usable baselines folder (--validate)
   do_not_use_when:
-  - TODO
+  - SETEC_BASELINES_DIR is already set and points at the folder you use
+  - you want the folder created or the environment changed; the script only
+    reports and recommends
   inputs:
-    target: TODO
+    target: none (scans common filesystem locations); --validate PATH checks one path
+    optional:
+    - optional flags --json, --validate, --max-depth (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - human-readable candidate report with the recommended export line (stdout)
+    - JSON candidate list (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only; bounded directory walk (default depth 4) under each
+      search root; writes nothing
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Survey common locations for an existing baselines folder
+    cmd: python3 plugins/setec-voiceprint/scripts/baseline_discovery.py
+  - description: Check whether one path is a usable baselines folder
+    cmd: python3 plugins/setec-voiceprint/scripts/baseline_discovery.py --validate ~/ai-prose-baselines-private
+  references:
+  - plugins/setec-voiceprint/skills/setup/SKILL.md
   _seeded_at: '2026-05-28'

@@ -756,7 +756,7 @@ def check_ghost_rows(
 
 
 def _surface_implementation_path(legacy: str) -> str | None:
-    """Owning locations for flat, calibration and acquisition per-file launchers."""
+    """Owning locations for flat and supported nested per-file launchers."""
     try:
         old_rel = (REPO_ROOT / legacy).relative_to(SCRIPTS_ROOT)
     except ValueError:
@@ -765,7 +765,7 @@ def _surface_implementation_path(legacy: str) -> str | None:
         return None
     if len(old_rel.parts) == 1:
         target = SCRIPTS_ROOT / "setec/surfaces" / old_rel.name
-    elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources"}:
+    elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources", "external_mirror"}:
         target = SCRIPTS_ROOT / "setec" / old_rel
     else:
         return None
