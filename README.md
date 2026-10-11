@@ -136,6 +136,65 @@ pip install -r requirements-surprisal.txt     # adds transformers + torch (Tier 
 
 See "Calibration costs" below before starting a calibration run.
 
+### Local developer tests: native Punkt data
+
+Use **Python 3.12**, matching CI. The text-primitives characterization tests require **NLTK 3.9.4** and pinned
+English `punkt_tab` data in an isolated directory. Installing NLTK alone does
+not provision this data. CI already runs the setup below; repeat it locally
+before running the tests. Run commands from the repository root, using the
+same Python interpreter for installation, provisioning and tests.
+
+Use a checkout with functioning repository symlinks and original LF data bytes, including `references`
+pointing to `plugins/setec-voiceprint/references`. On Windows, a checkout that
+stores `references` as a plain text file will also fail fixture lookup; CRLF
+conversion of the frozen tokenizer JSON will fail its canonical-data check.
+For a fresh Windows clone with symlink support enabled, use
+`git -c core.symlinks=true -c core.autocrlf=false clone https://github.com/anotherpanacea-eng/setec-voiceprint.git`;
+WSL is another option. These checkout prerequisites are separate from Punkt setup.
+
+Bash (Linux/macOS, in your chosen development environment):
+
+```bash
+python3 -m pip install nltk==3.9.4 pytest
+punkt_parent=$(mktemp -d)
+export TEXTPRIMS_PUNKT_DATA="$punkt_parent/punkt"
+python3 tools/prepare_punkt_characterization.py --destination "$TEXTPRIMS_PUNKT_DATA"
+python3 tools/run_textprims_characterization.py --fixture plugins/setec-voiceprint/references/textprims/characterization.json --punkt-data "$TEXTPRIMS_PUNKT_DATA"
+python3 -m pytest plugins/setec-voiceprint/scripts/tests/test_textprims_characterization.py -q
+```
+
+PowerShell (Python 3.12):
+
+```powershell
+py -3.12 -m pip install nltk==3.9.4 pytest
+$punktParent = Join-Path ([IO.Path]::GetTempPath()) ('setec-tests-' + [guid]::NewGuid().ToString('N'))
+$env:TEXTPRIMS_PUNKT_DATA = Join-Path $punktParent 'punkt'
+py -3.12 tools/prepare_punkt_characterization.py --destination "$env:TEXTPRIMS_PUNKT_DATA"
+py -3.12 tools/run_textprims_characterization.py --fixture plugins/setec-voiceprint/references/textprims/characterization.json --punkt-data "$env:TEXTPRIMS_PUNKT_DATA"
+py -3.12 -m pytest plugins/setec-voiceprint/scripts/tests/test_textprims_characterization.py -q
+```
+
+The provisioner downloads and verifies the pinned official archive, extracting
+only the four English files. Its destination must not already exist. To reuse
+an already provisioned directory, set `TEXTPRIMS_PUNKT_DATA` to it in the test
+shell and omit the provisioning command. Keep this directory isolated rather
+than adding it to global NLTK search paths. The characterization runner verifies
+the resources, restores NLTK's search path afterwards, and never downloads or
+skips missing data.
+
+For offline setup, obtain the exact archive named by `URL` in
+[`tools/prepare_punkt_characterization.py`](tools/prepare_punkt_characterization.py)
+on a connected machine. Add `--archive /path/to/punkt_tab.zip` (PowerShell:
+`--archive 'C:\path\to\punkt_tab.zip'`) to the provisioning command, still using
+a new destination. An arbitrary downloader archive may differ and will be
+rejected. The provisioned characterization tests then run offline.
+
+For the full suite, also install the core/acquisition dependencies and spaCy
+model used by [the test workflow](.github/workflows/tests.yml). With the same
+environment variable still set, run `python3 -m pytest` (PowerShell:
+`py -3.12 -m pytest`); the focused commands above verify the Punkt prerequisite,
+not full-suite or platform qualification.
+
 ### Plugin install: Claude Code CLI / Desktop
 
 ```
