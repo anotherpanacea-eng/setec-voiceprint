@@ -2,30 +2,55 @@ entries:
 - id: aesthetic_authority_audit
   script_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
   surface: smoothing_diagnosis
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   consumers: []
-  family: TODO
-  purpose: compound AIC-8 + AIC-9 audit.
+  family: aic-8-9-aesthetic-authority
+  purpose: Compound AIC-8 + AIC-9 audit. Runs kicker density, image conjunction and
+    prestige metaphor together and reports their joint co-occurrence (paragraphs
+    that close on a kicker and also carry an image conjunction, optionally in a
+    prestige domain), the "performing aesthetic authority" signature that the
+    single detectors cannot see, against register-typical or explicit baselines.
   use_when:
-  - TODO
+  - you want one AIC-8/9 report instead of running the three detectors separately
+  - comparing a draft against a shipped register-typical baseline (--register)
   do_not_use_when:
-  - TODO
+  - spaCy with a vectors-bearing model or the Brysbaert concreteness data is not
+    installed; the image-conjunction and prestige blocks are then unavailable
+  - you want a calibrated verdict; register-typical baselines are provisional
   inputs:
-    target: TODO
+    target: one .txt/.md file
+    required:
+    - input
+    optional:
+    - optional flags --register, --kicker-baseline, --ic-baseline, --pm-baseline, --t1, --t2, --t3,
+      --word-limit, --no-wordnet, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - JSON envelope with per-detector blocks and joint co-occurrence metrics (stdout
+      or --out)
   compute:
-    tier: core
-    cost_note: TODO
+    tier: spacy
+    cost_note: spaCy parse plus en_core_web_md or _lg word vectors; needs the locally
+      fetched Brysbaert concreteness CSV; WordNet via NLTK optional
     length_floor_words: null
   registers:
-  - TODO
+  - contemporary_essay
+  - literary_fiction
+  - hard_science_fiction
+  - academic_prose
+  - blog_post
+  - technical_documentation
   dependencies:
-    python: []
-  examples: []
-  references: []
+    python:
+    - spacy
+    python_optional:
+    - nltk
+  examples:
+  - description: Compound AIC-8/9 audit against the contemporary-essay baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py draft.md
+      --register contemporary_essay
+  references:
+  - baselines/register_typical.yaml
   _seeded_at: '2026-05-28'

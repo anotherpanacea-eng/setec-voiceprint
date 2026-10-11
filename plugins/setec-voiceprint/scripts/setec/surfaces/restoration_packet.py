@@ -52,7 +52,7 @@ from typing import Any, Sequence
 from setec.paths import find_plugin_root
 
 from claim_license import ClaimLicense, from_legacy  # type: ignore
-from output_schema import build_output  # type: ignore
+from output_schema import build_output, unwrap_envelope  # type: ignore
 
 
 TASK_SURFACE = "craft_restoration"
@@ -904,6 +904,13 @@ def packets_from_aic(aic: dict[str, Any]) -> list[Packet]:
 # --------------- Top-level packet assembly ------------------
 
 
+def _usable(audit: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return ``None`` for an audit flagged ``available: false``."""
+    if isinstance(audit, dict) and audit.get("available") is False:
+        return None
+    return audit
+
+
 def build_packets(
     *,
     variance: dict[str, Any] | None,
@@ -914,6 +921,17 @@ def build_packets(
     max_targets: int,
     targetability_filter: set[str] | None,
 ) -> list[Packet]:
+    # Accept each producer's schema 1.0 ``--json`` envelope as well as
+    # the legacy bare payload; the readers below look at top-level keys.
+    # An audit that explicitly reports ``available: false`` produced
+    # no evidence, even if it still carries partial results; never
+    # build revision advice from it. Legacy payloads without the
+    # flag still pass.
+    variance = _usable(unwrap_envelope(variance))
+    bigram = _usable(unwrap_envelope(bigram))
+    voice = _usable(unwrap_envelope(voice))
+    idiolect = _usable(unwrap_envelope(idiolect))
+    aic = _usable(unwrap_envelope(aic))
     all_packets: list[Packet] = []
     if variance:
         all_packets.extend(packets_from_variance(variance))

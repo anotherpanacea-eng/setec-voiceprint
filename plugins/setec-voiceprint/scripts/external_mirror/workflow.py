@@ -33,6 +33,9 @@ from typing import Callable
 
 
 SCRIPT_VERSION = "0.1.0"
+# Same surface as the Phase B emitter it drives (compose_evidence_pack.py);
+# declared so the harness, the operator entry point, has a capability entry.
+TASK_SURFACE = "external_mirror_discrimination"
 DEFAULT_FAMILIES = ("claude", "chatgpt", "gemini", "human_control")
 _WINDOW_FILE_RE = re.compile(r"^window_(\d+)\.(txt|md)$")
 
