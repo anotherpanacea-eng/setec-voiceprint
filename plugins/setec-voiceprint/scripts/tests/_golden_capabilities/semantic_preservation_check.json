@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib regex and lexicons; uses spaCy NER for named entities when installed, else a regex fallback",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -9,34 +9,54 @@
     "mimicry_cosplay_audit"
   ],
   "dependencies": {
-    "python": []
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
   },
   "do_not_use_when": [
-    "TODO"
+    "you want a quality judgment; the check reports preservation, not whether the revision is better",
+    "you want an authorship verdict"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/semantic_preservation_check.py --before original.md --after revised.md --json --out report.json",
+      "description": "Check a restoration pass for meaning drift"
+    }
+  ],
+  "family": "semantic-preservation",
   "handoff": "none",
   "id": "semantic_preservation_check",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --category, --keep-quotes, --ai-status, --json, --out (see --help)"
+    ],
+    "required": [
+      "--before",
+      "--after"
+    ],
+    "target": "the original text (--before) and the revised text (--after)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown preservation report (stdout or --out)",
+      "JSON envelope (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "semantic guardrails over the before / after restoration pair (paired-release schedule Release 8, Trustworthiness Tier 3).",
-  "references": [],
+  "purpose": "Semantic guardrails over a before/after revision pair. Compares claim inventory, named entities, citations and authorities, stance markers, modal verbs, causal claims and hedges between the two texts and reports per category what was dropped, added and shared, with a verdict (preserved, shifted_dropped, shifted_added, shifted_changed). shifted_added flags restoration edits that make the prose more forceful than the writer was.",
+  "references": [
+    "plugins/setec-voiceprint/skills/craft-restoration/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/semantic_preservation_check.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "craft_restoration",
   "use_when": [
-    "TODO"
+    "after a voice-restoration or AI-assisted revision, to check the meaning did not shift (added causal claims, removed hedges)",
+    "auditing each added stance or causal item before accepting a revision"
   ]
 }
