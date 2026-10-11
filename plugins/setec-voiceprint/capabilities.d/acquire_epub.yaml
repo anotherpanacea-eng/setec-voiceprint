@@ -33,7 +33,7 @@ entries:
   outputs:
     schema_version: '1.0'
     artifacts:
-    - .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+    - .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona-or-pool>/
       (or identity/<register>/... for --corpus-role identity_baseline)
     - draft_manifest.jsonl
     - optional JSON run summary (--out)
