@@ -136,6 +136,9 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/s5_distance.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_distance.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_profile.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/gecscore_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/specdetect_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/structural_shuffle_audit.py", "_SCRIPT_DIR"),
@@ -243,8 +246,9 @@ _P4_BOOTSTRAP_ANCHORS = {
     ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
     ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
 }
-# Exact intrinsic producer-byte anchors authorized by the acquisition amendment.
+# Exact intrinsic producer-byte anchors authorized by the acquisition and S5 amendments.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'),
