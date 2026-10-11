@@ -636,9 +636,11 @@ def calibrate(
                 }
                 since_flush += 1
                 if since_flush >= flush_every:
+                    # Carry forward checkpoint records not yet revisited in
+                    # this pass, so an interrupted resume never loses them.
                     _save_scores_cache(
-                        cache_path, scored_now, status="in_progress",
-                        meta=cache_meta,
+                        cache_path, {**cached, **scored_now},
+                        status="in_progress", meta=cache_meta,
                     )
                     since_flush = 0
 

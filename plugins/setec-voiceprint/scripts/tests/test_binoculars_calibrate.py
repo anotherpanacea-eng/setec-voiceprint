@@ -969,3 +969,24 @@ def test_resume_refuses_a_damaged_checkpoint_before_rescoring(tmp_path, damage):
         _calibrate(manifest, _scored_audit(calls), scores_cache=cache,
                    resume=True, log=io.StringIO())
     assert calls == []
+
+
+def test_interrupted_resume_keeps_checkpoint_records_it_has_not_reached(tmp_path):
+    import io
+
+    manifest = _resume_fixture(tmp_path, n=20)
+    cache = tmp_path / "scores.json"
+    _calibrate(manifest, _scored_audit([]), scores_cache=cache, log=io.StringIO())
+    (tmp_path / "text_0.txt").write_text("text content 0 edited\n")
+    (tmp_path / "text_1.txt").write_text("text content 1 edited\n")
+
+    with pytest.raises(_HostHang):
+        _calibrate(manifest, _scored_audit([], hang_after=1), scores_cache=cache,
+                   resume=True, cache_flush_every=1, log=io.StringIO())
+    assert len(json.loads(cache.read_text())["scored"]) == 20
+
+    calls: list[str] = []
+    resumed = _calibrate(manifest, _scored_audit(calls), scores_cache=cache,
+                         resume=True, log=io.StringIO())
+    assert calls == ["text content 1 edited\n"]
+    assert resumed == _calibrate(manifest, _scored_audit([]), log=io.StringIO())
