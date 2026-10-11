@@ -66,6 +66,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from setec.paths import scripts_dir
+from setec.contract.output_schema import unwrap_envelope
 
 SCRIPT_DIR = scripts_dir()
 
@@ -135,6 +136,16 @@ class ReportInputs:
     control_writer_name: str = "the control writer"
     cv_ceiling: float = DURABLE_CV_CEILING
     today: str = field(default_factory=lambda: _dt.date.today().isoformat())
+
+    def __post_init__(self) -> None:
+        self.voice_profile = unwrap_envelope(self.voice_profile)
+        if isinstance(self.voice_profile, dict) and self.voice_profile.get("available") is False:
+            raise ValueError("voice_profile is unavailable; cannot render a voice report.")
+        for name in ("voice_drift", "idiolect_n1", "idiolect_n2", "idiolect_n3", "comparison_drift"):
+            value = unwrap_envelope(getattr(self, name))
+            if isinstance(value, dict) and value.get("available") is False:
+                value = None
+            setattr(self, name, value)
 
 
 # --------------- Header ------------------------------------------
@@ -985,7 +996,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace) -> int:
     """Top-level driver. Returns shell-style exit code."""
-    profile = _load_json(args.voice_profile)
+    profile = unwrap_envelope(_load_json(args.voice_profile))
+    if isinstance(profile, dict) and profile.get("available") is False:
+        sys.stderr.write("--voice-profile is unavailable; cannot render a voice report.\n")
+        return 2
     if profile is None:
         sys.stderr.write(
             "--voice-profile is required and must point to a valid JSON file.\n"
