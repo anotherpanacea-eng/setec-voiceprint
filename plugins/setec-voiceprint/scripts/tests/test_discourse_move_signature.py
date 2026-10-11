@@ -27,6 +27,22 @@ import discourse_move_signature as dms  # type: ignore
 
 
 class TestClassifySentence:
+    @pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+    @pytest.mark.parametrize("phrase,category", [
+        ("on the other hand", "contrast"), ("to be sure", "concession"),
+        ("for that reason", "consequence"), ("more precisely", "elaboration"),
+        ("for example", "exemplification"), ("in turn", "sequencing"),
+        ("the better question is", "reframing"), ("as everyone knows", "boosting"),
+        ("to a certain extent", "hedging"), ("to put it another way", "self_correction"),
+        ("as discussed above", "metadiscourse"),
+    ])
+    def test_multiword_moves_accept_whitespace(self, separator, phrase, category):
+        single = phrase.capitalize() + ", the evidence needs careful review."
+        wrapped = separator.join(phrase.capitalize().split()) + ", the evidence needs careful review."
+        assert dms.classify_sentence(single) == category
+        assert dms.classify_sentence(wrapped) == category
+        assert dms.audit_discourse_moves(wrapped) == dms.audit_discourse_moves(single)
+
     def test_contrast_marker(self):
         assert dms.classify_sentence(
             "However, the evidence is mixed."
