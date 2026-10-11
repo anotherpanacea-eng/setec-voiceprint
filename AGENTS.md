@@ -56,8 +56,8 @@ private machine paths, or keys.
 
 **Fuller cross-repo context** (full backlog, topology, deep lessons) lives in the
 maintainer's Dropbox fleet hub at its JDex address,
-`80-89 Projects/81 Software & tools/81.11 Repo fleet/` (until the hub finishes moving, read the old
-`Cowork/repo-fleet/` copy) — **not reachable from a bare cloud container**
+`80-89 Projects/81 Software & tools/81.11 Repo fleet/` (moved from `Cowork/repo-fleet/` on
+2026-10-11) — **not reachable from a bare cloud container**
 (which holds only this one git repo); a session with the Dropbox connector can
 read it. If you're a cloud session and
 need cross-repo context beyond this section, flag it rather than guessing.
