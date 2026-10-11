@@ -35,7 +35,7 @@
   ],
   "script_path": "plugins/setec-voiceprint/scripts/adversarial_robustness_card.py",
   "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "todo_reason": "User-facing but blocked: adversarial_robustness_card looks up signal values at the top level of its --base and --fixture variance_audit JSON, while variance_audit now emits a schema 1.0 envelope that nests them under results; a real base/fixture pair yields n_signals_with_data 0 and every signal unknown. Promote after the consumer unwraps the envelope (2026-10-10 owner ruling: user-facing tools only become discoverable, and this one does not yet work end to end).",
   "surface": "validation",
   "use_when": [
     "TODO"

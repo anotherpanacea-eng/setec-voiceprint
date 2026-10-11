@@ -136,6 +136,36 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/surprisal_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/controls_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/function_word_grammar_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/draft_history_analysis.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/known_editor_profile.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/before_after_restoration.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/semantic_preservation_check.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_validation_harness.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_drift_tracker.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/generate_voice_report.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/adversarial_robustness_card.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/length_bootstrap.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/check_corpus.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_corpus_template.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/s5_distance.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_distance.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/voice_profile.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/pdf_extract.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/pdf_inventory.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_manuscript.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_magazine.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_epub.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_blog.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/kicker_density.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/prestige_metaphor.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/gecscore_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/specdetect_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/structural_shuffle_audit.py", "_SCRIPT_DIR"),
@@ -243,8 +273,9 @@ _P4_BOOTSTRAP_ANCHORS = {
     ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
     ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
 }
-# Exact intrinsic producer-byte anchors authorized by the acquisition amendment.
+# Exact intrinsic producer-byte anchors authorized by the acquisition and S5 amendments.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'),

@@ -236,9 +236,15 @@ def audit_paragraphs(text: str) -> dict[str, Any]:
     """
     paragraphs = split_paragraphs(text)
     n_paragraphs = len(paragraphs)
+    # Whole-text word count. ``build_audit_payload`` reads it for the
+    # envelope's ``target.words``; without it every --json envelope
+    # reported 0 words. Counted over the full text so short paragraphs
+    # that ``split_paragraphs`` drops still count.
+    total_words = word_count(text)
     if n_paragraphs == 0:
         return {
             "task_surface": TASK_SURFACE,
+            "n_words": total_words,
             "n_paragraphs": 0,
             "available": False,
             "reason": "no paragraphs",
@@ -419,6 +425,7 @@ def audit_paragraphs(text: str) -> dict[str, Any]:
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
         "available": True,
+        "n_words": total_words,
         "n_paragraphs": n_paragraphs,
         "paragraph_word_counts": para_word_counts,
         "length_summary": {
