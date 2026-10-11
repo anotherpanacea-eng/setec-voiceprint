@@ -100,7 +100,7 @@ def test_paragraph_alias_requires_its_metadata_row(monkeypatch, capsys):
     "wrong_target", "unrelated_source", "extra_dependency", "side_effect",
     "wrong_bootstrap", "unsupported_directory",
 ])
-@pytest.mark.parametrize("layout", ["flat", "calibration"])
+@pytest.mark.parametrize("layout", ["flat", "calibration", "external_mirror"])
 def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout):
     scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
@@ -110,8 +110,8 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     # Isolate candidate admission against an existing, empty baseline.
     monkeypatch.setattr(cl, "_merge_base", lambda ref: "baseline")
     monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: [])
-    legacy_dir = "" if layout == "flat" else "calibration/"
-    package_dir = "setec/surfaces" if layout == "flat" else "setec/calibration"
+    legacy_dir = "" if layout == "flat" else layout + "/"
+    package_dir = "setec/surfaces" if layout == "flat" else "setec/" + layout
     package_name = package_dir.replace("/", ".")
     scripts_anchor = "parent" if layout == "flat" else "parents[1]"
     for package in ("setec", package_dir):
@@ -470,14 +470,14 @@ def test_ratchet_preserves_only_existing_p2_dependencies(tmp_path, monkeypatch, 
     "changed_kind", "malformed_launcher", "wrong_target", "extra_dependency",
     "already_relocated", "already_relocated_new_target",
 ])
-@pytest.mark.parametrize("layout", ["flat", "calibration"])
+@pytest.mark.parametrize("layout", ["flat", "calibration", "external_mirror"])
 def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case, layout):
     prefix = "plugins/setec-voiceprint/scripts/"
     scripts = tmp_path / prefix
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
-    legacy_dir = "" if layout == "flat" else "calibration/"
-    package_dir = "setec/surfaces" if layout == "flat" else "setec/calibration"
+    legacy_dir = "" if layout == "flat" else layout + "/"
+    package_dir = "setec/surfaces" if layout == "flat" else "setec/" + layout
     package_name = package_dir.replace("/", ".")
     scripts_anchor = "parent" if layout == "flat" else "parents[1]"
     for package in ("setec", package_dir):
