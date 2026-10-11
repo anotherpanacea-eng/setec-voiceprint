@@ -68,6 +68,7 @@ from pathlib import Path
 from typing import Any
 
 from setec.paths import scripts_dir
+from setec.contract.output_schema import unwrap_envelope
 
 SCRIPT_DIR = scripts_dir()
 
@@ -136,6 +137,9 @@ def _extract_signal(
 
 def _extract_all_signals(data: dict[str, Any]) -> dict[str, float | None]:
     """Extract every supported signal from a variance audit JSON."""
+    data = unwrap_envelope(data)
+    if isinstance(data, dict) and data.get("available") is False:
+        return {name: None for name in _VARIANCE_SIGNALS}
     return {
         name: _extract_signal(data, path)
         for name, path in _VARIANCE_SIGNALS.items()

@@ -67,6 +67,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from setec.paths import scripts_dir
+from setec.contract.output_schema import unwrap_envelope
 
 ROOT = scripts_dir()
 
@@ -113,6 +114,14 @@ GAMING_AGGREGATES = (
 
 
 # --------------- Signal extractors --------------------------
+
+
+def _usable_audit(audit: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Read legacy or normalized output, refusing explicit unavailability."""
+    audit = unwrap_envelope(audit)
+    if isinstance(audit, dict) and audit.get("available") is False:
+        return None
+    return audit
 
 
 def _extract_variance_value(audit: dict[str, Any], signal_key: str) -> float | None:
@@ -164,8 +173,13 @@ def _extract_compression_fraction(audit: dict[str, Any]) -> float | None:
 
 
 def _extract_voice_distance(voice: dict[str, Any]) -> float | None:
-    v = voice.get("overall_distance") or voice.get("score")
-    return float(v) if isinstance(v, (int, float)) else None
+    for key in ("overall_distance", "score"):
+        value = voice.get(key)
+        if isinstance(value, (int, float)):
+            return float(value)
+    overall = voice.get("overall")
+    value = overall.get("weighted_delta") if isinstance(overall, dict) else None
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _bigram_kl_contribs(bigram: dict[str, Any]) -> dict[str, float]:
@@ -294,6 +308,14 @@ def evaluate_packet(
     """Compute a verdict for one packet from the original restoration
     packet. Dispatches on the packet's `id` prefix and reads
     before/after values from the corresponding JSON pair."""
+    before_variance = _usable_audit(before_variance)
+    after_variance = _usable_audit(after_variance)
+    before_bigram = _usable_audit(before_bigram)
+    after_bigram = _usable_audit(after_bigram)
+    before_voice = _usable_audit(before_voice)
+    after_voice = _usable_audit(after_voice)
+    before_idiolect = _usable_audit(before_idiolect)
+    after_idiolect = _usable_audit(after_idiolect)
     pid = packet.get("id", "")
     signal = packet.get("signal", "")
     targetability = packet.get("targetability", "unspecified")
@@ -389,15 +411,17 @@ def evaluate_packet(
         before_kls = _bigram_kl_contribs(before_bigram or {})
         after_kls = _bigram_kl_contribs(after_bigram or {})
         before = before_kls.get(bigram_key)
-        after = after_kls.get(bigram_key, 0.0)  # absent in after = 0 contribution
-        if before is None:
+        # Only a usable audit can establish that a missing row contributes zero.
+        after = after_kls.get(bigram_key, 0.0) if after_bigram is not None else None
+        if before is None or after is None:
             return TargetVerdict(
                 target_id=pid, signal=signal, targetability=targetability,
-                direction=direction, before=None, after=after,
+                direction=direction, before=before, after=after,
                 delta=None, signed_improvement=None,
                 noise_threshold=NOISE_THRESHOLDS["kl_contribution"],
                 verdict="not_measurable",
-                notes=["Could not find bigram in before bigram_diff JSON."],
+                notes=["Could not find bigram in before bigram_diff JSON." if before is None
+                       else "After bigram_diff audit is absent or unavailable."],
             )
         delta, signed_improvement, noise = _signed_improvement_bigram(before, after)
         if not after_bigram:
@@ -576,6 +600,12 @@ def diff_all_signals(
 ) -> dict[str, Any]:
     """Report raw before/after deltas across all measurable signals
     without committing to a target list. Used in diff-only mode."""
+    before_variance = _usable_audit(before_variance)
+    after_variance = _usable_audit(after_variance)
+    before_bigram = _usable_audit(before_bigram)
+    after_bigram = _usable_audit(after_bigram)
+    before_voice = _usable_audit(before_voice)
+    after_voice = _usable_audit(after_voice)
     out: dict[str, Any] = {"variance": {}, "bigram": {}, "voice": {}}
     if before_variance and after_variance:
         for key in COMPRESSION_HEURISTICS.keys():
@@ -826,7 +856,7 @@ def _load_json_arg(path: str | None) -> dict[str, Any] | None:
     if not p.is_file():
         sys.stderr.write(f"Input not found: {p}\n")
         sys.exit(1)
-    return json.loads(p.read_text(encoding="utf-8"))
+    return _usable_audit(json.loads(p.read_text(encoding="utf-8")))
 
 
 def _load_text_arg(path: str | None) -> str | None:
