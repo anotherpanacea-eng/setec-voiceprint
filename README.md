@@ -155,7 +155,7 @@ WSL is another option. These checkout prerequisites are separate from Punkt setu
 Bash (Linux/macOS, in your chosen development environment):
 
 ```bash
-python3 -m pip install nltk==3.9.4 pytest
+python3 -m pip install nltk==3.9.4 pytest numpy
 punkt_parent=$(mktemp -d)
 export TEXTPRIMS_PUNKT_DATA="$punkt_parent/punkt"
 python3 tools/prepare_punkt_characterization.py --destination "$TEXTPRIMS_PUNKT_DATA"
@@ -166,7 +166,7 @@ python3 -m pytest plugins/setec-voiceprint/scripts/tests/test_textprims_characte
 PowerShell (Python 3.12):
 
 ```powershell
-py -3.12 -m pip install nltk==3.9.4 pytest
+py -3.12 -m pip install nltk==3.9.4 pytest numpy
 $punktParent = Join-Path ([IO.Path]::GetTempPath()) ('setec-tests-' + [guid]::NewGuid().ToString('N'))
 $env:TEXTPRIMS_PUNKT_DATA = Join-Path $punktParent 'punkt'
 py -3.12 tools/prepare_punkt_characterization.py --destination "$env:TEXTPRIMS_PUNKT_DATA"
