@@ -2,34 +2,54 @@ entries:
 - id: semantic_preservation_check
   script_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
   surface: craft_restoration
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: heuristic
   handoff: none
   # consumers: named in the SHIPPED mimicry_cosplay_audit claim_license contract
   # fixture.
   consumers:
   - mimicry_cosplay_audit
-  family: TODO
-  purpose: semantic guardrails over the before / after restoration pair (paired-release
-    schedule Release 8, Trustworthiness Tier 3).
+  family: semantic-preservation
+  purpose: Semantic guardrails over a before/after revision pair. Compares claim inventory,
+    named entities, citations and authorities, stance markers, modal verbs, causal claims and
+    hedges between the two texts and reports per category what was dropped, added and shared,
+    with a verdict (preserved, shifted_dropped, shifted_added, shifted_changed). shifted_added
+    flags restoration edits that make the prose more forceful than the writer was.
   use_when:
-  - TODO
+  - after a voice-restoration or AI-assisted revision, to check the meaning did not shift (added
+    causal claims, removed hedges)
+  - auditing each added stance or causal item before accepting a revision
   do_not_use_when:
-  - TODO
+  - you want a quality judgment; the check reports preservation, not whether the revision is
+    better
+  - you want an authorship verdict
   inputs:
-    target: TODO
+    target: the original text (--before) and the revised text (--after)
+    required:
+    - --before
+    - --after
+    optional:
+    - optional flags --category, --keep-quotes, --ai-status, --json, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - Markdown preservation report (stdout or --out)
+    - JSON envelope (--json)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib regex and lexicons; uses spaCy NER for named entities when installed,
+      else a regex fallback
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
-  references: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Check a restoration pass for meaning drift
+    cmd: python3 plugins/setec-voiceprint/scripts/semantic_preservation_check.py --before original.md
+      --after revised.md --json --out report.json
+  references:
+  - plugins/setec-voiceprint/skills/craft-restoration/SKILL.md
   _seeded_at: '2026-05-28'

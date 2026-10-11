@@ -3,7 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
   surface: smoothing_diagnosis
   status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  todo_reason: "Internal library, hidden under the 2026-10-10 owner ruling (user-facing tools only): length_bootstrap.py has no __main__ entry point; variance_audit and voice_distance import its helpers when a user passes --bootstrap, so users reach it through those audits, not as a runnable capability."
   handoff: none
   consumers:
   - variance_audit

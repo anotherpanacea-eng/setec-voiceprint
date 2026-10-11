@@ -37,6 +37,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import write_utf8_text as _write
+
 SCRIPTS_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -115,12 +117,6 @@ def _multi_para_text(n_paras: int = 5, words_per: int = 60) -> str:
         body = " ".join([f"word{i}_{j}" for j in range(words_per)])
         paras.append(f"Paragraph number {i}. {body}.")
     return "\n\n".join(paras)
-
-
-def _write(tmp_path: Path, name: str, text: str) -> Path:
-    p = tmp_path / name
-    p.write_text(text, encoding="utf-8")
-    return p
 
 
 def _write_dir(tmp_path: Path, dirname: str, files: dict[str, str]) -> Path:

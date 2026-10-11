@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from conftest import write_utf8_text as _write
+
 import concreteness as c  # type: ignore
 
 
@@ -171,12 +173,6 @@ def test_is_available_accepts_a_locally_acquired_override(fixture_csv_path: Path
 # latin-1 byte raised UnicodeDecodeError straight out of `is_available()`,
 # which the three `_skip_no_data` markers call at import time (so pytest
 # COLLECTION errored, not just the run).
-
-
-def _write(tmp_path: Path, name: str, text: str) -> Path:
-    p = tmp_path / name
-    p.write_text(text, encoding="utf-8")
-    return p
 
 
 @pytest.mark.parametrize(
