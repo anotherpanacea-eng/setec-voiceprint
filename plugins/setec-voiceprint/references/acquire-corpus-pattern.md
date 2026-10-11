@@ -11,7 +11,7 @@ use the shared privacy guard unless `--allow-public-output` is explicit.
 
 ## When to reach for this
 
-Use this pattern (and the companion `scripts/acquire_corpus_template.py`) when:
+Use this pattern (and the companion `scripts/setec/surfaces/acquire_corpus_template.py`) when:
 
 - The user has prose they want to add to the impostor pool from a source SETEC doesn't already handle.
 - The source is a directory of files, an export archive, an API response, or a feed shape we don't yet support.
@@ -161,7 +161,7 @@ Argparse should make `--impostor-for`, `--register`, and `--consent-status` `req
 
 ## What the source-specific code has to implement
 
-Three pure functions plus one wiring step. The template (`scripts/acquire_corpus_template.py`) has all four marked with `TODO(LLM)` comments.
+Three pure functions plus one wiring step. The template (`scripts/setec/surfaces/acquire_corpus_template.py`) has all four marked with `TODO(LLM)` comments.
 
 ### 1. `discover_items(source, options)` → `Iterable[ItemMeta]`
 
@@ -339,7 +339,7 @@ The five existing scripts have 23–32 tests each; aim for similar coverage on a
 
 If you're using an LLM (Claude, GPT-4, etc.) to help you adapt the pattern to a new source, the workflow that works:
 
-1. **Show the LLM this doc + `scripts/acquire_corpus_template.py`**. Both files are stable and short enough to fit in one context window.
+1. **Show the LLM this doc + `scripts/setec/surfaces/acquire_corpus_template.py`**. Both files are stable and short enough to fit in one context window.
 
 2. **Describe the source.** What is it? Where does the content live (URL? file? archive?)? What format (HTML / Markdown / JSON / PDF / something exotic)? What metadata is available per item (title, author, date)? Are there obvious skip cases (paid content, comment threads, system messages)?
 
@@ -369,11 +369,11 @@ If you're using an LLM (Claude, GPT-4, etc.) to help you adapt the pattern to a 
 
 ## See also
 
-- `scripts/acquire_corpus_template.py` — the scaffold script with `TODO(LLM)` markers.
+- `scripts/setec/surfaces/acquire_corpus_template.py` — the scaffold script with `TODO(LLM)` markers (the flat `scripts/acquire_corpus_template.py` is its compatibility launcher, not a copyable scaffold).
 - `scripts/acquisition_core.py` — the shared helpers documented above.
-- `scripts/acquire_blog.py` — the most general live-network acquisition example. Reads as a worked instance of this pattern.
-- `scripts/acquire_blogger_takeout.py` — the simplest local-source acquisition example.
-- `scripts/acquire_magazine.py` — a worked example of multiple per-source modules behind a uniform CLI.
-- `scripts/acquire_epub.py` — local-source EPUB ebooks; chapter-level discovery, multi-author pools (per-book persona), per-book `era` from OPF `dc:date`.
+- `scripts/setec/surfaces/acquire_blog.py` — the most general live-network acquisition example. Reads as a worked instance of this pattern.
+- `scripts/setec/surfaces/acquire_blogger_takeout.py` — the simplest local-source acquisition example.
+- `scripts/setec/surfaces/acquire_magazine.py` — a worked example of multiple per-source modules behind a uniform CLI.
+- `scripts/setec/surfaces/acquire_epub.py` — local-source EPUB ebooks; chapter-level discovery, multi-author pools (per-book persona), per-book `era` from OPF `dc:date`.
 - `references/manifest-schema.md` — the manifest contract the emitted entries have to satisfy.
 - `internal/2026-05-08-impostor-corpus-spec.md` — the spec the existing scripts were built from.

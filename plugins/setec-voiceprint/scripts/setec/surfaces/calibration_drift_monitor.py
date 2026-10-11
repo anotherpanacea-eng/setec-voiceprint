@@ -490,9 +490,44 @@ def detect_drift(
     n_drifted = 0
     n_stable = 0
     drifted_benchmarks: list[str] = []
+    unmeasured_benchmarks: list[str] = []
     for bench_id in sorted(set(snap_benches) | set(curr_benches)):
         snap_b = snap_benches.get(bench_id, {})
         curr_b = curr_benches.get(bench_id, {})
+        # ``take_snapshot`` stores ``{"error": ...}`` for a benchmark
+        # whose measurement raised. Comparing that against anything
+        # compares absent signal dicts: an error on both sides used
+        # to come out as zero drifted signals, i.e. a silent
+        # no-drift verdict on a benchmark nobody measured. Treat an
+        # errored side as unmeasured and keep it out of the signal
+        # comparison so it can never read as stable.
+        errored_in = [
+            side for side, bench in (
+                ("snapshot", snap_b), ("current", curr_b),
+            )
+            if isinstance(bench, dict) and "error" in bench
+        ]
+        if errored_in:
+            unmeasured_benchmarks.append(bench_id)
+            per_benchmark[bench_id] = {
+                "unmeasured": True,
+                "errored_in": errored_in,
+                "errors": {
+                    side: str(
+                        (snap_b if side == "snapshot" else curr_b)
+                        .get("error")
+                    )
+                    for side in errored_in
+                },
+                "n_signals_drifted": 0,
+                "n_signals_stable": 0,
+                "n_signals_added": 0,
+                "n_signals_removed": 0,
+                "n_signals_schema_changed": 0,
+                "signal_diffs": {},
+                "compression_diffs": {},
+            }
+            continue
         signal_diffs = _compare_signals(
             snap_b.get("signals", {}),
             curr_b.get("signals", {}),
@@ -562,11 +597,16 @@ def detect_drift(
         b.get("n_signals_schema_changed", 0)
         for b in per_benchmark.values()
     )
+    # An unmeasured benchmark fails closed: the monitor cannot
+    # vouch for reproducibility it did not measure, so the overall
+    # verdict (and ``--exit-nonzero-on-drift``) never reads as
+    # no-drift while any benchmark errored.
     overall_drift = (
         n_drifted > 0
         or n_schema_changed_total > 0
         or bool(constant_changes)
         or bool(comp_diffs_in_aggregate(per_benchmark))
+        or bool(unmeasured_benchmarks)
     )
     # The recommendation surface: threshold constants changing,
     # OR the stack changing while *any* drift signal fired
@@ -589,6 +629,8 @@ def detect_drift(
         "n_signals_schema_changed": n_schema_changed_total,
         "n_benchmarks_drifted": len(drifted_benchmarks),
         "drifted_benchmarks": drifted_benchmarks,
+        "n_benchmarks_unmeasured": len(unmeasured_benchmarks),
+        "unmeasured_benchmarks": unmeasured_benchmarks,
         "infrastructure_drift_detected": overall_drift,
         "recalibration_recommended": recalibration_recommended,
         "claim_license": _claim_license_dict(
@@ -597,6 +639,7 @@ def detect_drift(
             n_signals_drifted=n_drifted,
             n_signals_schema_changed=n_schema_changed_total,
             recalibration=recalibration_recommended,
+            n_benchmarks_unmeasured=len(unmeasured_benchmarks),
         ),
     }
 
@@ -619,6 +662,7 @@ def _claim_license_dict(
     n_signals_drifted: int,
     n_signals_schema_changed: int = 0,
     recalibration: bool,
+    n_benchmarks_unmeasured: int = 0,
 ) -> dict[str, Any]:
     lic = ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -650,6 +694,7 @@ def _claim_license_dict(
             "stack_changes": list(stack_changes.keys()),
             "constant_changes": list(constant_changes.keys()),
             "recalibration_recommended": recalibration,
+            "n_benchmarks_unmeasured": n_benchmarks_unmeasured,
         },
         additional_caveats=[
             "The noise-floor thresholds are heuristic. "
@@ -675,6 +720,7 @@ def _claim_license_dict(
 
 def render_report(report: dict[str, Any]) -> str:
     drifted = report.get("drifted_benchmarks", [])
+    unmeasured = report.get("unmeasured_benchmarks", [])
     n_drifted = report.get("n_signals_drifted", 0)
     n_stable = report.get("n_signals_stable", 0)
     n_schema = report.get("n_signals_schema_changed", 0)
@@ -701,8 +747,26 @@ def render_report(report: dict[str, Any]) -> str:
         f"**Signals drifted / schema-changed / stable:** "
         f"{n_drifted} / {n_schema} / {n_stable}",
         f"**Benchmarks drifted:** {len(drifted)}",
+        f"**Benchmarks unmeasured (errored):** {len(unmeasured)}",
         "",
     ]
+
+    if unmeasured:
+        lines.append("## Unmeasured benchmarks")
+        lines.append("")
+        lines.append(
+            "These benchmarks raised during measurement, so their "
+            "drift is unknown. They count against the overall "
+            "verdict and are not reported as stable."
+        )
+        lines.append("")
+        for bench_id in unmeasured:
+            info = report.get("per_benchmark", {}).get(bench_id, {})
+            sides = ", ".join(info.get("errored_in") or []) or "unknown"
+            lines.append(f"- `{bench_id}`: errored in {sides}")
+            for side, err in (info.get("errors") or {}).items():
+                lines.append(f"  - {side}: {err}")
+        lines.append("")
 
     stack_changes = report.get("stack_changes", {})
     if stack_changes:

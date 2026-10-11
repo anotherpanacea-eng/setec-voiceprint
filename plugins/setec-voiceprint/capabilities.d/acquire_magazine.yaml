@@ -2,33 +2,59 @@ entries:
 - id: acquire_magazine
   script_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
   surface: voice_coherence_acquisition
-  status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  status: structural_only
   handoff: none
   # consumers: no code importer; surfaced by skills: corpus-acquisition, setup.
   consumers: []
-  family: TODO
-  purpose: pull literary-horror short fiction from online magazines.
+  family: acquisition
+  purpose: pull contemporary literary-horror short fiction from supported online
+    magazines (nightmare, the_dark) into the private impostor pool, optionally
+    filtered by author and minting one persona per author, for a
+    register-matched fiction comparison pool.
   use_when:
-  - TODO
+  - building a literary-horror impostor pool from named magazine writers
+    (--filter-author with --persona-from-author)
+  - you need register-matched contemporary short fiction to compare a fiction
+    baseline against (General Imposters)
   do_not_use_when:
-  - TODO
+  - the magazine is not in the supported set (nightmare, the_dark); other venues
+    need a new MAGAZINE_MODULES entry
+  - you want nonfiction or essay prose
   inputs:
-    target: TODO
+    target: a supported magazine slug (--magazine nightmare or the_dark)
+    required:
+    - --magazine
+    - --register
+    - --consent-status
+    - --impostor-for
+    - supply --persona or --persona-from-author
+    optional:
+    - optional flags --filter-author, --since/--until, --max-stories, --rate-limit, --dry-run,
+      --output-dir, --emit-manifest, --out (see --help)
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+    - draft_manifest.jsonl (corpus_role impostor)
+    - optional JSON run summary (--out)
   compute:
     tier: acquisition
-    cost_note: TODO
+    cost_note: network-bound; robots.txt honored with a per-host rate limit (default
+      2.0 s); archive plus one fetch per story, capped by --max-stories (default 30)
     length_floor_words: null
   registers:
-  - TODO
+  - literary_horror
   dependencies:
     python:
+    - requests
     - bs4
     - lxml
-  examples: []
-  references: []
+  examples:
+  - description: Per-author literary-horror impostor pool from Nightmare
+    cmd: python3 plugins/setec-voiceprint/scripts/acquire_magazine.py --magazine nightmare
+      --persona-from-author --filter-author "Brian Evenson" --register literary_horror
+      --impostor-for my_fiction_persona --consent-status fair_use_research --dry-run
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  - plugins/setec-voiceprint/skills/corpus-acquisition/SKILL.md
   _seeded_at: '2026-05-28'

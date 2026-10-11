@@ -3,7 +3,7 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/evidentiary_conditions_gate.py
   surface: validation
   status: todo
-  todo_reason: "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated."
+  todo_reason: "User-facing but blocked: evidentiary_conditions_gate reads several input keys at the top level, while the audit producers now emit schema 1.0 envelopes that nest results; with real variance, paragraph, agency and confounder JSON it reports n_audit_surfaces 0 and has_confounder_diagnosis false, so its rationale misstates the evidence (the posture errs low). Promote after the consumer unwraps the envelope (2026-10-10 owner ruling: user-facing tools only become discoverable)."
   handoff: none
   # consumers: the SHIPPED mimicry_cosplay_audit claim_license names "the
   # evidentiary-conditions gate" as a required pairing in does_not_license. Pinned by
