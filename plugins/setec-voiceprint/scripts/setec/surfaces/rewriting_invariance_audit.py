@@ -83,7 +83,6 @@ REWRITE_PROMPT = (
 # API-backed one from --judge.
 RewriteFn = Callable[..., str]
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
@@ -91,8 +90,7 @@ class RewriteError(RuntimeError):
     """Raised when a rewrite backend cannot produce a result."""
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _tokenize(text: str) -> list[str]:

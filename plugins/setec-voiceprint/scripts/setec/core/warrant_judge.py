@@ -123,8 +123,7 @@ def render_prompt() -> str:
     return "\n".join(lines)
 
 
-def _number_paragraphs(paragraphs: list[str]) -> str:
-    return "\n\n".join(f"[{i}] {p}" for i, p in enumerate(paragraphs))
+from setec.core.textprims import number_paragraphs as _number_paragraphs
 
 
 def fingerprint_prompt(prompt_text: str = "") -> str:

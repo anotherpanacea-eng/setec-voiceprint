@@ -107,3 +107,125 @@ def test_bytes_arguments_must_be_hex_objects(tmp_path):
         row["args"] = ["plain text"]
     with pytest.raises(ValueError, match="closed hex object"):
         runner.run(_altered(tmp_path, change), os.environ["TEXTPRIMS_PUNKT_DATA"])
+
+
+@pytest.mark.parametrize("module_name", [
+    "agd_move_scan", "argquality_dimension_profile", "argument_decision_audit",
+    "enthymeme_gapflag", "fallacy_scan", "warrant_probe",
+])
+def test_argument_audits_share_blankline_splitter(module_name):
+    # The one-owner contract keeps the established public aliases on one object.
+    import importlib
+    from setec.core import textprims
+    legacy = importlib.import_module(module_name)
+    packaged = importlib.import_module("setec.surfaces." + module_name)
+    assert legacy is packaged
+    assert legacy.split_paragraphs is textprims.split_paragraphs_blanklines
+
+
+@pytest.mark.parametrize("module_name", [
+    "crosslingual_voice_distance", "document_layout_audit", "formulaicity_audit",
+    "narratorial_distance_audit", "reference_ecology_audit",
+    "rewriting_invariance_audit", "sound_texture_audit",
+])
+def test_unicode_counters_share_function_and_pattern(module_name):
+    # Preserve existing public names and the compiled-pattern compatibility alias.
+    import importlib
+    from setec.core import textprims
+    legacy = importlib.import_module(module_name)
+    packaged = importlib.import_module("setec.surfaces." + module_name)
+    assert legacy is packaged
+    assert legacy.count_words is textprims.count_words_unicode_hyphen
+
+
+
+@pytest.mark.parametrize("module_name, public_name", [
+    ("stylometry_core", "word_tokens"),
+])
+def test_alpha_word_token_consumers_share_function_and_pattern(module_name, public_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert getattr(module, public_name) is textprims.word_tokens_alpha
+    assert module.WORD_RE is textprims.WORD_RE
+    # These regex methods are consumed publicly, with original case intact.
+    assert module.WORD_RE.findall("AbC café don't") == ["AbC", "caf", "don't"]
+    assert module.WORD_RE.sub(lambda m: m.group(0).upper(), "AbC café don't") == "ABC CAFé DON'T"
+
+
+
+@pytest.mark.parametrize("module_name, public_name", [
+    ("agency_abstraction_audit", "_word_count"),
+    ("discourse_move_signature", "_word_count"),
+    ("paragraph_audit", "word_count"),
+    ("punctuation_cadence_audit", "_word_count"),
+    ("stance_modality_audit", "_word_count"),
+])
+def test_unicode_plain_counters_share_function_and_pattern(module_name, public_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert getattr(module, public_name) is textprims.count_words_unicode
+    assert module._WORD_RE is textprims._WORD_UNICODE_RE
+
+
+
+@pytest.mark.parametrize("module_name", ["distinct_diversity_audit", "homogeneity_audit"])
+def test_token_count_consumers_share_count_words_alpha(module_name):
+    import importlib
+    from setec.core import textprims
+    assert importlib.import_module(module_name)._word_count is textprims.count_words_alpha
+
+
+
+@pytest.mark.parametrize("module_name, public_name", [
+    ("function_word_grammar_audit", "_sentences"), ("discourse_move_signature", "_split_sentences"),
+])
+def test_uppercase_sentence_consumers_share_function_and_pattern(module_name, public_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert getattr(module, public_name) is textprims.split_sentences_uppercase
+    assert module._SENTENCE_TERMINATORS is textprims._SENTENCE_TERMINATORS
+    if module_name == "function_word_grammar_audit":
+        # Run segmentation is deliberately different and remains local.
+        assert module._SENT_SPLIT_RE.pattern == r"[.!?]+|\n{2,}"
+        assert module.function_word_runs("in the. of the") == [["in", "the"], ["of", "the"]]
+
+
+
+@pytest.mark.parametrize("module_name", [
+    "specdetect_audit", "structural_shuffle_audit", "binoculars_audit",
+    "edit_magnitude_audit", "fast_detect_curvature", "intrinsic_dimension_audit",
+])
+def test_alpha_lower_counter_consumers_share_function_and_pattern(module_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert module.count_words is textprims.count_words_alpha_lower
+    assert module._WORD_RE is textprims._WORD_RE
+    # Lowercasing before the ASCII regex has distinct Unicode behavior.
+    assert module.count_words(text="\u212a") == 1
+    assert module.count_words(text="\u0130abc") == 2
+    assert module.count_words(text="A\u212aB") == 1
+    assert module._WORD_RE.findall("A\u212aB") == ["A", "B"]
+    with pytest.raises(AttributeError):
+        module.count_words(None)
+    with pytest.raises(TypeError):
+        module.count_words(b"AbC")
+
+
+
+@pytest.mark.parametrize("module_name", [
+    "agd_move_scan_judge", "argquality_judge", "argument_judge",
+    "fallacy_judge", "warrant_judge",
+])
+def test_numbered_paragraph_consumers_share_primitive(module_name):
+    import importlib
+    from setec.core import textprims
+    module = importlib.import_module(module_name)
+    assert module._number_paragraphs is textprims.number_paragraphs
+    paragraphs = ["", "second"]
+    assert module._number_paragraphs(paragraphs=paragraphs) == "[0] \n\n[1] second"
+    assert module._build_user_content("synthetic prompt", paragraphs).endswith("[0] \n\n[1] second")
+    assert paragraphs == ["", "second"]

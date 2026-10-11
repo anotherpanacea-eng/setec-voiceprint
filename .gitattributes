@@ -18,6 +18,7 @@ plugins/setec-voiceprint/scripts/tests/fixtures/imessage_atomic_export_seam/** t
 # checkouts.
 plugins/setec-voiceprint/references/register-classifier-h1-receipt.json text eol=lf
 plugins/setec-voiceprint/scripts/register_classifier.py text eol=lf
+plugins/setec-voiceprint/scripts/setec/surfaces/register_classifier.py text eol=lf
 
 # Consumers vendor and hash these producer-owned release artifacts as raw bytes.
 # Keep Git from rewriting either text or binary content at checkout or check-in.

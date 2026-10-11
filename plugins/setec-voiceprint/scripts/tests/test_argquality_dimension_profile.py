@@ -30,6 +30,15 @@ import argquality_judge  # type: ignore
 import fallacy_judge  # type: ignore
 from conftest import _results  # noqa: E402
 
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+@pytest.mark.parametrize("phrase", ["so that", "in conclusion", "for example", "on the other hand", "it follows"])
+def test_multiword_register_marker_accepts_whitespace(separator, phrase):
+    single = phrase + ", the evidence needs careful review."
+    wrapped = separator.join(phrase.split()) + ", the evidence needs careful review."
+    assert aqp.register_warnings(single, aqp.MIN_WORDS) == []
+    assert aqp.register_warnings(wrapped, aqp.MIN_WORDS) == []
+
 # A two-paragraph argument-shaped passage with inferential connectives (so no
 # register warning fires on the happy path) and enough words to clear MIN_WORDS.
 SAMPLE = (
