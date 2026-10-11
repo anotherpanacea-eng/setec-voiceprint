@@ -152,6 +152,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/length_bootstrap.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/check_corpus.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/acquire_corpus_template.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/gecscore_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/specdetect_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/structural_shuffle_audit.py", "_SCRIPT_DIR"),

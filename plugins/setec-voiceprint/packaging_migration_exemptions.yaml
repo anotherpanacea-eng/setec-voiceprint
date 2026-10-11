@@ -288,12 +288,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 49 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_epub.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 51 not yet converted
@@ -2835,7 +2835,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_corpus_template.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5392,6 +5392,14 @@ layer_exemptions:
 
 - from_path: plugins/setec-voiceprint/scripts/check_corpus.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/check_corpus.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_corpus_template.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
