@@ -48,7 +48,7 @@
       "dependency_ngrams",
       "punctuation"
     ],
-    "implementation_sha256": "sha256:ad08fc777a9202df47053c7eb59ef13fe435ddb53b8af33b3ff550d831254be9",
+    "implementation_sha256": "sha256:4e57efd3e132e4b839a3b211ab5cfd43770b511bb1aa889f13d383d539bad116",
     "method": "unweighted mean of six family Burrows-Delta values",
     "normalized_feature_inventory_sha256": "sha256:bdb22b940986ecfa86698395b5ac38ee0715fa2b74dc801982f93a410a398ba5",
     "parser_inventory_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",

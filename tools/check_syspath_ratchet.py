@@ -94,7 +94,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # The whole check_corpus and length_bootstrap modules have no old implementation
 # bootstrap to replace; their permanent launchers add 2 counted
 # site(s) (211 -> 213); no exclusions.
-PINNED_CEILING = 213
+# P4 S5/distance/profile: three permanent aliases replace one old S5
+# bootstrap (213 -> 215 on the train); all sites remain counted with no exclusions.
+PINNED_CEILING = 215
 
 
 def find_runtime_scripts() -> list[Path]:
