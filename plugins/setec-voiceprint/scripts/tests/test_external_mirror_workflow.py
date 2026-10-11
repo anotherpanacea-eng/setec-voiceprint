@@ -404,6 +404,17 @@ def test_score_forwards_embedding_alias(tmp_path):
     assert cmd2[cmd2.index("--embedding-alias") + 1] == "custom-model"
 
 
+def test_score_forwards_metrics_only_when_given(tmp_path):
+    run_dir = _make_run_dir(tmp_path)
+    runner = RecordingRunner(returncode=0)
+    workflow.score(run_dir, runner=runner, **_fake_phase_b_bins(tmp_path))
+    assert "--metrics" not in runner.calls[1]
+    runner = RecordingRunner(returncode=0)
+    workflow.score(run_dir, metrics="word_jaccard", runner=runner, **_fake_phase_b_bins(tmp_path))
+    cmd2 = runner.calls[1]
+    assert cmd2[cmd2.index("--metrics") + 1] == "word_jaccard"
+
+
 def test_score_stops_on_ingest_failure(tmp_path):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=1, stderr="ingest broke")
