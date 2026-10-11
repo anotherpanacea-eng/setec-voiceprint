@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "one variance_audit pass per version; tier 1 is stdlib, --tier2 needs spaCy",
+    "cost_note": "one variance_audit pass per version; tier 1 is stdlib, --tier2 needs spaCy and adds audit cost without adding trajectory signals",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -27,7 +27,7 @@
   "id": "draft_history_analysis",
   "inputs": {
     "optional": [
-      "optional flags --tier2 (adds spaCy signals), --json, --out (see --help)"
+      "optional flags --tier2 (also runs the spaCy tier-2 audit; the trajectory still reports tier-1 signals only), --json, --out (see --help)"
     ],
     "required": [
       "--versions-json"
