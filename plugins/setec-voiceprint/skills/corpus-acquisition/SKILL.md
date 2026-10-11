@@ -79,10 +79,10 @@ Get the user to describe the source clearly. Ask:
 
 Open `${CLAUDE_PLUGIN_ROOT}/references/acquire-corpus-pattern.md` and `${CLAUDE_PLUGIN_ROOT}/scripts/acquire_corpus_template.py`. The reference doc is structured for LLM consumption — every section the new script needs has its own heading.
 
-If you (Claude) are reading this skill, also load the worked examples:
-- `${CLAUDE_PLUGIN_ROOT}/scripts/acquire_blogger_takeout.py` — simplest local-source acquisition. Best example for archive / file-walking sources.
-- `${CLAUDE_PLUGIN_ROOT}/scripts/acquire_blog.py` — most general live-network acquisition. Best example for URL / feed sources.
-- `${CLAUDE_PLUGIN_ROOT}/scripts/acquire_magazine.py` — multiple per-source modules behind a uniform CLI. Best example when the user has several similar sources to handle (e.g. multiple Slack workspaces).
+If you (Claude) are reading this skill, also load the worked examples (the implementations live under `scripts/setec/surfaces/`; the flat `scripts/acquire_*.py` files are compatibility launchers that still run the same commands):
+- `${CLAUDE_PLUGIN_ROOT}/scripts/setec/surfaces/acquire_blogger_takeout.py` — simplest local-source acquisition. Best example for archive / file-walking sources.
+- `${CLAUDE_PLUGIN_ROOT}/scripts/setec/surfaces/acquire_blog.py` — most general live-network acquisition. Best example for URL / feed sources.
+- `${CLAUDE_PLUGIN_ROOT}/scripts/setec/surfaces/acquire_magazine.py` — multiple per-source modules behind a uniform CLI. Best example when the user has several similar sources to handle (e.g. multiple Slack workspaces).
 
 ### Step 3: Adapt the template
 

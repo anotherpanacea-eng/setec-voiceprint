@@ -371,9 +371,9 @@ If you're using an LLM (Claude, GPT-4, etc.) to help you adapt the pattern to a 
 
 - `scripts/acquire_corpus_template.py` — the scaffold script with `TODO(LLM)` markers.
 - `scripts/acquisition_core.py` — the shared helpers documented above.
-- `scripts/acquire_blog.py` — the most general live-network acquisition example. Reads as a worked instance of this pattern.
-- `scripts/acquire_blogger_takeout.py` — the simplest local-source acquisition example.
-- `scripts/acquire_magazine.py` — a worked example of multiple per-source modules behind a uniform CLI.
-- `scripts/acquire_epub.py` — local-source EPUB ebooks; chapter-level discovery, multi-author pools (per-book persona), per-book `era` from OPF `dc:date`.
+- `scripts/setec/surfaces/acquire_blog.py` — the most general live-network acquisition example. Reads as a worked instance of this pattern.
+- `scripts/setec/surfaces/acquire_blogger_takeout.py` — the simplest local-source acquisition example.
+- `scripts/setec/surfaces/acquire_magazine.py` — a worked example of multiple per-source modules behind a uniform CLI.
+- `scripts/setec/surfaces/acquire_epub.py` — local-source EPUB ebooks; chapter-level discovery, multi-author pools (per-book persona), per-book `era` from OPF `dc:date`.
 - `references/manifest-schema.md` — the manifest contract the emitted entries have to satisfy.
 - `internal/2026-05-08-impostor-corpus-spec.md` — the spec the existing scripts were built from.
