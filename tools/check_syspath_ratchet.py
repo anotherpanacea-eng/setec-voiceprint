@@ -91,7 +91,9 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # their reviewed permanent launchers add two counted sites (208 -> 210 on the train).
 # The whole baseline-discovery utility adds one required permanent launcher
 # with no old implementation bootstrap to replace (210 -> 211); no exclusions.
-PINNED_CEILING = 211
+# Whole acquisition_core retains its two temporary helper inserts and adds
+# one required no-main permanent alias bootstrap: 211 -> 212; no exclusions.
+PINNED_CEILING = 212
 
 
 def find_runtime_scripts() -> list[Path]:
