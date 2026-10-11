@@ -32,7 +32,7 @@
   ],
   "script_path": "plugins/setec-voiceprint/scripts/generate_voice_report.py",
   "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "todo_reason": "User-facing but blocked: generate_voice_report reads top-level keys (baseline_summary, families, periods) from its --voice-profile and --voice-drift inputs, while voice_profile and voice_drift_tracker now emit schema 1.0 envelopes that nest those keys under results; a current profile renders as 0 files, 0 words. Promote after the consumer unwraps the envelope (2026-10-10 owner ruling: user-facing tools only become discoverable, and this one does not yet work end to end).",
   "surface": "voice_coherence",
   "use_when": [
     "TODO"
