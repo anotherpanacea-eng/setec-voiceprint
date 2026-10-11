@@ -83,7 +83,6 @@ except ImportError:
     _NLP = None
 
 
-_WORD_RE = re.compile(r"\b\w[\w'-]*\b", re.UNICODE)
 
 # --------------- Lexicons (defaults; --verb-lexicon overrides verbs) ---------
 
@@ -147,8 +146,7 @@ SPEECH_TAG_VERBS: frozenset[str] = frozenset({
 _QUOTE_CHARS = "\"“”‘’'«»"
 
 
-def count_words(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode_hyphen as count_words
 
 
 def _per_1k(n: int, words: int) -> float:

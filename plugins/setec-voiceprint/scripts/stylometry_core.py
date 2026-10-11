@@ -45,7 +45,7 @@ safe_sd = _distance.safe_sd
 vector_stats = _distance.vector_stats
 
 
-WORD_RE = re.compile(r"[A-Za-z']+")
+from setec.core.textprims import WORD_RE
 CONTRACTION_RE = re.compile(
     r"\b(?:"
     r"[a-z]+(?:n't|'re|'ve|'ll|'d|'m)"
@@ -214,8 +214,7 @@ def read_text(path: str | Path) -> str:
     return Path(path).read_text(encoding="utf-8", errors="ignore")
 
 
-def word_tokens(text: str) -> list[str]:
-    return [w.lower() for w in WORD_RE.findall(text)]
+from setec.core.textprims import word_tokens_alpha as word_tokens
 
 
 def paragraphs(text: str) -> list[str]:

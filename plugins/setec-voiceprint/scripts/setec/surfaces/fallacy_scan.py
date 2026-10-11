@@ -90,17 +90,13 @@ DEFAULT_DOES_NOT_LICENSE = (
 # removed in review).
 _ARGUMENT_MARKERS = re.compile(
     r"\b(because|therefore|thus|hence|since|however|moreover|furthermore|"
-    r"consequently|nevertheless|whereas|although|so that|in conclusion|"
-    r"for example|on the other hand|it follows)\b",
+    r"consequently|nevertheless|whereas|although|so\s+that|in\s+conclusion|"
+    r"for\s+example|on\s+the\s+other\s+hand|it\s+follows)\b",
     re.IGNORECASE,
 )
 
 
-def split_paragraphs(text: str) -> list[str]:
-    """Split on blank lines; strip; drop empties. The judge flags exactly these
-    paragraphs (span paragraph_index aligns by position)."""
-    parts = re.split(r"\n\s*\n", text.strip())
-    return [p.strip() for p in parts if p.strip()]
+from setec.core.textprims import split_paragraphs_blanklines as split_paragraphs
 
 
 def register_warnings(text: str, n_words: int, n_paragraphs: int) -> list[str]:

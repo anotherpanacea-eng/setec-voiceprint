@@ -85,7 +85,7 @@ SCRIPT_VERSION = "1.0"
 
 _PARAGRAPH_BOUNDARY = re.compile(r"\n\s*\n")
 _SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
-_WORD_RE = re.compile(r"\b\w+\b")
+from setec.core.textprims import _WORD_UNICODE_RE as _WORD_RE
 
 
 def split_paragraphs(text: str, *, min_words: int = 3) -> list[str]:
@@ -113,8 +113,7 @@ def split_sentences(paragraph: str) -> list[str]:
     return [s.strip() for s in sentences if s.strip()]
 
 
-def word_count(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode as word_count
 
 
 def _content_fingerprint(cleaned_text: str) -> str:
