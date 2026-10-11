@@ -1,6 +1,6 @@
 {
   "compute": {
-    "cost_note": "prepare and status are stdlib and instant. score loads a sentence-transformers embedding model (default mxbai) for the sbert distance and always adds word-set Jaccard; TF-IDF is added only with scikit-learn, and the POS-bigram metrics only with spaCy plus its en_core_web_sm model (unavailable metrics are recorded as skipped). The continuations come from the operator's own chat sessions, so the harness makes no model calls of its own",
+    "cost_note": "prepare and status are stdlib and instant. score loads a sentence-transformers embedding model (default mxbai) for the sbert distance and always adds word-set Jaccard; TF-IDF is added only with scikit-learn, and the POS-bigram metrics only with spaCy plus its en_core_web_sm model (unavailable metrics are recorded as skipped). The continuations come from the operator's own chat sessions, so the harness makes no model calls of its own. --metrics word_jaccard scores without sentence-transformers",
     "length_floor_words": null,
     "tier": "optional"
   },
@@ -38,7 +38,7 @@
   "id": "external_mirror_workflow",
   "inputs": {
     "optional": [
-      "optional flags --runs-root, --run-id, --families, --windows, --context, --continuation, --positioning, --positions, --context-grid, --genre-descriptor (prepare); --json (status); --embedding-alias (score) (see each subcommand's --help)"
+      "optional flags --runs-root, --run-id, --families, --windows, --context, --continuation, --positioning, --positions, --context-grid, --genre-descriptor (prepare); --json (status); --embedding-alias, --metrics (score) (see each subcommand's --help)"
     ],
     "required": [
       "subcommand (prepare, status or score)",

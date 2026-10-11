@@ -32,7 +32,7 @@ entries:
     optional:
     - optional flags --runs-root, --run-id, --families, --windows, --context, --continuation,
       --positioning, --positions, --context-grid, --genre-descriptor (prepare); --json (status);
-      --embedding-alias (score) (see each subcommand's --help)
+      --embedding-alias, --metrics (score) (see each subcommand's --help)
   outputs:
     schema_version: '1.0'
     artifacts:
@@ -45,7 +45,8 @@ entries:
       embedding model (default mxbai) for the sbert distance and always adds word-set Jaccard;
       TF-IDF is added only with scikit-learn, and the POS-bigram metrics only with spaCy plus its
       en_core_web_sm model (unavailable metrics are recorded as skipped). The continuations come
-      from the operator's own chat sessions, so the harness makes no model calls of its own
+      from the operator's own chat sessions, so the harness makes no model calls of its own.
+      --metrics word_jaccard scores without sentence-transformers
     length_floor_words: null
   registers:
   - all_fiction
