@@ -345,6 +345,38 @@ def build_output(
     return envelope
 
 
+def unwrap_envelope(doc: Any) -> Any:
+    """Flatten a schema 1.0 envelope for a reader written against the
+    legacy bare payload.
+
+    Producers nest their script-specific keys under ``results``, while
+    several consumers (``restoration_packet``, ``confounder_audit``,
+    ``evidentiary_conditions_gate``) read those keys at the top level.
+    Handing them a ``--json`` envelope therefore dropped the payload
+    without an error. This returns a shallow dict with the envelope's
+    own keys plus every ``results`` key lifted to the top level.
+
+    - Anything that is not an envelope (no ``schema_version`` or no
+      ``results`` dict) is returned unchanged, so legacy bare payloads
+      keep working.
+    - A ``results`` key wins over an envelope key of the same name,
+      because legacy readers expect the payload's value.
+    - ``available`` stays ``False`` when the envelope says ``False``,
+      even if ``results`` carries its own flag.
+    """
+    if not (
+        isinstance(doc, dict)
+        and "schema_version" in doc
+        and isinstance(doc.get("results"), dict)
+    ):
+        return doc
+    flat = {k: v for k, v in doc.items() if k != "results"}
+    flat.update(doc["results"])
+    if doc.get("available") is False:
+        flat["available"] = False
+    return flat
+
+
 def build_error_output(
     *,
     task_surface: str | None,
