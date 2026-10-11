@@ -5,7 +5,8 @@ four-repo fleet. This is the producer's copy of the release sequence it
 initiates; follow it (human or agent) instead of re-deriving the chain from
 the workflow yamls each time. It is self-contained: every load-bearing step
 is here, so a cloud session (which holds only this one git repo and cannot
-reach the maintainer's `Cowork/repo-fleet/` hub) can execute it. The hub
+reach the maintainer's Dropbox fleet hub, `81.11 Repo fleet/`, formerly
+`Cowork/repo-fleet/`) can execute it. The hub
 `PATTERNS.md` §1/§4 carries the meta-pattern ("the producer owns the shared
 artifacts") and the verbose merge-bypass mechanics; this runbook is the
 actionable sequence and points back to it only for optional depth.
@@ -300,6 +301,6 @@ host is only needed for signal calibration work, never for the release train.
   APODICTIC-Gemini `.github/workflows/sync-apodictic-plugin.yml` — the
   authoritative cron times and dispatch inputs (the source of truth for the
   crons quoted above).
-- Hub `Cowork/repo-fleet/PATTERNS.md` §1/§4 — the meta-pattern ("the producer
+- Hub `81.11 Repo fleet/PATTERNS.md` (formerly `Cowork/repo-fleet/`) §1/§4 — the meta-pattern ("the producer
   owns the shared artifacts") and verbose merge-bypass mechanics (maintainer's
-  local hub; not reachable from cloud containers).
+  Dropbox hub; not reachable from a bare cloud container).
