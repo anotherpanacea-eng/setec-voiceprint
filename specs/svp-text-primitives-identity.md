@@ -41,7 +41,7 @@ Native Punkt rows read only NLTK 3.9.4 and the four English `punkt_tab` files fr
 
 ## 3. Copy lint
 
-`tools/gen_textprims_inventory.py --check` (the existing CI step) fails when a function anywhere in the plugin's production source has the same body and parameters as a registered primitive, up to renaming the parameters (ignoring its name, annotations and docstring), and reads module-level names with the same values. It also fails on a word-set literal equal to a registered set, and on a `PRIMITIVES` entry whose owner module does not define it. Same-named functions with different code are unrelated and are not reported. The fix for a reported copy is to import the registered primitive.
+`tools/gen_textprims_inventory.py --check` (the existing CI step) fails when a function anywhere in the plugin's production source outside the primitive's owner module has the same body and parameters as a registered primitive, up to renaming the parameters (ignoring its name, annotations and docstring), and reads module-level names with the same values. It also fails on a word-set literal equal to a registered set, and on a `PRIMITIVES` entry whose owner module does not define it. Same-named functions with different code are unrelated and are not reported. The fix for a reported copy is to import the registered primitive.
 
 ## Out of scope
 

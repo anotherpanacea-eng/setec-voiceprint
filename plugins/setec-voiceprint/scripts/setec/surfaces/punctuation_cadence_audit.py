@@ -72,7 +72,7 @@ SCRIPT_VERSION = "1.0"
 
 # --- Patterns --------------------------------------------------
 
-_WORD_RE = re.compile(r"\b\w+\b")
+from setec.core.textprims import _WORD_UNICODE_RE as _WORD_RE
 
 # Per-mark counters. We count occurrences across the whole text.
 # Em-dashes: include both U+2014 and the typewriter "--" pattern.
@@ -115,8 +115,7 @@ _PUNCT_RUN = re.compile(
 )
 
 
-def _word_count(text: str) -> int:
-    return len(_WORD_RE.findall(text))
+from setec.core.textprims import count_words_unicode as _word_count
 
 
 def _content_fingerprint(cleaned_text: str) -> str:

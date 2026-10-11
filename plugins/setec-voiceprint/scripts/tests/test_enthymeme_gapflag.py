@@ -23,6 +23,30 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 import enthymeme_gapflag as eg  # type: ignore  # noqa: E402
 from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 
+
+@pytest.mark.parametrize("separator", ["\n", "  ", "\t", "\r\n", " \n\t ", "\u00a0"])
+def test_multiword_conclusion_and_warrant_accept_whitespace(separator):
+    conclusion = separator.join("it follows".split())
+    warrant = separator.join("given that".split())
+    single = "Crime rose in the district. Given that unemployment increased, it follows the mayor should resign."
+    wrapped = f"Crime rose in the district. {warrant.capitalize()} unemployment increased, {conclusion} the mayor should resign."
+    assert eg._find_conclusion_marker(conclusion + " the mayor should resign.") == "it follows"
+    assert eg._has_warrant_bridge(warrant + " unemployment increased.")
+    # Preserved source whitespace belongs in span_text; stated warrants suppress the false flag.
+    assert eg.detect_enthymemes(wrapped) == eg.detect_enthymemes(single)
+    assert eg.detect_enthymemes(wrapped)["n_flags"] == 0
+
+
+@pytest.mark.parametrize("text", ["itfollows", "xit follows", "it followsx"])
+def test_multiword_conclusion_keeps_word_boundaries(text):
+    assert eg._find_conclusion_marker(text) is None
+
+
+@pytest.mark.parametrize("text", ["giventhat", "xgiven that", "given thatx"])
+def test_multiword_warrant_keeps_word_boundaries(text):
+    assert not eg._has_warrant_bridge(text)
+
+
 # Forbidden keys (AC-8): no decision/verdict/selection scalar may appear in results.
 _FORBIDDEN_KEYS = frozenset({
     "verdict", "soundness", "unsound", "incomplete", "quality", "pass", "fail",
