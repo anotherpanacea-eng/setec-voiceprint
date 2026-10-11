@@ -1,12 +1,12 @@
 """Whole consistency aliases and copied-plugin behavior with offline judges only."""
 
 import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from conftest import run_offline_python_probe as _probe
 
 _TOOLS = Path(__file__).resolve().parents[4] / "tools"
 if str(_TOOLS) not in sys.path:
@@ -16,14 +16,6 @@ from check_zero_install import make_bare_copy  # type: ignore  # noqa: E402
 
 STEMS = ("cross_doc_argument_consistency", "position_pair_register")
 SCRIPTS = Path(__file__).resolve().parents[1]
-
-
-def _probe(code, cwd, *args):
-    env = os.environ.copy()
-    env.pop("PYTHONPATH", None)
-    env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONUTF8="1")
-    return subprocess.run([sys.executable, "-B", "-S", "-c", code, *map(str, args)],
-                          cwd=cwd, env=env, capture_output=True, text=True, timeout=30)
 
 
 @pytest.mark.parametrize("stem", STEMS)
