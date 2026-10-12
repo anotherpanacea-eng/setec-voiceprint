@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import platform
 import sys
 from pathlib import Path
@@ -323,6 +324,7 @@ def take_snapshot(
             "measuring anything."
         )
 
+    _validate_measurements(benchmarks, "Snapshot")
     return {
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
@@ -342,6 +344,77 @@ def take_snapshot(
 # ---------- Drift detection ----------
 
 
+def _finite_number(value: Any, context: str) -> int | float:
+    """Refuse unusable numbers without changing valid numeric types."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            if math.isfinite(value):
+                return value
+        except OverflowError:
+            pass
+    raise ValueError(f"{context} must be a finite real number")
+
+
+def _validate_thresholds(
+    relative_threshold: float,
+    absolute_thresholds: dict[str, float] | None,
+) -> dict[str, float]:
+    _finite_number(relative_threshold, "Relative threshold")
+    if relative_threshold < 0:
+        raise ValueError("Relative threshold must be nonnegative")
+    floors = absolute_thresholds or _DEFAULT_NOISE_THRESHOLDS
+    for floor in floors.values():
+        _finite_number(floor, "Absolute threshold")
+        if floor < 0:
+            raise ValueError("Absolute threshold must be nonnegative")
+    return floors
+
+
+def _validate_signal_values(signals: dict[str, float], context: str) -> None:
+    for value in signals.values():
+        if value is not None:
+            _finite_number(value, context)
+
+
+def _require_object(value: Any, context: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{context} must be an object")
+    return value
+
+
+def _validate_snapshot(snapshot: dict[str, Any], context: str) -> None:
+    _require_object(snapshot, context)
+    _require_object(snapshot.get("stack", {}), f"{context} stack")
+    constants = _require_object(
+        snapshot.get("framework_constants", {}), f"{context} framework constants"
+    )
+    heuristics = _require_object(
+        constants.get("compression_heuristics", {}), f"{context} compression heuristics"
+    )
+    for heuristic in heuristics.values():
+        if heuristic is not None:
+            _require_object(heuristic, f"{context} compression heuristic")
+    pos_bigram = constants.get("pos_bigram_kl_heuristic")
+    if pos_bigram is not None:
+        _require_object(pos_bigram, f"{context} POS bigram heuristic")
+    _validate_measurements(snapshot.get("benchmarks", {}), context)
+
+
+def _validate_measurements(benchmarks: dict[str, Any], context: str) -> None:
+    """Require measured signals; failed or absent measurements are not evidence."""
+    _require_object(benchmarks, f"{context} benchmarks")
+    measured = False
+    for benchmark in benchmarks.values():
+        _require_object(benchmark, f"{context} benchmark")
+        signals = _require_object(benchmark.get("signals", {}), f"{context} signals")
+        _require_object(benchmark.get("compression", {}), f"{context} compression")
+        _validate_signal_values(signals, f"{context} signal")
+        if "error" not in benchmark and any(value is not None for value in signals.values()):
+            measured = True
+    if not measured:
+        raise ValueError(f"{context} has no successful benchmark signal measurements")
+
+
 def _compare_signals(
     snapshot_signals: dict[str, float],
     current_signals: dict[str, float],
@@ -350,7 +423,11 @@ def _compare_signals(
     absolute_thresholds: dict[str, float] | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Compare per-signal values; return per-signal drift verdict."""
-    absolute_thresholds = absolute_thresholds or _DEFAULT_NOISE_THRESHOLDS
+    absolute_thresholds = _validate_thresholds(
+        relative_threshold, absolute_thresholds,
+    )
+    _validate_signal_values(snapshot_signals, "Snapshot signal")
+    _validate_signal_values(current_signals, "Current signal")
     out: dict[str, dict[str, Any]] = {}
     keys = sorted(set(snapshot_signals) | set(current_signals))
     for key in keys:
@@ -371,18 +448,22 @@ def _compare_signals(
             }
             continue
         delta = curr - snap
+        _finite_number(delta, "Signal delta")
         # Drift threshold: max of the per-signal absolute floor and
         # the relative-change floor.
         rel_floor = abs(snap) * relative_threshold
+        _finite_number(rel_floor, "Relative noise floor")
         abs_floor = absolute_thresholds.get(key, 0.0)
         floor = max(rel_floor, abs_floor)
+        _finite_number(floor, "Noise floor")
+        rel_change = delta / snap if abs(snap) > 1e-9 else None
+        if rel_change is not None:
+            _finite_number(rel_change, "Relative signal change")
         verdict = "drifted" if abs(delta) > floor else "stable"
         out[key] = {
             "snapshot": snap, "current": curr,
             "delta": delta,
-            "rel_change": (
-                delta / snap if abs(snap) > 1e-9 else None
-            ),
+            "rel_change": rel_change,
             "noise_floor": floor,
             "verdict": verdict,
         }
@@ -476,6 +557,9 @@ def detect_drift(
 ) -> dict[str, Any]:
     """Compare snapshot vs. current. Returns a drift report with
     per-benchmark per-signal verdicts and overall summary."""
+    _validate_thresholds(relative_threshold, absolute_thresholds)
+    _validate_snapshot(snapshot, "Snapshot")
+    _validate_snapshot(current, "Current")
     stack_changes = _compare_stack(
         snapshot.get("stack", {}), current.get("stack", {}),
     )
@@ -490,9 +574,44 @@ def detect_drift(
     n_drifted = 0
     n_stable = 0
     drifted_benchmarks: list[str] = []
+    unmeasured_benchmarks: list[str] = []
     for bench_id in sorted(set(snap_benches) | set(curr_benches)):
         snap_b = snap_benches.get(bench_id, {})
         curr_b = curr_benches.get(bench_id, {})
+        # ``take_snapshot`` stores ``{"error": ...}`` for a benchmark
+        # whose measurement raised. Comparing that against anything
+        # compares absent signal dicts: an error on both sides used
+        # to come out as zero drifted signals, i.e. a silent
+        # no-drift verdict on a benchmark nobody measured. Treat an
+        # errored side as unmeasured and keep it out of the signal
+        # comparison so it can never read as stable.
+        errored_in = [
+            side for side, bench in (
+                ("snapshot", snap_b), ("current", curr_b),
+            )
+            if isinstance(bench, dict) and "error" in bench
+        ]
+        if errored_in:
+            unmeasured_benchmarks.append(bench_id)
+            per_benchmark[bench_id] = {
+                "unmeasured": True,
+                "errored_in": errored_in,
+                "errors": {
+                    side: str(
+                        (snap_b if side == "snapshot" else curr_b)
+                        .get("error")
+                    )
+                    for side in errored_in
+                },
+                "n_signals_drifted": 0,
+                "n_signals_stable": 0,
+                "n_signals_added": 0,
+                "n_signals_removed": 0,
+                "n_signals_schema_changed": 0,
+                "signal_diffs": {},
+                "compression_diffs": {},
+            }
+            continue
         signal_diffs = _compare_signals(
             snap_b.get("signals", {}),
             curr_b.get("signals", {}),
@@ -562,11 +681,16 @@ def detect_drift(
         b.get("n_signals_schema_changed", 0)
         for b in per_benchmark.values()
     )
+    # An unmeasured benchmark fails closed: the monitor cannot
+    # vouch for reproducibility it did not measure, so the overall
+    # verdict (and ``--exit-nonzero-on-drift``) never reads as
+    # no-drift while any benchmark errored.
     overall_drift = (
         n_drifted > 0
         or n_schema_changed_total > 0
         or bool(constant_changes)
         or bool(comp_diffs_in_aggregate(per_benchmark))
+        or bool(unmeasured_benchmarks)
     )
     # The recommendation surface: threshold constants changing,
     # OR the stack changing while *any* drift signal fired
@@ -589,6 +713,8 @@ def detect_drift(
         "n_signals_schema_changed": n_schema_changed_total,
         "n_benchmarks_drifted": len(drifted_benchmarks),
         "drifted_benchmarks": drifted_benchmarks,
+        "n_benchmarks_unmeasured": len(unmeasured_benchmarks),
+        "unmeasured_benchmarks": unmeasured_benchmarks,
         "infrastructure_drift_detected": overall_drift,
         "recalibration_recommended": recalibration_recommended,
         "claim_license": _claim_license_dict(
@@ -597,6 +723,7 @@ def detect_drift(
             n_signals_drifted=n_drifted,
             n_signals_schema_changed=n_schema_changed_total,
             recalibration=recalibration_recommended,
+            n_benchmarks_unmeasured=len(unmeasured_benchmarks),
         ),
     }
 
@@ -619,6 +746,7 @@ def _claim_license_dict(
     n_signals_drifted: int,
     n_signals_schema_changed: int = 0,
     recalibration: bool,
+    n_benchmarks_unmeasured: int = 0,
 ) -> dict[str, Any]:
     lic = ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -650,6 +778,7 @@ def _claim_license_dict(
             "stack_changes": list(stack_changes.keys()),
             "constant_changes": list(constant_changes.keys()),
             "recalibration_recommended": recalibration,
+            "n_benchmarks_unmeasured": n_benchmarks_unmeasured,
         },
         additional_caveats=[
             "The noise-floor thresholds are heuristic. "
@@ -675,6 +804,7 @@ def _claim_license_dict(
 
 def render_report(report: dict[str, Any]) -> str:
     drifted = report.get("drifted_benchmarks", [])
+    unmeasured = report.get("unmeasured_benchmarks", [])
     n_drifted = report.get("n_signals_drifted", 0)
     n_stable = report.get("n_signals_stable", 0)
     n_schema = report.get("n_signals_schema_changed", 0)
@@ -701,8 +831,26 @@ def render_report(report: dict[str, Any]) -> str:
         f"**Signals drifted / schema-changed / stable:** "
         f"{n_drifted} / {n_schema} / {n_stable}",
         f"**Benchmarks drifted:** {len(drifted)}",
+        f"**Benchmarks unmeasured (errored):** {len(unmeasured)}",
         "",
     ]
+
+    if unmeasured:
+        lines.append("## Unmeasured benchmarks")
+        lines.append("")
+        lines.append(
+            "These benchmarks raised during measurement, so their "
+            "drift is unknown. They count against the overall "
+            "verdict and are not reported as stable."
+        )
+        lines.append("")
+        for bench_id in unmeasured:
+            info = report.get("per_benchmark", {}).get(bench_id, {})
+            sides = ", ".join(info.get("errored_in") or []) or "unknown"
+            lines.append(f"- `{bench_id}`: errored in {sides}")
+            for side, err in (info.get("errors") or {}).items():
+                lines.append(f"  - {side}: {err}")
+        lines.append("")
 
     stack_changes = report.get("stack_changes", {})
     if stack_changes:
@@ -825,11 +973,20 @@ def _read_snapshot(path_str: str) -> dict[str, Any]:
             f"Snapshot file not found: {path_str}"
         )
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        def finite_json_float(token: str) -> float:
+            return _finite_number(float(token), "Snapshot JSON number")
+
+        snapshot = json.loads(
+            p.read_text(encoding="utf-8"),
+            parse_float=finite_json_float,
+            parse_constant=finite_json_float,
+        )
     except json.JSONDecodeError as exc:
         raise ValueError(
             f"Snapshot file is not valid JSON: {exc}"
         ) from exc
+    _validate_snapshot(snapshot, "Snapshot")
+    return snapshot
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -931,7 +1088,7 @@ def main(argv: list[str] | None = None) -> int:
                 do_tier2=not args.no_tier2,
                 include_filenames=args.include_filenames,
             )
-        except (FileNotFoundError, NotADirectoryError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             sys.stderr.write(f"--benchmark-dir: {exc}\n")
             return 2
         out_path = Path(args.out).expanduser()
@@ -948,6 +1105,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mode == "check":
         try:
+            _validate_thresholds(args.relative_threshold, None)
+        except ValueError as exc:
+            sys.stderr.write(f"--relative-threshold: {exc}\n")
+            return 2
+        try:
             snapshot = _read_snapshot(args.snapshot)
         except (FileNotFoundError, ValueError) as exc:
             sys.stderr.write(f"--snapshot: {exc}\n")
@@ -959,15 +1121,19 @@ def main(argv: list[str] | None = None) -> int:
                 do_tier2=not args.no_tier2,
                 include_filenames=args.include_filenames,
             )
-        except (FileNotFoundError, NotADirectoryError) as exc:
+        except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
             sys.stderr.write(f"--benchmark-dir: {exc}\n")
             return 2
 
-        report = detect_drift(
-            snapshot=snapshot,
-            current=current,
-            relative_threshold=args.relative_threshold,
-        )
+        try:
+            report = detect_drift(
+                snapshot=snapshot,
+                current=current,
+                relative_threshold=args.relative_threshold,
+            )
+        except ValueError as exc:
+            sys.stderr.write(f"Signal comparison: {exc}\n")
+            return 2
         out = (
             json.dumps(report, indent=2, default=str)
             if args.json else render_report(report)

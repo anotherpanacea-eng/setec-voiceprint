@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "stdlib only; one read and strip pass per file; wall-clock grows with file count (seconds at 10K files, about 30 min at 436K)",
     "length_floor_words": null,
     "tier": "core"
   },
@@ -14,31 +14,49 @@
     "python": []
   },
   "do_not_use_when": [
-    "TODO"
+    "you need schema or provenance checks (use manifest_validator)",
+    "the manifest exceeds about 1M files (use shard_runner --task corpus_hygiene; the script warns at that size)",
+    "you want a prose-quality, authorship or AI/human judgment; the ratio only measures strippable non-prose content"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/check_corpus.py --manifest corpus_manifest.jsonl --filter use=baseline,register=blog_essay",
+      "description": "Hygiene-check the baseline slice of a manifest"
+    }
+  ],
+  "family": "corpus-hygiene",
   "handoff": "none",
   "id": "check_corpus",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --filter, --warn-threshold, --fail-threshold, --strip-rules, --strip-aggressive, --show-stripped, --json, --out, --records-cache (see --help)"
+    ],
+    "required": [
+      "at least one of --path, --dir, --manifest"
+    ],
+    "target": "files (--path), directories of .txt/.md (--dir), or a JSONL manifest (--manifest, optionally --filter)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "Markdown hygiene report (stdout or --out)",
+      "JSON report with per-file strip ratios and statuses (--json)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "check_corpus.py",
-  "references": [],
+  "purpose": "Content-level corpus hygiene gate. Runs the preprocessing strip rules over files, directories, or a filtered manifest slice and reports, per file, the share of tokens stripped as suspected non-prose contamination (HTML, CSS, code, tables, markup) that would distort POS/KL and other distributional diagnostics; files are clean, warn (>= 1% stripped) or fail (>= 5%) at operator-adjustable thresholds, and undecodable bytes are counted.",
+  "references": [
+    "plugins/setec-voiceprint/skills/validation/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_fiction",
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/check_corpus.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "heuristic",
   "surface": "validation",
   "use_when": [
-    "TODO"
+    "before a KL-sensitive diagnostic, baseline build, or validation_harness run, to refuse contaminated inputs",
+    "checking newly acquired impostor or baseline text for scraped markup or code",
+    "auditing a manifest slice (--manifest with --filter use=baseline,register=...)"
   ]
 }

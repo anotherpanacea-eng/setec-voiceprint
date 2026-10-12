@@ -33,6 +33,9 @@ from typing import Callable
 
 
 SCRIPT_VERSION = "0.1.0"
+# Same surface as the Phase B emitter it drives (compose_evidence_pack.py);
+# declared so the harness, the operator entry point, has a capability entry.
+TASK_SURFACE = "external_mirror_discrimination"
 DEFAULT_FAMILIES = ("claude", "chatgpt", "gemini", "human_control")
 _WINDOW_FILE_RE = re.compile(r"^window_(\d+)\.(txt|md)$")
 
@@ -377,6 +380,7 @@ def score(
     run_dir: Path,
     *,
     embedding_alias: str = "mxbai",
+    metrics: str | None = None,
     ingest_bin: Path | None = None,
     distances_bin: Path | None = None,
     pack_bin: Path | None = None,
@@ -438,6 +442,8 @@ def score(
         "--out", str(distances_path),
         "--embedding-alias", embedding_alias,
     ]
+    if metrics:
+        cmd2.extend(["--metrics", metrics])
     if target_continuation_path.exists():
         cmd2.extend(["--target-continuation", str(target_continuation_path)])
     p2 = runner(cmd2)
@@ -498,6 +504,7 @@ def main(argv: list[str] | None = None) -> int:
     p_score = sub.add_parser("score", help="Invoke the Phase B chain end-to-end.")
     p_score.add_argument("run_dir")
     p_score.add_argument("--embedding-alias", default="mxbai")
+    p_score.add_argument("--metrics", default=None, help="Comma-separated distance metrics passed to compute_distances.py (default: all available). Leave out sbert, e.g. --metrics word_jaccard, to score without sentence-transformers.")
     p_score.add_argument("--ingest-bin", default=None)
     p_score.add_argument("--distances-bin", default=None)
     p_score.add_argument("--pack-bin", default=None)
@@ -550,6 +557,7 @@ def main(argv: list[str] | None = None) -> int:
             r = score(
                 Path(args.run_dir),
                 embedding_alias=args.embedding_alias,
+                metrics=args.metrics,
                 ingest_bin=Path(args.ingest_bin) if args.ingest_bin else None,
                 distances_bin=Path(args.distances_bin) if args.distances_bin else None,
                 pack_bin=Path(args.pack_bin) if args.pack_bin else None,

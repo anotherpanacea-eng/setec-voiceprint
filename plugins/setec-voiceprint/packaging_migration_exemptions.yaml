@@ -274,33 +274,33 @@ exemptions:
   introduced_sha: a66cecd7406dd93fcac73fd80527f59ad936c03a
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_blog.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 83 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 35 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 49 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_epub.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 51 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py
   symbol: <inline>
   reason: Actual executing package bytes are the Gmail extraction identity; stale approval
@@ -309,33 +309,33 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_magazine.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 75 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/acquire_manuscript.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 42 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 70 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
-  symbol: _SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 50 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/agd_move_scan.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -427,12 +427,12 @@ exemptions:
   introduced_sha: d3a3fc416327e7cc376598a3dbb70b48eb9097b9
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/before_after_restoration.py
-  symbol: ROOT
-  reason: pending relocation (P4); anchor `ROOT` at line 69 not yet converted to setec.paths
-    (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/calibration/_benchmark_embedding_length_sort.py
   symbol: here
   reason: pending relocation (P4); anchor `here` at line 132 not yet converted to
@@ -1006,6 +1006,13 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/check_corpus.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -1042,12 +1049,12 @@ exemptions:
   introduced_sha: 81797c5bc589fb0c2d37c08fe7e655e90f9917c1
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/controls_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 58 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -1105,12 +1112,12 @@ exemptions:
   introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 81 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/enthymeme_gapflag.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -1147,12 +1154,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py
-  symbol: _SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 28 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; direct
+    execution must locate scripts/ before importing setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py
   symbol: _SCRIPTS_DIR
   reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 32 not yet converted
@@ -1168,12 +1175,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 96 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/fallacy_judge.py
   symbol: _SCRIPT_DIR
   reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
@@ -1203,12 +1210,12 @@ exemptions:
   introduced_sha: 7ca8b1f5fbf9d16479bdc1da69443392b4be4b3c
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 57 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/gecscore_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility launcher bootstrap; runpy does not
@@ -1252,19 +1259,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/generate_voice_report.py
-  symbol: DEFAULT_TEMPLATE_PATH
-  reason: pending relocation (P4); anchor `DEFAULT_TEMPLATE_PATH` at line 82 not yet
-    converted to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/generate_voice_report.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 68 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/gmail_locator_map.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 38 not yet converted
@@ -1287,19 +1287,19 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/kicker_density.py
-  symbol: _SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 65 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/known_editor_profile.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 80 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -1577,19 +1577,19 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/pdf_extract.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 72 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/pdf_inventory.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 65 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/phraseological_signature_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -1612,12 +1612,12 @@ exemptions:
   introduced_sha: 7537b9f64af8181e1b59250ce66bdfc150d5ac06
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
-  symbol: _SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 87 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/productive_roughness_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility alias bootstrap; runpy does not put scripts/
@@ -1819,34 +1819,48 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/s5_distance.py
+- path: plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py
   symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at line 132 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: S5 binds its executing implementation source under the whole-family
+    amendment; preserve ordered source inputs and existing digest framing.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/s5_distance.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 19 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd execution must
+    locate scripts/ before importing setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/voice_distance.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd execution must
+    locate scripts/ before importing setec.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/voice_profile.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd execution must
+    locate scripts/ before importing setec.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 81 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 89 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/setec_run.py
   symbol: PLUGIN_ROOT
   reason: pending relocation (P2); anchor `PLUGIN_ROOT` at line 63 not yet converted
@@ -1904,12 +1918,12 @@ exemptions:
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/surprisal_audit.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 69 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/test_data/acquisition_gmail_fixture/build_fixture.py
   symbol: HERE
   reason: pending relocation (P4); anchor `HERE` at line 15 not yet converted to setec.paths
@@ -1953,12 +1967,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
-  symbol: ROOT
-  reason: pending relocation (P4); anchor `ROOT` at line 73 not yet converted to setec.paths
-    (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility launcher bootstrap; runpy needs the
@@ -1967,12 +1981,12 @@ exemptions:
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
-  symbol: ROOT
-  reason: pending relocation (P4); anchor `ROOT` at line 56 not yet converted to setec.paths
-    (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/warrant_judge.py
   symbol: _SCRIPT_DIR
   reason: Permanent P3 legacy-library alias bootstrap; scripts/ must be on
@@ -2142,6 +2156,13 @@ exemptions:
     not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
   introduced_sha: ecb3f9d732240f2d08d2b2bf1176f452e15bc5fe
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
   symbol: _SCRIPT_DIR
@@ -2788,7 +2809,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_blog.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_blog.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2801,7 +2822,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_blogger_takeout.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2814,7 +2835,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_corpus_template.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2840,7 +2861,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_epub.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_epub.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2931,7 +2952,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_magazine.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2944,7 +2965,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/acquire_manuscript.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_manuscript.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3009,7 +3030,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/aesthetic_authority_audit.py
   to_path: plugins/setec-voiceprint/scripts/image_conjunction.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3022,7 +3043,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/aesthetic_authority_audit.py
   to_path: plugins/setec-voiceprint/scripts/kicker_density.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3035,7 +3056,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/aesthetic_authority_audit.py
   to_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3081,7 +3102,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/before_after_restoration.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/before_after_restoration.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3439,7 +3460,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/check_corpus.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/check_corpus.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3478,7 +3499,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/controls_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/controls_audit.py
   to_path: plugins/setec-voiceprint/scripts/voice_distance.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3530,7 +3551,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/draft_history_analysis.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3809,7 +3830,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/generate_voice_report.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3848,7 +3869,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/known_editor_profile.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/known_editor_profile.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3985,7 +4006,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/pdf_extract.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/pdf_extract.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3998,7 +4019,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/pdf_inventory.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/pdf_inventory.py
   to_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4024,7 +4045,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/prestige_metaphor.py
   to_path: plugins/setec-voiceprint/scripts/image_conjunction.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4050,7 +4071,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/semantic_preservation_check.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4063,7 +4084,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/semantic_trajectory_audit.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4097,7 +4118,7 @@ layer_exemptions:
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
 
-- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_distance.py
   to_path: plugins/setec-voiceprint/scripts/biber_features.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4110,7 +4131,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_distance.py
   to_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4123,7 +4144,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_distance.py
   to_path: plugins/setec-voiceprint/scripts/register_classifier.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4136,7 +4157,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_drift_tracker.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4156,7 +4177,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/voice_profile.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_profile.py
   to_path: plugins/setec-voiceprint/scripts/biber_features.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4187,7 +4208,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: b03f58e4eb29abd6aec8028727ef5ccd42eef13a
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_validation_harness.py
   to_path: plugins/setec-voiceprint/scripts/manifest_validator.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4200,7 +4221,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_validation_harness.py
   to_path: plugins/setec-voiceprint/scripts/validation_harness.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5255,6 +5276,235 @@ layer_exemptions:
   reason: Permanent schema-1.x launcher to its own whole implementation.
   owner: packaging
   introduced_sha: 697b728a99586a1b6a24483be4316dd6d0611b2d
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py
+  to_path: plugins/setec-voiceprint/scripts/setec/external_mirror/compose_evidence_pack.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation
+    (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/function_word_grammar_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/controls_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/controls_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/surprisal_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/surprisal_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/semantic_preservation_check.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/before_after_restoration.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/before_after_restoration.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/known_editor_profile.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/known_editor_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/draft_history_analysis.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_drift_tracker.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_validation_harness.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/semantic_trajectory_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/fairness_dialect_guardrails.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/adversarial_robustness_card.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/generate_voice_report.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/check_corpus.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/check_corpus.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_corpus_template.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/s5_distance.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary launcher to its own whole implementation (P4).
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_distance.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary launcher to its own whole implementation (P4).
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/voice_profile.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/voice_profile.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary launcher to its own whole implementation (P4).
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_blog.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_blog.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_blogger_takeout.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_epub.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_epub.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_magazine.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/acquire_manuscript.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquire_manuscript.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/pdf_inventory.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/pdf_inventory.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/pdf_extract.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/pdf_extract.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/kicker_density.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/kicker_density.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/prestige_metaphor.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+
+- from_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/aesthetic_authority_audit.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x launcher to its own whole implementation.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/acquisition_core.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/acquisition_core.py

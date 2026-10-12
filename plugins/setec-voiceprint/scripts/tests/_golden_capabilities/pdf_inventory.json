@@ -1,7 +1,7 @@
 {
   "_seeded_at": "2026-05-28",
   "compute": {
-    "cost_note": "TODO",
+    "cost_note": "local; opens every PDF and samples its first five pages with pypdf; incremental cache lets an interrupted run resume",
     "length_floor_words": null,
     "tier": "ocr"
   },
@@ -10,37 +10,51 @@
   ],
   "dependencies": {
     "python": [
-      "concurrent",
-      "fnmatch",
       "pypdf"
     ]
   },
   "do_not_use_when": [
-    "TODO"
+    "the PDFs are remote URLs (use acquire_pdf_urls)",
+    "you want extracted text; this step only describes the library"
   ],
-  "examples": [],
-  "family": "TODO",
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/pdf_inventory.py --root papers/ --output ai-prose-baselines-private/pdf_inventory.jsonl",
+      "description": "Inventory a PDF library into a private JSONL for review"
+    }
+  ],
+  "family": "acquisition",
   "handoff": "none",
   "id": "pdf_inventory",
   "inputs": {
-    "target": "TODO"
+    "optional": [
+      "optional flags --include-glob, --exclude-glob, --max-files, --workers, --max-file-bytes, --no-incremental-cache, --refresh-partial (see --help)"
+    ],
+    "required": [
+      "--root",
+      "--output"
+    ],
+    "target": "local directory of PDFs (--root)"
   },
   "outputs": {
     "artifacts": [
-      "TODO"
+      "private pdf inventory JSONL (one row per PDF, under ai-prose-baselines-private/ unless --allow-public-output)"
     ],
     "schema_version": "1.0"
   },
-  "purpose": "classify PDFs in a library for impostor-corpus inclusion.",
-  "references": [],
+  "purpose": "walk a local PDF library and emit a private JSONL inventory that classifies each PDF as text_extractable / image_only / mixed / corrupted from a first-five-pages text sample, with metadata quality and an estimated word count; the review surface the user filters and annotates before pdf_extract. Writes no cleaned text and no manifest entries.",
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md",
+    "plugins/setec-voiceprint/skills/corpus-acquisition/SKILL.md"
+  ],
   "registers": [
-    "TODO"
+    "all_nonfiction"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/pdf_inventory.py",
-  "status": "todo",
-  "todo_reason": "Registry contract remains incomplete: this auto-seeded fragment still has unresolved TODO sentinels in family, use_when, do_not_use_when, inputs.target, outputs.artifacts, compute.cost_note, and registers; code/test presence alone cannot justify discovery until those operator fields are curated.",
+  "status": "structural_only",
   "surface": "voice_coherence_acquisition",
   "use_when": [
-    "TODO"
+    "you have a library of PDFs (papers, reports, books) and want to see what is extractable before adding any of it to the impostor pool",
+    "triaging which PDFs need OCR before running pdf_extract"
   ]
 }
