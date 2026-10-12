@@ -5522,3 +5522,11 @@ layer_exemptions:
   owner: packaging
   introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/length_bootstrap.py
+  edge_kind: l2_to_l2
+  reason: Permanent ordinary schema-1.x compatibility alias to its own whole length_bootstrap
+    implementation; actual edge remains visible and matched.
+  owner: packaging
+  introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
