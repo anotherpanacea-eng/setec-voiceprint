@@ -75,8 +75,8 @@ PRIVATE_DIR_NAME = _acq_primitives.PRIVATE_DIR_NAME
 # of the repo (the documented standard layout).
 DEFAULT_BASELINES_ENV = "SETEC_BASELINES_DIR"
 DEFAULT_BASELINES_FALLBACK = (
-    Path.home() / "Library" / "CloudStorage" / "Dropbox" / "Cowork"
-    / "ai-prose-baselines-private"
+    Path.home() / "Library" / "CloudStorage" / "Dropbox" / "80-89 Projects"
+    / "82 Stylometry" / "ai-prose-baselines-private"
 )
 
 

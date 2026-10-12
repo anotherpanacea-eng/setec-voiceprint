@@ -93,7 +93,7 @@ sample has undefined kappa and cannot recommend a cheaper judge.
   and `out/cards.jsonl`, looking for parse failures, `warnings`, and any `stop_reason`
   other than `end_turn`.
 - Copy `out/`, `plan.json` and `estimates.json` to Dropbox under
-  `/Cowork/repo-fleet/storyscope-atlas-pilot-20260923/`. Do not copy `works/` or
+  `/80-89 Projects/81 Software & tools/81.11 Repo fleet/storyscope-atlas-pilot-20260923/`. Do not copy `works/` or
   `requests/`.
 - Report: the Claude Code version; list-price cost per step; how many units parsed
   cleanly; the agreement table (feature, n_pairs, kappa or Jaccard, routing_hint);
