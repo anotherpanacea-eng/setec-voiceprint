@@ -361,12 +361,26 @@ def _load_capability_script_paths() -> set[str]:
 def classify_tiers(
     modules: list[Module], cap_script_paths: set[str],
 ) -> dict[str, str]:
+    # A registered permanent alias and its verified own implementation
+    # are one no-main capability. Existing main classification is unchanged;
+    # TAG-only unregistered libraries stay L1.
+    scanned_modules = {m.repo_rel: m for m in modules}
+    capability_implementations = set()
+    for legacy in cap_script_paths:
+        target = _surface_implementation_path(legacy)
+        implementation = scanned_modules.get(target)
+        if (implementation is not None
+                and not any(isinstance(n, ast.FunctionDef) and n.name == "main"
+                            for n in implementation.tree.body)
+                and _is_permanent_surface_launcher(legacy, target)):
+            capability_implementations.add(target)
     tiers: dict[str, str] = {}
     for m in modules:
         if m.stem in _L0_STEMS:
             tiers[m.repo_rel] = "L0"
             continue
-        has_cap = m.repo_rel in cap_script_paths
+        has_cap = (m.repo_rel in cap_script_paths
+                   or m.repo_rel in capability_implementations)
         has_main = _has_main_entry(m.tree)
         has_env = _emits_envelope(m.tree)
         tiers[m.repo_rel] = "L2" if (has_cap or has_main or has_env) else "L1"
@@ -773,7 +787,7 @@ def _surface_implementation_path(legacy: str) -> str | None:
 
 
 def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
-    """Recognize only the existing main+surface ordinary launcher contract.
+    """Recognize the existing main/no-main surface ordinary launcher contracts.
 
     This bounded AST check licenses a new exemption row, not other imports
     or arbitrary Python behavior. No implementation is executed here.
@@ -801,6 +815,19 @@ def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
     stem = old_rel.stem
     package = ".".join(new_rel.parent.parts)
     scripts_anchor = "parent" if len(old_rel.parts) == 1 else "parents[1]"
+    has_main = any(isinstance(n, ast.FunctionDef) and n.name == "main"
+                   for n in implementation.tree.body)
+    if not has_main and (
+            _has_main_entry(implementation.tree)
+            or any(isinstance(n, ast.AsyncFunctionDef) and n.name == "main"
+                   for n in implementation.tree.body)):
+        return False
+    final_branch = (
+        'if __name__ == "__main__":\n    sys.exit(_mod.main())\n'
+        'else:\n    sys.modules[__name__] = _mod\n'
+        if has_main else
+        'if __name__ != "__main__":\n    sys.modules[__name__] = _mod\n'
+    )
     expected = ast.parse(f"""
 import sys
 from pathlib import Path
@@ -809,17 +836,11 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 from {package} import {stem} as _mod
 from {package}.{stem} import TASK_SURFACE
-if __name__ == "__main__":
-    sys.exit(_mod.main())
-else:
-    sys.modules[__name__] = _mod
-""")
+""" + final_branch)
     if ast.dump(ast.Module(body=body, type_ignores=[])) != ast.dump(expected):
         return False
-    # The implementation must supply the two exports used by this template.
-    if not any(isinstance(n, ast.FunctionDef) and n.name == "main"
-               for n in implementation.tree.body):
-        return False
+    # Both templates require the same static surface export. The selected
+    # branch also preserves whether the implementation supplies a CLI main.
     if not any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
                and isinstance(n.value.value, str)
                and any(isinstance(t, ast.Name) and t.id == "TASK_SURFACE" for t in n.targets)
