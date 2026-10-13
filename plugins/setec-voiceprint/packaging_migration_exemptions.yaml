@@ -2421,6 +2421,13 @@ exemptions:
   owner: packaging
   introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
+    stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 606583a62a1fec7f6e0c2730d91f51325939818e
+  removal_phase: not-applicable
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
@@ -3128,7 +3135,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/binoculars_calibrate.py
   to_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5529,4 +5536,12 @@ layer_exemptions:
     implementation; actual edge remains visible and matched.
   owner: packaging
   introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/binoculars_calibrate.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x ordinary launcher to its own whole implementation
+    (specs/svp-packaging-conversion.md section 2).
+  owner: packaging
+  introduced_sha: 606583a62a1fec7f6e0c2730d91f51325939818e
   removal_phase: not-applicable
