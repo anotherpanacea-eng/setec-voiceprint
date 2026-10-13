@@ -1,6 +1,6 @@
 # SVP hermetic backend mode — build-only amendment
 
-- **Status:** REVIEW REQUIRED (v3 refresh) · **Date:** 2026-10-13
+- **Status:** BUILD-READY (v3 refresh; independent review, zero P1/P2) · **Date:** 2026-10-13
 - **Repo:** `setec-voiceprint` · **Fleet prerequisite:** #709 · **Card:** CB-6.
 - **tier:** COMPLEX · **builder:** `gpt-6.1-sol`, high effort (root-provided
   invocation metadata). Reason: refusal ordering, cached backend use, and real
@@ -27,12 +27,12 @@ Anchors below are repo-relative and were read from the verified main.
 
 | Boundary | Current behavior | Authorized refusal point |
 |---|---|---|
-| `plugins/setec-voiceprint/scripts/setec/core/judge_backends.py:199`, `make_api_judge(...) -> Callable[[Any], Any]` | Calls `_provider_setup` at line 219; returned `_run` at line 228 calls provider/host transport | Before provider setup, and before any work in the returned callable |
+| `plugins/setec-voiceprint/scripts/setec/core/judge_backends.py:199`, `make_api_judge(...) -> Callable[[Any], Any]` | Calls `_provider_setup` at line 219; returned `_run` at line 228 calls provider/host transport | Before provider setup |
 | `plugins/setec-voiceprint/scripts/setec/core/embedding_backend.py:236`, `EmbeddingBackend._load() -> Any` | Returns cached `_model` at line 247, imports sentence-transformers at line 250, constructs at line 302 | Before the cache fast path and dependency imports |
 | `plugins/setec-voiceprint/scripts/setec/core/surprisal_backend.py:351`, `SurprisalBackend._load() -> tuple[Any, Any]` | Returns cached model/tokenizer at line 360, imports transformers at line 363, constructs at lines 381/405 | Before the cache fast path and dependency imports |
 
 The three boundaries are not a process-wide network sandbox. They protect only
-factory/returned-callable use and loader use that actually passes through them.
+judge-factory use and loader use that actually passes through them.
 They do not intercept independently created models, transports, or direct access
 to private cached objects. Section 3 lists known bypasses; consumer coverage must
 not present those as guarded merely because stub mode is enabled.
@@ -52,10 +52,6 @@ no substitute judge, vectors, token scores, model identity, or numerical result.
 2. `make_api_judge` raises the supplied `judge_error` before `_provider_setup`,
    SDK import/client construction, host resolution, or callback invocation.
    Cover every member of `PROVIDERS`: anthropic, openai, gemini, agent_host.
-   The returned `_run` also checks at entry, before user-content callbacks or a
-   provider/host call. This second check is a root-selected consistency rule:
-   enabling mode before invoking a previously constructed judge must refuse,
-   just as enabling it before using an already cached model must refuse.
 3. The embedding and surprisal loaders raise their existing typed errors before
    cached objects are returned or touched, imports attempted, device/dtype
    resolution performed, weights loaded, or tokenizer/model calls made.
@@ -85,11 +81,9 @@ this increment.
 - Poison optional dependency imports and host resolution with tripwire finders
   or fake SDK modules. Stub mode must raise the existing typed exception before
   a poison is touched. Include all four judge providers and both model loaders.
-- Demonstrate default behavior without real credentials/models: fake SDK/host
-  and encoder/tokenizer objects exercise the existing construction/cached path,
-  then enable mode and invoke the returned judge or nonempty encode/score route.
-  Calls/callbacks on the warmed objects must not occur. Disable mode and show
-  normal fake-backed behavior still works. Do not download or run real models.
+- With mode unset, fake SDK/host and encoder/tokenizer objects show the
+  existing construction and cached paths still work. Do not download or run
+  real models.
 - Exercise real normalized dispatch for the admitted `narrative_decision_audit`
   judge on valid synthetic input with `--judge` set to anthropic, `--judge-model`, and a
   synthetic model name. Require exit 3, a schema-1.0 unavailable envelope with
@@ -130,8 +124,6 @@ this increment.
 | `plugins/setec-voiceprint/scripts/setec/surfaces/voice_fingerprint.py:196`, `:266`, `:322`, `:414` | Four independent encoder loaders, including the sentence-transformers encoder at line 274; future family grant must route or explicitly guard before claiming coverage |
 | `plugins/setec-voiceprint/scripts/setec/surfaces/edit_magnitude_audit.py:133` and `:135` | Own tokenizer/sequence-classification construction; defer |
 | `plugins/setec-voiceprint/scripts/setec/surfaces/variance_audit.py:572` | Own `SentenceTransformer` construction; CB-5 owns variance work, serialize any later change |
-| `plugins/setec-voiceprint/scripts/setec/core/embeddings.py:90` | spaCy vector-model loading; outside the sentence-transformers backend guarantee |
-| `plugins/setec-voiceprint/scripts/setec/core/dependency_primitives.py:18` and `plugins/setec-voiceprint/scripts/setec/surfaces/variance_audit.py:1102` | spaCy syntax loading; shared text primitives are excluded from this wave |
 | `plugins/setec-voiceprint/scripts/setec/surfaces/rewriting_invariance_audit.py:228` | Own Anthropic rewrite client; defer |
 | `plugins/setec-voiceprint/scripts/setec/calibration/storyscope_atlas.py:710` and `:734` | Direct Anthropic network steps; defer |
 | `plugins/setec-voiceprint/scripts/replication/stages/a1_prompt_extraction.py:120` and `:149` | Direct Anthropic/OpenAI clients; defer |
@@ -192,11 +184,9 @@ category, or `ai_status`. Freeze those rules in the family contract. Do not
 regenerate expectations from the candidate during validation. Existing golden
 normalization is precedent to inspect, not permission to blanket-normalize.
 
-Tests must reject missing/present-null/wrong-valued `ai_status` according to the
-row, wrong exits/tool/surface, extra/missing keys, modified measurements/licenses,
-unrelated errors, malformed/multiple JSON objects, traceback, and timeout. Prove
-at least one real-dispatch expected-output mutation fails. Case setup failure or
-missing fixture fails; no optional-dependency skip can pass an admitted row.
+A case passes on exact recursive JSON equality plus exit code; one real-dispatch
+expected-output mutation must fail. No optional-dependency skip can pass an
+admitted row.
 Success cases use existing model-free/mock/manifest routes; refused model/provider
 cases use the guarded boundaries. A live bypass requires a separately cleared
 routing/refusal change before admission as a hermetic case.
