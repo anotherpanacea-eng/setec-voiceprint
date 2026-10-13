@@ -1,9 +1,9 @@
 # SVP dependency inversion — non-text helpers
 
-**Status:** DRAFT; independent spec review required before implementation.
+**Status:** BUILD-READY (independent seven-lens spec review, zero findings).
 **Date:** 2026-10-13 · **Repo:** setec-voiceprint · **Fleet issue:** #708 (spec only).
 **tier:** COMPLEX · **builder:** gpt-6.1-sol/high (supplied invocation metadata).
-**Reason:** a small extraction must preserve mutable registry, calibration alias and pickle compatibility while removing a real dependency.
+**Reason:** a small extraction must preserve mutable registry and calibration alias compatibility while removing real dependencies.
 
 ## Authority and verified baseline
 
@@ -29,14 +29,14 @@ implementation; counts here describe this baseline, never replace the gate.
   direct/from-import aliases, shared registry/value identity and caller patches.
   `plugins/setec-voiceprint/scripts/tests/test_per_judge_generator_routing.py:389` changes a registry item and
   observes a real classifier result.
-- Runtime inspection confirmed ThresholdSpec.__module__ is
-  setec.surfaces.variance_audit. This historical serialization name is an
-  intentional compatibility requirement for the extraction.
+- `plugins/setec-voiceprint/scripts/setec/surfaces/before_after_restoration.py:76` and
+  `plugins/setec-voiceprint/scripts/calibration/calibration_survey.py:89` import
+  only COMPRESSION_HEURISTICS from variance_audit, at module level.
 - `tools/check_layering.py:40` reports cycles without gating them. Current
   strict JSON passes: 14 l1_to_l2, 279 l2_to_l2, five cycles. The exact exemption
   for calibration/calibrate_thresholds.py → variance_audit.py is l2_to_l2.
 
-## First durable unit: threshold metadata and one eliminated dependency
+## First durable unit: threshold metadata and three eliminated dependencies
 
 Create the proposed setec/core/compression_thresholds module. Move only
 THRESHOLD_STATUS_VALUES, ThresholdSpec, resolve_direction_with_slice,
@@ -54,24 +54,26 @@ variance_audit consumes and re-exports those same objects; it retains all
 classification, formatting, envelope, CLI, text/NLP/model and audit execution.
 Do not duplicate registry objects or replace default-argument registry identity.
 In-place mutation through the surface alias must remain visible to existing
-classification and moved status helpers. Preserve ThresholdSpec's historical
-module name through a narrow compatibility assignment and retain its public
-binding at that module, without importing a surface into core. Old pickles must
-load, and newly written pickles must retain the historical class reference.
-This requirement does not promise unpickling without importing the historical
-surface; ordinary import of core must remain independent of it.
+classification and moved status helpers. Nothing in the repo pickles
+ThresholdSpec, and the re-export already resolves old pickled references, so
+no `__module__` override is needed.
 
 calibration/calibrate_thresholds consumes the same COMPRESSION_HEURISTICS
 object from core in its existing lazy alias resolver. Preserve its other lazy
 scoring aliases, cache behavior, plain-import/help behavior and caller-installed
-patches. Correct its registry-location documentation in the same file.
+patches. Correct its registry-location documentation and the operator message
+at `plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py:3097`
+("Next: edit scripts/variance_audit.py…") in the same file. Retarget the one-line
+COMPRESSION_HEURISTICS imports in before_after_restoration and
+calibration_survey to core.
 
-Delete precisely the obsolete layer_exemptions row with from_path
-plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py,
-to_path plugins/setec-voiceprint/scripts/variance_audit.py and edge_kind
-l2_to_l2. Preserve all unrelated rows and the packaging exemptions key. Do not
-reseed the baseline, add exceptions, change the checker, or hide surface edges.
-At the cited baseline this removes one L2 exception; it does not complete the
+Delete precisely the three obsolete l2_to_l2 layer_exemptions rows with to_path
+plugins/setec-voiceprint/scripts/variance_audit.py and from_path
+calibration/calibrate_thresholds.py, calibration/calibration_survey.py or
+setec/surfaces/before_after_restoration.py (each under
+plugins/setec-voiceprint/scripts/). Preserve all unrelated rows and the
+packaging exemptions key. Do not reseed the baseline, add exceptions, change the checker, or hide surface edges.
+At the cited baseline this removes three L2 exceptions; it does not complete the
 variance hub or remove an L1 dependency. Fresh-base counts may differ.
 
 ## Acceptance and delivery
@@ -81,8 +83,7 @@ variance hub or remove an L1 dependency. Fresh-base counts may differ.
    skips obscuring the new core tests. Add only behavioral regressions needed
    for this extraction: core import and metadata use in a fresh stdlib-only
    subprocess that refuses surface/NLP/model imports; genuine class/registry
-   aliases and in-place mutation effects; pre-extraction synthetic pickle
-   loading plus historical-reference roundtrip. No source-text location test.
+   aliases and in-place mutation effects. No source-text location test.
 2. Compare fetched-base and candidate classifier outputs on deterministic
    synthetic audit dictionaries spanning available/missing signals, length
    floors and comparator/judge/generator fallback. Reuse the real producer
@@ -99,8 +100,7 @@ variance hub or remove an L1 dependency. Fresh-base counts may differ.
    green-suite gate remains required; inherited failures mean that gate is
    unresolved, not permission to claim full clearance. Run existing producer
    drift/docs/fixture gates and git diff --check. No hosted arming is authorized.
-5. The spec receives independent review before implementation. The implementation
-   needs its own exact path checkout, scoped plan and independent build review
+5. The implementation needs its own exact path checkout, scoped plan and independent build review
    before push/opening a draft constituent. Code-safe local receipts identify
    exact baseline/head and actual outcomes. Normal Claude/Codex review and train
    clearance remain required; this spec and its first unit authorize no merge.
@@ -108,15 +108,14 @@ variance hub or remove an L1 dependency. Fresh-base counts may differ.
 ## Increment boundary and later work
 
 The current spec PR edits only this contract and its changelog fragment.
-Its first implementation unit is limited to the two existing runtime modules,
-the proposed core module, exact dead layer row, relevant behavioral tests and
+Its first implementation unit is limited to the four existing runtime modules
+named above, the proposed core module, exact dead layer rows, relevant behavioral tests and
 its own changelog fragment. Implementation paths need a separate grant.
 
 Defer all text primitives/tokenization, POS/dependency helpers, spaCy state,
 backend factories, score extraction, classification extraction, harness/CLI
-consolidation and remaining metadata-only consumers. before_after_restoration
-PR #729 is merged; its metadata import remains deferred solely to bound this
-unit. calibration_survey, shard_runner and train_xgboost packaging decisions,
+consolidation and remaining metadata-only consumers. Beyond its one import
+line, calibration_survey, shard_runner and train_xgboost packaging decisions,
 the acquisition_core overlap in baselines-fallback PR #738, and binoculars
 relocation PR #739 are outside this scope.
 CB-6 owns separate backend/hermetic work; any later shared variance path work
