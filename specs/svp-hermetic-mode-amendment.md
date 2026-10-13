@@ -90,16 +90,29 @@ this increment.
   then enable mode and invoke the returned judge or nonempty encode/score route.
   Calls/callbacks on the warmed objects must not occur. Disable mode and show
   normal fake-backed behavior still works. Do not download or run real models.
-- Exercise real normalized CLI dispatch on synthetic input for one judge,
-  `semantic_trajectory_audit`, and `surprisal_audit`. A backend-specific mode
-  message must reach the existing unavailable result; an unrelated missing
-  input/dependency refusal does not prove the mode was reached. The dispatcher's
-  required-dependency spec probe precedes child execution. Make its declared
-  modules discoverable with importable tripwire packages confined to the test's
-  copied scripts root; importing/using a heavyweight package must trip the test.
-  Keep the dispatcher and child invocation real, disclose this test-only setup,
-  and do not alter the copied capability metadata to bypass preflight. Check exit code,
-  tool, surface, availability, reason category, and absence of numeric results.
+- Exercise real normalized dispatch for the admitted `narrative_decision_audit`
+  judge on valid synthetic input with `--judge` set to anthropic, `--judge-model`, and a
+  synthetic model name. Require exit 3, a schema-1.0 unavailable envelope with
+  `tool=setec_run`, the requested surface, `reason_category=bad_input`,
+  `results={}`, and the backend-specific mode message. An unrelated missing
+  input/dependency or unknown-surface refusal does not prove the guard was reached.
+- Exercise the actual direct legacy `semantic_trajectory_audit.py` and
+  `surprisal_audit.py` launchers from the copied plugin with a foreign cwd,
+  cleared `PYTHONPATH`, nonempty synthetic input and `--json`. Semantic input
+  must produce at least two paragraphs/windows, each with at least 25 ordinary
+  whitespace-separated words, so its existing short-input path cannot bypass
+  the loader. Require exit 3, empty stdout (no JSON), no traceback, the
+  backend-specific mode message, and the existing stderr prefix respectively
+  `Embedding backend error:` or `Surprisal scoring failed:`. Both capabilities
+  lack `json_delivery` on the verified base; their normalized dispatcher route
+  correctly refuses unknown surfaces before dependency probing or child launch.
+  Do not promote either capability or change that refusal in this increment.
+- Confine importable tripwire dependency packages to the test's copied scripts
+  root; importing/using a heavyweight package must trip the test. For admitted
+  dispatcher cases with required dependencies, these packages may satisfy the
+  existing import-spec preflight without executing a real dependency. Keep the
+  dispatcher, launchers and child invocation real, disclose this test-only setup,
+  and do not alter copied capability metadata to bypass discovery or preflight.
 - Execute mock/manifest judge behavior under mode and verify unchanged meaningful
   outputs. Include a fail-before check against the verified base and a removed-
   guard control that exposes attempted import/cached/provider use.
@@ -138,7 +151,7 @@ capability entries, contract builder inventory, and concrete per-case CLI input
 contracts. **Produces:** additive real-dispatch cases in the existing zero-install
 gate, with synthetic inputs and independent expected envelopes.
 
-`tools/check_zero_install.py:98`, `make_bare_copy`, copies only the plugin subtree
+`tools/check_zero_install.py:92`, `make_bare_copy`, copies only the plugin subtree
 to `<scratch>/setec-voiceprint`, refuses source symlinks, and creates no synthetic
 `plugins/` parent. Reuse it; keep foreign cwd and unset `PYTHONPATH`. The current
 gate has structural checks, five launcher representatives, the variance dispatch,
