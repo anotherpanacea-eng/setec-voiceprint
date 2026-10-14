@@ -10,7 +10,7 @@ entry, extracts the named per-signal score array via the harness's
 FPR target, and writes a provenance entry to
 `scripts/calibration/thresholds_calibrated.json`.
 
-The derived value is encoded in `scripts/variance_audit.py`'s
+The derived value is encoded in `scripts/setec/core/compression_thresholds.py`'s
 `COMPRESSION_HEURISTICS` registry by setting `provenance=<slug>` on
 the appropriate `ThresholdSpec` (a manual edit; this script writes
 the ledger, not the registry).
@@ -65,6 +65,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from manifest_validator import validate_manifest  # type: ignore
+from setec.core.compression_thresholds import COMPRESSION_HEURISTICS  # type: ignore
 
 # These scoring imports are also public aliases used by calibration callers.
 # Resolve direct attribute/from-import access to the genuine object, while
@@ -77,7 +78,7 @@ _HARNESS_ALIASES = (
     "load_manifest_entries",
     "score_smoothing_entry",
 )
-_RUNTIME_ALIASES = (*_HARNESS_ALIASES, "COMPRESSION_HEURISTICS")
+_RUNTIME_ALIASES = _HARNESS_ALIASES
 
 
 def __getattr__(name: str) -> Any:
@@ -85,10 +86,6 @@ def __getattr__(name: str) -> Any:
         import validation_harness  # type: ignore
 
         value = getattr(validation_harness, name)
-    elif name == "COMPRESSION_HEURISTICS":
-        from variance_audit import COMPRESSION_HEURISTICS  # type: ignore
-
-        value = COMPRESSION_HEURISTICS
     else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     globals()[name] = value
@@ -3094,7 +3091,7 @@ def main(argv: list[str] | None = None) -> int:
         f"  ledger: "
         f"{out_path.relative_to(REPO_ROOT) if out_path.is_relative_to(REPO_ROOT) else out_path}\n"
         f"\n"
-        f"Next: edit scripts/variance_audit.py and set\n"
+        f"Next: edit scripts/setec/core/compression_thresholds.py and set\n"
         f"  COMPRESSION_HEURISTICS[{args.signal!r}].provenance = "
         f"{entry['slug']!r}\n"
         f"  COMPRESSION_HEURISTICS[{args.signal!r}].status = 'calibrated'\n"

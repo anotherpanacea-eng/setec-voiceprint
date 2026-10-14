@@ -73,7 +73,7 @@ ROOT = scripts_dir()
 
 from claim_license import ClaimLicense, from_legacy  # type: ignore
 from output_schema import build_output  # type: ignore
-from variance_audit import COMPRESSION_HEURISTICS  # type: ignore
+from setec.core.compression_thresholds import COMPRESSION_HEURISTICS  # type: ignore
 
 
 TASK_SURFACE = "craft_restoration"
