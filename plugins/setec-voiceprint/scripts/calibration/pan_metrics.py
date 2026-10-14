@@ -58,15 +58,15 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
-# The scorer reuses validation_harness's ROC-AUC + bootstrap-CI helpers
-# verbatim. validation_harness lives one dir up (scripts/), which the
-# calibration adapters add to sys.path the same way (see
+# The scorer reuses the harness's ROC-AUC + bootstrap-CI helpers verbatim,
+# from setec.core.validation_metrics. setec/ lives one dir up (scripts/),
+# which the calibration adapters add to sys.path the same way (see
 # mage_to_manifest.py).
 SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from validation_harness import (  # noqa: E402
+from setec.core.validation_metrics import (  # noqa: E402
     fallback_roc_auc,
     paired_bootstrap_ci,
 )

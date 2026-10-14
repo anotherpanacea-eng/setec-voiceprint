@@ -68,7 +68,7 @@ from stylometry_core import (  # type: ignore
     select_feature_names,
     vector_stats,
 )
-from validation_harness import (  # type: ignore
+from setec.core.validation_metrics import (  # type: ignore
     fallback_average_precision,
     fallback_roc_auc,
 )

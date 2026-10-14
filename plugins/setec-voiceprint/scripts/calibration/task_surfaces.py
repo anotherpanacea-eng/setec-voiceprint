@@ -863,7 +863,7 @@ def _aggregate_calibration_records(
 
         # --- Layer 1 (Belt): pre-extract per-signal pairs once.
         try:
-            from validation_harness import (  # type: ignore
+            from setec.core.validation_metrics import (  # type: ignore
                 collect_signal_records,
             )
         except ImportError as exc:
