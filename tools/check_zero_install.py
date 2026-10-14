@@ -991,6 +991,9 @@ CONSUMER_CASES = [
     {"case": "s5", "id": "s5_distance", "args": ["consumer-s5-request.json"], "exit": 0,
      "normalize": ["results.implementation_sha256"]},
     # POS and dependency families need spaCy, which moves with the installed model.
+    {"case": "idiolect", "id": "idiolect_detector",
+     "args": ["--target-dir", "consumer-target", "--reference-dir", "consumer-baseline"],
+     "exit": 0},
     {"case": "voice_distance", "id": "voice_distance",
      "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline", "--no-spacy"],
      "exit": 0},
@@ -1001,8 +1004,7 @@ CONSUMER_CASES = [
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
     "author_corpus_export", "binoculars_audit", "general_imposters",
-    "gmail_author_pipeline", "idiolect_detector", "pov_voice_profile",
-    "voice_fingerprint",
+    "gmail_author_pipeline", "pov_voice_profile", "voice_fingerprint",
 })
 
 
@@ -1022,7 +1024,7 @@ def _posix_strings(value):
     if isinstance(value, list):
         return [_posix_strings(item) for item in value]
     if isinstance(value, dict):
-        return {key: _posix_strings(item) for key, item in value.items()}
+        return {_posix_strings(key): _posix_strings(item) for key, item in value.items()}
     return value
 
 
@@ -1047,6 +1049,8 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
 
     (outside_cwd / "consumer-input.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
     (outside_cwd / "consumer-pairs.txt").write_text(CONSUMER_PAIRS_INPUT, encoding="utf-8")
+    (outside_cwd / "consumer-target").mkdir(exist_ok=True)
+    (outside_cwd / "consumer-target" / "t.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
     for name, payload in CONSUMER_JSON_INPUTS.items():
         (outside_cwd / name).write_text(json.dumps(payload), encoding="utf-8")
     baseline = outside_cwd / "consumer-baseline"
