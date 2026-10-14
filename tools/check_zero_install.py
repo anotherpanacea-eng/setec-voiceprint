@@ -991,6 +991,9 @@ CONSUMER_CASES = [
     {"case": "s5", "id": "s5_distance", "args": ["consumer-s5-request.json"], "exit": 0,
      "normalize": ["results.implementation_sha256"]},
     # POS and dependency families need spaCy, which moves with the installed model.
+    {"case": "voice_distance", "id": "voice_distance",
+     "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline", "--no-spacy"],
+     "exit": 0},
     {"case": "voice_profile", "id": "voice_profile",
      "args": ["--baseline-dir", "consumer-baseline", "--no-spacy", "--char-top", "20"],
      "exit": 0},
@@ -999,7 +1002,7 @@ CONSUMER_CASES = [
 PENDING_CONSUMERS = frozenset({
     "author_corpus_export", "binoculars_audit", "general_imposters",
     "gmail_author_pipeline", "idiolect_detector", "pov_voice_profile",
-    "voice_distance", "voice_fingerprint",
+    "voice_fingerprint",
 })
 
 

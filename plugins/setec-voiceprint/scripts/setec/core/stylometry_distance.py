@@ -90,8 +90,10 @@ def compute_clusters(
     by_name = {d["feature"]: d for d in deviations}
     out: list[dict[str, Any]] = []
     for cluster_name, members in cluster_defs.items():
+        # Sorted, not set order: set order follows the hash seed, which would
+        # reorder tied top features and the float sums between runs.
         matched = [
-            by_name[m] for m in members
+            by_name[m] for m in sorted(members)
             if m in by_name and by_name[m].get("z") is not None
         ]
         if len(matched) < min_features:
