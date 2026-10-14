@@ -76,7 +76,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from output_schema import build_output  # type: ignore  # noqa: E402
 from claim_license import ClaimLicense  # type: ignore  # noqa: E402
-from validation_harness import fallback_roc_auc  # type: ignore  # noqa: E402
+from setec.core.validation_metrics import fallback_roc_auc  # type: ignore  # noqa: E402
 
 TASK_SURFACE = "validation"
 TOOL_NAME = "paraphrase_robustness"
