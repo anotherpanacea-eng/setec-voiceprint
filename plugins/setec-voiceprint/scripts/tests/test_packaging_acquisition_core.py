@@ -96,9 +96,11 @@ import os, sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import acquisition_core as ac
+from setec.core import acquisition_core as core
 scripts = Path(sys.argv[1])
 fallback = Path(sys.argv[2]) / 'synthetic-fallback'
-ac.DEFAULT_BASELINES_FALLBACK = fallback
+# The lookup and its fallback constant live in core; the surface re-exports them.
+core.DEFAULT_BASELINES_FALLBACK = fallback
 sibling = scripts.parents[2].parent / ac.PRIVATE_DIR_NAME
 assert not sibling.exists()
 assert ac.resolve_baselines_dir() == fallback
@@ -143,7 +145,9 @@ elif scenario == 'call_failure':
     else:
         source = "seen = []\\ndef extract_text_layer(path, **kwargs):\\n    seen.append(path)\\n    raise ValueError('planted call refusal')\\n"
     (local / (helper + '.py')).write_text(source, encoding='utf-8')
-ac.scripts_dir = lambda: local
+# preprocess_text lives in core; pdf_text_from_bytes stays on the surface.
+from setec.core import acquisition_core as core
+(core if helper == 'preprocessing' else ac).scripts_dir = lambda: local
 before = list(sys.path)
 if helper == 'pdf_extract':
     assert ac.pdf_text_from_bytes(b'') == ''

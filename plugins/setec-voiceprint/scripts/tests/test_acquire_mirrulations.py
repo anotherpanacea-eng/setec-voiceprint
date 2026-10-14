@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover
 _ok = True
 _reason = ""
 try:
-    import acquisition_core as ac  # type: ignore  # noqa: F401
+    from setec.core import acquisition_core as ac  # type: ignore  # noqa: F401
     import acquire_mirrulations as mr  # type: ignore
     import manifest_validator as mv  # type: ignore
 except ImportError as _e:  # pragma: no cover

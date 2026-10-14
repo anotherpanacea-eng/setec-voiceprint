@@ -79,7 +79,7 @@ from typing import Any, Iterable, Optional
 
 # Resolve repo-relative imports the same way the other scripts do.
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_everycrsreport"
