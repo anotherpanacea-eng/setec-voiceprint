@@ -1,0 +1,1516 @@
+{
+  "ai_status": null,
+  "available": true,
+  "baseline": null,
+  "claim_license": {
+    "additional_caveats": [
+      "Voice profiles are durable inputs for impersonation. If the profile is shared, the author's voiceprint is shared \u2014 the same way a fingerprint database is shared. Default policy: keep under ai-prose-baselines-private/, sibling to the SETEC repo, not inside it.",
+      "Feature stability (CV) varies sharply across families. Function-word ratios are usually the most stable; character-n-gram inventories the least. Read most-stable feature lists alongside topic-and-register consistency in the corpus.",
+      "POS and dependency families require spaCy + en_core_web_sm. Profile built with `--no-spacy` carries fewer feature families."
+    ],
+    "comparison_set": {
+      "features_retained": {
+        "char_ngrams_3": 20,
+        "char_ngrams_4": 20,
+        "char_ngrams_5": 20,
+        "function_words": 100,
+        "paragraph_dialogue": 7,
+        "pronoun_modal_negation": 9,
+        "punctuation": 11
+      },
+      "mean_words": 133.33333333333334,
+      "n_files": 3,
+      "total_words": 400
+    },
+    "confidence_interval_95": null,
+    "does_not_license": "An authorship verdict. The profile is descriptive, not diagnostic. CRITICAL: the profile is voice-cloning-grade input. Treat it as private to the author / workspace; do not share outside the author's control. The script enforces this by refusing public output paths unless `--allow-public-output` is explicitly passed (see is_private_output_path).",
+    "fpr_target": null,
+    "language_match": [],
+    "length_range_words": null,
+    "licenses": "A private stylometric profile of the supplied baseline corpus: per-family feature inventory (function words, character n-grams, POS trigrams, dependency n-grams), with each feature's baseline mean, standard deviation, and coefficient of variation. The profile is intended as a within-author reference for downstream voice-coherence work (voice_distance, idiolect_detector, mimicry_cosplay_audit).",
+    "references": [],
+    "register_match": [],
+    "task_surface": "voice_coherence"
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** A private stylometric profile of the supplied baseline corpus: per-family feature inventory (function words, character n-grams, POS trigrams, dependency n-grams), with each feature's baseline mean, standard deviation, and coefficient of variation. The profile is intended as a within-author reference for downstream voice-coherence work (voice_distance, idiolect_detector, mimicry_cosplay_audit).\n\n**Does NOT report:** An authorship verdict. The profile is descriptive, not diagnostic. CRITICAL: the profile is voice-cloning-grade input. Treat it as private to the author / workspace; do not share outside the author's control. The script enforces this by refusing public output paths unless `--allow-public-output` is explicitly passed (see is_private_output_path).\n\n### Comparison context\n\n- **features retained:** {'char_ngrams_3': 20, 'char_ngrams_4': 20, 'char_ngrams_5': 20, 'function_words': 100, 'paragraph_dialogue': 7, 'pronoun_modal_negation': 9, 'punctuation': 11}\n- **mean words:** 133.33333333333334\n- **n files:** 3\n- **total words:** 400\n\n### Caveats\n\n- Voice profiles are durable inputs for impersonation. If the profile is shared, the author's voiceprint is shared \u2014 the same way a fingerprint database is shared. Default policy: keep under ai-prose-baselines-private/, sibling to the SETEC repo, not inside it.\n- Feature stability (CV) varies sharply across families. Function-word ratios are usually the most stable; character-n-gram inventories the least. Read most-stable feature lists alongside topic-and-register consistency in the corpus.\n- POS and dependency families require spaCy + en_core_web_sm. Profile built with `--no-spacy` carries fewer feature families.",
+  "results": {
+    "baseline_summary": {
+      "files": [
+        {
+          "id": "b0",
+          "n_words": 120,
+          "path": "consumer-baseline/b0.txt"
+        },
+        {
+          "id": "b1",
+          "n_words": 144,
+          "path": "consumer-baseline/b1.txt"
+        },
+        {
+          "id": "b2",
+          "n_words": 136,
+          "path": "consumer-baseline/b2.txt"
+        }
+      ],
+      "max_words": 144,
+      "mean_words": 133.33333333333334,
+      "min_words": 120,
+      "n_files": 3,
+      "personas": [],
+      "privacy_values": [],
+      "register_tier_counts": {
+        "private_composed": 0,
+        "private_dyadic": 0,
+        "public_composed": 0,
+        "public_responsive": 0
+      },
+      "registers": [],
+      "total_words": 400,
+      "unresolved_register_count": 3
+    },
+    "families": {
+      "char_ngrams_3": {
+        "most_stable_features": [
+          {
+            "cv": 0.03064768972117786,
+            "feature": "ch3:ed ",
+            "mean": 0.011419312665224314,
+            "sd": 0.00034997555139291135
+          },
+          {
+            "cv": 0.2275065942007641,
+            "feature": "ch3:he ",
+            "mean": 0.030496772034224896,
+            "sd": 0.006938216739623615
+          },
+          {
+            "cv": 0.4109329248439222,
+            "feature": "ch3:er ",
+            "mean": 0.015138513037144351,
+            "sd": 0.006220913440141576
+          },
+          {
+            "cv": 0.47871847342960233,
+            "feature": "ch3:the",
+            "mean": 0.022618879370512438,
+            "sd": 0.010828075402940038
+          },
+          {
+            "cv": 0.8663442560187463,
+            "feature": "ch3: th",
+            "mean": 0.02197095325492325,
+            "sd": 0.019034409151659135
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:ter",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:e r",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:ad ",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:t a",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3:me ",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3:e h",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3: bo",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3:d t",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.9812560793498712,
+            "feature": "ch3:ver",
+            "mean": 0.011377347075696303,
+            "sd": 0.011164090984900477
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch3: he",
+            "mean": 0.011324470704086658,
+            "sd": 0.01961455862830339
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:ers",
+            "mean": 0.007877892663712457,
+            "sd": 0.013644910350124096
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:rs ",
+            "mean": 0.007877892663712457,
+            "sd": 0.013644910350124096
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:in ",
+            "mean": 0.007877892663712457,
+            "sd": 0.013644910350124096
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:ast",
+            "mean": 0.007522331922896097,
+            "sd": 0.013029061081853331
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:st ",
+            "mean": 0.007522331922896097,
+            "sd": 0.013029061081853331
+          }
+        ],
+        "n_features": 20,
+        "top_features": [
+          {
+            "cv": 0.2275065942007641,
+            "feature": "ch3:he ",
+            "mean": 0.030496772034224896,
+            "sd": 0.006938216739623615
+          },
+          {
+            "cv": 0.47871847342960233,
+            "feature": "ch3:the",
+            "mean": 0.022618879370512438,
+            "sd": 0.010828075402940038
+          },
+          {
+            "cv": 0.8663442560187463,
+            "feature": "ch3: th",
+            "mean": 0.02197095325492325,
+            "sd": 0.019034409151659135
+          },
+          {
+            "cv": 0.4109329248439222,
+            "feature": "ch3:er ",
+            "mean": 0.015138513037144351,
+            "sd": 0.006220913440141576
+          },
+          {
+            "cv": 0.03064768972117786,
+            "feature": "ch3:ed ",
+            "mean": 0.011419312665224314,
+            "sd": 0.00034997555139291135
+          },
+          {
+            "cv": 0.9812560793498712,
+            "feature": "ch3:ver",
+            "mean": 0.011377347075696303,
+            "sd": 0.011164090984900477
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch3: he",
+            "mean": 0.011324470704086658,
+            "sd": 0.01961455862830339
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:ers",
+            "mean": 0.007877892663712457,
+            "sd": 0.013644910350124096
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:rs ",
+            "mean": 0.007877892663712457,
+            "sd": 0.013644910350124096
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:in ",
+            "mean": 0.007877892663712457,
+            "sd": 0.013644910350124096
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:ter",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:e r",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:ad ",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8667175882735704,
+            "feature": "ch3:t a",
+            "mean": 0.007700112293304278,
+            "sd": 0.006673822756288355
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3:me ",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3:e h",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3: bo",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 0.8670943316176075,
+            "feature": "ch3:d t",
+            "mean": 0.007658146703776266,
+            "sd": 0.006640335597540466
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:ast",
+            "mean": 0.007522331922896097,
+            "sd": 0.013029061081853331
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch3:st ",
+            "mean": 0.007522331922896097,
+            "sd": 0.013029061081853331
+          }
+        ]
+      },
+      "char_ngrams_4": {
+        "most_stable_features": [
+          {
+            "cv": 0.8667195894505202,
+            "feature": "ch4:he r",
+            "mean": 0.007711251518291935,
+            "sd": 0.006683492750083686
+          },
+          {
+            "cv": 0.8708569948026789,
+            "feature": "ch4:. th",
+            "mean": 0.007020063335753138,
+            "sd": 0.006113471259898447
+          },
+          {
+            "cv": 0.9138961653408153,
+            "feature": "ch4:the ",
+            "mean": 0.01870614104304096,
+            "sd": 0.01709547056755957
+          },
+          {
+            "cv": 0.9297073559432754,
+            "feature": "ch4: the",
+            "mean": 0.018235331250197266,
+            "sd": 0.01695352160137068
+          },
+          {
+            "cv": 0.9812297325243355,
+            "feature": "ch4:ver ",
+            "mean": 0.011393562747237006,
+            "sd": 0.0111797025269706
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:ers ",
+            "mean": 0.007889546351084813,
+            "sd": 0.013665095128748538
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4: ove",
+            "mean": 0.0074487895716946,
+            "sd": 0.012901681993064263
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:over",
+            "mean": 0.0074487895716946,
+            "sd": 0.012901681993064263
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:he k",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:e ke",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4: kep",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:kept",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:ept ",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:pt h",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:t hi",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4: his",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:his ",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:is l",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch4: he ",
+            "mean": 0.011341222879684419,
+            "sd": 0.019643574247576026
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch4:ast ",
+            "mean": 0.007532956685499058,
+            "sd": 0.013047463710500017
+          }
+        ],
+        "n_features": 20,
+        "top_features": [
+          {
+            "cv": 0.9138961653408153,
+            "feature": "ch4:the ",
+            "mean": 0.01870614104304096,
+            "sd": 0.01709547056755957
+          },
+          {
+            "cv": 0.9297073559432754,
+            "feature": "ch4: the",
+            "mean": 0.018235331250197266,
+            "sd": 0.01695352160137068
+          },
+          {
+            "cv": 0.9812297325243355,
+            "feature": "ch4:ver ",
+            "mean": 0.011393562747237006,
+            "sd": 0.0111797025269706
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch4: he ",
+            "mean": 0.011341222879684419,
+            "sd": 0.019643574247576026
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:ers ",
+            "mean": 0.007889546351084813,
+            "sd": 0.013665095128748538
+          },
+          {
+            "cv": 0.8667195894505202,
+            "feature": "ch4:he r",
+            "mean": 0.007711251518291935,
+            "sd": 0.006683492750083686
+          },
+          {
+            "cv": 1.7320508075688774,
+            "feature": "ch4:ast ",
+            "mean": 0.007532956685499058,
+            "sd": 0.013047463710500017
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4: ove",
+            "mean": 0.0074487895716946,
+            "sd": 0.012901681993064263
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:over",
+            "mean": 0.0074487895716946,
+            "sd": 0.012901681993064263
+          },
+          {
+            "cv": 0.8708569948026789,
+            "feature": "ch4:. th",
+            "mean": 0.007020063335753138,
+            "sd": 0.006113471259898447
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:he k",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:e ke",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4: kep",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:kept",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:ept ",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:pt h",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:t hi",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4: his",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:his ",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch4:is l",
+            "mean": 0.0039447731755424065,
+            "sd": 0.006832547564374269
+          }
+        ]
+      },
+      "char_ngrams_5": {
+        "most_stable_features": [
+          {
+            "cv": 0.870855752725669,
+            "feature": "ch5:. the",
+            "mean": 0.00702993376260703,
+            "sd": 0.006122058258446739
+          },
+          {
+            "cv": 0.9297032639110373,
+            "feature": "ch5: the ",
+            "mean": 0.018260946973818262,
+            "sd": 0.016977262003665217
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: over",
+            "mean": 0.007459207459207459,
+            "sd": 0.012919726303544073
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:over ",
+            "mean": 0.007459207459207459,
+            "sd": 0.012919726303544073
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:he ke",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:e kep",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: kept",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:kept ",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:ept h",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:pt hi",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:t his",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: his ",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:his l",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:is le",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:s let",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: lett",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:lette",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:etter",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:tters",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:ters ",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          }
+        ],
+        "n_features": 20,
+        "top_features": [
+          {
+            "cv": 0.9297032639110373,
+            "feature": "ch5: the ",
+            "mean": 0.018260946973818262,
+            "sd": 0.016977262003665217
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: over",
+            "mean": 0.007459207459207459,
+            "sd": 0.012919726303544073
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:over ",
+            "mean": 0.007459207459207459,
+            "sd": 0.012919726303544073
+          },
+          {
+            "cv": 0.870855752725669,
+            "feature": "ch5:. the",
+            "mean": 0.00702993376260703,
+            "sd": 0.006122058258446739
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:he ke",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:e kep",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: kept",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:kept ",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:ept h",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:pt hi",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:t his",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: his ",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:his l",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:is le",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:s let",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5: lett",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:lette",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:etter",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:tters",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "ch5:ters ",
+            "mean": 0.003950617283950617,
+            "sd": 0.006842669857062231
+          }
+        ]
+      },
+      "function_words": {
+        "most_stable_features": [
+          {
+            "cv": 0.9493337494797258,
+            "feature": "the",
+            "mean": 0.10588235294117647,
+            "sd": 0.10051769112138273
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "he",
+            "mean": 0.05555555555555555,
+            "sd": 0.09622504486493762
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "over",
+            "mean": 0.044444444444444446,
+            "sd": 0.0769800358919501
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "and",
+            "mean": 0.022222222222222223,
+            "sd": 0.03849001794597505
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "after",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "it",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "no",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "one",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "why",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "a",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "all",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "at",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "his",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "in",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "some",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          }
+        ],
+        "n_features": 100,
+        "top_features": [
+          {
+            "cv": 0.9493337494797258,
+            "feature": "the",
+            "mean": 0.10588235294117647,
+            "sd": 0.10051769112138273
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "he",
+            "mean": 0.05555555555555555,
+            "sd": 0.09622504486493762
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "over",
+            "mean": 0.044444444444444446,
+            "sd": 0.0769800358919501
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "and",
+            "mean": 0.022222222222222223,
+            "sd": 0.03849001794597505
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "after",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "it",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "no",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "one",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "why",
+            "mean": 0.0196078431372549,
+            "sd": 0.03396178054056622
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "a",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "all",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "at",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "his",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "in",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "some",
+            "mean": 0.018518518518518517,
+            "sd": 0.032075014954979206
+          },
+          {
+            "cv": null,
+            "feature": "about",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "above",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "again",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "against",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "am",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "an",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "any",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "are",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "as",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "be",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "because",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "been",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "before",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "being",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "below",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "between",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "both",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "but",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "by",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "could",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "did",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "do",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "does",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "doing",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "down",
+            "mean": 0.0,
+            "sd": 0.0
+          }
+        ]
+      },
+      "paragraph_dialogue": {
+        "most_stable_features": [
+          {
+            "cv": 0.0,
+            "feature": "short_paragraph_ratio",
+            "mean": 1.0,
+            "sd": 0.0
+          },
+          {
+            "cv": 0.0916515138991168,
+            "feature": "paragraph_words_mean",
+            "mean": 16.666666666666668,
+            "sd": 1.5275252316519468
+          },
+          {
+            "cv": 0.09462341098975574,
+            "feature": "paragraph_count_per_1000_words",
+            "mean": 60.348583877995644,
+            "sd": 5.710388854937329
+          }
+        ],
+        "n_features": 7,
+        "top_features": [
+          {
+            "cv": 0.09462341098975574,
+            "feature": "paragraph_count_per_1000_words",
+            "mean": 60.348583877995644,
+            "sd": 5.710388854937329
+          },
+          {
+            "cv": 0.0916515138991168,
+            "feature": "paragraph_words_mean",
+            "mean": 16.666666666666668,
+            "sd": 1.5275252316519468
+          },
+          {
+            "cv": 0.0,
+            "feature": "short_paragraph_ratio",
+            "mean": 1.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "dialogue_paragraph_ratio",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "paragraph_words_sd",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "quote_span_words_mean",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "quoted_word_ratio",
+            "mean": 0.0,
+            "sd": 0.0
+          }
+        ]
+      },
+      "pronoun_modal_negation": {
+        "most_stable_features": [
+          {
+            "cv": 0.8670851945996296,
+            "feature": "negation_per_1000",
+            "mean": 38.126361655773415,
+            "sd": 33.05880371567215
+          },
+          {
+            "cv": 1.2290428150440755,
+            "feature": "third_person_singular_per_1000",
+            "mean": 93.68191721132897,
+            "sd": 115.13908724813778
+          }
+        ],
+        "n_features": 9,
+        "top_features": [
+          {
+            "cv": 1.2290428150440755,
+            "feature": "third_person_singular_per_1000",
+            "mean": 93.68191721132897,
+            "sd": 115.13908724813778
+          },
+          {
+            "cv": 0.8670851945996296,
+            "feature": "negation_per_1000",
+            "mean": 38.126361655773415,
+            "sd": 33.05880371567215
+          },
+          {
+            "cv": null,
+            "feature": "contractions_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "first_person_plural_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "first_person_singular_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "hedge_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "modal_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "second_person_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "third_person_plural_per_1000",
+            "mean": 0.0,
+            "sd": 0.0
+          }
+        ]
+      },
+      "punctuation": {
+        "most_stable_features": [
+          {
+            "cv": 0.0,
+            "feature": "terminal_punct_per_sentence",
+            "mean": 1.0,
+            "sd": 0.0
+          },
+          {
+            "cv": 0.09462341098975569,
+            "feature": "punct_per_100_words",
+            "mean": 18.104575163398692,
+            "sd": 1.7131166564811977
+          },
+          {
+            "cv": 0.8710849915478971,
+            "feature": "comma_per_100_words",
+            "mean": 4.183006535947713,
+            "sd": 3.6437542130108116
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "semicolon_per_100_words",
+            "mean": 1.8518518518518519,
+            "sd": 3.2075014954979206
+          }
+        ],
+        "n_features": 11,
+        "top_features": [
+          {
+            "cv": 0.09462341098975569,
+            "feature": "punct_per_100_words",
+            "mean": 18.104575163398692,
+            "sd": 1.7131166564811977
+          },
+          {
+            "cv": 0.8710849915478971,
+            "feature": "comma_per_100_words",
+            "mean": 4.183006535947713,
+            "sd": 3.6437542130108116
+          },
+          {
+            "cv": 1.7320508075688772,
+            "feature": "semicolon_per_100_words",
+            "mean": 1.8518518518518519,
+            "sd": 3.2075014954979206
+          },
+          {
+            "cv": 0.0,
+            "feature": "terminal_punct_per_sentence",
+            "mean": 1.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "colon_per_100_words",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "dash_per_100_words",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "ellipsis_per_100_words",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "exclamation_per_100_sentences",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "paren_pair_per_100_words",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "question_per_100_sentences",
+            "mean": 0.0,
+            "sd": 0.0
+          },
+          {
+            "cv": null,
+            "feature": "quote_mark_per_100_words",
+            "mean": 0.0,
+            "sd": 0.0
+          }
+        ]
+      }
+    },
+    "selected_features": {
+      "char_ngrams_3": 20,
+      "char_ngrams_4": 20,
+      "char_ngrams_5": 20,
+      "function_words": 100,
+      "paragraph_dialogue": 7,
+      "pronoun_modal_negation": 9,
+      "punctuation": 11
+    },
+    "warnings": [
+      "Fewer than 5 files. Treat stable-feature claims as provisional.",
+      "Some baseline files are under 1,000 words: b0, b1, b2."
+    ]
+  },
+  "schema_version": "1.0",
+  "target": {
+    "n_files": 3,
+    "path": "consumer-baseline",
+    "preprocessing": {
+      "applied": true,
+      "dominant_rule": null,
+      "input_tokens_after": 400,
+      "input_tokens_before": 400,
+      "opt_out": false,
+      "per_file": {
+        "b0": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 120,
+          "input_tokens_before": 120,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        },
+        "b1": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 144,
+          "input_tokens_before": 144,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        },
+        "b2": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 136,
+          "input_tokens_before": 136,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        }
+      },
+      "rules_active": [
+        "yaml_front_matter",
+        "html_block",
+        "fenced_code",
+        "indented_code",
+        "inline_code",
+        "css_at_rule",
+        "css_rule_block",
+        "html_tag",
+        "json_block",
+        "ascii_table"
+      ],
+      "strip_ratio": 0.0,
+      "tokens_stripped": 0,
+      "tokens_stripped_by_rule": {},
+      "warning": null
+    },
+    "privacy": "PRIVATE - DO NOT SHARE. A voice profile is a voice-cloning input.",
+    "words": 400
+  },
+  "task_surface": "voice_coherence",
+  "tool": "voice_profile",
+  "version": "1.0",
+  "warnings": [
+    "Fewer than 5 files. Treat stable-feature claims as provisional.",
+    "Some baseline files are under 1,000 words: b0, b1, b2."
+  ]
+}
