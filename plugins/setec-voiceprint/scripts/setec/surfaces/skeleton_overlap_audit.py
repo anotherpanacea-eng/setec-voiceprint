@@ -34,7 +34,7 @@ SCRIPT_DIR = scripts_dir()
 from setec.contract.output_schema import build_error_output, build_output  # noqa: E402
 from setec.contract.claim_license import from_legacy  # noqa: E402
 import pool_guard  # noqa: E402
-from setec.surfaces.originality_audit import _load_reference_dir, _load_reference_manifest  # noqa: E402
+from setec.core.verbatim_cover import _load_reference_dir, _load_reference_manifest  # noqa: E402
 from stylometry_core import split_sentences  # noqa: E402 (regex fallback when NLTK absent — stdlib path)
 
 TASK_SURFACE = "set_level_diversity"
