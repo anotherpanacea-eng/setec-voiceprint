@@ -49,6 +49,7 @@ import urllib.robotparser
 import uuid
 from dataclasses import dataclass, field, asdict
 from setec.core import acquisition_primitives as _acq_primitives
+from setec.core.atomic_publish import PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE
 from setec.paths import scripts_dir
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -327,16 +328,17 @@ class StableRedactionMap:
         ``acquire_gmail_sent``) uses ``fsync=True`` so the label map is on disk
         before it commits any row that references those labels.
         """
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        _private_mkdir(self.path.parent)
         payload = json.dumps(self._map, indent=2, sort_keys=True) + "\n"
         if not fsync:
             tmp = self.path.with_name(self.path.name + ".tmp")
-            tmp.write_text(payload, encoding="utf-8")
+            with _open_private(tmp, os.O_TRUNC, encoding="utf-8") as fh:
+                fh.write(payload)
             tmp.replace(self.path)
             return
         tmp = self.path.with_name(f"{self.path.name}.{uuid.uuid4().hex}.tmp")
         try:
-            with open(tmp, "w", encoding="utf-8", newline="") as fh:
+            with _open_private(tmp, os.O_EXCL, encoding="utf-8", newline="") as fh:
                 fh.write(payload)
                 fh.flush()
                 os.fsync(fh.fileno())
@@ -351,6 +353,45 @@ class StableRedactionMap:
                     tmp.unlink()
             except OSError:
                 pass
+
+
+def _private_mkdir(directory: Path) -> None:
+    """Create any missing directories owner-only (0700) whatever the umask.
+
+    Existing directories are left exactly as they are: this never tightens a
+    folder the caller already owns, and never resolves or refuses symlinks.
+    """
+    missing = []
+    current = Path(directory)
+    while not current.exists():
+        missing.append(current)
+        current = current.parent
+    for path in reversed(missing):
+        try:
+            os.mkdir(path, PRIVATE_DIRECTORY_MODE)
+        except FileExistsError:
+            continue
+        if os.name == "posix":
+            os.chmod(path, PRIVATE_DIRECTORY_MODE)
+
+
+def _open_private(path, flag: int, *, binary: bool = False, **text_kwargs):
+    """Open ``path`` for writing, creating it owner-only (0600) whatever the umask.
+
+    Acquired text, sidecars, manifests and redaction maps are private corpus
+    material; with the usual umask 022 a plain open would leave them
+    world-readable, and the Gmail pipeline then refuses its own artifacts.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | flag, PRIVATE_FILE_MODE)
+    if os.name == "posix":
+        try:
+            os.fchmod(fd, PRIVATE_FILE_MODE)
+        except BaseException:
+            os.close(fd)
+            raise
+    # fdopen owns the descriptor from here, closing it itself if it fails.
+    mode = ("a" if flag & os.O_APPEND else "w") + ("b" if binary else "")
+    return os.fdopen(fd, mode, **text_kwargs)
 
 
 is_private_safe_path = _acq_primitives.is_private_safe_path
@@ -861,7 +902,7 @@ def _write_bytes_atomic(path: Path, data: bytes) -> None:
     tmp_fs = _filesystem_path(tmp)
     final_fs = _filesystem_path(path)
     try:
-        with open(tmp_fs, "wb") as fh:
+        with _open_private(tmp_fs, os.O_EXCL, binary=True) as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
@@ -909,7 +950,7 @@ def write_piece(
     here so the sidecar is never persisted in a locator-less intermediate
     state — there is no second rewrite to be interrupted between.
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _private_mkdir(output_dir)
     stem = _unique_stem(piece, output_dir)
     text_path = output_dir / f"{stem}.txt"
     meta_path = output_dir / f"{stem}.meta.json"
@@ -1110,9 +1151,9 @@ def append_manifest_entry(
     Append mode means only the trailing line can ever be torn by a mid-write
     kill, which a startup tail-repair can drop.
     """
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    _private_mkdir(manifest_path.parent)
     line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
-    with manifest_path.open("a", encoding="utf-8") as f:
+    with _open_private(manifest_path, os.O_APPEND, encoding="utf-8") as f:
         f.write(line + "\n")
         if fsync:
             f.flush()
