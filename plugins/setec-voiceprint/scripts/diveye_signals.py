@@ -13,8 +13,8 @@ vector from a per-token surprisal series.
 
 F1–F4 (mean / variance / skew / excess-kurtosis) and F9 (surprisal ACF lag-1)
 are already shipped in ``surprisal_audit.py``; ``aggregate_diveye_signals``
-**reuses** those tested helpers via a lazy import (with a self-contained stdlib
-fallback) rather than duplicating the math.
+computes them with stdlib helpers that use the same formulas, so this module
+does not import that surface.
 
 POSTURE — this is descriptive surprisal-diversity evidence, NOT an authorship
 verdict. The module is a pure-math helper:
@@ -167,62 +167,59 @@ def surprisal_histogram_entropy(
     return float(entropy) if entropy > 0.0 else 0.0
 
 
-# --------------- Self-contained stdlib fallbacks ---------------------
+# --------------- Stdlib moment helpers ---------------------
 #
-# aggregate_diveye_signals reuses surprisal_audit's tested moment helpers via a
-# lazy import. These fallbacks are used only when surprisal_audit is not on the
-# path (e.g. the module is vendored standalone). They are byte-for-byte
-# equivalent in behaviour to surprisal_audit's helpers for the cases the
-# aggregator exercises.
+# The same formulas as surprisal_audit's moment helpers; ``_acf_at_lag`` takes
+# the caller's minimum series length instead of a module constant.
 
 
-def _fallback_mean(xs: Sequence[float]) -> float:
+def _mean(xs: Sequence[float]) -> float:
     if not xs:
         return 0.0
     return float(sum(xs) / len(xs))
 
 
-def _fallback_sample_variance(xs: Sequence[float]) -> float:
+def _sample_variance(xs: Sequence[float]) -> float:
     if len(xs) < 2:
         return 0.0
-    m = _fallback_mean(xs)
+    m = _mean(xs)
     return float(sum((x - m) ** 2 for x in xs) / (len(xs) - 1))
 
 
-def _fallback_sample_sd(xs: Sequence[float]) -> float:
-    return math.sqrt(_fallback_sample_variance(xs))
+def _sample_sd(xs: Sequence[float]) -> float:
+    return math.sqrt(_sample_variance(xs))
 
 
-def _fallback_skew(xs: Sequence[float]) -> float | None:
+def _skew(xs: Sequence[float]) -> float | None:
     n = len(xs)
     if n < 3:
         return None
-    m = _fallback_mean(xs)
-    sd = _fallback_sample_sd(xs)
+    m = _mean(xs)
+    sd = _sample_sd(xs)
     if sd == 0.0:
         return None
     return float(sum(((x - m) / sd) ** 3 for x in xs) / n)
 
 
-def _fallback_excess_kurtosis(xs: Sequence[float]) -> float | None:
+def _excess_kurtosis(xs: Sequence[float]) -> float | None:
     n = len(xs)
     if n < 4:
         return None
-    m = _fallback_mean(xs)
-    sd = _fallback_sample_sd(xs)
+    m = _mean(xs)
+    sd = _sample_sd(xs)
     if sd == 0.0:
         return None
     fourth = sum(((x - m) / sd) ** 4 for x in xs) / n
     return float(fourth - 3.0)
 
 
-def _fallback_acf_at_lag(
+def _acf_at_lag(
     xs: Sequence[float], lag: int, *, min_length: int,
 ) -> float | None:
     n = len(xs)
     if n < min_length or lag <= 0 or lag >= n:
         return None
-    m = _fallback_mean(xs)
+    m = _mean(xs)
     denom = sum((x - m) ** 2 for x in xs)
     if denom == 0.0:
         return None
@@ -231,38 +228,15 @@ def _fallback_acf_at_lag(
 
 
 def _load_helpers(min_acf_length: int):
-    """Return (mean, sd, skew, excess_kurtosis, acf_at_lag) — reusing the
-    tested ``surprisal_audit`` implementations via a LAZY import (inside this
-    function, not at module top, so importing ``diveye_signals`` never triggers
-    surprisal_audit's import graph). Falls back to the stdlib equivalents above
-    when surprisal_audit is not importable.
-
-    ``surprisal_audit._acf_at_lag`` hard-codes its own ``MIN_SERIES_FOR_ACF``;
-    when ``min_acf_length`` differs from that constant we route ACF through the
-    fallback so the caller's threshold is honoured exactly.
-    """
-    try:
-        import surprisal_audit as sa  # noqa: PLC0415 (lazy by design)
-    except Exception:  # pragma: no cover - exercised only without the dep
-        return (
-            _fallback_mean,
-            _fallback_sample_sd,
-            _fallback_skew,
-            _fallback_excess_kurtosis,
-            lambda xs, lag: _fallback_acf_at_lag(
-                xs, lag, min_length=min_acf_length
-            ),
-        )
-
-    if int(getattr(sa, "MIN_SERIES_FOR_ACF", min_acf_length)) == int(
-        min_acf_length
-    ):
-        acf = sa._acf_at_lag
-    else:
-        def acf(xs: Sequence[float], lag: int) -> float | None:
-            return _fallback_acf_at_lag(xs, lag, min_length=min_acf_length)
-
-    return (sa._mean, sa._sample_sd, sa._skew, sa._excess_kurtosis, acf)
+    """Return (mean, sd, skew, excess_kurtosis, acf_at_lag), with ACF honouring
+    the caller's ``min_acf_length``."""
+    return (
+        _mean,
+        _sample_sd,
+        _skew,
+        _excess_kurtosis,
+        lambda xs, lag: _acf_at_lag(xs, lag, min_length=min_acf_length),
+    )
 
 
 # --------------- The 9-signal DivEye aggregation ---------------------
@@ -276,7 +250,7 @@ def aggregate_diveye_signals(
 ) -> dict[str, float | None]:
     """Assemble the DivEye signal vector from a per-token surprisal series.
 
-    Reuses ``surprisal_audit``'s moment helpers (lazy import; stdlib fallback)
+    Uses the stdlib moment helpers above (surprisal_audit's formulas)
     for F1–F4/F9 and the new helpers above for F5–F8. Operates on an injected
     ``list[float]`` in M1; on ``SurprisalBackend.score_text`` output in M2.
 
