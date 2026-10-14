@@ -1,0 +1,64 @@
+{
+  "ai_status": null,
+  "available": true,
+  "baseline": null,
+  "claim_license": {
+    "additional_caveats": [
+      "Identities are no-prose metadata; inspect the private artifacts locally."
+    ],
+    "comparison_set": {
+      "stage_id": "01_source_smoke"
+    },
+    "confidence_interval_95": null,
+    "does_not_license": "Does not verify authorship, consent, or corpus quality, and supports no AI/human, voice, or provenance verdict about the acquired text.",
+    "fpr_target": null,
+    "language_match": [],
+    "length_range_words": null,
+    "licenses": "Confirms that the named producer stage ran to completion under this exact recipe configuration and that its declared output artifacts hash to the recorded identities.",
+    "references": [],
+    "register_match": [],
+    "task_surface": "voice_coherence_acquisition"
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence corpus acquisition\n\n**Reports:** Confirms that the named producer stage ran to completion under this exact recipe configuration and that its declared output artifacts hash to the recorded identities.\n\n**Does NOT report:** Does not verify authorship, consent, or corpus quality, and supports no AI/human, voice, or provenance verdict about the acquired text.\n\n### Comparison context\n\n- **stage id:** 01_source_smoke\n\n### Caveats\n\n- Identities are no-prose metadata; inspect the private artifacts locally.",
+  "results": {
+    "action": "run",
+    "config_sha256": "e1d6d8e7c4348e30b8acb74663b38eeee731e2b677efa536d453ec46d9c2fd74",
+    "domain_receipts": [
+      {
+        "domain_identity": "1545e78e63af9fa5d5153a4e01a957647c2b765bd2e395f4b867ffa33c030d2e",
+        "label": "domain_identity",
+        "relative_path": null,
+        "sha256": null
+      }
+    ],
+    "input_identities": [],
+    "lineage_receipt_sha256": "cf30111c4aeacdb84fa1650cc6cbbb272d5acfb3f6e1578d3247c64c9200247b",
+    "output_identities": [
+      {
+        "identity": "0eaff3bbc4fe506346a93642c44d1e5ac43b077e22ad359c41091edaa23fb16d",
+        "identity_kind": "sha256",
+        "kind": "file",
+        "label": "smoke_descriptor"
+      },
+      {
+        "identity": "a9d908779b22a81dfa32031b66c579c92cde52d1695885c1136bdb8a0ee6b372",
+        "identity_kind": "sha256",
+        "kind": "file",
+        "label": "smoke_manifest"
+      }
+    ],
+    "reason_category": null,
+    "request_schema": "setec-gmail-author-pipeline-request/1",
+    "stage_id": "01_source_smoke",
+    "status": "completed"
+  },
+  "schema_version": "1.0",
+  "target": {
+    "path": null,
+    "words": 0
+  },
+  "task_surface": "voice_coherence_acquisition",
+  "tool": "gmail_author_pipeline",
+  "version": "1.0",
+  "warnings": []
+}
