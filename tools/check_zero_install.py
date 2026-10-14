@@ -943,6 +943,18 @@ CONSUMER_JSON_INPUTS = {
         {"phrase": "the lamps were lit"}]},
     "consumer-distance.json": {"overall": {"weighted_delta": 2.0}},
 }
+# Marked prose for position_pair_register's mock judge, which pairs only
+# passages tagged [[pair=<id> side=<a|b> q=<question>]].
+CONSUMER_PAIRS_INPUT = (
+    "[[pair=p1 side=a q=Should the town keep the old mill?]] The mill should stay. "
+    "It anchors the river walk, and the repairs cost less than a new hall.\n\n"
+    "[[pair=p2 side=a q=Who should pay for the lamps?]] The shops should pay, since "
+    "they gain the evening trade.\n\n"
+    "[[pair=p1 side=b q=Should the town keep the old mill?]] The mill should go. "
+    "Its floors are unsafe, and the land would serve the school better.\n\n"
+    "[[pair=p2 side=b q=Who should pay for the lamps?]] The council should pay, "
+    "since the lamps light a public road.\n\n"
+)
 CONSUMER_CASES = [
     {"case": "punctuation", "id": "punctuation_cadence_audit",
      "args": ["consumer-input.txt"], "exit": 0},
@@ -966,13 +978,19 @@ CONSUMER_CASES = [
      "args": ["consumer-input.txt", "--no-tier2"], "exit": 0},
     {"case": "agd_mock", "id": "agd_move_scan",
      "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0},
+    {"case": "position_pairs_mock", "id": "position_pair_register",
+     "args": ["consumer-pairs.txt", "--judge", "mock"], "exit": 0,
+     "normalize": ["results.run_timestamp_utc"]},
+    # POS and dependency families need spaCy, which moves with the installed model.
+    {"case": "voice_profile", "id": "voice_profile",
+     "args": ["--baseline-dir", "consumer-baseline", "--no-spacy", "--char-top", "20"],
+     "exit": 0},
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
     "author_corpus_export", "binoculars_audit", "general_imposters",
-    "gmail_author_pipeline", "idiolect_detector", "position_pair_register",
-    "pov_voice_profile", "s5_distance", "voice_distance", "voice_fingerprint",
-    "voice_profile",
+    "gmail_author_pipeline", "idiolect_detector", "pov_voice_profile",
+    "s5_distance", "voice_distance", "voice_fingerprint",
 })
 
 
@@ -1016,6 +1034,7 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
                f"cased but still pending: {both}")
 
     (outside_cwd / "consumer-input.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
+    (outside_cwd / "consumer-pairs.txt").write_text(CONSUMER_PAIRS_INPUT, encoding="utf-8")
     for name, payload in CONSUMER_JSON_INPUTS.items():
         (outside_cwd / name).write_text(json.dumps(payload), encoding="utf-8")
     baseline = outside_cwd / "consumer-baseline"
