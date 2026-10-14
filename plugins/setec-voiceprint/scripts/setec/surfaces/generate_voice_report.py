@@ -70,7 +70,7 @@ from setec.contract.output_schema import unwrap_envelope
 
 SCRIPT_DIR = scripts_dir()
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_primitives as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "generate_voice_report"

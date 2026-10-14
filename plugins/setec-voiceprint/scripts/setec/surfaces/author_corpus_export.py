@@ -30,7 +30,7 @@ from setec.paths import scripts_dir
 
 SCRIPT_DIR = scripts_dir()
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_primitives as ac  # noqa: E402
 import acquire_imessage_sent_atomic as atomic_imessage  # noqa: E402
 import atomic_publish  # noqa: E402
 from claim_license import ClaimLicense  # noqa: E402
