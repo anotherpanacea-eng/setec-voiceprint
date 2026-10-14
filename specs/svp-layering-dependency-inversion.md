@@ -12,21 +12,20 @@ the suite is green. Text primitives stay out of scope; they are CAM-12's
 
 ## First unit: variance_audit threshold metadata
 
-All paths are under `plugins/setec-voiceprint/scripts/`. Lines are from main
-`606583a6`.
+Lines are from main `606583a6`.
 
-1. Create `setec/core/compression_thresholds.py` (stdlib only), and move into it:
+1. Create `plugins/setec-voiceprint/scripts/setec/core/compression_thresholds.py` (stdlib only), and move into it:
    - `THRESHOLD_STATUS_VALUES` (line 1927) and `ThresholdSpec` (1937);
    - `resolve_direction_with_slice` and `resolve_direction` (2099, 2157);
    - `COMPRESSION_HEURISTICS` (2177) and `POS_BIGRAM_KL_HEURISTIC` (2539);
    - the six status helpers from line 2427: `signals_by_status`,
      `calibrated_signals`, `literature_anchored_signals`,
      `empirically_oriented_signals`, `heuristic_signals` and `provisional_signals`.
-2. `setec/surfaces/variance_audit.py` re-exports the same objects, not copies, so
+2. `plugins/setec-voiceprint/scripts/setec/surfaces/variance_audit.py` re-exports the same objects, not copies, so
    in-place registry changes still reach classification.
 3. Import `COMPRESSION_HEURISTICS` from core in
-   `calibration/calibrate_thresholds.py`, `calibration/calibration_survey.py` and
-   `setec/surfaces/before_after_restoration.py`.
+   `plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py`, `plugins/setec-voiceprint/scripts/calibration/calibration_survey.py` and
+   `plugins/setec-voiceprint/scripts/setec/surfaces/before_after_restoration.py`.
    - In `calibrate_thresholds`, replace its lazy `__getattr__` alias with a plain
      import. The laziness only kept heavy `variance_audit` out of plain import,
      and core is stdlib.
