@@ -935,6 +935,14 @@ CONSUMER_BASELINE = [
     "He kept his letters in a tin box. Some he read twice; others he never opened at all.\n\n" * 8,
     "The road bent east past the chapel. Nobody walked it after dark, though no one said why.\n\n" * 8,
 ]
+# Upstream results for mimicry: every listed phrase occurs in CONSUMER_INPUT and
+# the distance is high, which is the lexical-without-syntactic shape it flags.
+CONSUMER_JSON_INPUTS = {
+    "consumer-idiolect.json": {"preservation_list": [
+        {"phrase": "the old mill"}, {"phrase": "nobody came"},
+        {"phrase": "the lamps were lit"}]},
+    "consumer-distance.json": {"overall": {"weighted_delta": 2.0}},
+}
 CONSUMER_CASES = [
     {"case": "punctuation", "id": "punctuation_cadence_audit",
      "args": ["consumer-input.txt"], "exit": 0},
@@ -950,13 +958,15 @@ CONSUMER_CASES = [
      "normalize": ["results.run_timestamp_utc"]},
     {"case": "repetition", "id": "repetition_audit",
      "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline"], "exit": 0},
+    {"case": "mimicry", "id": "mimicry_cosplay_audit",
+     "args": ["--target", "consumer-input.txt", "--idiolect-json", "consumer-idiolect.json",
+              "--voice-distance-json", "consumer-distance.json"], "exit": 0},
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
     "agd_move_scan", "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
     "general_imposters", "gmail_author_pipeline", "idiolect_detector",
-    "mimicry_cosplay_audit", "position_pair_register", "pov_voice_profile",
-    "restoration_packet", "s5_distance",
+    "position_pair_register", "pov_voice_profile", "restoration_packet", "s5_distance",
     "validation_harness", "variance_audit", "voice_distance", "voice_fingerprint",
     "voice_profile",
 })
@@ -999,6 +1009,8 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
                f"cased but still pending: {both}")
 
     (outside_cwd / "consumer-input.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
+    for name, payload in CONSUMER_JSON_INPUTS.items():
+        (outside_cwd / name).write_text(json.dumps(payload), encoding="utf-8")
     baseline = outside_cwd / "consumer-baseline"
     baseline.mkdir(exist_ok=True)
     for index, text in enumerate(CONSUMER_BASELINE):
