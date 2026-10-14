@@ -969,10 +969,9 @@ CONSUMER_CASES = [
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
-    "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
-    "general_imposters", "gmail_author_pipeline", "idiolect_detector",
-    "position_pair_register", "pov_voice_profile", "restoration_packet", "s5_distance",
-    "validation_harness", "voice_distance", "voice_fingerprint",
+    "author_corpus_export", "binoculars_audit", "general_imposters",
+    "gmail_author_pipeline", "idiolect_detector", "position_pair_register",
+    "pov_voice_profile", "s5_distance", "voice_distance", "voice_fingerprint",
     "voice_profile",
 })
 
@@ -1002,7 +1001,10 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
     consumers = set()
     for frag in sorted((bare_root / "capabilities.d").glob("*.yaml")):
         for entry in (yaml.safe_load(frag.read_text(encoding="utf-8")) or {}).get("entries", []):
-            if {"apodictic", "setec-voicewright"} & set(entry.get("consumers") or []):
+            # Only json_delivery entries are setec_run-dispatchable; the rest
+            # sit outside the normalized dispatcher and cannot have a case here.
+            if entry.get("json_delivery") is not None and \
+                    {"apodictic", "setec-voicewright"} & set(entry.get("consumers") or []):
                 consumers.add(entry["id"])
     cased = {row["id"] for row in CONSUMER_CASES}
     unknown = sorted((cased | PENDING_CONSUMERS) - consumers)
