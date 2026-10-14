@@ -939,7 +939,7 @@ CONSUMER_CASES = [
     {"case": "argument_mock", "id": "argument_decision_audit",
      "args": ["--judge", "mock"], "exit": 0, "normalize": ["results.run_timestamp_utc"]},
 ]
-# Consumer IDs with no case yet. Shrink-only: add a case, then delete the ID.
+# Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
     "agd_move_scan", "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
     "general_imposters", "gmail_author_pipeline", "idiolect_detector",
@@ -975,7 +975,8 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
                f"cased but still pending: {both}")
 
     (outside_cwd / "consumer-input.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
-    env = {**_clean_env(), "setec_hermetic_backend": "stub"}
+    # COLUMNS fixes argparse usage wrapping, which refusal envelopes quote.
+    env = {**_clean_env(), "setec_hermetic_backend": "stub", "COLUMNS": "80"}
     for row in CONSUMER_CASES:
         name = f"consumer_cases:{row['case']}"
         argv = [sys.executable, str(bare_root / "scripts" / "setec_run.py"), row["id"],

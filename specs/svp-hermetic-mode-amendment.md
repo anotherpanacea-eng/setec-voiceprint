@@ -72,8 +72,8 @@ boundary.
   envelopes are generated once, reviewed and checked in; the gate never
   regenerates them.
 - **Coverage:** every capability ID whose `consumers` include apodictic or
-  setec-voicewright must be in the table or in `PENDING_CONSUMERS`. That set
-  only shrinks. When it is empty, the card is done. Unit 2 cases four IDs
+  setec-voicewright must be in the table or in `PENDING_CONSUMERS`. When that
+  set is empty, the card is done. Unit 2 cases four IDs
   (punctuation, manuscript, narrative decision with a mock judge and with a
   stub-refused API judge, argument decision); 18 are pending.
 
