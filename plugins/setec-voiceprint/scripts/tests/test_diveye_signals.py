@@ -7,7 +7,7 @@ Stdlib, deterministic. No model, no torch, no GPU. Covers:
   * The four new signals F5–F8 (delta / acceleration / histogram entropy /
     accel ACF) against hand-computable inputs + edge cases.
   * ``aggregate_diveye_signals`` shape (the 11-key DivEye vector) and the
-    reuse-of-surprisal_audit-helpers invariants.
+    moment-helper invariants (surprisal_audit's formulas).
   * The SIGN / direction pin (the surprisal-detector family's shared
     silent-inversion failure mode): AI-like narrow-band series has LOWER
     variance / entropy / delta-SD than a human-like wide-band series.
@@ -155,7 +155,7 @@ def test_aggregate_diveye_signals_basic():
     import math
     assert out["surprisal_entropy"] is not None
     assert math.isfinite(out["surprisal_entropy"])
-    # surprisal_mean reuses the same mean as surprisal_audit.
+    # surprisal_mean is the plain arithmetic mean, as in surprisal_audit.
     assert out["surprisal_mean"] == pytest.approx(sum(s) / len(s))
 
 
