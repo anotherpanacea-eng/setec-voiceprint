@@ -61,7 +61,7 @@ boundary.
 
 - **Format:** `CONSUMER_CASES` in `tools/check_zero_install.py`, rows of
   `(case, id, args, expected exit, normalized fields)`. Each runs real
-  `setec_run.py <id> consumer-input.txt <args> --json` in the existing
+  `setec_run.py <id> <args> --json` in the existing
   `make_bare_copy` with the mode on. The expected envelope is
   `tools/zero_install_cases/<case>.json`.
 - **Beside, not instead of, the packaging checks:** the existing family checks
@@ -73,9 +73,10 @@ boundary.
   regenerates them.
 - **Coverage:** every capability ID whose `consumers` include apodictic or
   setec-voicewright must be in the table or in `PENDING_CONSUMERS`. When that
-  set is empty, the card is done. Unit 2 cases four IDs
-  (punctuation, manuscript, narrative decision with a mock judge and with a
-  stub-refused API judge, argument decision); 18 are pending.
+  set is empty, the card is done. Unit 2 cased four IDs (punctuation, manuscript, narrative decision with a mock judge
+  and with a stub-refused API judge, argument decision); unit 3 added repetition against a small synthetic baseline folder. 17 are pending;
+  mimicry needs synthetic idiolect and distance inputs to be a real case. `voice_distance`
+  waits on a fix for its nondeterministic tie ordering.
 
 Out of scope: routing the §2 sites, capability promotion, schema changes, and
 model or provider execution.
