@@ -34,7 +34,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from acquisition_core import is_private_safe_path  # type: ignore  # noqa: E402
+from setec.core.acquisition_primitives import is_private_safe_path  # type: ignore  # noqa: E402
 
 ZENODO_URL = "https://zenodo.org/records/10718757/files/pan24-generative-authorship-news.zip?download=1"
 DOI = "10.5281/zenodo.10718757"
