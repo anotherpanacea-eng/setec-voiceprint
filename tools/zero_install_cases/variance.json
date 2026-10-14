@@ -106,17 +106,6 @@
         },
         "shannon_entropy_bits": 4.625053839880556,
         "yules_k": 382.4811732065002
-      },
-      "tier3": {
-        "adjacent_cosine": {
-          "max": 0.0,
-          "mean": 0.0,
-          "method": "tfidf-cosine",
-          "min": 0.0,
-          "n_pairs": 29,
-          "sd": 0.0
-        },
-        "available": true
       }
     },
     "compression": {
@@ -166,9 +155,7 @@
         "mtld (need 500+ words, have 174)",
         "yules_k (need 500+ words, have 174)",
         "shannon_entropy (need 2000+ words, have 174)",
-        "fkgl_sd (need 200+ words, have 174)",
-        "adjacent_cosine_mean (polarity corpus-dependent; gated from unbaselined band)",
-        "adjacent_cosine_sd (need 300+ words, have 174)"
+        "fkgl_sd (need 200+ words, have 174)"
       ],
       "thresholds_used": {
         "adjacent_cosine_mean": {
