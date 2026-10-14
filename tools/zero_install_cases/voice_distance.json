@@ -1,0 +1,1437 @@
+{
+  "ai_status": null,
+  "available": true,
+  "baseline": {
+    "files": [
+      {
+        "id": "b0",
+        "n_words": 120,
+        "path": "consumer-baseline/b0.txt"
+      },
+      {
+        "id": "b1",
+        "n_words": 144,
+        "path": "consumer-baseline/b1.txt"
+      },
+      {
+        "id": "b2",
+        "n_words": 136,
+        "path": "consumer-baseline/b2.txt"
+      }
+    ],
+    "max_words": 144,
+    "mean_words": 133.33333333333334,
+    "min_words": 120,
+    "n_files": 3,
+    "personas": [],
+    "privacy_values": [],
+    "register_tier_counts": {
+      "private_composed": 0,
+      "private_dyadic": 0,
+      "public_composed": 0,
+      "public_responsive": 0
+    },
+    "registers": [],
+    "unresolved_register_count": 3,
+    "words": 400
+  },
+  "claim_license": {
+    "additional_caveats": [
+      "Voice distance is sensitive to baseline size. Below ~20K baseline words the variance bands widen and the comparison becomes less stable; pair small-baseline runs with `--bootstrap` to surface the uncertainty.",
+      "Register match is a heuristic indicator, not a validation. The register classifier is itself a heuristic; a register mismatch warning means the comparison is suspect, not that the score is wrong.",
+      "Per-family distances can disagree. When the function-word and character-n-gram families point opposite directions, the differential diagnosis matters more than the weighted overall."
+    ],
+    "comparison_set": {
+      "band": "Light drift (provisional thresholds; calibration pending)",
+      "baseline_words": 400,
+      "n_baseline_files": 3,
+      "register_match": "unavailable",
+      "target_words": 174,
+      "weighted_delta": 1.075936934187307
+    },
+    "confidence_interval_95": null,
+    "does_not_license": "An AI-provenance verdict. High distance can come from register shift, audience shift, time drift, deliberate stylistic experiment, AI editing, or any combination. Bands are heuristic; the literature reference values for Burrows Delta and per-feature cosine apply to specific corpora and may not generalize to the user's comparison. The differential diagnosis of cause is the confounder audit's job.",
+    "fpr_target": null,
+    "language_match": [],
+    "length_range_words": null,
+    "licenses": "Stylometric distance from a target text to a writer / register baseline. Reports per-family distances (function words, character n-grams, POS trigrams, dependency n-grams) plus a weighted overall distance and a verbal drift band. The point of the audit is voice-coherence comparison: does this draft look like prior work from the same writer or the same register?",
+    "references": [],
+    "register_match": [],
+    "task_surface": "voice_coherence"
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** Stylometric distance from a target text to a writer / register baseline. Reports per-family distances (function words, character n-grams, POS trigrams, dependency n-grams) plus a weighted overall distance and a verbal drift band. The point of the audit is voice-coherence comparison: does this draft look like prior work from the same writer or the same register?\n\n**Does NOT report:** An AI-provenance verdict. High distance can come from register shift, audience shift, time drift, deliberate stylistic experiment, AI editing, or any combination. Bands are heuristic; the literature reference values for Burrows Delta and per-feature cosine apply to specific corpora and may not generalize to the user's comparison. The differential diagnosis of cause is the confounder audit's job.\n\n### Comparison context\n\n- **band:** Light drift (provisional thresholds; calibration pending)\n- **baseline words:** 400\n- **n baseline files:** 3\n- **register match:** unavailable\n- **target words:** 174\n- **weighted delta:** 1.075936934187307\n\n### Caveats\n\n- Voice distance is sensitive to baseline size. Below ~20K baseline words the variance bands widen and the comparison becomes less stable; pair small-baseline runs with `--bootstrap` to surface the uncertainty.\n- Register match is a heuristic indicator, not a validation. The register classifier is itself a heuristic; a register mismatch warning means the comparison is suspect, not that the score is wrong.\n- Per-family distances can disagree. When the function-word and character-n-gram families point opposite directions, the differential diagnosis matters more than the weighted overall.",
+  "results": {
+    "families": {
+      "char_ngrams_3": {
+        "burrows_delta": 0.6349298445939312,
+        "capped_in_overall": false,
+        "cosine_distance_to_baseline_mean": 0.5306637951750094,
+        "cosine_distance_to_baseline_min": 0.4268594748175474,
+        "cosine_distance_to_centroid": 0.31825026756735,
+        "n_features": 200,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 12.990794395357943,
+            "baseline_mean": 0.011419312665224314,
+            "baseline_sd": 0.00034997555139291135,
+            "feature": "ch3:ed ",
+            "value": 0.006872852233676976,
+            "z": -12.990794395357943
+          },
+          {
+            "abs_z": 1.5479973847602233,
+            "baseline_mean": 0.030496772034224896,
+            "baseline_sd": 0.006938216739623615,
+            "feature": "ch3:he ",
+            "value": 0.041237113402061855,
+            "z": 1.5479973847602233
+          },
+          {
+            "abs_z": 1.4374236083432432,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:. s",
+            "value": 0.013745704467353952,
+            "z": 1.4374236083432432
+          },
+          {
+            "abs_z": 1.3286892484521156,
+            "baseline_mean": 0.015138513037144351,
+            "baseline_sd": 0.006220913440141576,
+            "feature": "ch3:er ",
+            "value": 0.006872852233676976,
+            "z": -1.3286892484521156
+          },
+          {
+            "abs_z": 1.1546460290551173,
+            "baseline_mean": 0.007480366333368086,
+            "baseline_sd": 0.006478493101032446,
+            "feature": "ch3:e s",
+            "value": 0.0,
+            "z": -1.1546460290551173
+          },
+          {
+            "abs_z": 1.1546460290551173,
+            "baseline_mean": 0.007480366333368086,
+            "baseline_sd": 0.006478493101032446,
+            "feature": "ch3: ro",
+            "value": 0.0,
+            "z": -1.1546460290551173
+          },
+          {
+            "abs_z": 1.1537783627904876,
+            "baseline_mean": 0.007700112293304278,
+            "baseline_sd": 0.006673822756288355,
+            "feature": "ch3:ad ",
+            "value": 0.0,
+            "z": -1.1537783627904876
+          },
+          {
+            "abs_z": 1.153277058257837,
+            "baseline_mean": 0.007658146703776266,
+            "baseline_sd": 0.006640335597540466,
+            "feature": "ch3:me ",
+            "value": 0.0,
+            "z": -1.153277058257837
+          },
+          {
+            "abs_z": 1.153277058257837,
+            "baseline_mean": 0.007658146703776266,
+            "baseline_sd": 0.006640335597540466,
+            "feature": "ch3:e h",
+            "value": 0.0,
+            "z": -1.153277058257837
+          },
+          {
+            "abs_z": 1.153277058257837,
+            "baseline_mean": 0.007658146703776266,
+            "baseline_sd": 0.006640335597540466,
+            "feature": "ch3: bo",
+            "value": 0.0,
+            "z": -1.153277058257837
+          },
+          {
+            "abs_z": 1.153277058257837,
+            "baseline_mean": 0.007658146703776266,
+            "baseline_sd": 0.006640335597540466,
+            "feature": "ch3:d t",
+            "value": 0.0,
+            "z": -1.153277058257837
+          },
+          {
+            "abs_z": 1.0051549145298768,
+            "baseline_mean": 0.007522331922896097,
+            "baseline_sd": 0.013029061081853331,
+            "feature": "ch3: no",
+            "value": 0.020618556701030927,
+            "z": 1.0051549145298768
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.007877892663712457,
+            "baseline_sd": 0.013644910350124096,
+            "feature": "ch3:ers",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.007877892663712457,
+            "baseline_sd": 0.013644910350124096,
+            "feature": "ch3:rs ",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.007877892663712457,
+            "baseline_sd": 0.013644910350124096,
+            "feature": "ch3:in ",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.007438400743840074,
+            "baseline_sd": 0.012883688015389139,
+            "feature": "ch3: ov",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.007438400743840074,
+            "baseline_sd": 0.012883688015389139,
+            "feature": "ch3:ove",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:e k",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3: ke",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:kep",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:ept",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:pt ",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:t h",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3: hi",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.003938946331856229,
+            "baseline_sd": 0.006822455175062048,
+            "feature": "ch3:his",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          }
+        ]
+      },
+      "char_ngrams_4": {
+        "burrows_delta": 0.5544494354596161,
+        "capped_in_overall": false,
+        "cosine_distance_to_baseline_mean": 0.658579299457153,
+        "cosine_distance_to_baseline_min": 0.5227845004803406,
+        "cosine_distance_to_centroid": 0.4587538096301238,
+        "n_features": 200,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.007889546351084813,
+            "baseline_sd": 0.013665095128748538,
+            "feature": "ch4:ers ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:he k",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:e ke",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4: kep",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:kept",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:ept ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:pt h",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:t hi",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4: his",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:his ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:is l",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:s le",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4: let",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:lett",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:ette",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:tter",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:ters",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:rs i",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:s in",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4: in ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:in a",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:n a ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4: a t",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4:a ti",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.0039447731755424065,
+            "baseline_sd": 0.006832547564374269,
+            "feature": "ch4: tin",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          }
+        ]
+      },
+      "char_ngrams_5": {
+        "burrows_delta": 0.5652126532998797,
+        "capped_in_overall": false,
+        "cosine_distance_to_baseline_mean": 0.7539546495743085,
+        "cosine_distance_to_baseline_min": 0.5921216451149891,
+        "cosine_distance_to_centroid": 0.6016317237396376,
+        "n_features": 200,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:he ke",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:e kep",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5: kept",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:kept ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:ept h",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:pt hi",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:t his",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5: his ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:his l",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:is le",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:s let",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5: lett",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:lette",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:etter",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:tters",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:ters ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:ers i",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:rs in",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:s in ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5: in a",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:in a ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:n a t",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5: a ti",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5:a tin",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.003950617283950617,
+            "baseline_sd": 0.006842669857062231,
+            "feature": "ch5: tin ",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          }
+        ]
+      },
+      "function_words": {
+        "burrows_delta": 0.4926938999616973,
+        "capped_in_overall": false,
+        "clusters": [
+          {
+            "cluster": "quantifiers",
+            "direction": "low",
+            "direction_consistency": 1.0,
+            "directional": false,
+            "max_abs_z": 0.5773502691896258,
+            "mean_abs_z": 0.5773502691896258,
+            "mean_signed_z": -0.5773502691896258,
+            "n_in_cluster": 8,
+            "n_matched": 2,
+            "net_signed_z": -1.1547005383792517,
+            "top_features": [
+              {
+                "feature": "all",
+                "value": 0.0,
+                "z": -0.5773502691896258
+              },
+              {
+                "feature": "some",
+                "value": 0.0,
+                "z": -0.5773502691896258
+              }
+            ]
+          },
+          {
+            "cluster": "prepositions_spatial",
+            "direction": "low",
+            "direction_consistency": 1.0,
+            "directional": false,
+            "max_abs_z": 0.5773502691896258,
+            "mean_abs_z": 0.5773502691896258,
+            "mean_signed_z": -0.5773502691896258,
+            "n_in_cluster": 14,
+            "n_matched": 2,
+            "net_signed_z": -1.1547005383792517,
+            "top_features": [
+              {
+                "feature": "in",
+                "value": 0.0,
+                "z": -0.5773502691896258
+              },
+              {
+                "feature": "over",
+                "value": 0.0,
+                "z": -0.5773502691896258
+              }
+            ]
+          },
+          {
+            "cluster": "third_person_animate",
+            "direction": "low",
+            "direction_consistency": 1.0,
+            "directional": false,
+            "max_abs_z": 0.5773502691896258,
+            "mean_abs_z": 0.39817259944112127,
+            "mean_signed_z": -0.39817259944112127,
+            "n_in_cluster": 8,
+            "n_matched": 2,
+            "net_signed_z": -0.7963451988822425,
+            "top_features": [
+              {
+                "feature": "his",
+                "value": 0.0,
+                "z": -0.5773502691896258
+              },
+              {
+                "feature": "he",
+                "value": 0.034482758620689655,
+                "z": -0.21899492969261666
+              }
+            ]
+          },
+          {
+            "cluster": "articles",
+            "direction": "flat",
+            "direction_consistency": 0.5,
+            "directional": false,
+            "max_abs_z": 0.4977157493014016,
+            "mean_abs_z": 0.26096557953305916,
+            "mean_signed_z": 0.23675016976834248,
+            "n_in_cluster": 3,
+            "n_matched": 2,
+            "net_signed_z": 0.47350033953668497,
+            "top_features": [
+              {
+                "feature": "a",
+                "value": 0.034482758620689655,
+                "z": 0.4977157493014016
+              },
+              {
+                "feature": "the",
+                "value": 0.10344827586206896,
+                "z": -0.024215409764716665
+              }
+            ]
+          }
+        ],
+        "cosine_distance_to_baseline_mean": 0.5559401663139751,
+        "cosine_distance_to_baseline_min": 0.41808562603735355,
+        "cosine_distance_to_centroid": 0.34712399434068497,
+        "n_features": 100,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.044444444444444446,
+            "baseline_sd": 0.0769800358919501,
+            "feature": "over",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.022222222222222223,
+            "baseline_sd": 0.03849001794597505,
+            "feature": "and",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.018518518518518517,
+            "baseline_sd": 0.032075014954979206,
+            "feature": "all",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.018518518518518517,
+            "baseline_sd": 0.032075014954979206,
+            "feature": "at",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.018518518518518517,
+            "baseline_sd": 0.032075014954979206,
+            "feature": "his",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.018518518518518517,
+            "baseline_sd": 0.032075014954979206,
+            "feature": "in",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896258,
+            "baseline_mean": 0.018518518518518517,
+            "baseline_sd": 0.032075014954979206,
+            "feature": "some",
+            "value": 0.0,
+            "z": -0.5773502691896258
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.0196078431372549,
+            "baseline_sd": 0.03396178054056622,
+            "feature": "after",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.0196078431372549,
+            "baseline_sd": 0.03396178054056622,
+            "feature": "no",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.5773502691896257,
+            "baseline_mean": 0.0196078431372549,
+            "baseline_sd": 0.03396178054056622,
+            "feature": "one",
+            "value": 0.0,
+            "z": -0.5773502691896257
+          },
+          {
+            "abs_z": 0.4977157493014016,
+            "baseline_mean": 0.018518518518518517,
+            "baseline_sd": 0.032075014954979206,
+            "feature": "a",
+            "value": 0.034482758620689655,
+            "z": 0.4977157493014016
+          },
+          {
+            "abs_z": 0.4379898593852333,
+            "baseline_mean": 0.0196078431372549,
+            "baseline_sd": 0.03396178054056622,
+            "feature": "it",
+            "value": 0.034482758620689655,
+            "z": 0.4379898593852333
+          },
+          {
+            "abs_z": 0.4379898593852333,
+            "baseline_mean": 0.0196078431372549,
+            "baseline_sd": 0.03396178054056622,
+            "feature": "why",
+            "value": 0.034482758620689655,
+            "z": 0.4379898593852333
+          },
+          {
+            "abs_z": 0.21899492969261666,
+            "baseline_mean": 0.05555555555555555,
+            "baseline_sd": 0.09622504486493762,
+            "feature": "he",
+            "value": 0.034482758620689655,
+            "z": -0.21899492969261666
+          },
+          {
+            "abs_z": 0.024215409764716665,
+            "baseline_mean": 0.10588235294117647,
+            "baseline_sd": 0.10051769112138273,
+            "feature": "the",
+            "value": 0.10344827586206896,
+            "z": -0.024215409764716665
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "about",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "above",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "again",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "against",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "am",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "an",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "any",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "are",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "as",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "be",
+            "value": 0.0,
+            "z": null
+          }
+        ]
+      },
+      "paragraph_dialogue": {
+        "burrows_delta": 1.4637043415366668,
+        "capped_in_overall": false,
+        "cosine_distance_to_baseline_mean": 0.0034713688191142142,
+        "cosine_distance_to_baseline_min": 0.0007486986937301765,
+        "cosine_distance_to_centroid": 0.0025847667748080116,
+        "n_features": 7,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 1.5089923965393823,
+            "baseline_mean": 60.348583877995644,
+            "baseline_sd": 5.710388854937329,
+            "feature": "paragraph_count_per_1000_words",
+            "value": 68.9655172413793,
+            "z": 1.5089923965393823
+          },
+          {
+            "abs_z": 1.4184162865339511,
+            "baseline_mean": 16.666666666666668,
+            "baseline_sd": 1.5275252316519468,
+            "feature": "paragraph_words_mean",
+            "value": 14.5,
+            "z": -1.4184162865339511
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "dialogue_paragraph_ratio",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "paragraph_words_sd",
+            "value": 1.5666989036012806,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "quote_span_words_mean",
+            "value": 2.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "quoted_word_ratio",
+            "value": 0.06896551724137931,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 1.0,
+            "baseline_sd": 0.0,
+            "feature": "short_paragraph_ratio",
+            "value": 1.0,
+            "z": null
+          }
+        ]
+      },
+      "pronoun_modal_negation": {
+        "burrows_delta": 0.2472629717380763,
+        "capped_in_overall": false,
+        "cosine_distance_to_baseline_mean": 0.07125353714372795,
+        "cosine_distance_to_baseline_min": 1.1102230246251565e-16,
+        "cosine_distance_to_centroid": 0.009998331053764575,
+        "n_features": 9,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 0.3843101272469511,
+            "baseline_mean": 93.68191721132897,
+            "baseline_sd": 115.13908724813778,
+            "feature": "third_person_singular_per_1000",
+            "value": 137.9310344827586,
+            "z": 0.3843101272469511
+          },
+          {
+            "abs_z": 0.11021581622920146,
+            "baseline_mean": 38.126361655773415,
+            "baseline_sd": 33.05880371567215,
+            "feature": "negation_per_1000",
+            "value": 34.48275862068965,
+            "z": -0.11021581622920146
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "contractions_per_1000",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "first_person_plural_per_1000",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "first_person_singular_per_1000",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "hedge_per_1000",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "modal_per_1000",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "second_person_per_1000",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "third_person_plural_per_1000",
+            "value": 0.0,
+            "z": null
+          }
+        ]
+      },
+      "punctuation": {
+        "burrows_delta": 3.4199389923426446,
+        "capped_in_overall": false,
+        "cosine_distance_to_baseline_mean": 0.1703887740383352,
+        "cosine_distance_to_baseline_min": 0.17031893075765825,
+        "cosine_distance_to_centroid": 0.15220016190033103,
+        "n_features": 11,
+        "overall_delta_contribution_cap": 5.0,
+        "top_deviations": [
+          {
+            "abs_z": 9.560460109548135,
+            "baseline_mean": 18.104575163398692,
+            "baseline_sd": 1.7131166564811977,
+            "feature": "punct_per_100_words",
+            "value": 34.48275862068966,
+            "z": 9.560460109548135
+          },
+          {
+            "abs_z": 0.4977157493014015,
+            "baseline_mean": 1.8518518518518519,
+            "baseline_sd": 3.2075014954979206,
+            "feature": "semicolon_per_100_words",
+            "value": 3.4482758620689653,
+            "z": 0.4977157493014015
+          },
+          {
+            "abs_z": 0.20164111817839764,
+            "baseline_mean": 4.183006535947713,
+            "baseline_sd": 3.6437542130108116,
+            "feature": "comma_per_100_words",
+            "value": 3.4482758620689653,
+            "z": -0.20164111817839764
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "colon_per_100_words",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "dash_per_100_words",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "ellipsis_per_100_words",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "exclamation_per_100_sentences",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "paren_pair_per_100_words",
+            "value": 0.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "question_per_100_sentences",
+            "value": 20.0,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 0.0,
+            "baseline_sd": 0.0,
+            "feature": "quote_mark_per_100_words",
+            "value": 6.896551724137931,
+            "z": null
+          },
+          {
+            "abs_z": null,
+            "baseline_mean": 1.0,
+            "baseline_sd": 0.0,
+            "feature": "terminal_punct_per_sentence",
+            "value": 1.2,
+            "z": null
+          }
+        ]
+      }
+    },
+    "overall": {
+      "band": "Light drift (provisional thresholds; calibration pending)",
+      "interpretation": "The target is recognizably related to the baseline, with a few meaningful departures.",
+      "threshold_note": "provisional thresholds; calibration pending",
+      "weighted_delta": 1.075936934187307
+    },
+    "register_match": {
+      "match": {
+        "baseline_distribution": {},
+        "baseline_family_distribution": {},
+        "rationale": "Baseline entries don't carry register tags (directory-baseline or untagged manifest). Register-match check skipped; supply --manifest with register-tagged entries to enable.",
+        "strength": "unavailable",
+        "target": "narrative_fiction",
+        "target_family": "narrative_fiction",
+        "taxonomy": "register_families/v2"
+      },
+      "target_classification": {
+        "confidence": 0.892,
+        "primary": "narrative_fiction",
+        "refusal_reason": null,
+        "secondary": [],
+        "taxonomy": "register_families/v2",
+        "warning": null
+      }
+    },
+    "selected_features": {
+      "char_ngrams_3": 200,
+      "char_ngrams_4": 200,
+      "char_ngrams_5": 200,
+      "function_words": 100,
+      "paragraph_dialogue": 7,
+      "pronoun_modal_negation": 9,
+      "punctuation": 11
+    }
+  },
+  "schema_version": "1.0",
+  "target": {
+    "n_paragraphs": 12,
+    "n_sentences": 30,
+    "n_words_original": 174,
+    "path": "consumer-input.txt",
+    "preprocessing": {
+      "baseline": {
+        "applied": true,
+        "dominant_rule": null,
+        "input_tokens_after": 400,
+        "input_tokens_before": 400,
+        "opt_out": false,
+        "per_file": {
+          "b0": {
+            "applied": true,
+            "dominant_rule": null,
+            "input_tokens_after": 120,
+            "input_tokens_before": 120,
+            "masking_rules_active": [],
+            "opt_out": false,
+            "rules_active": [
+              "yaml_front_matter",
+              "html_block",
+              "fenced_code",
+              "indented_code",
+              "inline_code",
+              "css_at_rule",
+              "css_rule_block",
+              "html_tag",
+              "json_block",
+              "ascii_table"
+            ],
+            "strip_ratio": 0.0,
+            "tokens_masked": 0,
+            "tokens_stripped": 0,
+            "tokens_stripped_by_rule": {},
+            "warning": null
+          },
+          "b1": {
+            "applied": true,
+            "dominant_rule": null,
+            "input_tokens_after": 144,
+            "input_tokens_before": 144,
+            "masking_rules_active": [],
+            "opt_out": false,
+            "rules_active": [
+              "yaml_front_matter",
+              "html_block",
+              "fenced_code",
+              "indented_code",
+              "inline_code",
+              "css_at_rule",
+              "css_rule_block",
+              "html_tag",
+              "json_block",
+              "ascii_table"
+            ],
+            "strip_ratio": 0.0,
+            "tokens_masked": 0,
+            "tokens_stripped": 0,
+            "tokens_stripped_by_rule": {},
+            "warning": null
+          },
+          "b2": {
+            "applied": true,
+            "dominant_rule": null,
+            "input_tokens_after": 136,
+            "input_tokens_before": 136,
+            "masking_rules_active": [],
+            "opt_out": false,
+            "rules_active": [
+              "yaml_front_matter",
+              "html_block",
+              "fenced_code",
+              "indented_code",
+              "inline_code",
+              "css_at_rule",
+              "css_rule_block",
+              "html_tag",
+              "json_block",
+              "ascii_table"
+            ],
+            "strip_ratio": 0.0,
+            "tokens_masked": 0,
+            "tokens_stripped": 0,
+            "tokens_stripped_by_rule": {},
+            "warning": null
+          }
+        },
+        "rules_active": [
+          "yaml_front_matter",
+          "html_block",
+          "fenced_code",
+          "indented_code",
+          "inline_code",
+          "css_at_rule",
+          "css_rule_block",
+          "html_tag",
+          "json_block",
+          "ascii_table"
+        ],
+        "strip_ratio": 0.0,
+        "tokens_stripped": 0,
+        "tokens_stripped_by_rule": {},
+        "warning": null
+      },
+      "target": {
+        "applied": true,
+        "dominant_rule": null,
+        "input_tokens_after": 174,
+        "input_tokens_before": 174,
+        "masking_rules_active": [],
+        "opt_out": false,
+        "rules_active": [
+          "yaml_front_matter",
+          "html_block",
+          "fenced_code",
+          "indented_code",
+          "inline_code",
+          "css_at_rule",
+          "css_rule_block",
+          "html_tag",
+          "json_block",
+          "ascii_table"
+        ],
+        "strip_ratio": 0.0,
+        "tokens_masked": 0,
+        "tokens_stripped": 0,
+        "tokens_stripped_by_rule": {},
+        "warning": null
+      }
+    },
+    "preprocessing_applied": true,
+    "spacy_available": true,
+    "words": 174
+  },
+  "task_surface": "voice_coherence",
+  "tool": "voice_distance",
+  "version": "1.0",
+  "warnings": [
+    "Target below 500 words; voice-distance z-scores are unstable. Read top deviations as inspection leads, not verdicts.",
+    "Fewer than 5 baseline files; baseline standard deviations can be unstable.",
+    "Some baseline files are under 1,000 words: b0, b1, b2."
+  ]
+}

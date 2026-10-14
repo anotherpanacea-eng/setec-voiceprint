@@ -1,0 +1,398 @@
+{
+  "ai_status": null,
+  "available": true,
+  "baseline": {
+    "files": [
+      {
+        "id": "b0",
+        "metadata": {
+          "source": "directory"
+        },
+        "path": "consumer-baseline/b0.txt"
+      },
+      {
+        "id": "b1",
+        "metadata": {
+          "source": "directory"
+        },
+        "path": "consumer-baseline/b1.txt"
+      },
+      {
+        "id": "b2",
+        "metadata": {
+          "source": "directory"
+        },
+        "path": "consumer-baseline/b2.txt"
+      }
+    ],
+    "label": "reference",
+    "n_files": 3,
+    "path": "consumer-baseline",
+    "preprocessing": {
+      "applied": true,
+      "dominant_rule": null,
+      "input_tokens_after": 400,
+      "input_tokens_before": 400,
+      "opt_out": false,
+      "per_file": {
+        "consumer-baseline/b0.txt": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 120,
+          "input_tokens_before": 120,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        },
+        "consumer-baseline/b1.txt": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 144,
+          "input_tokens_before": 144,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        },
+        "consumer-baseline/b2.txt": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 136,
+          "input_tokens_before": 136,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        }
+      },
+      "rules_active": [
+        "yaml_front_matter",
+        "html_block",
+        "fenced_code",
+        "indented_code",
+        "inline_code",
+        "css_at_rule",
+        "css_rule_block",
+        "html_tag",
+        "json_block",
+        "ascii_table"
+      ],
+      "strip_ratio": 0.0,
+      "tokens_stripped": 0,
+      "tokens_stripped_by_rule": {},
+      "warning": null
+    },
+    "words": 400
+  },
+  "claim_license": {
+    "additional_caveats": [
+      "Keyness is sensitive to the choice of reference corpus. A reference corpus that under-represents the target's register / topic / writer-baseline-influence will produce inflated keyness scores; a tightly register-matched reference will produce conservative scores. Read keyness alongside the reference-corpus provenance.",
+      "Collocation filters (LR / PMI) drop phrases that fail the chosen association measure, including some that are real idiolect tokens with low marginal counts. The default thresholds favor precision over recall.",
+      "Preservation quotas are heuristic. The default split across n-values may over-favor unigrams when the writer's actual idiolect lives in 2- and 3-grams; review the per-n rankings, not just the merged preservation list."
+    ],
+    "comparison_set": {
+      "keyness_method": "log_likelihood",
+      "n_preservation_entries": 4,
+      "n_values": [
+        1,
+        2,
+        3
+      ],
+      "reference_n_files": 3,
+      "reference_n_tokens": 400,
+      "target_n_files": 1,
+      "target_n_tokens": 174
+    },
+    "confidence_interval_95": null,
+    "does_not_license": "An authorship verdict. The output is a corpus-relative keyness ranking, not provenance certification. Highly characteristic phrases may simply be the writer's personal lexicon, topic vocabulary, register markers, or domain terminology. CRITICAL: the preservation list is voice-cloning-grade input by design. Treat the rendered list as private to the writer and workspace.",
+    "fpr_target": null,
+    "language_match": [],
+    "length_range_words": null,
+    "licenses": "A ranked keyness list and a preservation list of phrases unusually characteristic of the target corpus against the reference corpus. Output names the phrases a writer should consider preserving through revision so their voice survives the editing pass.",
+    "references": [],
+    "register_match": [],
+    "task_surface": "voice_coherence"
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** A ranked keyness list and a preservation list of phrases unusually characteristic of the target corpus against the reference corpus. Output names the phrases a writer should consider preserving through revision so their voice survives the editing pass.\n\n**Does NOT report:** An authorship verdict. The output is a corpus-relative keyness ranking, not provenance certification. Highly characteristic phrases may simply be the writer's personal lexicon, topic vocabulary, register markers, or domain terminology. CRITICAL: the preservation list is voice-cloning-grade input by design. Treat the rendered list as private to the writer and workspace.\n\n### Comparison context\n\n- **keyness method:** log_likelihood\n- **n preservation entries:** 4\n- **n values:** [1, 2, 3]\n- **reference n files:** 3\n- **reference n tokens:** 400\n- **target n files:** 1\n- **target n tokens:** 174\n\n### Caveats\n\n- Keyness is sensitive to the choice of reference corpus. A reference corpus that under-represents the target's register / topic / writer-baseline-influence will produce inflated keyness scores; a tightly register-matched reference will produce conservative scores. Read keyness alongside the reference-corpus provenance.\n- Collocation filters (LR / PMI) drop phrases that fail the chosen association measure, including some that are real idiolect tokens with low marginal counts. The default thresholds favor precision over recall.\n- Preservation quotas are heuristic. The default split across n-values may over-favor unigrams when the writer's actual idiolect lives in 2- and 3-grams; review the per-n rankings, not just the merged preservation list.",
+  "results": {
+    "method": {
+      "collocation_filter": true,
+      "include_function_words": false,
+      "keyness": "log_likelihood",
+      "min_collocation_lr": 10.83,
+      "min_collocation_pmi": 3.0,
+      "min_reference_count": 5,
+      "min_target_count": 5,
+      "min_total_count": 10,
+      "n_values": [
+        1,
+        2,
+        3
+      ],
+      "smoothing_alpha": 0.5
+    },
+    "preservation_list": [
+      {
+        "collocation_lr": null,
+        "collocation_method": "not_applicable",
+        "collocation_pmi": null,
+        "display": "came",
+        "log2_ratio": 0.8139,
+        "n": 1,
+        "p_value": null,
+        "phrase": "came",
+        "reference_count": 8,
+        "reference_per_1000": 20.0,
+        "score": 1.0062,
+        "score_name": "G2",
+        "target_count": 6,
+        "target_per_1000": 34.483
+      },
+      {
+        "collocation_lr": null,
+        "collocation_method": "not_applicable",
+        "collocation_pmi": null,
+        "display": "nobody",
+        "log2_ratio": 0.8139,
+        "n": 1,
+        "p_value": null,
+        "phrase": "nobody",
+        "reference_count": 8,
+        "reference_per_1000": 20.0,
+        "score": 1.0062,
+        "score_name": "G2",
+        "target_count": 6,
+        "target_per_1000": 34.483
+      },
+      {
+        "collocation_lr": null,
+        "collocation_method": "not_applicable",
+        "collocation_pmi": null,
+        "display": "past",
+        "log2_ratio": 0.8139,
+        "n": 1,
+        "p_value": null,
+        "phrase": "past",
+        "reference_count": 8,
+        "reference_per_1000": 20.0,
+        "score": 1.0062,
+        "score_name": "G2",
+        "target_count": 6,
+        "target_per_1000": 34.483
+      },
+      {
+        "collocation_lr": 30.0534,
+        "collocation_method": "likelihood_ratio",
+        "collocation_pmi": 3.2813,
+        "display": "past the",
+        "log2_ratio": 0.8113,
+        "n": 2,
+        "p_value": null,
+        "phrase": "past the",
+        "reference_count": 8,
+        "reference_per_1000": 20.0,
+        "score": 1.0,
+        "score_name": "G2",
+        "target_count": 6,
+        "target_per_1000": 34.483
+      }
+    ],
+    "rankings": {
+      "1": {
+        "anti_idiolectic": [],
+        "idiolectic": [
+          {
+            "collocation_lr": null,
+            "collocation_method": "not_applicable",
+            "collocation_pmi": null,
+            "display": "came",
+            "log2_ratio": 0.8139,
+            "n": 1,
+            "p_value": null,
+            "phrase": "came",
+            "reference_count": 8,
+            "reference_per_1000": 20.0,
+            "score": 1.0062,
+            "score_name": "G2",
+            "target_count": 6,
+            "target_per_1000": 34.483
+          },
+          {
+            "collocation_lr": null,
+            "collocation_method": "not_applicable",
+            "collocation_pmi": null,
+            "display": "nobody",
+            "log2_ratio": 0.8139,
+            "n": 1,
+            "p_value": null,
+            "phrase": "nobody",
+            "reference_count": 8,
+            "reference_per_1000": 20.0,
+            "score": 1.0062,
+            "score_name": "G2",
+            "target_count": 6,
+            "target_per_1000": 34.483
+          },
+          {
+            "collocation_lr": null,
+            "collocation_method": "not_applicable",
+            "collocation_pmi": null,
+            "display": "past",
+            "log2_ratio": 0.8139,
+            "n": 1,
+            "p_value": null,
+            "phrase": "past",
+            "reference_count": 8,
+            "reference_per_1000": 20.0,
+            "score": 1.0062,
+            "score_name": "G2",
+            "target_count": 6,
+            "target_per_1000": 34.483
+          }
+        ]
+      },
+      "2": {
+        "anti_idiolectic": [],
+        "idiolectic": [
+          {
+            "collocation_lr": 30.0534,
+            "collocation_method": "likelihood_ratio",
+            "collocation_pmi": 3.2813,
+            "display": "past the",
+            "log2_ratio": 0.8113,
+            "n": 2,
+            "p_value": null,
+            "phrase": "past the",
+            "reference_count": 8,
+            "reference_per_1000": 20.0,
+            "score": 1.0,
+            "score_name": "G2",
+            "target_count": 6,
+            "target_per_1000": 34.483
+          }
+        ]
+      },
+      "3": {
+        "anti_idiolectic": [],
+        "idiolectic": []
+      }
+    }
+  },
+  "schema_version": "1.0",
+  "target": {
+    "files": [
+      {
+        "id": "t",
+        "metadata": {
+          "source": "directory"
+        },
+        "path": "consumer-target/t.txt"
+      }
+    ],
+    "label": "target",
+    "n_files": 1,
+    "path": "consumer-target",
+    "preprocessing": {
+      "applied": true,
+      "dominant_rule": null,
+      "input_tokens_after": 174,
+      "input_tokens_before": 174,
+      "opt_out": false,
+      "per_file": {
+        "consumer-target/t.txt": {
+          "applied": true,
+          "dominant_rule": null,
+          "input_tokens_after": 174,
+          "input_tokens_before": 174,
+          "masking_rules_active": [],
+          "opt_out": false,
+          "rules_active": [
+            "yaml_front_matter",
+            "html_block",
+            "fenced_code",
+            "indented_code",
+            "inline_code",
+            "css_at_rule",
+            "css_rule_block",
+            "html_tag",
+            "json_block",
+            "ascii_table"
+          ],
+          "strip_ratio": 0.0,
+          "tokens_masked": 0,
+          "tokens_stripped": 0,
+          "tokens_stripped_by_rule": {},
+          "warning": null
+        }
+      },
+      "rules_active": [
+        "yaml_front_matter",
+        "html_block",
+        "fenced_code",
+        "indented_code",
+        "inline_code",
+        "css_at_rule",
+        "css_rule_block",
+        "html_tag",
+        "json_block",
+        "ascii_table"
+      ],
+      "strip_ratio": 0.0,
+      "tokens_stripped": 0,
+      "tokens_stripped_by_rule": {},
+      "warning": null
+    },
+    "privacy": "PRIVATE - DO NOT SHARE. Idiolect output is a voice-cloning input.",
+    "words": 174
+  },
+  "task_surface": "voice_coherence",
+  "tool": "idiolect_detector",
+  "version": "1.0",
+  "warnings": []
+}
