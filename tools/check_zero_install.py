@@ -947,6 +947,15 @@ CONSUMER_JSON_INPUTS = {
         (PLUGIN_ROOT / "scripts" / "tests" / "fixtures" / "s5_distance_request.json")
         .read_text(encoding="utf-8")),
 }
+# A tiny general_imposters corpus: two consumer-baseline files are the
+# candidate's identity baseline; the third plus these four are five impostor
+# writers (its MIN_IMPOSTORS).
+CONSUMER_IMPOSTOR_TEXTS = [
+    "The ferry left at noon. Passengers crowded the rail and watched the island shrink.\n\n" * 8,
+    "Grain prices rose again this spring. Farmers held their stock and waited for rain.\n\n" * 8,
+    "She tuned the old piano herself. Two keys still stuck, but the rest rang true.\n\n" * 8,
+    "Snow closed the pass by evening. The drivers slept in their cabs until the ploughs came.\n\n" * 8,
+]
 # Marked prose for position_pair_register's mock judge, which pairs only
 # passages tagged [[pair=<id> side=<a|b> q=<question>]].
 CONSUMER_PAIRS_INPUT = (
@@ -991,6 +1000,9 @@ CONSUMER_CASES = [
     {"case": "s5", "id": "s5_distance", "args": ["consumer-s5-request.json"], "exit": 0,
      "normalize": ["results.implementation_sha256"]},
     # POS and dependency families need spaCy, which moves with the installed model.
+    {"case": "general_imposters", "id": "general_imposters",
+     "args": ["--target", "consumer-input.txt", "--manifest", "consumer-gi.jsonl",
+              "--candidate-persona", "cand"], "exit": 0},
     {"case": "idiolect", "id": "idiolect_detector",
      "args": ["--target-dir", "consumer-target", "--reference-dir", "consumer-baseline"],
      "exit": 0},
@@ -1003,8 +1015,8 @@ CONSUMER_CASES = [
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
-    "author_corpus_export", "binoculars_audit", "general_imposters",
-    "gmail_author_pipeline", "pov_voice_profile", "voice_fingerprint",
+    "author_corpus_export", "binoculars_audit", "gmail_author_pipeline",
+    "pov_voice_profile", "voice_fingerprint",
 })
 
 
@@ -1051,6 +1063,16 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
     (outside_cwd / "consumer-pairs.txt").write_text(CONSUMER_PAIRS_INPUT, encoding="utf-8")
     (outside_cwd / "consumer-target").mkdir(exist_ok=True)
     (outside_cwd / "consumer-target" / "t.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
+    gi_rows = [{"id": f"c{i}", "path": f"consumer-baseline/b{i}.txt", "persona": "cand",
+                "corpus_role": "identity_baseline"} for i in (0, 1)]
+    gi_rows.append({"id": "p0", "path": "consumer-baseline/b2.txt", "persona": "p0",
+                    "corpus_role": "impostor", "impostor_for": ["cand"]})
+    for i, text in enumerate(CONSUMER_IMPOSTOR_TEXTS, 1):
+        (outside_cwd / f"consumer-imp-{i}.txt").write_text(text, encoding="utf-8")
+        gi_rows.append({"id": f"p{i}", "path": f"consumer-imp-{i}.txt", "persona": f"p{i}",
+                        "corpus_role": "impostor", "impostor_for": ["cand"]})
+    (outside_cwd / "consumer-gi.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in gi_rows), encoding="utf-8")
     for name, payload in CONSUMER_JSON_INPUTS.items():
         (outside_cwd / name).write_text(json.dumps(payload), encoding="utf-8")
     baseline = outside_cwd / "consumer-baseline"
