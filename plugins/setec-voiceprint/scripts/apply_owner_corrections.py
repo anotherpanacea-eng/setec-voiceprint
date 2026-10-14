@@ -23,7 +23,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from manifest_validator import (
+from setec.core.manifest_core import (
     ALLOWED_ERA,
     ALLOWED_REGISTER,
     resolve_path,

@@ -64,7 +64,7 @@ SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from manifest_validator import validate_manifest  # type: ignore
+from setec.core.manifest_core import validate_manifest  # type: ignore
 from setec.core.compression_thresholds import COMPRESSION_HEURISTICS  # type: ignore
 
 # These scoring imports are also public aliases used by calibration callers.

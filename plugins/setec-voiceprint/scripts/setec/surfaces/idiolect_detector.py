@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
-from manifest_validator import resolve_path, validate_manifest
+from setec.core.manifest_core import resolve_path, validate_manifest
 from preprocessing import (
     aggregate_preprocessing_metadata,
     available_rule_names,

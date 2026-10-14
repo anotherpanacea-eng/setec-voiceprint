@@ -1882,7 +1882,7 @@ def _export_required_source_fields() -> tuple[str, ...]:
     ``import near_dup_dedup`` stays light) minus the two the export produces
     itself, so this cannot drift from the validator it must satisfy.
     """
-    import manifest_validator  # noqa: PLC0415  (lazy on purpose)
+    from setec.core import manifest_core as manifest_validator  # noqa: PLC0415  (lazy on purpose)
     return tuple(f for f in manifest_validator.REQUIRED_FIELDS if f not in ("id", "path"))
 
 
