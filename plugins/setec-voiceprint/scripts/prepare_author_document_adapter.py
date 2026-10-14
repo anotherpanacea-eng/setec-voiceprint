@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Any
-import author_corpus_export as exporter
+from setec.core import author_record as exporter
 import atomic_publish
 
 SCHEMA_MAP = "setec-author-document-map/1"

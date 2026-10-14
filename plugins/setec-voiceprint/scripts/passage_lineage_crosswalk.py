@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-import author_corpus_export as author_export
+from setec.core import author_record as author_export
 from setec.core import probe_population as spec75
 from passage_source_population_commitment import canonical_frame_v1
 

@@ -18,7 +18,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-import author_corpus_export as author_export
+from setec.core import author_record as author_export
 from setec.core import passage_tokenizer_v1
 from setec.core.passage_tokenizer_v1 import DATA_FILE, load_data
 
