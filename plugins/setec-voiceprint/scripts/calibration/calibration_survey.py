@@ -86,7 +86,7 @@ import calibrate_thresholds as ct  # noqa: E402
 PARENT_SCRIPTS = SCRIPT_DIR.parent
 if str(PARENT_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(PARENT_SCRIPTS))
-from variance_audit import COMPRESSION_HEURISTICS  # type: ignore  # noqa: E402
+from setec.core.compression_thresholds import COMPRESSION_HEURISTICS  # type: ignore  # noqa: E402
 from validation_harness import load_manifest_entries  # type: ignore  # noqa: E402
 
 TASK_SURFACE = "smoothing_diagnosis_calibration"
