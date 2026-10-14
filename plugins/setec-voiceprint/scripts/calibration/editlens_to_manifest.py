@@ -621,7 +621,7 @@ def convert(args: argparse.Namespace) -> int:
 
     # Validate the output manifest.
     try:
-        from manifest_validator import validate_manifest  # type: ignore
+        from setec.core.manifest_core import validate_manifest  # type: ignore
     except ImportError:
         sys.stderr.write(
             "Could not import manifest_validator; skipping validation.\n"

@@ -57,7 +57,7 @@ from setec.paths import scripts_dir
 
 ROOT = scripts_dir()
 
-from manifest_validator import resolve_path, validate_manifest  # type: ignore
+from setec.core.manifest_core import resolve_path, validate_manifest  # type: ignore
 from stylometry_core import (  # type: ignore
     DEFAULT_LIMITS,
     FAMILY_WEIGHTS,

@@ -32,7 +32,7 @@ from typing import Any, Callable, Sequence
 from check_corpus import check_corpus_paths
 from claim_license import ClaimLicense, from_legacy
 from output_schema import build_output
-from manifest_validator import resolve_path, validate_manifest
+from setec.core.manifest_core import resolve_path, validate_manifest
 from preprocessing import available_rule_names, strip_non_prose
 from variance_audit import (
     COMPRESSION_HEURISTICS,
