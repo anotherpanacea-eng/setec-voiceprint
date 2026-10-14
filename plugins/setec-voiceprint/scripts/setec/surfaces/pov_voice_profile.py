@@ -56,7 +56,7 @@ from typing import Any, Sequence
 
 
 from claim_license import ClaimLicense  # type: ignore
-from manifest_validator import resolve_path, validate_manifest  # type: ignore
+from setec.core.manifest_core import resolve_path, validate_manifest  # type: ignore
 from output_schema import build_output  # type: ignore
 from register_taxonomy import (  # type: ignore
     assert_personal_register_isolated,

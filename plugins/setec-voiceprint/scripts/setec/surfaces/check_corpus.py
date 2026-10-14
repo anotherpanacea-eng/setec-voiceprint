@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from claim_license import ClaimLicense  # type: ignore
-from manifest_validator import resolve_path, validate_manifest
+from setec.core.manifest_core import resolve_path, validate_manifest
 from output_schema import build_output  # type: ignore
 from preprocessing import available_rule_names, strip_non_prose
 
