@@ -929,23 +929,37 @@ CONSUMER_INPUT = (
     "The river ran past the old mill. She watched it for a long time; nobody came.\n\n"
     "Later, the lamps were lit. \"Why now?\" he asked. She did not answer.\n\n"
 ) * 6
+# A small synthetic baseline folder, for surfaces that compare against one.
+CONSUMER_BASELINE = [
+    "Morning came slowly over the harbour. The boats rocked, and the gulls argued over scraps.\n\n" * 8,
+    "He kept his letters in a tin box. Some he read twice; others he never opened at all.\n\n" * 8,
+    "The road bent east past the chapel. Nobody walked it after dark, though no one said why.\n\n" * 8,
+]
 CONSUMER_CASES = [
-    {"case": "punctuation", "id": "punctuation_cadence_audit", "args": [], "exit": 0},
-    {"case": "manuscript", "id": "manuscript_audit", "args": [], "exit": 0},
+    {"case": "punctuation", "id": "punctuation_cadence_audit",
+     "args": ["consumer-input.txt"], "exit": 0},
+    {"case": "manuscript", "id": "manuscript_audit", "args": ["consumer-input.txt"], "exit": 0},
     {"case": "narrative_mock", "id": "narrative_decision_audit",
-     "args": ["--judge", "mock"], "exit": 0, "normalize": ["results.run_timestamp_utc"]},
+     "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0,
+     "normalize": ["results.run_timestamp_utc"]},
     {"case": "narrative_api_refused", "id": "narrative_decision_audit",
-     "args": ["--judge", "anthropic", "--judge-model", "synthetic-model"], "exit": 3},
+     "args": ["consumer-input.txt", "--judge", "anthropic", "--judge-model", "synthetic-model"],
+     "exit": 3},
     {"case": "argument_mock", "id": "argument_decision_audit",
-     "args": ["--judge", "mock"], "exit": 0, "normalize": ["results.run_timestamp_utc"]},
+     "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0,
+     "normalize": ["results.run_timestamp_utc"]},
+    {"case": "repetition", "id": "repetition_audit",
+     "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline"], "exit": 0},
+    {"case": "mimicry", "id": "mimicry_cosplay_audit",
+     "args": ["--target", "consumer-input.txt"], "exit": 0},
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
     "agd_move_scan", "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
     "general_imposters", "gmail_author_pipeline", "idiolect_detector",
-    "mimicry_cosplay_audit", "position_pair_register", "pov_voice_profile",
-    "repetition_audit", "restoration_packet", "s5_distance", "validation_harness",
-    "variance_audit", "voice_distance", "voice_fingerprint", "voice_profile",
+    "position_pair_register", "pov_voice_profile", "restoration_packet", "s5_distance",
+    "validation_harness", "variance_audit", "voice_distance", "voice_fingerprint",
+    "voice_profile",
 })
 
 
@@ -975,12 +989,16 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
                f"cased but still pending: {both}")
 
     (outside_cwd / "consumer-input.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
+    baseline = outside_cwd / "consumer-baseline"
+    baseline.mkdir(exist_ok=True)
+    for index, text in enumerate(CONSUMER_BASELINE):
+        (baseline / f"b{index}.txt").write_text(text, encoding="utf-8")
     # COLUMNS fixes argparse usage wrapping, which refusal envelopes quote.
     env = {**_clean_env(), "setec_hermetic_backend": "stub", "COLUMNS": "80"}
     for row in CONSUMER_CASES:
         name = f"consumer_cases:{row['case']}"
         argv = [sys.executable, str(bare_root / "scripts" / "setec_run.py"), row["id"],
-                "consumer-input.txt", *row["args"], "--json"]
+                *row["args"], "--json"]
         try:
             proc = subprocess.run(argv, cwd=outside_cwd, env=env,
                                   capture_output=True, text=True, timeout=120)
