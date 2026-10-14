@@ -364,6 +364,7 @@ class StableRedactionMap:
 
 is_private_safe_path = _acq_primitives.is_private_safe_path
 check_output_privacy = _acq_primitives.check_output_privacy
+add_allow_empty_arg = _acq_primitives.add_allow_empty_arg
 
 
 # --------------- Output-path conventions --------------------------
@@ -1453,16 +1454,3 @@ def add_user_agent_arg(parser: argparse.ArgumentParser) -> None:
     """
     parser.add_argument("--user-agent",
                         help="Override the User-Agent header.")
-
-
-def add_allow_empty_arg(parser: argparse.ArgumentParser) -> None:
-    """Register the shared ``--allow-empty`` flag.
-
-    Byte-identical across the acquirers that expose it (the 3-line help
-    block was hand-duplicated verbatim). Same ``store_true`` action and
-    same help text as the inline definitions it replaces.
-    """
-    parser.add_argument("--allow-empty", action="store_true",
-                        help="Exit 0 even when nothing is acquired. By default a "
-                             "zero-output run that isn't a dedupe-only rerun "
-                             "(nothing matched the source/filters) fails.")

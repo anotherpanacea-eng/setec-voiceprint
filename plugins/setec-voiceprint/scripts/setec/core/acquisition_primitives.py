@@ -24,6 +24,7 @@ exists to remove.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import sys
 from pathlib import Path
@@ -85,3 +86,16 @@ def check_output_privacy(
                 f"for non-personal corpora.\n"
             )
             sys.exit(2)
+
+
+def add_allow_empty_arg(parser: argparse.ArgumentParser) -> None:
+    """Register the shared ``--allow-empty`` flag.
+
+    Byte-identical across the acquirers that expose it (the 3-line help
+    block was hand-duplicated verbatim). Same ``store_true`` action and
+    same help text as the inline definitions it replaces.
+    """
+    parser.add_argument("--allow-empty", action="store_true",
+                        help="Exit 0 even when nothing is acquired. By default a "
+                             "zero-output run that isn't a dedupe-only rerun "
+                             "(nothing matched the source/filters) fails.")
