@@ -52,7 +52,7 @@ from setec.paths import scripts_dir
 
 SCRIPT_DIR = scripts_dir()
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_core as ac  # noqa: E402
 
 # EPUB content documents are XHTML; html_to_text parses them with the HTML
 # parser on purpose. Silence BeautifulSoup's "parsed XML as HTML" notice.

@@ -76,7 +76,7 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator, Optional
 
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_core as ac  # noqa: E402
 
 TASK_SURFACE = "voice_coherence_acquisition"
 TOOL_NAME = "acquire_courtlistener"
