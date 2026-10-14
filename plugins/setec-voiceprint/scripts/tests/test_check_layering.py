@@ -228,9 +228,10 @@ def test_real_repo_cycles_are_reported_and_known_count():
     modules = [cl.Module(p) for p in cl.find_runtime_scripts()]
     edges = cl.build_internal_graph(modules)
     cycles = cl.find_cycles(edges)
-    # 5 -> 4 on 2026-10-14: CB-5 moved the acquisition library to core, which
-    # removed the acquisition_core <-> pdf_extract cycle.
-    assert len(cycles) == 4
+    # 5 -> 3 on 2026-10-14: CB-5 moved the acquisition library and the
+    # register-sweep refusal types to core, which removed the
+    # acquisition_core <-> pdf_extract and manifest_validator <-> register_sweep cycles.
+    assert len(cycles) == 3
 
 
 # --------------------------- tier predicates -----------------------------

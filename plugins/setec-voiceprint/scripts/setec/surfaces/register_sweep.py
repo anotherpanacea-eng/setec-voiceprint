@@ -63,12 +63,22 @@ from shingle_dedup_io import (  # type: ignore
     publish_create_new,
     read_bounded_regular,
 )
+from setec.core.register_sweep_errors import (  # noqa: F401 -- re-exported, same objects
+    BadInput,
+    BIDI_CONTROLS,
+    INT64_MAX,
+    InternalError,
+    MAX_PATH_BYTES,
+    MAX_PERSONA_BYTES,
+    MAX_USE_MEMBERS,
+    SweepRefusal,
+)
 
-# ``manifest_validator`` imports this module at load time (exception classes
-# and shared string-domain constants), so the one back-reference H2 needs —
-# the three CLI filter enums — is imported lazily inside each of the two
-# functions that read them, ``build_report_scope`` and ``parse_arguments``, to
-# keep manifest_validator -> register_sweep the only import-time direction.
+# The exception classes and shared string-domain constants that
+# ``manifest_validator`` needs live in ``setec.core.register_sweep_errors``
+# (re-exported below), so manifest_validator no longer imports this module.
+# The one back-reference H2 needs -- the three CLI filter enums -- is still
+# imported lazily inside ``build_report_scope`` and ``parse_arguments``.
 
 # --------------------------------------------------------------------------
 # Fixed identities
@@ -185,12 +195,8 @@ SHARD_ROWS = 250
 
 MIN_WORDS_FLOOR = 1
 MIN_WORDS_CEILING = 1_000_000
-MAX_PERSONA_BYTES = 128
-MAX_PATH_BYTES = 4_096
-MAX_USE_MEMBERS = 32
 MAX_WARNING_BYTES = 4_096
 MAX_SECONDARY = 8
-INT64_MAX = 2**63 - 1
 
 #: The exact closed report ``limits`` object.
 LIMITS: dict[str, int] = {
@@ -210,10 +216,6 @@ LIMITS: dict[str, int] = {
 #: Match-inventory domain. These are count buckets, not accuracy labels.
 MATCH_DOMAIN = ("same", "different", "unresolved")
 
-BIDI_CONTROLS = frozenset(
-    "؜‎‏‪‫‬‭‮"
-    "⁦⁧⁨⁩"
-)
 
 ZERO_WORD_EVIDENCE_KEYS = ("n_words", "n_chars")
 FULL_EVIDENCE_KEYS = (
@@ -314,36 +316,12 @@ SHARD_COUNT_KEYS = frozenset(
 # --------------------------------------------------------------------------
 
 
-class SweepRefusal(Exception):
-    """Base controlled refusal.
-
-    Refusals carry no path, digest, commit, filter value, or caught-exception
-    text: the CLI maps each subclass to one fixed golden envelope.
-    """
-
-    exit_code = 4
-    reason_category = "internal_error"
-    reason = "register composition sweep unavailable after internal failure"
-
-
-class BadInput(SweepRefusal):
-    """Manifest, document, or CLI input failure."""
-
-    exit_code = 2
-    reason_category = "bad_input"
-    reason = "register composition sweep refused invalid input"
-
-
 class PolicyRefused(SweepRefusal):
     """H1 identity/contract, checkpoint/privacy/platform, or create-new failure."""
 
     exit_code = 3
     reason_category = "policy_refused"
     reason = "register composition sweep refused by policy"
-
-
-class InternalError(SweepRefusal):
-    """Violation in H2's already-validated in-memory construction."""
 
 
 # --------------------------------------------------------------------------
