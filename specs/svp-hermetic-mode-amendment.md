@@ -38,7 +38,7 @@ cases without models installed, and check their exact envelopes.
   --json` on synthetic input exits 3 with a schema-1.0 unavailable envelope,
   `reason_category: bad_input`, `results: {}`, and the mode message.
 - The direct `semantic_trajectory_audit.py` and `surprisal_audit.py` launchers,
-  run from a bare copy, exit 3 with their existing stderr prefixes and the mode
+  run from a foreign cwd (packaging stays the zero-install gate's job, §3), exit 3 with their existing stderr prefixes and the mode
   message. The semantic input must be long enough to reach the loader: at least
   two windows of 25 or more words.
 
