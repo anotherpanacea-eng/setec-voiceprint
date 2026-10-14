@@ -21,7 +21,7 @@ import stat
 import sys
 from typing import Any, Mapping, Sequence
 
-from reconstructibility_probe_set import (
+from setec.core.probe_population import (
     ProbeSetError as _PortablePathError,
     portable_collision_key,
     portable_private_relative_path_v1,

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import author_corpus_export as author_export
-import reconstructibility_probe_set as spec75
+from setec.core import probe_population as spec75
 from passage_source_population_commitment import canonical_frame_v1
 
 

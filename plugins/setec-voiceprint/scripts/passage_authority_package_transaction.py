@@ -21,7 +21,7 @@ import re
 import stat
 from typing import Any, Callable, Mapping, Sequence
 
-import reconstructibility_probe_set as spec75
+from setec.core import probe_population as spec75
 import passage_lineage_crosswalk as lineage
 from passage_remediation import (
     PinnedPrivateRoot,
