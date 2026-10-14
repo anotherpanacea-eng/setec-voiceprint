@@ -942,6 +942,10 @@ CONSUMER_JSON_INPUTS = {
         {"phrase": "the old mill"}, {"phrase": "nobody came"},
         {"phrase": "the lamps were lit"}]},
     "consumer-distance.json": {"overall": {"weighted_delta": 2.0}},
+    # The synthetic six-family request the s5_distance contract tests use.
+    "consumer-s5-request.json": json.loads(
+        (PLUGIN_ROOT / "scripts" / "tests" / "fixtures" / "s5_distance_request.json")
+        .read_text(encoding="utf-8")),
 }
 # Marked prose for position_pair_register's mock judge, which pairs only
 # passages tagged [[pair=<id> side=<a|b> q=<question>]].
@@ -973,14 +977,19 @@ CONSUMER_CASES = [
     {"case": "mimicry", "id": "mimicry_cosplay_audit",
      "args": ["--target", "consumer-input.txt", "--idiolect-json", "consumer-idiolect.json",
               "--voice-distance-json", "consumer-distance.json"], "exit": 0},
-    # Tier 2 is spaCy POS output, which moves with the installed model.
+    # Tier 2 is spaCy POS output, which moves with the installed model; Tier 3
+    # and FKGL change when sentence_transformers or textstat is installed.
     {"case": "variance", "id": "variance_audit",
-     "args": ["consumer-input.txt", "--no-tier2"], "exit": 0},
+     "args": ["consumer-input.txt", "--no-tier2", "--no-tier3"], "exit": 0,
+     "normalize": ["results.audit.tier1.fkgl"]},
     {"case": "agd_mock", "id": "agd_move_scan",
      "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0},
     {"case": "position_pairs_mock", "id": "position_pair_register",
      "args": ["consumer-pairs.txt", "--judge", "mock"], "exit": 0,
      "normalize": ["results.run_timestamp_utc"]},
+    # implementation_sha256 hashes the surface's own source, so any edit moves it.
+    {"case": "s5", "id": "s5_distance", "args": ["consumer-s5-request.json"], "exit": 0,
+     "normalize": ["results.implementation_sha256"]},
     # POS and dependency families need spaCy, which moves with the installed model.
     {"case": "voice_profile", "id": "voice_profile",
      "args": ["--baseline-dir", "consumer-baseline", "--no-spacy", "--char-top", "20"],
@@ -990,7 +999,7 @@ CONSUMER_CASES = [
 PENDING_CONSUMERS = frozenset({
     "author_corpus_export", "binoculars_audit", "general_imposters",
     "gmail_author_pipeline", "idiolect_detector", "pov_voice_profile",
-    "s5_distance", "voice_distance", "voice_fingerprint",
+    "voice_distance", "voice_fingerprint",
 })
 
 
