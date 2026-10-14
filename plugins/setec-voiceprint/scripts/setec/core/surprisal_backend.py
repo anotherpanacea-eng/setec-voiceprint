@@ -52,6 +52,8 @@ The module does NOT manage:
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -357,6 +359,9 @@ class SurprisalBackend:
         ``SurprisalBackendError`` on any failure with a message
         naming the failure mode.
         """
+        if os.environ.get("setec_hermetic_backend") == "stub":
+            raise SurprisalBackendError(
+                "setec_hermetic_backend=stub: the surprisal backend is disabled.")
         if self._model is not None and self._tokenizer is not None:
             return self._model, self._tokenizer
         try:
