@@ -16,9 +16,9 @@ cases without models installed, and check their exact envelopes.
 
 | Boundary (main `606583a6`) | Refuse before |
 |---|---|
-| `setec/core/judge_backends.py:199` `make_api_judge` | `_provider_setup` (line 219), for every member of `PROVIDERS` |
-| `setec/core/embedding_backend.py:236` `EmbeddingBackend._load` | the cached `_model` return (line 247) and the import (line 250) |
-| `setec/core/surprisal_backend.py:351` `SurprisalBackend._load` | the cached return (line 360) and the import (line 363) |
+| `plugins/setec-voiceprint/scripts/setec/core/judge_backends.py:199` `make_api_judge` | `_provider_setup` (line 219), for every member of `PROVIDERS` |
+| `plugins/setec-voiceprint/scripts/setec/core/embedding_backend.py:236` `EmbeddingBackend._load` | the cached `_model` return (line 247) and the import (line 250) |
+| `plugins/setec-voiceprint/scripts/setec/core/surprisal_backend.py:351` `SurprisalBackend._load` | the cached return (line 360) and the import (line 363) |
 
 1. The mode is on only when `os.environ.get("setec_hermetic_backend") == "stub"`,
    read at each call.
@@ -29,7 +29,7 @@ cases without models installed, and check their exact envelopes.
 3. With the mode off, behavior is unchanged. Mock and manifest judges don't go
    through `make_api_judge`, so they keep working under the mode.
 
-**Tests** (`scripts/tests/test_hermetic_backends.py`):
+**Tests** (`plugins/setec-voiceprint/scripts/tests/test_hermetic_backends.py`):
 
 - Under the mode, each of the four providers and both loaders refuses before a
   tripwire import or fake SDK is touched, including when a model is already cached.
@@ -50,12 +50,12 @@ boundary.
 
 | Site | Constructs |
 |---|---|
-| `setec/surfaces/voice_fingerprint.py:196, 266, 322, 414` | four encoders |
-| `setec/surfaces/edit_magnitude_audit.py:133, 135` | tokenizer and classifier |
-| `setec/surfaces/variance_audit.py:572` | `SentenceTransformer` |
-| `setec/surfaces/rewriting_invariance_audit.py:228` | Anthropic client |
-| `setec/calibration/storyscope_atlas.py:710, 734` | Anthropic calls |
-| `replication/stages/a1_prompt_extraction.py:120, 149` | Anthropic and OpenAI clients |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/voice_fingerprint.py:196, 266, 322, 414` | four encoders |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/edit_magnitude_audit.py:133, 135` | tokenizer and classifier |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/variance_audit.py:572` | `SentenceTransformer` |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/rewriting_invariance_audit.py:228` | Anthropic client |
+| `plugins/setec-voiceprint/scripts/setec/calibration/storyscope_atlas.py:710, 734` | Anthropic calls |
+| `plugins/setec-voiceprint/scripts/replication/stages/a1_prompt_extraction.py:120, 149` | Anthropic and OpenAI clients |
 
 ## 3. Consumer-case table (later PRs, one family each)
 
