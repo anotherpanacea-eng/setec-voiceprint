@@ -961,13 +961,18 @@ CONSUMER_CASES = [
     {"case": "mimicry", "id": "mimicry_cosplay_audit",
      "args": ["--target", "consumer-input.txt", "--idiolect-json", "consumer-idiolect.json",
               "--voice-distance-json", "consumer-distance.json"], "exit": 0},
+    # Tier 2 is spaCy POS output, which moves with the installed model.
+    {"case": "variance", "id": "variance_audit",
+     "args": ["consumer-input.txt", "--no-tier2"], "exit": 0},
+    {"case": "agd_mock", "id": "agd_move_scan",
+     "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0},
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
-    "agd_move_scan", "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
+    "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
     "general_imposters", "gmail_author_pipeline", "idiolect_detector",
     "position_pair_register", "pov_voice_profile", "restoration_packet", "s5_distance",
-    "validation_harness", "variance_audit", "voice_distance", "voice_fingerprint",
+    "validation_harness", "voice_distance", "voice_fingerprint",
     "voice_profile",
 })
 
