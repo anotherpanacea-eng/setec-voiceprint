@@ -326,3 +326,40 @@ def test_content_hash_dedup_missing_txt_is_not_a_duplicate(tmp_path):
         ac.content_hash_already_present(piece.content_hash, tmp_path)
         is None
     )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_acquired_files_are_owner_only_under_a_permissive_umask(tmp_path):
+    """Private corpus files never land group/world-readable, whatever the umask.
+
+    Under umask 022 the writers used to leave 0644 files and 0755 directories,
+    which the Gmail pipeline then refused as its own artifacts. A directory that
+    already exists is left exactly as it was.
+    """
+    import stat
+
+    def mode(path):
+        return stat.S_IMODE(path.stat().st_mode)
+
+    existing = tmp_path / "existing"
+    existing.mkdir(mode=0o755)
+    existing.chmod(0o755)
+    old = os.umask(0o022)
+    try:
+        text, meta = ac.write_piece(_piece("alpha " * 50), output_dir=existing / "new" / "pieces",
+                                    scraper_version="t")
+        manifest = existing / "manifests" / "draft.jsonl"
+        ac.append_manifest_entry(manifest, {"id": "x"})
+        ac.append_manifest_entry(manifest, {"id": "y"}, fsync=True)
+        names = ac.StableRedactionMap(existing / "maps" / "names.json", label_prefix="r")
+        names.save()
+        names.save(fsync=True)
+    finally:
+        os.umask(old)
+    assert mode(existing) == 0o755
+    for directory in (existing / "new", existing / "new" / "pieces", existing / "manifests",
+                      existing / "maps"):
+        assert mode(directory) == 0o700, directory
+    for path in (text, meta, manifest, existing / "maps" / "names.json"):
+        assert mode(path) == 0o600, path
+    assert manifest.read_text(encoding="utf-8").count("\n") == 2
