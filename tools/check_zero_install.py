@@ -950,14 +950,13 @@ CONSUMER_CASES = [
      "normalize": ["results.run_timestamp_utc"]},
     {"case": "repetition", "id": "repetition_audit",
      "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline"], "exit": 0},
-    {"case": "mimicry", "id": "mimicry_cosplay_audit",
-     "args": ["--target", "consumer-input.txt"], "exit": 0},
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
     "agd_move_scan", "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
     "general_imposters", "gmail_author_pipeline", "idiolect_detector",
-    "position_pair_register", "pov_voice_profile", "restoration_packet", "s5_distance",
+    "mimicry_cosplay_audit", "position_pair_register", "pov_voice_profile",
+    "restoration_packet", "s5_distance",
     "validation_harness", "variance_audit", "voice_distance", "voice_fingerprint",
     "voice_profile",
 })
@@ -970,6 +969,17 @@ def _blank(envelope: dict, dotted: str) -> None:
         node = node.get(key) if isinstance(node, dict) else None
     if isinstance(node, dict) and leaf in node:
         node[leaf] = None
+
+
+def _posix_strings(value):
+    """Native Windows paths in an envelope, compared in POSIX form."""
+    if isinstance(value, str):
+        return value.replace("\\", "/")
+    if isinstance(value, list):
+        return [_posix_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _posix_strings(item) for key, item in value.items()}
+    return value
 
 
 def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> None:
@@ -1007,6 +1017,8 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
         except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
             report.add(name, False, str(exc))
             continue
+        if os.sep == "\\":
+            actual = _posix_strings(actual)
         for dotted in row.get("normalize", []):
             _blank(actual, dotted)
             _blank(expected, dotted)

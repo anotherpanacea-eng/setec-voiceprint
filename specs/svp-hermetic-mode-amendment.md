@@ -74,8 +74,8 @@ boundary.
 - **Coverage:** every capability ID whose `consumers` include apodictic or
   setec-voicewright must be in the table or in `PENDING_CONSUMERS`. When that
   set is empty, the card is done. Unit 2 cased four IDs (punctuation, manuscript, narrative decision with a mock judge
-  and with a stub-refused API judge, argument decision); unit 3 added repetition and
-  mimicry against a small synthetic baseline folder. 16 are pending. `voice_distance`
+  and with a stub-refused API judge, argument decision); unit 3 added repetition against a small synthetic baseline folder. 17 are pending;
+  mimicry needs synthetic idiolect and distance inputs to be a real case. `voice_distance`
   waits on a fix for its nondeterministic tie ordering.
 
 Out of scope: routing the §2 sites, capability promotion, schema changes, and
