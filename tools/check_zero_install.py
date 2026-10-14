@@ -45,6 +45,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -1000,6 +1001,13 @@ CONSUMER_CASES = [
     {"case": "s5", "id": "s5_distance", "args": ["consumer-s5-request.json"], "exit": 0,
      "normalize": ["results.implementation_sha256"]},
     # POS and dependency families need spaCy, which moves with the installed model.
+    {"case": "author_export", "id": "author_corpus_export",
+     "args": ["--source-manifest", "gmail_sent=ai-prose-baselines-private/gmail_sent/draft_manifest.jsonl",
+              "--register-map", "gmail_sent:personal=email.personal",
+              "--allowed-ai-status", "pre_ai_human", "--persona", "fixture_persona",
+              "--hmac-key", "ai-prose-baselines-private/export.key",
+              "--output-dir", "ai-prose-baselines-private/export", "--dry-run"],
+     "exit": 0, "normalize": ["results.producer_receipt.producer_revision"]},
     {"case": "general_imposters", "id": "general_imposters",
      "args": ["--target", "consumer-input.txt", "--manifest", "consumer-gi.jsonl",
               "--candidate-persona", "cand"], "exit": 0},
@@ -1015,7 +1023,7 @@ CONSUMER_CASES = [
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
-    "author_corpus_export", "binoculars_audit", "gmail_author_pipeline",
+    "binoculars_audit", "gmail_author_pipeline",
     "pov_voice_profile", "voice_fingerprint",
 })
 
@@ -1038,6 +1046,39 @@ def _posix_strings(value):
     if isinstance(value, dict):
         return {_posix_strings(key): _posix_strings(item) for key, item in value.items()}
     return value
+
+
+def _write_author_export_inputs(outside_cwd: Path) -> None:
+    """One synthetic gmail_sent source, a 0600 HMAC key and an output folder,
+    inside a private root, in the shape the exporter's own tests use."""
+    root = outside_cwd / "ai-prose-baselines-private"
+    source = root / "gmail_sent"
+    source.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o700)
+    text = "Email message words in a somewhat more deliberate synthetic rhythm."
+    (source / "piece.txt").write_bytes(text.encode("utf-8"))
+    content_hash = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+    (source / "piece.meta.json").write_text(json.dumps({
+        "content_hash": content_hash,
+        "author_corpus_thread_locator": "sha256:" + "3" * 64,
+        "author_corpus_entry_locator": "sha256:" + "4" * 64,
+        "author_corpus_order_timestamp": "2017-01-02T12:00:00+00:00",
+    }), encoding="utf-8")
+    entry = {
+        "id": "gmail_sent-1", "path": "piece.txt", "author": "Synthetic Author",
+        "persona": "fixture_persona", "register": "personal", "date_written": "2017-01-02",
+        "ai_status": "pre_ai_human", "language_status": "native", "word_count": 10,
+        "use": ["voice_profile"], "split": "baseline", "privacy": "private",
+        "content_hash": content_hash, "source": "gmail_takeout_local",
+        "corpus_role": "identity_baseline", "era": "pre_chatgpt",
+        "consent_status": "author_consent", "acquired_via": "acquire_gmail_sent_1",
+    }
+    # Bytes, not text mode: the receipt hashes the raw manifest, so no CRLF on Windows.
+    (source / "draft_manifest.jsonl").write_bytes((json.dumps(entry) + "\n").encode("utf-8"))
+    key = root / "export.key"
+    key.write_bytes(b"k" * 32)
+    if os.name != "nt":
+        key.chmod(0o600)
 
 
 def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> None:
@@ -1063,6 +1104,7 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
     (outside_cwd / "consumer-pairs.txt").write_text(CONSUMER_PAIRS_INPUT, encoding="utf-8")
     (outside_cwd / "consumer-target").mkdir(exist_ok=True)
     (outside_cwd / "consumer-target" / "t.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
+    _write_author_export_inputs(outside_cwd)
     gi_rows = [{"id": f"c{i}", "path": f"consumer-baseline/b{i}.txt", "persona": "cand",
                 "corpus_role": "identity_baseline"} for i in (0, 1)]
     gi_rows.append({"id": "p0", "path": "consumer-baseline/b2.txt", "persona": "p0",
