@@ -257,7 +257,7 @@ def test_engine_propagates_into_per_signal_namespace(
 def test_pair_extraction_fast_path_dispatches_pairs(
     hardened_run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    """When ``validation_harness.collect_signal_records`` is
+    """When ``setec.core.validation_metrics.collect_signal_records`` is
     available and the records carry the expected per_signal_scores
     structure, the dispatcher should pass ``pre_extracted_pairs``
     instead of the full records list."""
@@ -306,7 +306,7 @@ def test_pair_extraction_failure_falls_back_to_legacy(
     # Force every collect_signal_records call to raise. The dispatcher
     # should still call derive_threshold_from_records for every signal.
     monkeypatch.setattr(
-        "validation_harness.collect_signal_records",
+        "setec.core.validation_metrics.collect_signal_records",
         mock.Mock(side_effect=RuntimeError("simulated extraction failure")),
     )
     captured_calls: list[bool] = []
@@ -389,7 +389,7 @@ def test_process_executor_routes_failed_pairs_to_legacy_fallback(
     base = hardened_run["base"]
     run_id = hardened_run["run_id"]
     out = tmp_path / "agg.json"
-    import validation_harness as vh  # noqa: PLC0415
+    from setec.core import validation_metrics as vh  # noqa: PLC0415
     real_collect = vh.collect_signal_records
     fail_signal_paths = {
         "tier1.sentence_length.burstiness_B",

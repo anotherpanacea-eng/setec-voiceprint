@@ -87,7 +87,7 @@ PARENT_SCRIPTS = SCRIPT_DIR.parent
 if str(PARENT_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(PARENT_SCRIPTS))
 from setec.core.compression_thresholds import COMPRESSION_HEURISTICS  # type: ignore  # noqa: E402
-from validation_harness import load_manifest_entries  # type: ignore  # noqa: E402
+from setec.core.validation_metrics import load_manifest_entries  # type: ignore  # noqa: E402
 
 TASK_SURFACE = "smoothing_diagnosis_calibration"
 TOOL_NAME = "calibration_survey"
