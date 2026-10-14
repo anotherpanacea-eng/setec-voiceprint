@@ -31,7 +31,7 @@ SCRIPT_DIR = scripts_dir()
 from setec.contract.output_schema import build_error_output, build_output  # noqa: E402
 from setec.contract.claim_license import from_legacy  # noqa: E402
 import pool_guard  # noqa: E402
-from setec.surfaces.originality_audit import (  # noqa: E402
+from setec.core.verbatim_cover import (  # noqa: E402
     DEFAULT_MIN_NGRAM,
     _MAX_SPAN,
     _load_reference_dir,
