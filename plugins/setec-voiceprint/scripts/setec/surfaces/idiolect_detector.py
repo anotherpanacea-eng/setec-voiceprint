@@ -690,6 +690,9 @@ def score_candidates(
             }
             rows_by_side[side].append(row)
         for side, rows in rows_by_side.items():
+            # Phrase order first, so the stable score sort breaks ties the same
+            # way every run instead of in hash-seeded n-gram set order.
+            rows.sort(key=lambda r: r["phrase"])
             if side == "idiolectic":
                 rows.sort(key=lambda r: (r["score"], r["log2_ratio"], r["target_count"]), reverse=True)
             else:
@@ -749,6 +752,7 @@ def preservation_list(
         backfill: list[dict[str, Any]] = []
         for n in n_values:
             backfill.extend(rankings.get(n, {}).get("idiolectic", []))
+        backfill.sort(key=lambda r: r["phrase"])
         backfill.sort(key=lambda r: (r["score"], r["log2_ratio"], r["target_count"]), reverse=True)
         for row in backfill:
             if len(selected) >= top_total:
