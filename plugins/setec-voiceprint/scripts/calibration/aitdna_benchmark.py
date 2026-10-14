@@ -222,7 +222,7 @@ def make_membership_novelty_scorer(
     runner. ``band`` is always ``uncalibrated`` — this surface reports a
     distribution, not a per-doc verdict without an operator operating
     point (the honest-gap posture)."""
-    import originality_audit
+    from setec.core import verbatim_cover as originality_audit
 
     def score(text: str) -> dict[str, Any]:
         if not text or not text.strip():
