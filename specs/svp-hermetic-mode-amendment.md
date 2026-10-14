@@ -72,10 +72,15 @@ boundary.
   envelopes are generated once, reviewed and checked in; the gate never
   regenerates them.
 - **Coverage:** every capability ID whose `consumers` include apodictic or
-  setec-voicewright must be in the table or in `PENDING_CONSUMERS`. When that
+  setec-voicewright, and that `setec_run` can dispatch (it has `json_delivery`),
+  must be in the table or in `PENDING_CONSUMERS`. IDs without `json_delivery`
+  (`aic_pattern_audit`, `restoration_packet`, `validation_harness`) are declared
+  apodictic consumers outside the normalized dispatcher, so they have no case. When that
   set is empty, the card is done. Unit 2 cased four IDs (punctuation, manuscript, narrative decision with a mock judge
   and with a stub-refused API judge, argument decision); unit 3 added repetition against a small synthetic baseline folder; unit 4 added
-  mimicry with synthetic idiolect and distance inputs that make it flag. 16 are pending. `voice_distance`
+  mimicry with synthetic idiolect and distance inputs that make it flag; unit 5 added
+  `variance_audit` (`--no-tier2`, since spaCy POS output moves with the model) and
+  `agd_move_scan` with a mock judge. 11 are pending. `voice_distance`
   waits on a fix for its nondeterministic tie ordering.
 
 Out of scope: routing the §2 sites, capability promotion, schema changes, and
