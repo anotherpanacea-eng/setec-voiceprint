@@ -57,19 +57,25 @@ boundary.
 | `plugins/setec-voiceprint/scripts/setec/calibration/storyscope_atlas.py:710, 734` | Anthropic calls |
 | `plugins/setec-voiceprint/scripts/replication/stages/a1_prompt_extraction.py:120, 149` | Anthropic and OpenAI clients |
 
-## 3. Consumer-case table (later PRs, one family each)
+## 3. Consumer-case table (unit 2, then one family per PR)
 
-- **Format:** `tools/check_zero_install.py` gets one table format: rows of
-  `(id, argv, fixture paths, expected exit, expected envelope)`, run with real
-  `setec_run.py` in the existing `make_bare_copy` with the mode on.
-- **Migration:** existing family checks move into the table as each family is
-  done, so there aren't two formats.
-- **Comparison:** exact recursive JSON equality plus the exit code. Only the
-  path, time and version fields listed on a row may be normalized. Expected
-  envelopes are written by hand, never regenerated from the candidate.
+- **Format:** `CONSUMER_CASES` in `tools/check_zero_install.py`, rows of
+  `(case, id, args, expected exit, normalized fields)`. Each runs real
+  `setec_run.py <id> consumer-input.txt <args> --json` in the existing
+  `make_bare_copy` with the mode on. The expected envelope is
+  `tools/zero_install_cases/<case>.json`.
+- **Beside, not instead of, the packaging checks:** the existing family checks
+  test launch routes (direct, runpy, `-m`, identity) and stay as they are. The
+  table tests consumer envelopes.
+- **Comparison:** exact JSON equality plus the exit code. Only the dotted fields
+  a row lists are normalized, such as `results.run_timestamp_utc`. Expected
+  envelopes are generated once, reviewed and checked in; the gate never
+  regenerates them.
 - **Coverage:** every capability ID whose `consumers` include apodictic or
-  setec-voicewright must be in the table or in a `PENDING` set in the gate. That
-  set only shrinks. When it is empty, the card is done.
+  setec-voicewright must be in the table or in `PENDING_CONSUMERS`. That set
+  only shrinks. When it is empty, the card is done. Unit 2 cases four IDs
+  (punctuation, manuscript, narrative decision with a mock judge and with a
+  stub-refused API judge, argument decision); 18 are pending.
 
 Out of scope: routing the §2 sites, capability promotion, schema changes, and
 model or provider execution.

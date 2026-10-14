@@ -915,6 +915,88 @@ def check_non_voice_structure_conformance(bare_root: Path, outside_cwd: Path, re
                 report.add(f"{stem}:{mode}", False, str(exc))
 
 
+# ---------- consumer-case table (CB-6) ------------------------------------
+#
+# Real `setec_run.py <id> ... --json` runs, in the bare copy with
+# setec_hermetic_backend=stub, for the capabilities apodictic and
+# setec-voicewright consume. Each envelope must equal its checked-in
+# tools/zero_install_cases/<case>.json exactly, apart from the dotted fields a
+# row lists under "normalize" (set to null on both sides). Expected envelopes
+# are written once and reviewed; this gate never regenerates them.
+
+CASES_DIR = REPO_ROOT / "tools" / "zero_install_cases"
+CONSUMER_INPUT = (
+    "The river ran past the old mill. She watched it for a long time; nobody came.\n\n"
+    "Later, the lamps were lit. \"Why now?\" he asked. She did not answer.\n\n"
+) * 6
+CONSUMER_CASES = [
+    {"case": "punctuation", "id": "punctuation_cadence_audit", "args": [], "exit": 0},
+    {"case": "manuscript", "id": "manuscript_audit", "args": [], "exit": 0},
+    {"case": "narrative_mock", "id": "narrative_decision_audit",
+     "args": ["--judge", "mock"], "exit": 0, "normalize": ["results.run_timestamp_utc"]},
+    {"case": "narrative_api_refused", "id": "narrative_decision_audit",
+     "args": ["--judge", "anthropic", "--judge-model", "synthetic-model"], "exit": 3},
+    {"case": "argument_mock", "id": "argument_decision_audit",
+     "args": ["--judge", "mock"], "exit": 0, "normalize": ["results.run_timestamp_utc"]},
+]
+# Consumer IDs with no case yet. Shrink-only: add a case, then delete the ID.
+PENDING_CONSUMERS = frozenset({
+    "agd_move_scan", "aic_pattern_audit", "author_corpus_export", "binoculars_audit",
+    "general_imposters", "gmail_author_pipeline", "idiolect_detector",
+    "mimicry_cosplay_audit", "position_pair_register", "pov_voice_profile",
+    "repetition_audit", "restoration_packet", "s5_distance", "validation_harness",
+    "variance_audit", "voice_distance", "voice_fingerprint", "voice_profile",
+})
+
+
+def _blank(envelope: dict, dotted: str) -> None:
+    *parents, leaf = dotted.split(".")
+    node = envelope
+    for key in parents:
+        node = node.get(key) if isinstance(node, dict) else None
+    if isinstance(node, dict) and leaf in node:
+        node[leaf] = None
+
+
+def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> None:
+    yaml = _load_yaml()
+    consumers = set()
+    for frag in sorted((bare_root / "capabilities.d").glob("*.yaml")):
+        for entry in (yaml.safe_load(frag.read_text(encoding="utf-8")) or {}).get("entries", []):
+            if {"apodictic", "setec-voicewright"} & set(entry.get("consumers") or []):
+                consumers.add(entry["id"])
+    cased = {row["id"] for row in CONSUMER_CASES}
+    unknown = sorted((cased | PENDING_CONSUMERS) - consumers)
+    missing = sorted(consumers - cased - PENDING_CONSUMERS)
+    both = sorted(cased & PENDING_CONSUMERS)
+    report.add("consumer_cases:coverage", not (unknown or missing or both),
+               "" if not (unknown or missing or both) else
+               f"no case or pending entry: {missing}; not a consumer ID: {unknown}; "
+               f"cased but still pending: {both}")
+
+    (outside_cwd / "consumer-input.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
+    env = {**_clean_env(), "setec_hermetic_backend": "stub"}
+    for row in CONSUMER_CASES:
+        name = f"consumer_cases:{row['case']}"
+        argv = [sys.executable, str(bare_root / "scripts" / "setec_run.py"), row["id"],
+                "consumer-input.txt", *row["args"], "--json"]
+        try:
+            proc = subprocess.run(argv, cwd=outside_cwd, env=env,
+                                  capture_output=True, text=True, timeout=120)
+            actual = json.loads(proc.stdout)
+            expected = json.loads((CASES_DIR / f"{row['case']}.json").read_text(encoding="utf-8"))
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError) as exc:
+            report.add(name, False, str(exc))
+            continue
+        for dotted in row.get("normalize", []):
+            _blank(actual, dotted)
+            _blank(expected, dotted)
+        ok = proc.returncode == row["exit"] and actual == expected
+        report.add(name, ok, "" if ok else
+                   f"exit={proc.returncode} (want {row['exit']}); envelope differs from "
+                   f"tools/zero_install_cases/{row['case']}.json")
+
+
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
     tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
@@ -933,6 +1015,7 @@ def run(keep_scratch: bool = False) -> tuple[bool, Report]:
         check_argument_quality_conformance(bare_root, outside_cwd, report)
         check_argument_consistency_conformance(bare_root, outside_cwd, report)
         check_non_voice_structure_conformance(bare_root, outside_cwd, report)
+        check_consumer_cases(bare_root, outside_cwd, report)
     finally:
         if not keep_scratch:
             shutil.rmtree(tmp_root, ignore_errors=True)
