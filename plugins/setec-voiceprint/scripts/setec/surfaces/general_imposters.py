@@ -83,7 +83,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_primitives as ac  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import (  # noqa: E402
     ClaimLicense,
