@@ -216,6 +216,8 @@ def make_api_judge(
     returned callable runs one request per call. ``build_result`` is invoked as
     ``build_result(payload, raw_text, judge_identity, judge_input)``.
     """
+    if os.environ.get("setec_hermetic_backend") == "stub":
+        raise judge_error(f"setec_hermetic_backend=stub: the {provider} API judge is disabled.")
     client, call, read = _provider_setup(
         provider,
         model=model,

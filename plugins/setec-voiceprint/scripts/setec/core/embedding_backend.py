@@ -45,6 +45,8 @@ The module does NOT manage:
 
 from __future__ import annotations
 
+import os
+
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -244,6 +246,9 @@ class EmbeddingBackend:
         timeout — with a message naming the failure mode so the
         caller can surface it cleanly.
         """
+        if os.environ.get("setec_hermetic_backend") == "stub":
+            raise EmbeddingBackendError(
+                "setec_hermetic_backend=stub: the embedding backend is disabled.")
         if self._model is not None:
             return self._model
         try:
