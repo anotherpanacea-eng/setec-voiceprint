@@ -1,0 +1,20 @@
+{
+  "ai_status": null,
+  "available": false,
+  "baseline": null,
+  "claim_license": null,
+  "claim_license_rendered": null,
+  "reason": "narrative_decision_audit: invalid arguments (exit 2): usage: narrative_decision_audit.py [-h]\n                                   [--judge {manifest,mock,anthropic,openai,gemini,agent_host}]\n                                   [--judge-manifest JUDGE_MANIFEST]\n                                   [--judge-model JUDGE_MODEL]\n                                   [--judge-temperature JUDGE_TEMPERATURE]\n                                   [--judge-max-tokens JUDGE_MAX_TOKENS]\n                                   [--threshold-low THRESHOLD_LOW]\n                                   [--threshold-high THRESHOLD_HIGH]\n                                   [--out OUT] [--out-md OUT_MD] [--json]\n                                   [--licenses LICENSES]\n                                   [--does-not-license DOES_NOT_LICENSE]\n                                   [--bridge-control]\n                                   target\nnarrative_decision_audit.py: error: judge construction failed: setec_hermetic_backend=stub: the anthropic API judge is disabled.",
+  "reason_category": "bad_input",
+  "results": {},
+  "schema_version": "1.0",
+  "surface": "narrative_decision_audit",
+  "target": {
+    "path": null,
+    "words": 0
+  },
+  "task_surface": null,
+  "tool": "setec_run",
+  "version": "1.0.0",
+  "warnings": []
+}
