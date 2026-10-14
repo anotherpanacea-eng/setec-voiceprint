@@ -1008,6 +1008,17 @@ CONSUMER_CASES = [
               "--hmac-key", "ai-prose-baselines-private/export.key",
               "--output-dir", "ai-prose-baselines-private/export", "--dry-run"],
      "exit": 0, "normalize": ["results.producer_receipt.producer_revision"]},
+    # A real stage-01 run under the default umask: it completes only because
+    # acquisition writes owner-only artifacts. The descriptor carries a timestamp
+    # and the manifest the acquisition date, so their identities (and the domain
+    # and lineage hashes over them) are normalized; the config identity and the
+    # artifact set are pinned.
+    {"case": "gmail_pipeline_smoke", "id": "gmail_author_pipeline",
+     "args": ["--request", "ai-prose-baselines-private/pipeline/runs/one/request.json"], "exit": 0,
+     "normalize": ["results.domain_receipts.0.domain_identity",
+                   "results.lineage_receipt_sha256",
+                   "results.output_identities.0.identity",
+                   "results.output_identities.1.identity"]},
     {"case": "general_imposters", "id": "general_imposters",
      "args": ["--target", "consumer-input.txt", "--manifest", "consumer-gi.jsonl",
               "--candidate-persona", "cand"], "exit": 0},
@@ -1023,16 +1034,19 @@ CONSUMER_CASES = [
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
 PENDING_CONSUMERS = frozenset({
-    "binoculars_audit", "gmail_author_pipeline",
-    "pov_voice_profile", "voice_fingerprint",
+    "binoculars_audit", "pov_voice_profile", "voice_fingerprint",
 })
 
 
 def _blank(envelope: dict, dotted: str) -> None:
+    """Null one dotted field; a numeric segment indexes a list."""
     *parents, leaf = dotted.split(".")
     node = envelope
     for key in parents:
-        node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, list) and key.isdigit() and int(key) < len(node):
+            node = node[int(key)]
+        else:
+            node = node.get(key) if isinstance(node, dict) else None
     if isinstance(node, dict) and leaf in node:
         node[leaf] = None
 
@@ -1081,6 +1095,55 @@ def _write_author_export_inputs(outside_cwd: Path) -> None:
         key.chmod(0o600)
 
 
+def _write_gmail_pipeline_inputs(outside_cwd: Path) -> None:
+    """A one-message synthetic Sent mbox, an HMAC key and a stage-01 request for
+    gmail_author_pipeline, all owner-only, in the shape its own tests use."""
+    # The acquirer writes only under a directory named ai-prose-baselines-private.
+    private = outside_cwd / "ai-prose-baselines-private"
+    root = private / "pipeline"
+    run = root / "runs" / "one"
+    run.mkdir(parents=True, exist_ok=True)
+    for path in (private, root, root / "runs", run):
+        path.chmod(0o700)
+    mbox = ("From owner@example.test Mon Jan 04 12:00:00 2021\n"
+            "From: Synthetic Owner <owner@example.test>\nTo: friend@example.test\n"
+            "Subject: Synthetic note\nDate: Mon, 04 Jan 2021 12:00:00 +0000\n"
+            "Message-ID: <synthetic-1@example.test>\nX-Gmail-Labels: Sent\n"
+            "Content-Type: text/plain; charset=utf-8\n\n"
+            "The river ran past the old mill and nobody came, so I wrote this note anyway.\n\n")
+    source = {
+        "adapter": "gmail_takeout_sent/1", "mbox": "source.mbox",
+        "own_addresses": ["owner@example.test"], "persona": "synthetic-author",
+        "author": None, "register": "personal", "since": None, "until": None,
+        "sent_label_token": "Sent", "recipient_map": None, "name_map": None,
+        "own_signature_lines": None, "consent_status": "author_consent",
+        "min_words_per_piece": 1, "max_items": 5, "allow_empty": False,
+        "output_dir": "acquired", "manifest": "acquired/source.jsonl",
+        "smoke_dir": "smoke", "smoke_since": "2020-01-01", "smoke_until": None,
+    }
+    corpus = {
+        "strict_manifest": True, "check_conflict_copies": True,
+        "dedup_manifest": "acquired/dedup.jsonl", "dedup_report": "dedup-report.json",
+        "dedup_threshold": 0.8, "dedup_num_perm": 8, "dedup_shingle_size": 2,
+        "hmac_key": "hmac.key", "allowed_ai_status": ["unknown"],
+        "register_map": {"personal": "email.personal"},
+        "package_smoke_dir": "packages/smoke", "package_dir": "packages/full",
+        "producer_envelope": "producer-envelope.json",
+        "smoke_max_records": 1, "smoke_max_text_bytes": 128,
+    }
+    request = {
+        "schema": "setec-gmail-author-pipeline-request/1", "action": "run",
+        "stage_id": "01_source_smoke", "private_root": str(root), "run_root": "runs/one",
+        "config": {"source": source, "corpus": corpus}, "prior": [],
+    }
+    for path, data in ((root / "source.mbox", mbox.encode("utf-8")),
+                       (root / "hmac.key", b"k" * 32),
+                       (run / "request.json",
+                        json.dumps(request, sort_keys=True, separators=(",", ":")).encode("utf-8"))):
+        path.write_bytes(data)
+        path.chmod(0o600)
+
+
 def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> None:
     yaml = _load_yaml()
     consumers = set()
@@ -1105,6 +1168,7 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
     (outside_cwd / "consumer-target").mkdir(exist_ok=True)
     (outside_cwd / "consumer-target" / "t.txt").write_text(CONSUMER_INPUT, encoding="utf-8")
     _write_author_export_inputs(outside_cwd)
+    _write_gmail_pipeline_inputs(outside_cwd)
     gi_rows = [{"id": f"c{i}", "path": f"consumer-baseline/b{i}.txt", "persona": "cand",
                 "corpus_role": "identity_baseline"} for i in (0, 1)]
     gi_rows.append({"id": "p0", "path": "consumer-baseline/b2.txt", "persona": "p0",
