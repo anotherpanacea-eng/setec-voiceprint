@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Optional
 
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_core as ac  # noqa: E402
 import atomic_publish  # noqa: E402
 
 

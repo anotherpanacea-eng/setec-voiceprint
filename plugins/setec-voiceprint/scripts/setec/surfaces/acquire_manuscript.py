@@ -43,7 +43,7 @@ from setec.paths import scripts_dir
 
 SCRIPT_DIR = scripts_dir()
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_core as ac  # noqa: E402
 
 SOURCE_NAME = "manuscript"
 TOOL_NAME = "acquire_manuscript"
