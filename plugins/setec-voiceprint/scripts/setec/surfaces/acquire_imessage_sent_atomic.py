@@ -7548,7 +7548,7 @@ def _decode_attributed_body(blob: bytes | None) -> str:
 
 def _default_preprocessor(text: str) -> tuple[str, dict[str, Any]]:
     try:
-        import acquisition_core
+        from setec.core import acquisition_core
 
         return acquisition_core.preprocess_text(text)
     except Exception as exc:
