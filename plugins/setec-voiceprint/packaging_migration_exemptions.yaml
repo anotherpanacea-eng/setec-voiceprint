@@ -2700,19 +2700,6 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/passage_authority_package_transaction.py
-  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  edge_kind: l1_to_l2
-  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
-    \ plugins/setec-voiceprint/scripts/passage_authority_package_transaction.py imports\
-    \ L2 module plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py.\
-    \ Not yet analyzed for a specific fix (possible future direction: invert via a\
-    \ registry so the L2 module registers itself rather than the L1 module reaching\
-    \ down); captured as a baseline row rather than promising an unverified removal\
-    \ phase."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py
   to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
   edge_kind: l1_to_l2
@@ -2722,18 +2709,6 @@ layer_exemptions:
     \ a specific fix (possible future direction: invert via a registry so the L2 module\
     \ registers itself rather than the L1 module reaching down); captured as a baseline\
     \ row rather than promising an unverified removal phase."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py
-  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  edge_kind: l1_to_l2
-  reason: "Pre-existing L1\u2192L2 dependency frozen into the P5 enforcement baseline:\
-    \ plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py imports L2 module\
-    \ plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py. Not yet analyzed\
-    \ for a specific fix (possible future direction: invert via a registry so the\
-    \ L2 module registers itself rather than the L1 module reaching down); captured\
-    \ as a baseline row rather than promising an unverified removal phase."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
@@ -3732,32 +3707,6 @@ layer_exemptions:
     \ are widely-shared L2 libraries), not migration debt -- no relocation phase clears\
     \ this row wholesale. The baseline may only shrink from here; a NEW L2\u2192L2\
     \ edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/passage_consumer_authority.py
-  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/passage_consumer_authority.py\
-    \ imports plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
-  owner: packaging
-  introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
-  removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/passage_remediation.py
-  to_path: plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py
-  edge_kind: l2_to_l2
-  reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
-    \ (specs/svp-packaging-conversion.md \xA74): plugins/setec-voiceprint/scripts/passage_remediation.py\
-    \ imports plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py directly.\
-    \ L2\u2192L2 sharing between capability-bearing surfaces is real architecture\
-    \ (e.g. acquisition_core/variance_audit are widely-shared L2 libraries), not migration\
-    \ debt -- no relocation phase clears this row wholesale. The baseline may only\
-    \ shrink from here; a NEW L2\u2192L2 edge always fails, --strict or not."
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable

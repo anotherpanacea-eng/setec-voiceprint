@@ -31,7 +31,7 @@ from passage_remediation import (
 from passage_source_population_commitment import canonical_frame_v1
 from setec.core import passage_tokenizer_v1
 from setec.core.passage_tokenizer_v1 import TokenizerDataError, load_data
-from reconstructibility_probe_set import (
+from setec.core.probe_population import (
     ProbeSetError,
     portable_collision_key,
     portable_private_relative_path_v1,
