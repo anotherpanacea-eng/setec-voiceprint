@@ -39,7 +39,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import acquisition_core as ac  # noqa: E402
+from setec.core import acquisition_primitives as ac  # noqa: E402
 
 TOOL_NAME = "gmail_locator_map"
 _META_SUFFIX = ".meta.json"
