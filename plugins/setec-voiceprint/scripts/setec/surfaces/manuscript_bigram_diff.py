@@ -48,11 +48,11 @@ from typing import Any
 
 from claim_license import ClaimLicense  # type: ignore
 from output_schema import build_baseline_metadata, build_output  # type: ignore
-from variance_audit import (  # type: ignore
-    HAS_SPACY,
+from setec.core.compression_thresholds import (  # type: ignore
     normalize_pos_bigram_counts,
     pos_bigram_kl_contributions,
 )
+from setec.core.dependency_primitives import HAS_SPACY  # type: ignore
 from bigram_diff import (  # type: ignore
     aggregate_cluster_mean,
     aggregate_cluster_pooled,
