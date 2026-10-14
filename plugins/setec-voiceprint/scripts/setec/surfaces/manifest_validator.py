@@ -49,7 +49,7 @@ from register_taxonomy import (  # type: ignore
     PROFILE_ONLY_REGISTERS,
     validate_registry_closure,
 )
-from register_sweep import (  # type: ignore
+from setec.core.register_sweep_errors import (
     BadInput,
     BIDI_CONTROLS,
     INT64_MAX,
