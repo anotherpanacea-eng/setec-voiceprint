@@ -36,11 +36,10 @@ fresh train/<date> branch. Do not make a constituent ready or merge it separatel
 
 For the train PR, replace this comment with: Included / Explicitly excluded /
 exact base + head / closed setec-merge-train/1 inventory / integration resolutions /
-local and independent-review receipts / promotion and exact-base landing plan.
+local suite result.
 
 Only an explicitly authorized urgent standalone may be made ready with the exact
-ci-ready label. Before any workflow-policy push, run the local policy mutation
-suite; draft status is not a hostile-workflow security boundary.
+ci-ready label.
 -->
 
 ## Docs freshness
