@@ -35,7 +35,7 @@ exact-head independent review. Record its exact remote head when admitted to a
 fresh train/<date> branch. Do not make a constituent ready or merge it separately.
 
 For the train PR, replace this comment with: Included / Explicitly excluded /
-exact base + head / closed setec-merge-train/1 inventory / integration resolutions /
+exact base + head / integration resolutions /
 local suite result.
 
 Only an explicitly authorized urgent standalone may be made ready with the exact
