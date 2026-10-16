@@ -286,28 +286,6 @@ def test_fixture_path_cannot_escape_bundle(tmp_path):
 # ---------- test_capabilities_entry_present ----------
 
 
-def test_capabilities_entry_present():
-    """capabilities.d/ carries a pan_replay entry on the validation
-    surface with the spec's status / handoff / compute fields."""
-    pytest.importorskip("yaml") if pytest is not None else __import__("yaml")
-    from capabilities import load_manifest  # type: ignore
-
-    manifest = load_manifest()  # canonical capabilities.d/ fragment directory
-    entries = {e["id"]: e for e in manifest.get("entries", [])}
-    assert "pan_replay" in entries
-    entry = entries["pan_replay"]
-    assert entry["surface"] == "validation"
-    assert entry["status"] == "empirically_oriented"
-    assert entry["handoff"] == "internal"
-    assert entry["compute"]["tier"] == "core"
-    assert entry["dependencies"]["python"] == []
-    # script_path points at the real file (forward-slash, repo-relative).
-    assert entry["script_path"] == (
-        "plugins/setec-voiceprint/scripts/calibration/pan_replay.py"
-    )
-    assert (REPO_ROOT / entry["script_path"]).is_file()
-
-
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

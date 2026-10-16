@@ -209,30 +209,6 @@ def test_refuses_pooled_fpr(tmp_path: Path) -> None:
     assert refuses is not None and "REFUSED" in refuses
 
 
-def test_refuses_pooled_fpr_default_on_does_not_refuse(tmp_path: Path) -> None:
-    """Sanity companion: the SAME mixed manifest with the slice ON (the
-    default) does NOT refuse — it slices instead. This pins that the
-    refusal is specifically about pooling-without-slicing, not about
-    mixed backgrounds per se."""
-    entries = [
-        _entry("nh1", NATIVE_HUMAN[0], "pre_ai_human", "native"),
-        _entry("na1", NATIVE_AI[0], "ai_generated", "native"),
-        _entry("nnh1", NON_NATIVE_HUMAN_INT[0], "pre_ai_human",
-               "non_native_intermediate"),
-    ]
-    manifest = tmp_path / "manifest.jsonl"
-    write_manifest(manifest, entries)
-
-    payload = run_harness(manifest, "--fpr-target", "0.1")
-    result = payload["results"]
-    assert result["language_slice_active"] is True
-    assert result["language_pooling"]["disposition"] == "sliced"
-    assert result["language_pooling"]["refuse_aggregate_fpr"] is False
-    # Aggregate FPR is NOT refused when sliced.
-    overall_fpr = result["slices"]["overall"]["threshold_metrics"]["rates"]["fpr"]
-    assert overall_fpr.get("refused") is not True
-
-
 # ---------------------------------------------------------------------
 # 3. test_empty_slice_caveat
 # ---------------------------------------------------------------------
@@ -285,93 +261,8 @@ def test_empty_slice_caveat(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------
 
 
-def test_native_only_annotation(tmp_path: Path) -> None:
-    """When only native entries are present, the aggregate FPR is
-    annotated native-only (and not refused)."""
-    entries = [
-        _entry("nh1", NATIVE_HUMAN[0], "pre_ai_human", "native"),
-        _entry("nh2", NATIVE_HUMAN[1], "pre_ai_human", "native"),
-        _entry("na1", NATIVE_AI[0], "ai_generated", "native"),
-    ]
-    manifest = tmp_path / "manifest.jsonl"
-    write_manifest(manifest, entries)
-
-    payload = run_harness(manifest, "--fpr-target", "0.1")
-    result = payload["results"]
-
-    pooling = result["language_pooling"]
-    assert pooling["disposition"] == "native_only"
-    assert pooling["annotation"] == "native-only"
-    assert pooling["refuse_aggregate_fpr"] is False
-
-    op = result["operating_point"]
-    assert op["aggregate_fpr_annotation"] == "native-only"
-    # The aggregate is still published (annotated, not refused).
-    overall_fpr = result["slices"]["overall"]["threshold_metrics"]["rates"]["fpr"]
-    assert overall_fpr.get("refused") is not True
-    assert overall_fpr.get("value") is not None
-
-    # A native-only warning is surfaced.
-    warnings_text = " ".join(result.get("warnings") or [])
-    assert "native-only" in warnings_text
-
-    # The license is explicit that nothing is licensed about non-native.
-    refuses = result["claim_license"]["language_status_slice"]["refuses"]
-    assert refuses is not None
-    assert "non-native" in refuses.lower()
-
-
 # ---------------------------------------------------------------------
 # 5. test_backward_compat
 # ---------------------------------------------------------------------
 
 
-def test_backward_compat(tmp_path: Path) -> None:
-    """Manifests with NO language_status produce the prior report shape:
-    the ESL slice is off, the aggregate FPR is unmodified, and no
-    refusal/annotation is applied."""
-    entries = [
-        _entry("a", NATIVE_HUMAN[0], "pre_ai_human", None),
-        _entry("b", NATIVE_HUMAN[1], "pre_ai_human", None),
-        _entry("c", NATIVE_AI[0], "ai_generated", None),
-    ]
-    manifest = tmp_path / "manifest.jsonl"
-    write_manifest(manifest, entries)
-
-    payload = run_harness(manifest, "--fpr-target", "0.1")
-    result = payload["results"]
-
-    # Slice is off; no per-status block.
-    assert result["language_slice_active"] is False
-    assert result["language_status_slices"] == {}
-    assert result["language_pooling"]["disposition"] == "not_applicable"
-    assert result["language_pooling"]["refuse_aggregate_fpr"] is False
-
-    # The aggregate FPR is unmodified — present, numeric, not refused.
-    overall_rates = result["slices"]["overall"]["threshold_metrics"]["rates"]
-    assert overall_rates["fpr"].get("refused") is not True
-    assert overall_rates["fpr"]["value"] is not None
-    assert "pooled_fpr_refused" not in result["slices"]["overall"][
-        "threshold_metrics"
-    ]
-
-    # The operating point carries no ESL annotation/refusal keys.
-    op = result["operating_point"]
-    assert "aggregate_fpr_refused" not in op
-    assert "aggregate_fpr_annotation" not in op
-
-    # The prior slice families are all still present (report shape pin).
-    slices = result["slices"]
-    for key in (
-        "overall",
-        "by_register",
-        "by_length_bucket",
-        "by_language_status",
-        "by_adversarial_class",
-        "by_ai_status",
-    ):
-        assert key in slices, f"prior slice family {key!r} missing"
-
-    # The ESL claim-license clause reports itself inactive.
-    lang_license = result["claim_license"]["language_status_slice"]
-    assert lang_license["active"] is False

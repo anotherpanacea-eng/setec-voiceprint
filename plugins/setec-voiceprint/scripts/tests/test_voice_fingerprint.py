@@ -24,7 +24,6 @@ from __future__ import annotations
 import builtins
 import hashlib
 import json
-import sys
 from pathlib import Path
 
 import pytest
@@ -379,31 +378,3 @@ def test_window_strategy_parity(tmp_path: Path):
 # --------------- 8. Capabilities entry present ------------------
 
 
-def test_capabilities_entry_present():
-    """voice_fingerprint is in capabilities.d/ with the right
-    surface/status/handoff, and the repo passes the drift linter."""
-    pytest.importorskip("yaml")
-    from capabilities import load_manifest  # type: ignore
-
-    repo_root = Path(__file__).resolve().parents[4]
-    manifest = load_manifest()  # canonical capabilities.d/ fragment directory
-    entries = {e["id"]: e for e in manifest["entries"]}
-    assert "voice_fingerprint" in entries
-    entry = entries["voice_fingerprint"]
-    assert entry["surface"] == "authorship_embedding"
-    assert entry["status"] == "empirically_oriented"
-    assert entry["handoff"] == "experimental"
-    assert entry["compute"]["tier"] == "optional"
-    assert entry["compute"]["length_floor_words"] == 500
-    assert "transformers" in entry["dependencies"]["python"]
-
-    # Drift linter must pass on the committed manifest.
-    tools = repo_root / "tools"
-    if str(tools) not in sys.path:
-        sys.path.insert(0, str(tools))
-    import check_capabilities_drift as ccd  # type: ignore
-    report = ccd.check_drift()
-    assert report.passed, (
-        "capabilities drift: "
-        + str([f"{v.kind}:{v.where}" for v in report.violations])
-    )

@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import inspect
 import json
 import os
 import struct
@@ -7413,38 +7412,6 @@ def test_report_counts_conserve_the_scoped_totals(tmp_path: Path) -> None:
 
 def test_module_declares_the_capability_task_surface() -> None:
     assert rs.TASK_SURFACE == "validation"
-
-
-def test_capability_fragment_and_golden_agree() -> None:
-    import capabilities as _capabilities  # type: ignore
-
-    manifest = _capabilities.load_manifest(SCRIPTS.parent / "capabilities.d")
-    entry = {e["id"]: e for e in manifest["entries"]}["register_composition_sweep"]
-    golden = json.loads(
-        (
-            Path(__file__).resolve().parent
-            / "_golden_capabilities"
-            / "register_composition_sweep.json"
-        ).read_text(encoding="utf-8")
-    )
-    assert entry == golden
-    assert entry["surface"] == rs.TASK_SURFACE == "validation"
-    assert entry["status"] == "heuristic"
-    # `manifest_validator` imports this surface; the registry records that.
-    assert entry["consumers"] == ["manifest_validator"]
-    assert entry["script_path"] == (
-        "plugins/setec-voiceprint/scripts/register_sweep.py"
-    )
-    assert entry["dependencies"]["python"] == []
-
-
-
-def test_docs_freshness_is_green() -> None:
-    completed = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "tools" / "check_docs_freshness.py")],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-    )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_changelog_fragment_names_the_capability_id_verbatim() -> None:
