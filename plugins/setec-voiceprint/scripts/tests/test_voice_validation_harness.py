@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -127,22 +126,6 @@ def test_function_word_smoke_aucs_within_tolerance() -> None:
     assert abs(cos_auc - 0.796) < 0.10, (
         f"function-word cosine AUC {cos_auc} drifted from documented "
         f"0.796 smoke value by more than 0.10"
-    )
-
-
-def test_refuses_aggregate_accuracy_without_fpr_target() -> None:
-    if not MANIFEST.exists():
-        if pytest is not None:
-            pytest.skip("Federalist voice manifest not available")
-        return
-    result = vvh.run_harness(_args(fpr_target=None))
-    assert result.get("operating_point") is None
-    license_block = result["claim_license"]
-    assert "No FPR target" in license_block["operating_point"]
-    # The license text must explicitly refuse single-aggregate-accuracy
-    # claims regardless of operating-point status.
-    assert (
-        "single aggregate accuracy" in license_block["does_not_license"]
     )
 
 

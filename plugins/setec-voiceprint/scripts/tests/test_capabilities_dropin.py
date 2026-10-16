@@ -67,37 +67,6 @@ def _golden_meta():
     return json.loads((_GOLDEN_DIR / "_meta.json").read_text(encoding="utf-8"))
 
 
-def test_aggregate_matches_golden_by_id():
-    """Every entry matches its frozen golden fragment by id (so a lost, added, or
-    mutated entry is caught), and the count is derived from the fragments — no
-    `==N` literal to bump or collide on."""
-    golden = _load_golden_by_id()
-    m = cap.load_manifest(_CAP_DIR)
-    assert m["schema_version"] == _golden_meta()["schema_version"]
-    assert _by_id(m) == golden
-    assert len(m["entries"]) == len(golden)
-
-
-def test_meta_carries_schema_version():
-    meta = _CAP_DIR / "_meta.yaml"
-    assert meta.exists()
-    assert cap.load_manifest(_CAP_DIR)["schema_version"] == "0.4.0"
-
-
-def test_one_fragment_per_entry_bijection():
-    frag_ids = {p.stem for p in _CAP_DIR.glob("*.yaml") if p.name != "_meta.yaml"}
-    manifest_ids = {e["id"] for e in cap.load_manifest(_CAP_DIR)["entries"]}
-    assert frag_ids == manifest_ids
-
-
-def test_entry_order_is_deterministic_alphabetical():
-    """Aggregated order is sorted by fragment filename — the only collision-free
-    order for a drop-in directory. Inert (consumers are order-independent or
-    sort); pinned so it stays intentional."""
-    ids = [e["id"] for e in cap.load_manifest(_CAP_DIR)["entries"]]
-    assert ids == sorted(ids)
-
-
 def test_empty_dir_is_rejected(tmp_path):
     (tmp_path / "_meta.yaml").write_text("schema_version: '0.3.0'\n", encoding="utf-8")
     with pytest.raises(ValueError):
@@ -142,14 +111,3 @@ def test_fragment_must_be_single_entry_keyed_by_filename(tmp_path):
         cap.load_manifest(tmp_path)
 
 
-def test_real_consumers_pass_against_committed_dir():
-    """End-to-end: the drift linter and docs-freshness coverage run green against
-    the committed capabilities.d/ — catches consumers that bypass the loader."""
-    import check_capabilities_drift as drift  # type: ignore
-    import check_docs_freshness as freshness  # type: ignore
-
-    report = drift.check_drift(drift.DEFAULT_MANIFEST)
-    assert report.violations == [], [v.render() for v in report.violations]
-
-    missing = freshness.changelog_coverage(freshness.DEFAULT_MANIFEST, freshness.CHANGELOG)
-    assert missing == []

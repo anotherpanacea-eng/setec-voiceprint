@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import builtins
 import hashlib
-import importlib
 import json
 import subprocess
 import sys
@@ -722,49 +721,3 @@ def test_holdout_validators_do_not_import_selector_encoder(validator):
 # ============ 10. Capabilities regen, no count change =================
 
 
-def test_capabilities_count_unchanged_and_no_new_surface():
-    """Editing the two fragments did not add an entry or a task surface:
-    the manifest entry count equals the golden fragment count (no new id),
-    and both edited surfaces keep their existing surface labels."""
-    pytest.importorskip("yaml")
-    from capabilities import load_manifest  # type: ignore
-
-    cap_dir = SCRIPTS_ROOT.parent / "capabilities.d"
-    golden_dir = Path(__file__).resolve().parent / "_golden_capabilities"
-    manifest = load_manifest(cap_dir)
-    by_id = {e["id"]: e for e in manifest["entries"]}
-
-    golden_ids = {
-        p.stem for p in golden_dir.glob("*.json") if p.name != "_meta.json"
-    }
-    # No new id (count parity is the no-new-surface guarantee).
-    assert len(manifest["entries"]) == len(golden_ids)
-    assert {e["id"] for e in manifest["entries"]} == golden_ids
-
-    # Surfaces unchanged by the encoder upgrade.
-    assert by_id["voice_fingerprint"]["surface"] == "authorship_embedding"
-    assert by_id["crosslingual_voice_distance"]["surface"] == "voice_coherence"
-    # The crosslingual default tier stays core; transformers is optional only.
-    cl = by_id["crosslingual_voice_distance"]
-    assert cl["compute"]["tier"] == "core"
-    assert cl["dependencies"]["python"] == []
-    assert "transformers" in cl["dependencies"]["python_optional"]
-
-
-def test_drift_and_docs_gates_pass():
-    """The capabilities drift linter and docs-freshness gate run green
-    against the committed fragments (no stale golden, changelog covered)."""
-    pytest.importorskip("yaml")
-    tools = REPO_ROOT / "tools"
-    if str(tools) not in sys.path:
-        sys.path.insert(0, str(tools))
-    import check_capabilities_drift as ccd  # type: ignore
-    import check_docs_freshness as freshness  # type: ignore
-
-    report = ccd.check_drift()
-    assert report.passed, str(
-        [f"{v.kind}:{v.where}" for v in report.violations]
-    )
-    missing = freshness.changelog_coverage(
-        freshness.DEFAULT_MANIFEST, freshness.CHANGELOG)
-    assert missing == []

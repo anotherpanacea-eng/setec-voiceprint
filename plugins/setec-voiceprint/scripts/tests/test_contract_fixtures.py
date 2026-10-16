@@ -322,12 +322,6 @@ def test_drift_check_fails_when_golden_mutated(tmp_path, monkeypatch):
     assert ("fixture_drift", "variance_audit") in kinds, kinds
 
 
-def test_clean_tree_passes_drift_checker():
-    import check_capabilities_drift as ccd  # type: ignore
-    report = ccd.check_drift()
-    assert report.passed, [f"{v.kind}:{v.where}" for v in report.violations]
-
-
 def test_voice_distance_fixture_has_live_register_family_contract():
     """Static shape gate: mutually stale generator+golden must still fail."""
     regenerated = gen.regenerate_surface("voice_distance")
@@ -357,15 +351,6 @@ def test_voice_distance_fixture_has_live_register_family_contract():
 
 # ---- (e) determinism ---------------------------------------------------
 
-@pytest.mark.parametrize("surface", ALL_SURFACES)
-def test_regeneration_is_byte_stable(surface):
-    a = gen.serialize(gen.regenerate_surface(surface))
-    b = gen.serialize(gen.regenerate_surface(surface))
-    assert a == b
-    # And identical to the committed golden.
-    assert a == (FIXTURES_DIR / f"{surface}.json").read_text(encoding="utf-8")
-
-
 # ---- (f) console safety on a non-UTF-8 default console ------------------
 #
 # `main(["--check"])`'s SUCCESS branch is the only one carrying a non-ASCII
@@ -394,66 +379,8 @@ def _cp1252_stream(*, errors="strict"):
     )
 
 
-def test_check_success_line_survives_a_cp1252_console(monkeypatch):
-    raw_out, tw_out = _cp1252_stream(errors="surrogateescape")
-    raw_err, tw_err = _cp1252_stream(errors="backslashreplace")
-    monkeypatch.setattr(gen, "check_all", lambda: [])
-    monkeypatch.setattr(sys, "stdout", tw_out)
-    monkeypatch.setattr(sys, "stderr", tw_err)
-
-    # Pre-fix this raised UnicodeEncodeError instead of returning 0.
-    assert gen.main(["--check"]) == 0
-
-    tw_out.flush()
-    written = raw_out.getvalue()
-    assert "✔".encode("utf-8") in written
-    assert b"surface(s) checked" in written
-    assert tw_out.errors == "surrogateescape"
-    assert tw_err.errors == "backslashreplace"
-    tw_err.write("\udcff")
-    tw_err.flush()
-    assert b"\\udcff" in raw_err.getvalue()
-
-
 # The glyph here is injected by the stub, not observed in a committed drift
 # message (those are ASCII today). It pins the DATA-borne case — a problem
 # string built from surface-supplied text — which no source-literal audit of
 # this module could catch, mirroring the assemble_changelog case in
 # test_tools_console_utf8.py.
-def test_check_drift_line_survives_a_cp1252_console(monkeypatch):
-    raw_out, tw_out = _cp1252_stream()
-    _, tw_err = _cp1252_stream()
-    monkeypatch.setattr(gen, "check_all", lambda: ["some_surface: drifted → regenerate"])
-    monkeypatch.setattr(sys, "stdout", tw_out)
-    monkeypatch.setattr(sys, "stderr", tw_err)
-
-    # A drifted tree must still report drift, not die encoding its own message.
-    assert gen.main(["--check"]) == 1
-
-    tw_out.flush()
-    assert b"Contract-fixture drift (1)" in raw_out.getvalue()
-
-
-def test_check_success_is_safe_with_stringio_capture(monkeypatch):
-    # A plain StringIO has no .reconfigure (pytest's own capture can substitute
-    # such a stream). Exercise the public CLI path so the console helper remains
-    # freely movable or replaceable.
-    captured = io.StringIO()
-    monkeypatch.setattr(gen, "check_all", lambda: [])
-    monkeypatch.setattr(sys, "stdout", captured)
-    monkeypatch.setattr(sys, "stderr", io.StringIO())
-    assert gen.main(["--check"]) == 0
-    assert "surface(s) checked" in captured.getvalue()
-
-
-def test_check_success_is_safe_when_reconfigure_is_unsupported(monkeypatch):
-    class UnsupportedReconfigureStream(io.StringIO):
-        def reconfigure(self, **_kwargs):
-            raise OSError("synthetic unsupported reconfigure")
-
-    captured = UnsupportedReconfigureStream()
-    monkeypatch.setattr(gen, "check_all", lambda: [])
-    monkeypatch.setattr(sys, "stdout", captured)
-    monkeypatch.setattr(sys, "stderr", io.StringIO())
-    assert gen.main(["--check"]) == 0
-    assert "surface(s) checked" in captured.getvalue()

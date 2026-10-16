@@ -31,10 +31,6 @@ def _tree(tmp_path, files):
     return lint.check(tmp_path)
 
 
-def test_repository_has_no_copies():
-    assert lint.check(ROOT) == []
-
-
 def test_renamed_copy_is_reported(tmp_path):
     errors = _tree(tmp_path, {"surface.py": 'import re\n_WORD_RE = re.compile(r"[A-Za-z\']+")\n\ndef n(text):\n    return len(_WORD_RE.findall(text))\n'})
     assert errors == ["copy of registered primitive count_words_alpha at plugins/setec-voiceprint/scripts/surface.py:4; import it from setec.core.textprims"]

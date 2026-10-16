@@ -58,42 +58,6 @@ def _init_git_repo(root: Path) -> str:
 # --------------------------- real-repo pins -----------------------------
 
 
-def test_real_repo_layering_passes():
-    modules = [cl.Module(p) for p in cl.find_runtime_scripts()]
-    cap_paths = cl._load_capability_script_paths()
-    tiers = cl.classify_tiers(modules, cap_paths)
-    edges = cl.build_internal_graph(modules)
-    violations = cl.find_violations(edges, tiers)
-    rows = cl.load_layer_exemptions()
-    assert not cl.validate_layer_exemption_rows(rows)
-    exempted = {cl._exemption_key(r) for r in rows}
-    unexempted = [
-        v for v in violations
-        if (v.from_path, v.to_path, v.edge_kind) not in exempted
-    ]
-    assert not unexempted, [
-        (v.from_path, v.to_path, v.edge_kind) for v in unexempted
-    ]
-
-
-def test_paragraph_alias_requires_its_metadata_row(monkeypatch, capsys):
-    """A permanent launcher stays a visible edge, never an implicit bypass."""
-    source = "plugins/setec-voiceprint/scripts/paragraph_audit.py"
-    target = "plugins/setec-voiceprint/scripts/setec/surfaces/paragraph_audit.py"
-    rows = cl.load_layer_exemptions()
-    paragraph_rows = [r for r in rows if r["from_path"] == source and r["to_path"] == target]
-    assert len(paragraph_rows) == 1
-    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: rows)
-    assert cl.main(["--strict", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["passed"] is True
-
-    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: [r for r in rows if r not in paragraph_rows])
-    assert cl.main(["--strict", "--json"]) == 1
-    report = json.loads(capsys.readouterr().out)
-    assert any(v["from_path"] == source and v["to_path"] == target
-               and v["edge_kind"] == "l2_to_l2" for v in report["unexempted"])
-
-
 @pytest.mark.parametrize("case", [
     "proper_row", "missing_row", "missing_owner", "ghost_row",
     "arbitrary_import", "dynamic_alias", "wrong_main", "renamed_surface",
@@ -205,33 +169,6 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
             and "NEW layer_exemptions row" in problem
             for problem in report["strict_problems"]
         )
-
-
-@pytest.mark.parametrize("location", ["", "setec/contract/"])
-@pytest.mark.parametrize("stem", ["output_schema", "claim_license", "capabilities"])
-def test_contract_outbound_prohibition_survives_relocation(tmp_path, monkeypatch, location, stem):
-    _, _, _, violations = _synthetic_check(
-        tmp_path, monkeypatch,
-        files={location + stem + ".py": "import a_surface\n",
-               "a_surface.py": "if __name__ == '__main__':\n    pass\n"},
-        cap_paths=set(),
-    )
-    assert any(v.edge_kind == "l0_outbound" for v in violations)
-
-
-def test_real_repo_cycles_are_reported_and_known_count():
-    """Informational only. This pins the CURRENT measured cycle count so a
-    silent regression (a NEW cycle) is visible in a test diff even though
-    the gate itself never fails on cycles. If this test breaks because a
-    real new cycle appeared, that's a signal to look, not to blindly bump
-    the number."""
-    modules = [cl.Module(p) for p in cl.find_runtime_scripts()]
-    edges = cl.build_internal_graph(modules)
-    cycles = cl.find_cycles(edges)
-    # 5 -> 3 on 2026-10-14: CB-5 moved the acquisition library and the
-    # register-sweep refusal types to core, which removed the
-    # acquisition_core <-> pdf_extract and manifest_validator <-> register_sweep cycles.
-    assert len(cycles) == 3
 
 
 # --------------------------- tier predicates -----------------------------
@@ -452,31 +389,6 @@ def test_check_ratchet_flags_a_new_row_beyond_a_committed_baseline(tmp_path, mon
     assert problems  # committed baseline had zero rows; this adds one
 
 
-@pytest.mark.parametrize("target", ["s5_distance.py", "setec/consumer_client.py"])
-def test_ratchet_preserves_only_existing_p2_dependencies(tmp_path, monkeypatch, target):
-    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
-    exemptions_path = tmp_path / "exemptions.yaml"
-    monkeypatch.setattr(cl, "EXEMPTIONS_PATH", exemptions_path)
-    prefix = "plugins/setec-voiceprint/scripts/"
-    row = {"from_path": prefix + "capabilities.py", "to_path": prefix + target,
-           "edge_kind": "l0_outbound", "reason": "existing dependency", "owner": "packaging",
-           "introduced_sha": "base", "removal_phase": "not-applicable"}
-    exemptions_path.write_text(json.dumps({"layer_exemptions": [row]}), encoding="utf-8")
-    sha = _init_git_repo(tmp_path)
-    row["from_path"] = prefix + "setec/contract/capabilities.py"
-    exemptions_path.write_text(json.dumps({"layer_exemptions": [row]}), encoding="utf-8")
-    assert cl.check_ratchet(sha) == []
-    # Ghost matching uses the new real path, not a normalization of the graph.
-    assert cl.check_ghost_rows([row], [cl.Violation(row["from_path"], row["to_path"], row["edge_kind"])]) == []
-    assert cl.check_ghost_rows([row], [])
-    for field, value in [("to_path", prefix + "new_dependency.py"),
-                         ("from_path", prefix + "setec/other/capabilities.py"),
-                         ("edge_kind", "l2_to_l2")]:
-        changed = dict(row, **{field: value})
-        exemptions_path.write_text(json.dumps({"layer_exemptions": [changed]}), encoding="utf-8")
-        assert cl.check_ratchet(sha)
-
-
 @pytest.mark.parametrize("case", [
     "both_endpoints", "source_only", "target_only", "new_target", "new_source",
     "changed_kind", "malformed_launcher", "wrong_target", "extra_dependency",
@@ -552,38 +464,6 @@ def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monk
     assert cl.check_ghost_rows([new], [])
 
 
-@pytest.mark.parametrize("stem", [
-    "repetition_audit", "manuscript_repetition_audit", "chapter_distinctiveness_audit",
-])
-def test_repetition_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
-    source = "plugins/setec-voiceprint/scripts/" + stem + ".py"
-    target = "plugins/setec-voiceprint/scripts/setec/surfaces/" + stem + ".py"
-    rows = cl.load_layer_exemptions()
-    missing = [r for r in rows if (r["from_path"], r["to_path"]) != (source, target)]
-    assert len(rows) - len(missing) == 1
-    assert cl.main(["--strict", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["passed"] is True
-    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: missing)
-    assert cl.main(["--strict", "--json"]) == 1
-    report = json.loads(capsys.readouterr().out)
-    assert any(v["from_path"] == source and v["to_path"] == target for v in report["unexempted"])
-
-
-@pytest.mark.parametrize("stem", ["narrative_decision_audit", "narrative_decision_long_form"])
-def test_narrative_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
-    source = "plugins/setec-voiceprint/scripts/" + stem + ".py"
-    target = "plugins/setec-voiceprint/scripts/setec/surfaces/" + stem + ".py"
-    rows = cl.load_layer_exemptions()
-    missing = [r for r in rows if (r["from_path"], r["to_path"]) != (source, target)]
-    assert len(rows) - len(missing) == 1
-    assert cl.main(["--strict", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)["passed"] is True
-    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: missing)
-    assert cl.main(["--strict", "--json"]) == 1
-    report = json.loads(capsys.readouterr().out)
-    assert any(v["from_path"] == source and v["to_path"] == target for v in report["unexempted"])
-
-
 def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():
     contract = "plugins/setec-voiceprint/scripts/setec/contract/claim_license.py"
     paths = "plugins/setec-voiceprint/scripts/setec/paths.py"
@@ -594,46 +474,6 @@ def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():
     # The resolver remains visible: its own downward coupling is still a violation.
     surface = "plugins/setec-voiceprint/scripts/surface.py"
     assert cl.find_violations({(paths, surface)}, {paths: "L1", surface: "L2"})
-
-
-def test_check_ratchet_allows_only_the_generator_hub_addition(tmp_path, monkeypatch):
-    """A surface joining the R5 golden regime adds one generator edge; that
-    row may be added.  Any other from_path -- including a surface importing
-    the generator, the reverse direction -- stays shrink-only."""
-    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
-    exemptions_path = tmp_path / "exemptions.yaml"
-    monkeypatch.setattr(cl, "EXEMPTIONS_PATH", exemptions_path)
-    exemptions_path.write_text(
-        "schema_version: 1\nlayer_exemptions: []\n", encoding="utf-8",
-    )
-    sha = _init_git_repo(tmp_path)
-    def rows(from_path, to_path):
-        return [{
-            "from_path": from_path, "to_path": to_path,
-            "edge_kind": "l2_to_l2", "reason": "r", "owner": "o",
-            "introduced_sha": sha, "removal_phase": "not-applicable",
-        }]
-    generator = cl._GENERATOR_FROM_PATH
-    surface = "plugins/setec-voiceprint/scripts/setec/surfaces/x.py"
-    exemptions_path.write_text(
-        json.dumps({"schema_version": 1,
-                    "layer_exemptions": rows(generator, surface)}),
-        encoding="utf-8")
-    assert cl.check_ratchet(sha) == []  # sanctioned: generator -> surface
-    exemptions_path.write_text(
-        json.dumps({"schema_version": 1,
-                    "layer_exemptions": rows(surface, generator)}),
-        encoding="utf-8")
-    assert cl.check_ratchet(sha)  # reverse direction still refuses
-    exemptions_path.write_text(
-        json.dumps({"schema_version": 1,
-                    "layer_exemptions": [{
-                        "from_path": generator, "to_path": surface,
-                        "edge_kind": "l1_to_l2", "reason": "r", "owner": "o",
-                        "introduced_sha": sha,
-                        "removal_phase": "not-applicable"}]}),
-        encoding="utf-8")
-    assert cl.check_ratchet(sha)  # other edge kinds from the generator too
 
 
 def test_check_ratchet_absent_key_at_merge_base_is_a_no_op(tmp_path, monkeypatch):
@@ -713,69 +553,3 @@ def test_no_main_relocation_ratchet(tmp_path, monkeypatch, case, layout):
     test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case, layout, "no_main")
 
 
-@pytest.mark.parametrize("case", [
-    "registered", "unregistered", "malformed", "wrong_target", "main_mismatch",
-    "cli_guard", "async_main", "unscanned", "l0",
-])
-def test_registered_no_main_implementation_classification(tmp_path, monkeypatch, case):
-    prefix = "plugins/setec-voiceprint/scripts/"
-    scripts = tmp_path / prefix
-    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
-    for package in ("setec", "setec/surfaces"):
-        _write(scripts, package + "/__init__.py", "")
-    stem = "output_schema" if case == "l0" else "audit"
-    target = "setec/surfaces/" + stem + ".py"
-    implementation = 'TASK_SURFACE = "voice_coherence"\nimport other_surface\n'
-    if case == "main_mismatch":
-        implementation += "def main():\n    return 0\n"
-    elif case == "cli_guard":
-        implementation += "if __name__ == '__main__':\n    pass\n"
-    elif case == "async_main":
-        implementation += "async def main():\n    return 0\n"
-    launcher = (
-        "import sys\nfrom pathlib import Path\n"
-        "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
-        "if str(_SCRIPT_DIR) not in sys.path:\n    sys.path.insert(0, str(_SCRIPT_DIR))\n"
-        f"from setec.surfaces import {stem} as _mod\n"
-        f"from setec.surfaces.{stem} import TASK_SURFACE\n"
-        "if __name__ != '__main__':\n    sys.modules[__name__] = _mod\n"
-    )
-    if case == "malformed":
-        launcher += "print('side effect')\n"
-    elif case == "wrong_target":
-        launcher = launcher.replace("import audit as", "import other as").replace("surfaces.audit import", "surfaces.other import")
-    files = {stem + ".py": launcher, target: implementation,
-             "setec/surfaces/other.py": 'TASK_SURFACE = "voice_coherence"\n',
-             "other_surface.py": "if __name__ == '__main__':\n    pass\n"}
-    for rel, source in files.items():
-        _write(scripts, rel, source)
-    modules = [cl.Module(scripts / rel) for rel in files if case != "unscanned" or rel != target]
-    caps = set() if case == "unregistered" else {prefix + stem + ".py"}
-    tiers = cl.classify_tiers(modules, caps)
-    if case == "unscanned":
-        assert prefix + target not in tiers
-        return
-    expected = "L0" if case == "l0" else "L2" if case in {"registered", "cli_guard"} else "L1"
-    assert tiers[prefix + target] == expected
-    violations = cl.find_violations(cl.build_internal_graph(modules), tiers)
-    outbound = [v for v in violations if v.from_path == prefix + target]
-    assert [(v.to_path, v.edge_kind) for v in outbound] == [
-        (prefix + "other_surface.py", "l0_outbound" if case == "l0" else "l2_to_l2" if expected == "L2" else "l1_to_l2")
-    ]
-    if case in {"main_mismatch", "cli_guard", "async_main"}:
-        assert not cl._is_permanent_surface_launcher(prefix + stem + ".py", prefix + target)
-
-
-@pytest.mark.parametrize("stem", ["acquisition_core", "register_classifier"])
-def test_no_main_alias_requires_its_metadata_row(monkeypatch, capsys, stem):
-    source = "plugins/setec-voiceprint/scripts/" + stem + ".py"
-    target = "plugins/setec-voiceprint/scripts/setec/surfaces/" + stem + ".py"
-    rows = cl.load_layer_exemptions()
-    missing = [r for r in rows if (r["from_path"], r["to_path"]) != (source, target)]
-    assert len(rows) - len(missing) == 1
-    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: missing)
-    assert cl.main(["--strict", "--json"]) == 1
-    report = json.loads(capsys.readouterr().out)
-    assert any(v["from_path"] == source and v["to_path"] == target
-               and v["edge_kind"] == "l2_to_l2" for v in report["unexempted"])

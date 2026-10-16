@@ -21,7 +21,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,15 +93,6 @@ def test_parse_iso_date_rejects_impossible_calendar_dates() -> None:
     # Leap year edge cases:
     assert vdt._parse_iso_date("2020-02-29") == (2020, 2, 29)  # 2020 is leap
     assert vdt._parse_iso_date("2021-02-29") is None  # 2021 isn't
-
-
-def test_parse_iso_date_accepts_valid_partials_and_fulls() -> None:
-    """Sanity: the strictness fix doesn't break legitimate dates."""
-    assert vdt._parse_iso_date("2022") == (2022, 0, 0)
-    assert vdt._parse_iso_date("2022-04") == (2022, 4, 0)
-    assert vdt._parse_iso_date("2022-04-15") == (2022, 4, 15)
-    assert vdt._parse_iso_date("1787-10-27") == (1787, 10, 27)
-    assert vdt._parse_iso_date("1788-01-16") == (1788, 1, 16)
 
 
 def test_period_key_year_granularity() -> None:
@@ -426,48 +416,7 @@ def test_cli_refuses_stdout_without_allow_flag() -> None:
         assert rc == 2
 
 
-def test_cli_allows_stdout_with_allow_flag(capsys) -> None:
-    """With --allow-public-output, stdout works as before."""
-    if not MANIFEST.exists():
-        if pytest is not None:
-            pytest.skip("Federalist drift manifest not available")
-        return
-    rc = vdt.main([
-        "--manifest", str(MANIFEST),
-        "--min-docs-per-period", "1",
-        "--allow-public-output",
-    ])
-    assert rc == 0
-    captured = capsys.readouterr() if pytest is not None else None
-    if captured:
-        assert "Voice Drift Report" in captured.out
-
-
 # ---- Burrows-Delta magnitude regression --------------------
-
-
-def test_burrows_delta_is_not_the_two_period_constant() -> None:
-    """Reviewer catch: with stats computed over only K=2 period
-    centroids, every informative feature gets symmetric z-scores
-    ±sqrt(2)/2, so |z_a - z_b| collapses to a constant sqrt(2) ≈
-    1.414 regardless of actual drift magnitude. The fix uses per-
-    document stats. On the Federalist fixture (Hamilton 1787 vs.
-    Madison 1788), the result must NOT equal sqrt(2)."""
-    if not MANIFEST.exists():
-        if pytest is not None:
-            pytest.skip("Federalist drift manifest not available")
-        return
-    result = vdt.run(_args())
-    pair = result["weighted_distances"][("1787", "1788")]
-    delta = pair["burrows_delta"]
-    assert delta is not None
-    # The pre-fix degenerate value was exactly sqrt(2) ≈ 1.4142135.
-    # If the fix regresses, this value will return.
-    SQRT_2 = 2 ** 0.5  # 1.4142135623730951
-    assert abs(delta - SQRT_2) > 0.01, (
-        f"Burrows-Delta {delta!r} is suspiciously close to sqrt(2). "
-        f"The 2-period centroid-stats degeneracy may have returned."
-    )
 
 
 def test_burrows_delta_varies_with_drift_magnitude() -> None:

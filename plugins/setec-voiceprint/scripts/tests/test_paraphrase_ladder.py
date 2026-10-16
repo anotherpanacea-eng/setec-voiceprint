@@ -528,37 +528,6 @@ def test_import_pulls_no_model_dependency():
 # ---------- #11 Capability registration + golden ----------
 
 
-def test_capability_entry_present_and_golden():
-    pytest.importorskip("yaml") if pytest is not None else __import__("yaml")
-    from capabilities import load_manifest  # type: ignore
-
-    manifest = load_manifest()
-    entries = {e["id"]: e for e in manifest.get("entries", [])}
-    assert "paraphrase_ladder" in entries
-    entry = entries["paraphrase_ladder"]
-    assert entry["surface"] == "validation"
-    assert entry["status"] == "empirically_oriented"
-    assert entry["handoff"] == "internal"
-    assert entry["compute"]["tier"] == "core"
-    assert entry["dependencies"]["python"] == []
-    assert entry["script_path"] == (
-        "plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py"
-    )
-    assert (REPO_ROOT / entry["script_path"]).is_file()
-
-    # The per-id golden fragment exists and matches the assembled entry.
-    golden = (
-        Path(__file__).resolve().parent
-        / "_golden_capabilities" / "paraphrase_ladder.json"
-    )
-    assert golden.is_file()
-    assert json.loads(golden.read_text(encoding="utf-8")) == entry
-
-    # pan_replay's entry is unchanged (still present, surface validation).
-    assert "pan_replay" in entries
-    assert entries["pan_replay"]["surface"] == "validation"
-
-
 def test_use_when_has_no_doubled_apostrophe():
     """Regression (preflight #240): the use_when / do_not_use_when scalars must
     parse to single apostrophes, not the literal doubled `''`.

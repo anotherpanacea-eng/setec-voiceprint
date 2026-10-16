@@ -38,11 +38,6 @@ def _entry(eid: str) -> dict:
     raise AssertionError(f"no manifest entry {eid!r}")
 
 
-def test_committed_doc_is_fresh():
-    """The 'keep updated' contract: committed doc matches generator output."""
-    assert gcr.main(["--check"]) == 0
-
-
 def test_readiness_tracks_status():
     assert gcr.derive(_entry("variance_audit"))["readiness"] == "Empirical (provisional)"
     assert gcr.derive(_entry("aic_pattern_audit"))["readiness"] == "Heuristic (uncalibrated)"

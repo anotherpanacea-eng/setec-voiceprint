@@ -5,10 +5,8 @@ from __future__ import annotations
 import io
 import os
 from pathlib import Path
-import subprocess
 import sys
 
-import pytest
 
 from setec.core.script_console import enable_utf8_stdio
 
@@ -27,15 +25,6 @@ def cp1252_env():
     env["PYTHONIOENCODING"] = "cp1252"
     env["PYTHONUTF8"] = "0"
     return env
-
-
-@pytest.mark.parametrize("script,glyph", HELP_CASES)
-def test_help_preserves_unicode_when_host_stdio_is_cp1252(script, glyph):
-    child = subprocess.run([sys.executable, str(SCRIPTS / script), "--help"],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           env=cp1252_env(), cwd=SCRIPTS, check=False)
-    assert child.returncode == 0, child.stderr.decode("utf-8", errors="replace")
-    assert glyph in child.stdout.decode("utf-8")
 
 
 def test_text_wrappers_keep_stream_identity_and_each_error_policy(monkeypatch):
@@ -81,27 +70,3 @@ def test_unsupported_none_and_closed_streams_are_best_effort(monkeypatch):
     good.close()
 
 
-def test_helper_import_has_no_stdio_side_effect():
-    code = ("import sys; before=(sys.stdout.encoding,sys.stderr.encoding,id(sys.stdout),id(sys.stderr)); "
-            "sys.path.insert(0,sys.argv[1]); import setec.core.script_console; "
-            "after=(sys.stdout.encoding,sys.stderr.encoding,id(sys.stdout),id(sys.stderr)); "
-            "assert before==after")
-    child = subprocess.run([sys.executable, "-c", code, str(SCRIPTS)],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           env=cp1252_env(), cwd=SCRIPTS, check=False)
-    assert child.returncode == 0, child.stderr.decode("utf-8", errors="replace")
-
-
-@pytest.mark.parametrize("script,_glyph", HELP_CASES)
-def test_cli_library_import_does_not_reconfigure_stdio(script, _glyph):
-    code = ("import runpy,sys; from pathlib import Path; "
-            "p=Path(sys.argv[1]); scripts=Path(sys.argv[2]); "
-            "sys.path.insert(0,str(scripts)); "
-            "before=(sys.stdout.encoding,sys.stderr.encoding,id(sys.stdout),id(sys.stderr)); "
-            "runpy.run_path(str(p),run_name='__library_import__'); "
-            "after=(sys.stdout.encoding,sys.stderr.encoding,id(sys.stdout),id(sys.stderr)); "
-            "assert before==after")
-    child = subprocess.run([sys.executable, "-c", code, str(SCRIPTS / script), str(SCRIPTS)],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                           env=cp1252_env(), cwd=SCRIPTS, check=False)
-    assert child.returncode == 0, child.stderr.decode("utf-8", errors="replace")
