@@ -527,32 +527,5 @@ def test_separation_guard_no_forbidden_imports():
 # Registration + drift + golden.
 # ----------------------------------------------------------------------
 
-def test_capability_entry_and_golden_present():
-    tools_dir = _REPO_ROOT / "tools"
-    if str(tools_dir) not in sys.path:
-        sys.path.insert(0, str(tools_dir))
-    import check_capabilities_drift as drift  # type: ignore
-
-    report = drift.check_drift()
-    assert report.passed, (
-        "capabilities drift detected:\n"
-        + "\n".join(v.render() for v in report.violations)
-    )
-    manifest = drift.load_manifest(drift.DEFAULT_MANIFEST)
-    entry = next(
-        (e for e in manifest["entries"] if e.get("id") == "compression_edit_distance_audit"),
-        None,
-    )
-    assert entry is not None, "compression_edit_distance_audit missing from capabilities.d"
-    assert entry["surface"] == "compression_edit_distance"
-    assert entry["status"] == "literature_anchored"
-    assert entry["compute"]["tier"] == "core"
-    assert entry["dependencies"]["python"] == []
-
-    golden = _HERE / "_golden_capabilities" / "compression_edit_distance_audit.json"
-    assert golden.exists()
-    assert json.loads(golden.read_text(encoding="utf-8")) == entry
-
-
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

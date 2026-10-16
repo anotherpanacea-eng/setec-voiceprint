@@ -25,8 +25,6 @@ No real model loads: a synthetic surprisal (bits) series is injected.
 from __future__ import annotations
 
 import ast
-import importlib
-import json
 import math
 import random
 import subprocess
@@ -511,33 +509,6 @@ def test_lastde_not_wired_into_surface_output():
 # ============================================================
 # 10. Capability fragment + golden + drift
 # ============================================================
-
-
-def test_capability_entry_and_golden_present():
-    tools_dir = _REPO_ROOT / "tools"
-    sys.path.insert(0, str(tools_dir))
-    import check_capabilities_drift as drift  # type: ignore
-
-    report = drift.check_drift()
-    assert report.passed, (
-        "capabilities drift detected:\n"
-        + "\n".join(v.render() for v in report.violations)
-    )
-
-    manifest = drift.load_manifest(drift.DEFAULT_MANIFEST)
-    entry = next(
-        (e for e in manifest["entries"] if e.get("id") == "specdetect_audit"),
-        None,
-    )
-    assert entry is not None, "specdetect_audit missing from capabilities.d"
-    assert entry["surface"] == "discrimination_spectral"
-    assert entry["status"] == "literature_anchored"
-    assert entry["compute"]["tier"] == "surprisal"
-
-    # Per-id golden fragment exists and equals the loaded entry.
-    golden = _HERE / "_golden_capabilities" / "specdetect_audit.json"
-    assert golden.exists()
-    assert json.loads(golden.read_text(encoding="utf-8")) == entry
 
 
 # ============================================================

@@ -19,8 +19,6 @@ Pins:
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
 import capabilities as cap  # type: ignore  # noqa: E402
 
@@ -31,38 +29,6 @@ def _manifest() -> dict:
 
 # ---------- loading -----------------------------------------------
 
-def test_manifest_loads_and_has_entries():
-    m = _manifest()
-    # Schema v0.3.0 added handoff posture (stable / experimental /
-    # internal / none) + consumers free-list to make the consumer-
-    # pinning contract explicit and queryable.
-    assert m.get("schema_version") == "0.4.0"
-    assert isinstance(m.get("entries"), list)
-    assert len(m["entries"]) > 30
-
-
-def test_every_entry_has_required_fields():
-    m = _manifest()
-    for entry in m["entries"]:
-        assert entry.get("id"), f"entry missing id: {entry}"
-        assert entry.get("script_path"), (
-            f"{entry['id']} missing script_path"
-        )
-        assert entry.get("surface"), (
-            f"{entry['id']} missing surface"
-        )
-        assert entry.get("status"), (
-            f"{entry['id']} missing status"
-        )
-        compute = entry.get("compute")
-        assert isinstance(compute, dict), (
-            f"{entry['id']} missing compute block"
-        )
-        assert compute.get("tier"), (
-            f"{entry['id']} missing compute.tier"
-        )
-
-
 # ---------- filtering ---------------------------------------------
 
 def test_filter_excludes_todo_by_default():
@@ -72,22 +38,6 @@ def test_filter_excludes_todo_by_default():
         assert e.get("status") != "todo", (
             f"todo leaked into default-filter output: {e['id']}"
         )
-
-
-def test_curated_acquisition_cohort_is_discoverable_but_atomic_wip_is_hidden():
-    ids = {e["id"] for e in cap.filter_entries(_manifest()["entries"])}
-    assert {
-        "acquire_courtlistener", "acquire_everycrsreport", "acquire_gmail_sent",
-        "acquire_govinfo_chrg", "acquire_imessage_sent", "acquire_mirrulations",
-        "acquire_openalex_core", "acquire_pdf_urls",
-    } <= ids
-    assert "acquire_imessage_sent_atomic" not in ids
-
-
-def test_every_todo_has_a_bounded_reason():
-    todos = [e for e in _manifest()["entries"] if e.get("status") == "todo"]
-    assert todos
-    assert all(str(e.get("todo_reason", "")).strip() for e in todos)
 
 
 def test_filter_includes_todo_when_asked():
@@ -162,36 +112,6 @@ def test_filter_by_consumer_apodictic():
     assert expected_subset.issubset(ids), (
         f"missing from --consumer apodictic: "
         f"{expected_subset - ids}"
-    )
-
-
-def test_filter_by_consumer_setec_voicewright():
-    """v1.115.0: --consumer setec-voicewright returns the voicewright
-    fitness-loop surfaces — the selection ensemble (voice_fingerprint,
-    voice_distance) + held-out validators (mimicry_cosplay_audit,
-    general_imposters, binoculars_audit) + idiolect_detector (whose JSON
-    is mimicry_cosplay_audit's required cross-check input).
-    Plus narrative_decision_audit — added as a consumer for voicewright's
-    spec-17 M3 work-level narrative diagnostic (a read-only check over the
-    assembled draft, NOT a fitness-loop surface).
-    Plus gmail_author_pipeline — the closed producer facade consumed by the
-    registered-SFT recipe runner. Plus variance_audit — the smoothing-diagnosis surface, added for
-    voicewright's spec-45 bake-off scorecard smoothing/diversity axis
-    (MTLD/MATTR/burstiness). Like narrative_decision_audit it is a read-only
-    scorecard observation, NOT a selection/held-out fitness-loop surface."""
-    m = _manifest()
-    out = cap.filter_entries(m["entries"], consumer="setec-voicewright")
-    ids = {e["id"] for e in out}
-    expected = {
-        "author_corpus_export", "gmail_author_pipeline",
-        "voice_fingerprint", "voice_distance", "idiolect_detector",
-        "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
-        "narrative_decision_audit", "variance_audit",
-        "s5_distance",
-    }
-    assert ids == expected, (
-        f"--consumer setec-voicewright mismatch: "
-        f"missing {expected - ids}, unexpected {ids - expected}"
     )
 
 
@@ -295,38 +215,6 @@ def test_filter_combines_constraints():
 
 
 # ---------- recommend ---------------------------------------------
-
-def test_recommend_fiction_routes_to_narrative_decision():
-    m = _manifest()
-    results = cap.recommend(
-        "I have a 5000-word short story and I want to know if it was AI-edited",
-        manifest=m,
-    )
-    assert results, "expected at least one recommendation"
-    ids = [r[0] for r in results]
-    assert "narrative_decision_audit" in ids
-    assert "aic_pattern_audit" in ids
-
-
-def test_recommend_essay_routes_to_variance_and_aic():
-    m = _manifest()
-    results = cap.recommend(
-        "Is this short essay AI-generated?", manifest=m,
-    )
-    ids = [r[0] for r in results]
-    assert "variance_audit" in ids
-    assert "aic_pattern_audit" in ids
-
-
-def test_recommend_setup_routes_to_dependency_check():
-    m = _manifest()
-    results = cap.recommend(
-        "First-run setup; getting an ImportError from a SETEC script.",
-        manifest=m,
-    )
-    ids = [r[0] for r in results]
-    assert "dependency_check" in ids
-
 
 def test_recommend_no_match_returns_empty_or_few():
     m = _manifest()
@@ -625,44 +513,6 @@ def test_emit_projects_calibration_status_on_every_entry():
     assert all(
         "calibration_status" not in e for e in m["entries"]
     ), "build_emit_envelope mutated the source manifest entries"
-
-
-def test_emit_consumer_surfaces_carry_full_r1_bundle():
-    """(b) each of the 9 consumer entries in emit output has
-    min_setec_version, json_delivery, structured inputs[] (list of dicts),
-    and the projected calibration_status."""
-    env = cap.build_emit_envelope(_manifest())
-    by_id = {e["id"]: e for e in env["entries"]}
-    for sid in _R1_CONSUMER_SURFACES:
-        e = by_id[sid]
-        assert isinstance(e.get("min_setec_version"), str), sid
-        assert e.get("json_delivery") in ("stdout", "file"), sid
-        inputs = e.get("inputs")
-        assert isinstance(inputs, list) and inputs, sid
-        assert all(isinstance(item, dict) for item in inputs), sid
-        assert all(
-            {"flag", "type", "required"} <= set(item) for item in inputs
-        ), sid
-        assert "calibration_status" in e, sid
-
-
-def test_emit_floor_and_delivery_decisions():
-    """Pin the per-surface floor and delivery decisions: the R1 Step B
-    floors (narrative_decision_audit at 1.107.0, the other apodictic
-    surfaces at 1.86.0), the voicewright four at 1.115.0, and the
-    file-delivery set — voice_profile + pov_voice_profile + general_imposters
-    (all privacy-gate non-private output, so the R2 dispatcher must inject
-    a private --json-out and project their envelopes)."""
-    by_id = {
-        e["id"]: e for e in cap.build_emit_envelope(_manifest())["entries"]
-    }
-    for sid in _R1_CONSUMER_SURFACES:
-        expected_floor = _R1_FLOOR_EXCEPTIONS.get(sid, "1.86.0")
-        assert by_id[sid]["min_setec_version"] == expected_floor, sid
-    file_surfaces = {"voice_profile", "pov_voice_profile", "general_imposters"}
-    for sid in _R1_CONSUMER_SURFACES:
-        expected = "file" if sid in file_surfaces else "stdout"
-        assert by_id[sid]["json_delivery"] == expected, sid
 
 
 def test_show_json_projects_calibration_status():

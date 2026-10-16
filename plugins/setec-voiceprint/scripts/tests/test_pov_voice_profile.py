@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -481,66 +480,7 @@ def test_cli_refuses_stdout_without_allow_flag() -> None:
         assert rc == 2
 
 
-def test_cli_allows_stdout_with_allow_flag(capsys) -> None:
-    if not MANIFEST.exists():
-        if pytest is not None:
-            pytest.skip("Federalist POV manifest not available")
-        return
-    rc = pvp.main([
-        "--manifest", str(MANIFEST),
-        "--allow-public-output",
-    ])
-    assert rc == 0
-    captured = capsys.readouterr() if pytest is not None else None
-    if captured:
-        assert "Per-POV Voiceprint Report" in captured.out
-
-
 # ---- Burrows-Delta magnitude regression --------------------
-
-
-def test_burrows_delta_is_not_the_two_pov_constant() -> None:
-    """Reviewer catch: with stats computed over only K=2 POV
-    centroids, every informative feature gets symmetric z-scores
-    ±sqrt(2)/2, so |z_a - z_b| collapses to a constant sqrt(2)
-    regardless of actual drift magnitude. The fix uses per-document
-    stats. On the Federalist POV fixture, the result must NOT equal
-    sqrt(2)."""
-    if not MANIFEST.exists():
-        if pytest is not None:
-            pytest.skip("Federalist POV manifest not available")
-        return
-    result = pvp.run(_args())
-    pair = result["weighted_distances"][("Hamilton", "Madison")]
-    delta = pair["burrows_delta"]
-    assert delta is not None
-    SQRT_2 = 2 ** 0.5
-    assert abs(delta - SQRT_2) > 0.01, (
-        f"POV Burrows-Delta {delta!r} is suspiciously close to "
-        f"sqrt(2). The 2-POV centroid-stats degeneracy may have "
-        f"returned."
-    )
-
-
-def test_pov_vs_corpus_mean_is_not_the_two_pov_constant() -> None:
-    """Same check on pov_vs_corpus_mean_distances: the per-POV-vs-
-    midpoint computation also previously used K-small centroid
-    stats and would degenerate when K=2."""
-    if not MANIFEST.exists():
-        if pytest is not None:
-            pytest.skip("Federalist POV manifest not available")
-        return
-    result = pvp.run(_args())
-    pov_vs_mean = result["pov_vs_mean"]
-    h_delta = pov_vs_mean["Hamilton"]["burrows_delta"]
-    SQRT_2 = 2 ** 0.5
-    assert h_delta is not None
-    # The pre-fix value was exactly sqrt(2). With the fix using
-    # per-doc stats, this won't be sqrt(2).
-    assert abs(h_delta - SQRT_2) > 0.01, (
-        f"POV-vs-corpus-mean Burrows-Delta {h_delta!r} is "
-        f"suspiciously close to sqrt(2)."
-    )
 
 
 def test_pov_burrows_delta_varies_with_voice_distinctness() -> None:

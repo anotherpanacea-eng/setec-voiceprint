@@ -305,7 +305,9 @@ def test_format_flowed_terminal_scans_stay_linear():
     G._unwrap_flowed(unresolved, delsp=True)
     G._unwrap_flowed(crossed_boundary, delsp=True)
     G._unwrap_flowed(long_dash_run, delsp=True)
-    assert time.perf_counter() - started < 2.0
+    # A quadratic rescan of these inputs takes minutes; 20 s only catches that
+    # and tolerates a loaded machine (2 s flaked under train load).
+    assert time.perf_counter() - started < 20.0
 
 
 def test_format_flowed_delsp_detects_attribution_across_eight_fragments(

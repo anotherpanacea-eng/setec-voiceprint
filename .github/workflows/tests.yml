@@ -1,11 +1,5 @@
 name: tests
 
-run-name: >-
-  setec-tests pr=${{ github.event.pull_request.number }}
-  action=${{ github.event.action }}
-  train=${{ github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/') }}
-  ci-ready-event=${{ github.event.label.name == 'ci-ready' }}
-
 # Core-tier CI: runs the stdlib + spaCy + scikit-learn/statsmodels test
 # suite once on an admitted integration train (or authorized standalone).
 # The Tier-4 surprisal / embedding
@@ -41,20 +35,6 @@ jobs:
           # Full history: the diff-scoped spec-anchor lint below needs a merge
           # base against the PR base ref, and a shallow clone has none.
           fetch-depth: 0
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python3 tools/check_pr_merge_binding.py
-          --base "$BASE_SHA" --head "$HEAD_SHA" --github-sha "$MERGE_SHA"
-          --job "$JOB_NAME" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -102,7 +82,7 @@ jobs:
       # drift can't land unblocked. `if: always()` so they report even when the
       # test step above failed — the two signals are independent.
       - name: Consistency gates
-        if: always() && steps.merge_binding.outcome == 'success'
+        if: always()
         run: |
           python3 tools/check_capabilities_drift.py
           python3 tools/check_docs_freshness.py
@@ -119,7 +99,7 @@ jobs:
       # tools, not a cryptography suite. See specs/svp-packaging-conversion.md
       # §3's amendment note.
       - name: Packaging P1 gates (migration checker, zero-install)
-        if: always() && steps.merge_binding.outcome == 'success'
+        if: always()
         run: |
           python3 tools/check_packaging_migration.py --strict
           python3 tools/check_zero_install.py
@@ -147,7 +127,7 @@ jobs:
       #     introduced_sha/removal_phase. --strict also rejects a
       #     hand-mutated baseline and a ghost exemption row.
       - name: Packaging P5 gates (layering, sys.path ratchet, flat-module freeze)
-        if: always() && steps.merge_binding.outcome == 'success'
+        if: always()
         run: |
           python3 tools/check_layering.py --strict
           python3 tools/check_syspath_ratchet.py --strict
@@ -168,7 +148,7 @@ jobs:
       # must be clean, historical shorthand is left alone until someone touches
       # that spec. MEDIUM-confidence hits stay advisory (no --strict).
       - name: Spec anchor lint (changed specs)
-        if: always() && steps.merge_binding.outcome == 'success'
+        if: always()
         run: |
           set -euo pipefail
           base="origin/${{ github.base_ref }}"
@@ -184,20 +164,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python3 tools/check_pr_merge_binding.py
-          --base "$BASE_SHA" --head "$HEAD_SHA" --github-sha "$MERGE_SHA"
-          --job "$JOB_NAME" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
@@ -215,41 +181,39 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_reconstructibility_probe_set.py \
             -q -rs
 
-  windows-descriptor-backend:
+  windows:
     if: >-
       github.event.pull_request.draft == false &&
       (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
       ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
       ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
+    # One native-Windows runner for the Windows-reachable contracts: the
+    # handle-relative descriptor backend and writers, owner corrections,
+    # shingle-dedup, the non-prose sweep, and the private-corpus writers'
+    # POSIX-only os.fchmod guards (an unguarded call raises AttributeError on
+    # Windows; Linux/macOS never see it). The os.name=="posix" chmod guards are
+    # NOT covered by pass/fail here: os.chmod silently succeeds on Windows.
+    # author_corpus_export's export-seam fixture is hash-pinned and must stay
+    # LF (see .gitattributes) or core.autocrlf on this runner breaks it.
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python tools/check_pr_merge_binding.py
-          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
-          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install focused test dependency
-        run: python -m pip install pytest tzdata
+      - name: Install focused test dependencies
+        # pyyaml: test_author_corpus_export's dispatcher tests load the
+        # capabilities manifest, whose loader imports yaml.
+        run: python -m pip install pytest tzdata pyyaml
 
-      - name: Run Windows handle-relative writer, guard, and conflict-copy tests
+      - name: Run native-Windows contract tests
         shell: pwsh
         run: |
+          # test_adapter_refuses_declared_nonbaseline_material builds a path with
+          # filename-illegal characters (WinError 123); pre-existing, deselected.
           python -m pytest `
             plugins/setec-voiceprint/scripts/tests/test_manifest_validator_conflict_copies.py `
             plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
@@ -265,205 +229,17 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_cli_loads_approved_portable_key_and_runs `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_direct_script_invocation_help_avoids_circular_import `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_direct_script_invocation_validate_run_fails_controlled_not_via_import_error `
-            -q `
-            --basetemp "${{ runner.temp }}\\setec-win-descriptor"
-
-  windows-owner-corrections:
-    if: >-
-      github.event.pull_request.draft == false &&
-      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
-      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python tools/check_pr_merge_binding.py
-          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
-          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install focused test dependency
-        run: python -m pip install pytest
-
-      - name: Run owner-corrections Windows contract tests
-        shell: pwsh
-        run: |
-          python -m pytest `
             plugins/setec-voiceprint/scripts/tests/test_apply_owner_corrections.py `
-            -q `
-            --basetemp "${{ runner.temp }}\\setec-win-owner-corrections"
-
-  windows-shingle-dedup:
-    if: >-
-      github.event.pull_request.draft == false &&
-      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
-      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python tools/check_pr_merge_binding.py
-          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
-          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install focused test dependency
-        run: python -m pip install pytest
-
-      - name: Run shingle-dedup Windows contract tests
-        shell: pwsh
-        run: |
-          python -m pytest `
             plugins/setec-voiceprint/scripts/tests/test_shingle_dedup.py `
             plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_checkpoint.py `
             plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_io_faults.py `
             plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_validate.py `
             plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_windows.py `
-            -q `
-            --basetemp "${{ runner.temp }}\\setec-win-shingle-dedup"
-
-  windows-nonprose-sweep:
-    if: >-
-      github.event.pull_request.draft == false &&
-      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
-      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
-    runs-on: windows-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python tools/check_pr_merge_binding.py
-          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
-          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install focused test dependency
-        run: python -m pip install pytest
-
-      - name: Run non-prose sweep Windows contract tests
-        shell: pwsh
-        run: |
-          python -m pytest `
             plugins/setec-voiceprint/scripts/tests/test_nonprose_sweep.py `
-            plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
-            -q -rs `
-            --basetemp "${{ runner.temp }}\\setec-win-nonprose"
-
-  windows-private-writer-guards:
-    if: >-
-      github.event.pull_request.draft == false &&
-      (((github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'train/')) && github.event.action != 'labeled' && github.event.action != 'unlabeled') ||
-      ((github.event.pull_request.head.repo.full_name != github.repository || startsWith(github.head_ref, 'train/') == false) && contains(github.event.pull_request.labels.*.name, 'ci-ready') &&
-      ((github.event.action != 'labeled' && github.event.action != 'unlabeled') || (github.event.action == 'labeled' && github.event.label.name == 'ci-ready'))))
-    # The private-corpus writers harden file modes with POSIX-only os.fchmod,
-    # which does not exist on native Windows, so an unguarded call raises
-    # AttributeError. The Linux/macOS lanes never see it and the other focused
-    # Windows lanes above only run their own files, so a bare fchmod can land
-    # invisibly. This lane runs the writers whose atomic() path is
-    # Windows-REACHABLE and reaches the shared atomic writer through
-    # normalize_author_registry and prepare_author_document_adapter, so its
-    # fchmod guard is genuine crash-fix regression coverage. The shared helper's
-    # direct tests also exercise native Windows no-replace rename behavior.
-    # author_corpus_export is included because its
-    # export-seam fixture is hash-pinned and must stay LF (see .gitattributes) or
-    # core.autocrlf=true on this runner remangles it into a "source content hash
-    # mismatch" failure.
-    #
-    # Scope caveats (no overclaiming):
-    #   - The os.name=="posix" chmod guards are NOT regression-covered by
-    #     pass/fail here: os.chmod exists on Windows and silently succeeds, so a
-    #     regressed chmod guard would not fail this lane. It catches the fchmod
-    #     AttributeError class only.
-    #   - compose_imessage_review_bursts is deliberately absent: its production
-    #     entry point raises ReviewBurstError("requires macOS") before reaching
-    #     either fchmod site, so its guards are defensive dead-code hardening --
-    #     not Windows-reachable and not meaningfully testable on windows-latest.
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Bind billed job to the exact pull-request merge
-        id: merge_binding
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_SHA: ${{ github.sha }}
-          JOB_NAME: ${{ github.job }}
-          RUN_ID: ${{ github.run_id }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: >-
-          python tools/check_pr_merge_binding.py
-          --base "$env:BASE_SHA" --head "$env:HEAD_SHA" --github-sha "$env:MERGE_SHA"
-          --job "$env:JOB_NAME" --run-id "$env:RUN_ID" --run-attempt "$env:RUN_ATTEMPT"
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install focused test dependency
-        # pyyaml: test_author_corpus_export's dispatcher tests load the
-        # capabilities manifest, whose loader imports yaml (capabilities.py).
-        run: python -m pip install pytest tzdata pyyaml
-
-      - name: Run private-writer mode-guard and export-seam tests on native Windows
-        shell: pwsh
-        run: |
-          # test_adapter_refuses_declared_nonbaseline_material is deselected: it
-          # fails on native Windows for an UNRELATED reason (it constructs a path
-          # containing filename-illegal characters -> WinError 123), is
-          # pre-existing on main, and is tracked as a separate follow-up.
-          # Deselecting keeps that known failure from poisoning this lane while
-          # the rest of the file still regression-covers the fchmod guard.
-          python -m pytest `
             plugins/setec-voiceprint/scripts/tests/test_atomic_publish.py `
             plugins/setec-voiceprint/scripts/tests/test_normalize_author_registry.py `
             plugins/setec-voiceprint/scripts/tests/test_author_corpus_export.py `
             plugins/setec-voiceprint/scripts/tests/test_prepare_author_document_adapter.py `
             --deselect "plugins/setec-voiceprint/scripts/tests/test_prepare_author_document_adapter.py::test_adapter_refuses_declared_nonbaseline_material" `
-            -q `
-            --basetemp "${{ runner.temp }}\\setec-win-private-writers"
+            -q -rs `
+            --basetemp "${{ runner.temp }}\\setec-win"

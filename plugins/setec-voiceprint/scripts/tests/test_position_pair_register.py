@@ -499,38 +499,5 @@ def test_cli_markdown_default(tmp_path):
 # Registration + drift + golden.
 # ----------------------------------------------------------------------
 
-def test_capability_entry_and_golden_present():
-    tools_dir = _REPO_ROOT / "tools"
-    if str(tools_dir) not in sys.path:
-        sys.path.insert(0, str(tools_dir))
-    import check_capabilities_drift as drift  # type: ignore
-
-    report = drift.check_drift()
-    assert report.passed, (
-        "capabilities drift detected:\n"
-        + "\n".join(v.render() for v in report.violations)
-    )
-    manifest = drift.load_manifest(drift.DEFAULT_MANIFEST)
-    entry = next(
-        (e for e in manifest["entries"] if e.get("id") == "position_pair_register"),
-        None,
-    )
-    assert entry is not None, "position_pair_register missing from capabilities.d"
-    assert entry["surface"] == "position_pair_register"
-    # Adopted as an apodictic consumer surface (stance PR 2 ripple): the R1
-    # normalized-entrypoint bundle is now present so the surface can be vendored
-    # under a pinned tag + drift gate.
-    assert entry["consumers"] == ["apodictic"]
-    assert entry["min_setec_version"] == "1.121.0"
-    assert entry["json_delivery"] == "stdout"
-    assert entry["family"] == "argument-consistency"
-    assert entry["compute"]["tier"] == "api_llm"
-    assert entry["dependencies"]["python"] == []
-
-    golden = _HERE / "_golden_capabilities" / "position_pair_register.json"
-    assert golden.exists()
-    assert json.loads(golden.read_text(encoding="utf-8")) == entry
-
-
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

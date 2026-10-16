@@ -686,34 +686,6 @@ def test_valid_scorer_without_torch_still_reports_missing_tier(
 # ============================================================
 
 
-def test_capabilities_entry_present():
-    tools_dir = _REPO_ROOT / "tools"
-    sys.path.insert(0, str(tools_dir))
-    import check_capabilities_drift as drift  # type: ignore
-
-    report = drift.check_drift()
-    assert report.passed, (
-        "capabilities drift detected:\n"
-        + "\n".join(v.render() for v in report.violations)
-    )
-    manifest = drift.load_manifest(drift.DEFAULT_MANIFEST)
-    entry = next(
-        (e for e in manifest["entries"] if e.get("id") == "structural_shuffle_audit"),
-        None,
-    )
-    assert entry is not None, "structural_shuffle_audit missing from manifest"
-    assert entry["surface"] == "discrimination_structural_shuffle"
-    assert entry["status"] == "heuristic"
-    assert entry["handoff"] == "experimental"
-    compute = entry["compute"]
-    assert compute["tier"] == "surprisal"
-    assert compute["length_floor_words"] == 50
-    assert "cost_note" in compute and compute["cost_note"]
-    deps = entry["dependencies"]["python"]
-    assert "transformers" in deps and "torch" in deps
-    assert "spacy" not in deps
-
-
 # ============================================================
 # 14-15. Separation guard + Binoculars orthogonality (static import scan)
 # ============================================================

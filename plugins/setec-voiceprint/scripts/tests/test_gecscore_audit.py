@@ -794,29 +794,6 @@ def test_ac10_non_string_correction_raises():
 # AC-11 — registration + drift + golden.
 # ----------------------------------------------------------------------
 
-def test_ac11_capability_entry_and_golden_present():
-    tools_dir = _REPO_ROOT / "tools"
-    if str(tools_dir) not in sys.path:
-        sys.path.insert(0, str(tools_dir))
-    import check_capabilities_drift as drift  # type: ignore
-
-    report = drift.check_drift()
-    assert report.passed, (
-        "capabilities drift detected:\n"
-        + "\n".join(v.render() for v in report.violations)
-    )
-
-    manifest = drift.load_manifest(drift.DEFAULT_MANIFEST)
-    entry = next(
-        (e for e in manifest["entries"] if e.get("id") == "gecscore_audit"), None
-    )
-    assert entry is not None, "gecscore_audit missing from capabilities.d"
-
-    golden = _HERE / "_golden_capabilities" / "gecscore_audit.json"
-    assert golden.exists()
-    assert json.loads(golden.read_text(encoding="utf-8")) == entry
-
-
 def test_envelope_builds_with_registered_surface():
     """End-to-end: audit() → compose_envelope() builds a valid schema-1.0 envelope
     (the path that hard-raises if the surface fragment is missing)."""

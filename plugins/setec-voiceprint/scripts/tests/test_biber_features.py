@@ -685,50 +685,6 @@ class TestStubDeterminism:
 # (checked separately via check_capabilities_drift.py — basic smoke here)
 # ===========================================================================
 
-class TestCapabilityRegistration:
-    def test_yaml_fragment_exists(self):
-        """AC12: capabilities.d/biber_features.yaml exists."""
-        caps_dir = Path(__file__).resolve().parents[2] / "capabilities.d"
-        assert (caps_dir / "biber_features.yaml").exists(), (
-            "capabilities.d/biber_features.yaml missing"
-        )
-
-    def test_golden_json_exists(self):
-        """AC12: _golden_capabilities/biber_features.json exists."""
-        golden_dir = Path(__file__).resolve().parents[0] / "_golden_capabilities"
-        assert (golden_dir / "biber_features.json").exists(), (
-            "_golden_capabilities/biber_features.json missing"
-        )
-
-    def test_golden_agrees_with_yaml(self):
-        """AC12: golden and YAML agree on the required fields."""
-        import yaml  # type: ignore
-
-        caps_dir = Path(__file__).resolve().parents[2] / "capabilities.d"
-        yaml_path = caps_dir / "biber_features.yaml"
-        golden_path = Path(__file__).resolve().parents[0] / "_golden_capabilities" / "biber_features.json"
-
-        if not yaml_path.exists() or not golden_path.exists():
-            pytest.skip("capability files not yet present")
-
-        with open(yaml_path, encoding="utf-8") as f:
-            yd = yaml.safe_load(f)
-        entries = yd.get("entries", [])
-        assert len(entries) == 1
-        ye = entries[0]
-
-        with open(golden_path, encoding="utf-8") as f:
-            gd = json.load(f)
-
-        for key in ("id", "script_path", "surface", "status"):
-            assert ye[key] == gd[key], f"Mismatch on {key}: YAML={ye[key]!r}, golden={gd[key]!r}"
-
-    def test_task_surface_registered(self):
-        """AC12: TASK_SURFACE is a valid registered surface."""
-        assert bf.TASK_SURFACE == "voice_coherence"
-        assert "voice_coherence" in VALID_TASK_SURFACES
-
-
 # ===========================================================================
 # AC13 — M2 seam inert in CI (skipif guard for real tagger smoke)
 # ===========================================================================

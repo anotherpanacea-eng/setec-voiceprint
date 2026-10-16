@@ -16,7 +16,6 @@ per-position conditional log-probs via an injected ``score_fn``.
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -361,38 +360,6 @@ def test_missing_torch_graceful(monkeypatch, tmp_path, capsys):
 # ============================================================
 # test_capabilities_entry_present
 # ============================================================
-
-
-def test_capabilities_entry_present():
-    """The drift linter passes and the manifest carries the
-    fast_detect_curvature entry with the spec'd shape."""
-    tools_dir = _REPO_ROOT / "tools"
-    sys.path.insert(0, str(tools_dir))
-    import check_capabilities_drift as drift  # type: ignore
-
-    report = drift.check_drift()
-    assert report.passed, (
-        "capabilities drift detected:\n"
-        + "\n".join(v.render() for v in report.violations)
-    )
-
-    # The manifest entry exists with the spec'd fields.
-    manifest = drift.load_manifest(drift.DEFAULT_MANIFEST)
-    entry = next(
-        (e for e in manifest["entries"] if e.get("id") == "fast_detect_curvature"),
-        None,
-    )
-    assert entry is not None, "fast_detect_curvature missing from capabilities.yaml"
-    assert entry["surface"] == "discrimination_curvature"
-    assert entry["status"] == "literature_anchored"
-    assert entry["handoff"] == "experimental"
-    compute = entry["compute"]
-    assert compute["tier"] == "surprisal"
-    assert compute["length_floor_words"] == 50
-    assert "cost_note" in compute and compute["cost_note"]
-    deps = entry["dependencies"]["python"]
-    assert "transformers" in deps
-    assert "torch" in deps
 
 
 # ============================================================
