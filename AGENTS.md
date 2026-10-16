@@ -27,21 +27,12 @@ integration train. Only the frozen train becomes ready and runs hosted CI. Merge
 commits, never squash; version + changelog are cut at release (a PR ships a
 `changelog.d/` fragment), tagged from `main`. (Full detail in §The flow below.)
 
-**Draft-first integration trains (Spec 81):** draft constituent PRs may be opened
-and synchronized without running hosted jobs. Keep them draft after local tests
-and exact-head review. Near the end of the window, build a new disposable
-`train/<date>[-<slug>]` branch from exact fresh `origin/main`; merge only
-independently cleared remote heads with `--no-ff`, preserve their ancestry, run
-the closed-topology/local gates, and mark only that frozen same-repository train
-ready. All seven hosted jobs then validate the same synthetic merge exactly once.
-Do not reuse a permanent staging branch, merge constituents separately, or use
-ordinary direct pushes to `main`. A separately authorized urgent standalone may
-be armed with the exact `ci-ready` label, but it receives the same freeze,
-complete hosted clearance, merge-binding receipts, and exact-base landing checks.
-Unrelated label edits never arm or cancel a train. The policy is operational and
-does not depend on a paid ruleset; without a strict current-base merge interlock,
-land the tested two-parent tree with the exact-base `--force-with-lease` protocol
-in Spec 81.
+**Draft-first integration trains (Spec 81):** constituent PRs stay draft and run
+no hosted jobs. Near the end of the window, build a fresh `train/<date>[-<slug>]`
+branch from `origin/main`, merge the reviewed constituent heads with `--no-ff`,
+run the local suite (`-n auto`), and mark only the train ready. Its hosted jobs
+validate the combined change once; merge it with the merge button when they are
+green. An urgent standalone change can instead carry the `ci-ready` label.
 
 **Cloud-reachable coordination hub** (added 2026-07-19):
 [`anotherpanacea-eng/fleet-coordination`](https://github.com/anotherpanacea-eng/fleet-coordination)
@@ -343,16 +334,11 @@ spec→review→write→review→fix structure durable on GitHub and gives
 
 ### Merge mechanics
 
-- **Merge the cleared train, not its constituents.** Immediately before
-  promotion and landing, re-read the exact base, train head, every constituent
-  PR head, current arming state, and review threads. Require one newest complete
-  seven-job run/attempt and seven agreeing `setec-pr-merge-binding/1` receipts.
-- **Use a merge commit, never squash/rebase.** With a reliable strict-current-base
-  interlock, the GitHub Create-a-merge-commit path may be used with an expected
-  head. Otherwise fetch the tested synthetic merge, require exact base/head
-  parents, construct the tree-identical two-parent merge locally, and update
-  `main` only with `--force-with-lease=refs/heads/main:<tested-base>`. A rejected
-  lease means rebuild and retest; never retry against the moved base.
+- **Merge the train, not its constituents.** Before marking the train ready,
+  check that no constituent head moved since review, and run
+  `git diff --check origin/main...HEAD` for stray conflict markers.
+- **Use a merge commit, never squash/rebase.** Land the green train with
+  GitHub's Create-a-merge-commit button.
 - **Delete the train branch after landing.** Confirm `main` contains the exact
   train and constituent heads first. Close only unchanged constituent UI
   stragglers with the train link; a moved head remains open as new work.
@@ -368,18 +354,13 @@ spec→review→write→review→fix structure durable on GitHub and gives
   the accumulated fragments into a `## [X.Y.Z]` section, set `plugin.json`, then
   tag from `main`. This is the existing accumulate-then-cut "consolidated
   release" practice (see `## [1.111.0]`), now scripted and conflict-free.
-- **Auto-merge only the frozen train or explicitly authorized standalone on
-  dual agreement.** When both reviewing agents agree the exact candidate is
-  ready, its required combined CI/receipts are green, the live base/head and
-  inventory are unchanged, and review threads are resolved, land it without a
-  further prompt. Dual agreement on a constituent admits it to a train; it does
-  not authorize merging that constituent separately.
+- **Auto-merge only the train or an authorized standalone on dual agreement.**
+  When both reviewing agents agree, CI is green and review threads are resolved,
+  land it without a further prompt. Agreement on a constituent admits it to a
+  train; it does not authorize merging that constituent separately.
 - **`gh` OAuth workflow-scope merge block (public repo).** A PR that touches
   `.github/workflows/` can't be merged with the `gh` OAuth token (403 "refusing to
-  allow an OAuth App to create or update workflow"). The *git* credential keeps the
-  scope (it pushed the branch fine), so the fallback is to
-  use Spec 81's local tree-identical two-parent merge and exact-base leased push,
-  or merge via the GitHub web UI when its strict-current-base guard is reliable.
+  allow an OAuth App to create or update workflow"). Merge it in the GitHub web UI.
 
 ### No direct-to-main exception
 
