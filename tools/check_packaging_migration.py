@@ -234,6 +234,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/general_imposters.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/rank_space_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/binoculars_audit.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/binoculars_calibrate.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/fast_detect_curvature.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/tocsin_audit.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/intrinsic_dimension_audit.py", "_SCRIPT_DIR"),

@@ -98,7 +98,7 @@ _EXCLUDED_DIR_PARTS = {"tests", "__pycache__"}
 # bootstrap (213 -> 215 on the train); all sites remain counted with no exclusions.
 # Whole acquisition_core retains its two temporary helper inserts and adds
 # one required no-main permanent alias bootstrap: 215 -> 216; no exclusions.
-PINNED_CEILING = 216
+PINNED_CEILING = 217
 
 
 def find_runtime_scripts() -> list[Path]:

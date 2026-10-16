@@ -127,10 +127,12 @@ def _adapter_run(
 def test_adapter_refuses_declared_nonbaseline_material(tmp_path: Path):
     # P1a: a source row declaring a non-baseline role/use/split/consent must NOT be
     # silently relabeled as identity_baseline just because it is pre_ai_human.
-    for extra in ({"corpus_role": "impostor"}, {"split": "test"},
-                  {"use": ["held_out"]}, {"consent_status": "revoked"}):
-        with pytest.raises(ValueError):
-            _adapter_run(tmp_path / json.dumps(extra, sort_keys=True)[:8], extra)
+    for index, extra in enumerate((
+        {"corpus_role": "impostor"}, {"split": "test"},
+        {"use": ["held_out"]}, {"consent_status": "revoked"},
+    )):
+        with pytest.raises(ValueError, match="refusing to relabel as identity_baseline"):
+            _adapter_run(tmp_path / str(index), extra)
 
 
 def test_adapter_refuses_drifted_content_hash(tmp_path: Path):
