@@ -1,0 +1,3 @@
+### Changed
+
+- Rewrite `test_schema_envelopes.py` (4,248 → ~940 lines, 376 → 185 tests). The envelope checks repeated per surface (keys, identity, claim license, results payload, target words) now run once each, parametrized over 26 surfaces. Every envelope is now real module output, mostly from the surface's own `--json` CLI, instead of a hand-built result dict. aesthetic_authority_audit, pov_voice_profile and voice_drift_tracker drop out because their real pipelines need spaCy; their own test files cover their envelopes. Driving from real output found that six text audits report `baseline.words == 0` on a real `--baseline-dir` run. Those cases are pinned as strict xfails.
