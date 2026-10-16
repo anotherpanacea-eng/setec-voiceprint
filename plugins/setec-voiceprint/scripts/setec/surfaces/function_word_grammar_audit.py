@@ -418,6 +418,7 @@ def audit_baseline_function_grammar(
 
     skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
+    n_words = 0
     pooled_bigram_entropy: list[float] = []
     pooled_preposition_entropy: list[float] = []
     pooled_subordinator_entropy: list[float] = []
@@ -473,6 +474,7 @@ def audit_baseline_function_grammar(
             })
             next_anon_id += 1
             continue
+        n_words += int(a.get("n_words", 0) or 0)
         per_file.append({
             "file": (
                 p.name if include_filenames
@@ -507,6 +509,7 @@ def audit_baseline_function_grammar(
     return {
         "n_files": len(per_file),
         "n_skipped": len(skipped_files),
+        "n_words": n_words,
         "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate": {

@@ -47,6 +47,7 @@ from variance_audit import (  # type: ignore
     audit_text,
     audit_baseline,
     classify_compression,
+    _sum_baseline_n_words,
 )
 from preprocessing import aggregate_preprocessing_metadata, available_rule_names, strip_non_prose
 
@@ -397,6 +398,7 @@ def audit_manuscript(
 
     baseline_stats: dict[str, dict[str, float]] = {}
     n_baseline_files = 0
+    n_baseline_words = 0
     baseline_preprocessing: dict[str, Any] | None = None
     if baseline_dir:
         baseline_block = audit_baseline(
@@ -408,6 +410,7 @@ def audit_manuscript(
             strip_aggressive=strip_aggressive,
         )
         n_baseline_files = baseline_block.get("n_files", 0)
+        n_baseline_words = _sum_baseline_n_words(baseline_block)
         baseline_stats = aggregate_baseline_stats(baseline_block.get("audits", []))
         baseline_preprocessing = baseline_block.get("preprocessing")
 
@@ -476,6 +479,7 @@ def audit_manuscript(
         },
         "n_chapters": len(chapter_audits),
         "n_baseline_files": n_baseline_files,
+        "n_baseline_words": n_baseline_words,
         "chapters": chapter_audits,
         "baseline_stats": baseline_stats,
     }
@@ -852,7 +856,7 @@ def build_audit_payload(
     if result.get("n_baseline_files"):
         baseline_meta = build_baseline_metadata(
             n_files=int(result.get("n_baseline_files", 0) or 0),
-            words=0,
+            words=int(result.get("n_baseline_words", 0) or 0),
             extra=(
                 {"preprocessing": preprocessing["baseline"]}
                 if preprocessing.get("baseline") else None

@@ -350,6 +350,7 @@ def audit_baseline_agency(
 
     skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
+    n_words = 0
     pooled: dict[str, list[float]] = {}
     next_anon_id = 1
     for p in paths:
@@ -399,6 +400,7 @@ def audit_baseline_agency(
             })
             next_anon_id += 1
             continue
+        n_words += int(a.get("n_words", 0) or 0)
         per_file.append({
             "file": (
                 p.name if include_filenames
@@ -428,6 +430,7 @@ def audit_baseline_agency(
     return {
         "n_files": len(per_file),
         "n_skipped": len(skipped_files),
+        "n_words": n_words,
         "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate": {k: _mean_sd(v) for k, v in pooled.items()},

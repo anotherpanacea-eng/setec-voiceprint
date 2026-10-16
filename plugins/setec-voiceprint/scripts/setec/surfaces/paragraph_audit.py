@@ -520,6 +520,7 @@ def audit_baseline_paragraphs(
 
     skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
+    n_words = 0
     pooled_open: Counter[str] = Counter()
     pooled_close: Counter[str] = Counter()
     pooled_cv: list[float] = []
@@ -582,6 +583,7 @@ def audit_baseline_paragraphs(
             continue
         ls = a["length_summary"]
         rs = a["rhythm_signals"]
+        n_words += int(a.get("n_words", 0) or 0)
         per_file.append({
             # Privacy default (1.34.1): anonymized id; opt in to raw
             # filenames with `include_filenames=True`. Filenames
@@ -618,6 +620,7 @@ def audit_baseline_paragraphs(
     return {
         "n_files": len(per_file),
         "n_skipped": len(skipped_files),
+        "n_words": n_words,
         "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate": {

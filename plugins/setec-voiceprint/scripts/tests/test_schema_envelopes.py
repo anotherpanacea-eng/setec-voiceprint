@@ -598,22 +598,10 @@ def test_baseline_dir_populates_baseline(name, baseline_envelope):
     assert env["baseline"]["n_files"] == len(BASELINE_TEXTS)
 
 
-# These builders read baseline_block["n_words"], which their own CLI never
-# sets, so a real --baseline-dir run reports baseline.words == 0. The old
-# hand-built baseline blocks supplied n_words and hid it.
-BASELINE_WORDS_MISSING = {
-    "agency_abstraction_audit", "discourse_move_signature", "function_word_grammar_audit",
-    "paragraph_audit", "punctuation_cadence_audit", "stance_modality_audit",
-}
-
-
-@pytest.mark.parametrize("name", [
-    pytest.param(n, marks=pytest.mark.xfail(
-        strict=True, reason="baseline_block carries no n_words")
-    ) if n in BASELINE_WORDS_MISSING else n
-    # manuscript_audit hard-codes baseline words to 0.
-    for n in sorted(set(BASELINE_CLI) - {"manuscript_audit"})
-])
+# Regression: six builders read baseline_block["n_words"], which their own
+# baseline builders never set, and manuscript_audit hard-coded words=0, so
+# real --baseline-dir runs reported baseline.words == 0.
+@pytest.mark.parametrize("name", sorted(BASELINE_CLI))
 def test_baseline_dir_reports_baseline_words(name, baseline_envelope):
     # variance_audit: main() trims output["baseline"], so baseline.words
     # depends on summing the per-file audits before the trim.

@@ -697,6 +697,7 @@ def audit_baseline_discourse(
 
     skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
+    n_words = 0
     pooled_density_by_cat: dict[str, list[float]] = {c: [] for c in CATEGORIES}
     pooled_relation_density: dict[str, list[float]] = {
         b: [] for b in RELATION_BUCKETS
@@ -750,6 +751,7 @@ def audit_baseline_discourse(
             })
             next_anon_id += 1
             continue
+        n_words += int(a.get("n_words", 0) or 0)
         per_file.append({
             "file": (
                 p.name if include_filenames
@@ -794,6 +796,7 @@ def audit_baseline_discourse(
     return {
         "n_files": len(per_file),
         "n_skipped": len(skipped_files),
+        "n_words": n_words,
         "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate_density_by_category": aggregate,
