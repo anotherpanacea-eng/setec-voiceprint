@@ -32,8 +32,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history: the P5 layering and flat-module gates below compare
-          # against a merge base with the PR base ref, and a shallow clone has none.
+          # Full history: the P5 layering and flat-module gates and the spec
+          # dependency check below compare against a merge base with the PR base
+          # ref, and a shallow clone has none.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -149,6 +150,16 @@ jobs:
             python3 tools/spec_anchor_lint.py --spec "$spec" --repo . || { echo "::error file=$spec::phantom spec anchor"; rc=1; }
           done < <(find specs -name '*.md' -print0 | sort -z)
           exit "$rc"
+
+      # The whole-tree lint checks a sibling-spec reference by number only, so a
+      # renamed or deleted spec that a surviving spec still names by path would
+      # pass it. check_changed_spec_anchors.py rejects that case, so it stays.
+      - name: Spec dependency check (removed or renamed specs)
+        if: always()
+        run: |
+          set -euo pipefail
+          base="origin/${{ github.base_ref }}"
+          python3 tools/check_changed_spec_anchors.py --repo . --base "$base"
 
   macos-descriptor-confinement:
     if: >-
