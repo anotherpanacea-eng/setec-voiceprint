@@ -19,12 +19,11 @@
 - **GPU required:** optional for development; needed for GPT-Neo-2.7B at useful speed (M2 only).
 
 > **Code-Mac adaptation note.** This spec was authored against the Code-PC rig
-> (`D:\Code-PC\...`, Windows ROCm, RX 7900 XT). On the Code-Mac checkout
-> (`/Users/anotherpanacea/Documents/Code-Mac/setec-voiceprint`) the rig-specific paths,
+> (Windows ROCm, RX 7900 XT). On the macOS checkout the rig-specific paths,
 > `py -3.12` interpreter, `HIP_VISIBLE_DEVICES`, ROCm/bf16, and Windows-Scheduled-Task / HWiNFO64
 > thermal notes are **M2 concerns on the PC rig** and do not bind the M1 build, which is pure
-> Python + stdlib and runs anywhere. Corpus/run paths (`D:\Code-PC\_litprose_frontier_...`) are
-> the PC experiment's; the M1 deliverable is the model-free orchestration script and its tests.
+> Python + stdlib and runs anywhere. Corpus and run paths are
+> the PC experiment's and live outside this repo; the M1 deliverable is the model-free orchestration script and its tests.
 
 - **Upstream / prior art:** Luminol-AIDetect (arXiv:2604.25860, 2026) **[PROVISIONAL — UNVERIFIED;
   M0 confirmation is a hard gate before M2]**. Method: compute perplexity of the original text and
@@ -180,7 +179,7 @@ this. It also imports nothing from `binoculars_audit` and leaks no Binoculars/cr
 
 GPT-Neo-2.7B load, lit-horror corpus scoring, the 7-statistic SETEC experiment. PC-rig thermal /
 Scheduled-Task / bf16 / HF-cache notes apply (REVIEW R3: on the PC rig, verify GPT-Neo-2.7B cache
-integrity at `D:\hf_cache` before the CPU-first test; apply the snapshot-repair recipe if a symlink
+integrity in the local Hugging Face cache before the CPU-first test; apply the snapshot-repair recipe if a symlink
 is broken). On Code-Mac, the model would load via the standard HF cache. M2 is `skipif`-gated.
 
 ---
