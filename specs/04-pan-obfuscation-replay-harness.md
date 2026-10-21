@@ -45,7 +45,7 @@ obfuscation-class slicing.
   `dependencies.python: []` (reuses harness optional deps), inputs = fixture dir.
 - **Dependencies / footprint:** none new; CPU.
 
-## Test contract (`.../tests/test_pan_replay.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_pan_replay.py`)
 
 - `test_envelope_and_surface` — validates; `task_surface == "validation"`.
 - `test_per_class_slicing` — output has independent per-(signal × class) entries; no

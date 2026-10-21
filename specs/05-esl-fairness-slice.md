@@ -50,7 +50,7 @@ Extends the existing harness slicing; new code is the language-status slice + th
   but the CHANGELOG line is still required by the docs-freshness gate).
 - **Dependencies / footprint:** none new.
 
-## Test contract (`.../tests/test_validation_harness_esl_slice.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_validation_harness_esl_slice.py`)
 
 - `test_language_status_slices_present` — report carries per-status FPR/TPR when entries
   have language status.

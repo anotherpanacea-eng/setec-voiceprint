@@ -1092,7 +1092,7 @@ train on the result.
 
 ## Named implementation and documentation deliverables
 
-- `scripts/acquire_imessage_sent_atomic.py`;
+- `plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py`;
 - focused acquisition tests plus malformed/mutated fixture builders;
 - atomic-run validator and tests;
 - `capabilities.d/acquire_imessage_sent_atomic.yaml` with

@@ -204,11 +204,18 @@ def verify(ref: Reference, idx: RepoIndex) -> None:
             ref.status = "absent"
             ref.suggestion = _suggest(path.rsplit("/", 1)[-1], idx.basenames.keys())
             return
-        try:
-            n = sum(1 for _ in (idx.root / resolved).open(encoding="utf-8", errors="ignore"))
-        except OSError:
-            ref.status = "absent"
-            return
+        # A bare basename can name several files (e.g. a compatibility launcher and the
+        # package module it forwards to). The cited line is in range if ANY of them reaches
+        # it; checking only the first walk hit made the verdict depend on rglob order.
+        candidates = [resolved] if "/" in path else idx.basenames.get(path, [resolved])
+        n = 0
+        for candidate in candidates:
+            try:
+                count = sum(1 for _ in (idx.root / candidate).open(encoding="utf-8", errors="ignore"))
+            except OSError:
+                continue
+            if count > n:
+                n, resolved = count, candidate
         ref.status = "found" if (ref.line or 0) <= n else "absent"
         if ref.status == "absent":
             ref.suggestion = f"{resolved} has {n} lines (cited :{ref.line})"

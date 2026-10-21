@@ -90,7 +90,7 @@ parse-free dependency distance, so the surface abstains rather than approximatin
 - **Surface-addition paper trail (AGENTS.md):** the `capabilities.d/` fragment + a `changelog.d/`
   fragment (citing arXiv:2211.14620) + **`_golden_capabilities.json` regen (insert entry, `json.dumps`
   indent=2 **without** `sort_keys`; alphabetical) + the `== N` count bump in
-  `tests/test_capabilities_dropin.py`** + `gen_calibration_readiness.py` refresh + a
+  `plugins/setec-voiceprint/scripts/tests/test_capabilities_dropin.py`** + `gen_calibration_readiness.py` refresh + a
   **`references/signals-glossary.md` entry at BUILD** (a new signal; the calibration-status
   *distribution counts* + ROADMAP reconcile at release). Run check_capabilities_drift /
   gen_calibration_readiness / check_docs_freshness AND `pytest tests/test_capabilities_dropin.py` before push.

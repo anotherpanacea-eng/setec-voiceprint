@@ -37,7 +37,7 @@ mean ± sd, and the z-distance** — the deviation, not an absolute.
 - **Claim license:** *licenses* "how this draft's roughness features deviate from this writer's own baseline pattern"; *refuses* any absolute roughness/quality judgment, any voice/authorship/AI verdict, and any use without a writer-specific baseline.
 - **capabilities.yaml:** `id: productive_roughness_audit`, `surface: productive_roughness`, `status: heuristic`, `compute: {tier: spacy, length_floor_words: 1000}`, `dependencies.python: [spacy]`.
 
-## Test contract (`tests/test_productive_roughness_audit.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_productive_roughness_audit.py`)
 
 - `test_surface_registered`; `test_requires_baseline` (no `--baseline-dir` → clean error / `available=False`); `test_fragment_detection` (spaCy stub or `en_core_web_sm`); `test_features_are_relative` (results carry baseline_mean + z, not an absolute band); `test_claim_license_refuses_absolute_and_verdict`; `test_envelope_shape`; `test_deterministic`.
 

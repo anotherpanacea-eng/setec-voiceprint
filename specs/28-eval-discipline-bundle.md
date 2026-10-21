@@ -149,7 +149,8 @@ doc its own PR), for three reasons:
 only if — a fragment's wording changes, regenerate `_golden_capabilities.json` (the
 `entries`-keyed dict) by inserting/replacing that entry with **`json.dumps`, no
 `sort_keys`** (the "voiceprint capability golden bump" rule) and **keep the count
-`== 95`** in `tests/test_capabilities_dropin.py:53` unchanged — because no entry is
+`== 95`** in `plugins/setec-voiceprint/scripts/tests/test_capabilities_dropin.py` unchanged (that count
+pin was later retired) — because no entry is
 *added*. The `_golden_task_surface_labels.json` flat dict changes only if a label string
 changes; here it does not. **Net: zero count bumps, at most two fragment-text edits +
 their golden re-serialization.** This is the both-goldens discipline applied honestly to

@@ -119,7 +119,7 @@ attribute) → a ranked named-description list. The anchors are themselves LUAR-
 
 ## Test contract (monkeypatched input seam; torch-free)
 
-`tests/test_cosine_explanation.py` (M1): monkeypatch `compute_inputs` to return a fixed `(cosine,
+`plugins/setec-voiceprint/scripts/tests/test_cosine_explanation.py` (M1): monkeypatch `compute_inputs` to return a fixed `(cosine,
 features)` →
 - deterministic `named_feature_comparison` shape (each row has feature/target_value/comparison_value/
   feature_similarity/`agreement ∈ {tracks, diverges}`) + `divergent_features` = the diverging rows.

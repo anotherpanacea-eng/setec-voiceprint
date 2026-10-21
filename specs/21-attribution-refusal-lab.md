@@ -194,7 +194,7 @@ Three gates, each a hard refusal (not a warning), plus per-experiment acceptance
   recorded `control_design` + `residual_after_controls`. E3: the aggregate contrast +
   `calibration_bins` + a *passed* foil-strength gate.
 
-## Test contract (`scripts/tests/test_attribution_refusal_lab.py`)
+## Test contract (planned `test_attribution_refusal_lab` module; build-gated, not yet created)
 
 - `test_task_surface_is_validation` — `TASK_SURFACE == "validation"`.
 - `test_consent_gate_refuses_live` — a manifest row with `consent: live_unconsented`

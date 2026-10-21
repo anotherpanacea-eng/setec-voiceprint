@@ -12,7 +12,7 @@ truth for each contract.
 
 ## Index
 
-> **Reconciled 2026-07-02** against `capabilities.d/` + `fleet_inventory.py` (the docs had drifted — the shortlist build loop shipped faster than this index updated). Statuses below are oracle-verified. Specs **22–35** were not indexed here; see [§ Specs 22–35](#specs-2235--arxiv-shortlist-wave). Tier annotations mark cloud-buildability: **Tier 1/2 (stdlib/spaCy) → cloud** (CI installs spaCy + runs the suite); **torch/embeddings/surprisal/judge → local box** (`skipif` in CI).
+> **Reconciled 2026-07-02** against `capabilities.d/` + the fleet inventory (the docs had drifted — the shortlist build loop shipped faster than this index updated). Statuses below are oracle-verified. Specs **22–35** were not indexed here; see [§ Specs 22–35](#specs-2235--arxiv-shortlist-wave). Tier annotations mark cloud-buildability: **Tier 1/2 (stdlib/spaCy) → cloud** (CI installs spaCy + runs the suite); **torch/embeddings/surprisal/judge → local box** (`skipif` in CI).
 
 | File | What |
 |---|---|
@@ -55,7 +55,7 @@ the flipped statuses above); their model/corpus tiers run on the local box.
 ## Specs 22–35 — arXiv-shortlist wave
 
 Built by the autonomous shortlist loop and **not** in the index above. Status verified
-2026-07-02 against `capabilities.d/` + `fleet_inventory.py`. Spec numbers repeat (a number
+2026-07-02 against `capabilities.d/` + the fleet inventory. Spec numbers repeat (a number
 is a wave group, not a unique id).
 
 **Shipped:** 22 set-level-diversity (`set_level_diversity`) · 23 rank-turbulence-delta

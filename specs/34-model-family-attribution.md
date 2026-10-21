@@ -129,7 +129,7 @@ style-embedding tier → gated/skipif like `voice_fingerprint`. Lands separately
 
 ## Test contract (stdlib; torch-free; CI-runnable end to end)
 
-`tests/test_model_family_attribution.py` — small synthetic per-family corpora (≥ MIN_DOCS_PER_FAMILY) with
+`plugins/setec-voiceprint/scripts/tests/test_model_family_attribution.py` — small synthetic per-family corpora (≥ MIN_DOCS_PER_FAMILY) with
 distinct stylometric profiles →
 - deterministic `family_ranking` (target drawn from family X ranks X top) over RAW similarities; **no key
   sums to 1** (assert no `advisory_posterior`).

@@ -439,6 +439,19 @@ def test_ambiguous_basename_is_not_gated(tmp_path):
     assert _lint("see `dup.py`", root)["gated"] is False
 
 
+def test_ambiguous_basename_file_line_checks_every_candidate(tmp_path):
+    # Bug: a bare `name.py:N` was checked against the first rglob hit only, so a short
+    # compatibility launcher shadowed the long module it forwards to. In range in any
+    # candidate resolves; past the end of all of them still gates.
+    root = _make_repo(tmp_path)
+    (root / "a_launcher").mkdir()
+    (root / "a_launcher" / "mod.py").write_text("from pkg import mod\n", encoding="utf-8")
+    (root / "z_pkg").mkdir()
+    (root / "z_pkg" / "mod.py").write_text("x = 1\n" * 40, encoding="utf-8")
+    assert _lint("see `mod.py:30`", root)["gated"] is False
+    assert _lint("see `mod.py:41`", root)["gated"] is True
+
+
 def test_env_var_substring_is_not_a_false_positive(tmp_path):
     # An invented SETEC_FOO must NOT resolve just because SETEC_FOO_BAR exists in
     # source — env-var is a gating type, so a substring match is a false negative.

@@ -300,7 +300,7 @@ not the spec-18 model (M1 = a real stdlib linter). Stated plainly so review does
 
 ## Test contract (mock judge; torch-free; the M1 CI surface)
 
-`tests/test_argquality_dimension_profile.py` — a `mock` judge returning a fixed three-band result →
+`plugins/setec-voiceprint/scripts/tests/test_argquality_dimension_profile.py` — a `mock` judge returning a fixed three-band result →
 
 1. **Three-band data shape** — `results.dimensions` has exactly the three keys `logic` / `rhetoric` /
    `dialectic`, each with `band ∈ {lower, mid, higher, null}`, an `evidence_spans` list of
