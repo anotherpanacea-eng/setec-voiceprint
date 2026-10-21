@@ -202,8 +202,8 @@ def warn_if_large_manifest(
     # Without this the recipe fails for exactly the operator the
     # warning is trying to help — RAID-scale corpora often live
     # under user-named directories with spaces (e.g., today's
-    # workspace at ``C:\Users\Joshua\Documents\Claude Cowork
-    # Working Folder\...``).
+    # workspace under ``C:\Users\<name>\Documents\My Working
+    # Folder\...``).
     #
     # Codex P2 on PR #52. Quoted with POSIX shell rules; if the
     # operator is on cmd.exe rather than bash they may still need
