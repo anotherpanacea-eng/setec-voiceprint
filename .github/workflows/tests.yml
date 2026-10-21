@@ -32,8 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history: the diff-scoped spec-anchor lint below needs a merge
-          # base against the PR base ref, and a shallow clone has none.
+          # Full history: the P5 layering and flat-module gates below compare
+          # against a merge base with the PR base ref, and a shallow clone has none.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -133,26 +133,22 @@ jobs:
           python3 tools/check_syspath_ratchet.py --strict
           python3 tools/check_no_new_flat_modules.py --strict
 
-      # Spec-anchor lint, DIFF-SCOPED. tools/spec_anchor_lint.py catches the
+      # Spec-anchor lint, WHOLE TREE. tools/spec_anchor_lint.py catches the
       # "a spec asserts a symbol / file:line / sibling-spec / env-var that does
       # not exist" class, which the build retrospective puts behind ~40% of P1s.
-      # It caught a real gating phantom in spec 37 -- six references to a
-      # sibling spec number that was never allocated -- that nothing in CI ran.
-      #
-      # Scoped to specs CHANGED in this PR, deliberately. 19 of the 51 specs on
-      # main gate today, and sampling shows those are overwhelmingly shorthand-
-      # path false positives (a spec writes `tests/test_explain.py` for a file
-      # that really lives at plugins/.../scripts/tests/test_explain.py), not
-      # real phantoms. Gating the whole tree would fail CI on day one and teach
-      # everyone to ignore the signal. Ratchet instead: new and edited specs
-      # must be clean, historical shorthand is left alone until someone touches
-      # that spec. MEDIUM-confidence hits stay advisory (no --strict).
-      - name: Spec anchor lint (changed specs)
+      # Every spec on main resolves its gating anchors, so every spec is linted
+      # on every run: a code move that strands an anchor in an untouched spec
+      # fails here, not only an edit to the spec itself. MEDIUM-confidence hits
+      # stay advisory (no --strict).
+      - name: Spec anchor lint (all specs)
         if: always()
         run: |
           set -euo pipefail
-          base="origin/${{ github.base_ref }}"
-          python3 tools/check_changed_spec_anchors.py --repo . --base "$base"
+          rc=0
+          while IFS= read -r -d '' spec; do
+            python3 tools/spec_anchor_lint.py --spec "$spec" --repo . || { echo "::error file=$spec::phantom spec anchor"; rc=1; }
+          done < <(find specs -name '*.md' -print0 | sort -z)
+          exit "$rc"
 
   macos-descriptor-confinement:
     if: >-
