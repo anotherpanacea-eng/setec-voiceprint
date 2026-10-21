@@ -8,7 +8,7 @@
 > *structure* view of the same tokens the shipped `function_word_grammar_audit`
 > reads as flat sequences. **No verdict.** M1 = stdlib + numpy (already in CI).
 
-- **Status:** DRAFT — DECISION-COMPLETE, **review findings folded** (see §13). The
+- **Status:** Shipped (`function_word_adjacency_audit`). Decision-complete, **review findings folded** (see §13). The
   load-bearing design call (overlap with `function_word_grammar_audit`) is
   resolved **with evidence** below: ship as a **sibling capability that reuses the
   same token stream**, because the graph-structural features are mechanically

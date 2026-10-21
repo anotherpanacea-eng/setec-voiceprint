@@ -13,7 +13,7 @@
 > features, with a **relative** out-of-distribution gate. **No normalized posterior, no attribution
 > verdict, no AI-vs-human verdict.** Raw ranked evidence for a human, under heavy abstention.
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 4 P1s fixed: (1)
+- **Status:** Shipped (`model_family_attribution`); adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 4 P1s fixed: (1)
   **dropped the normalized `advisory_posterior`** — a sum-to-1 quantity over families reads as P(family)
   and renormalizes to look confident on a bad fit (the #231 `residual_fraction` lesson); M1 emits only
   raw per-family similarities. (2) **OOD is now RELATIVE** — a per-family within-scatter baseline, not a

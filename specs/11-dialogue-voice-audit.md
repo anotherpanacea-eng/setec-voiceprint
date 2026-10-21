@@ -5,7 +5,7 @@
 > / discourse-marker signatures — to catch character-voice collapse, which shows up in
 > dialogue before narration.
 
-- **Status:** Spec (full-deps box — needs spaCy).
+- **Status:** Shipped (`dialogue_voice_audit`; needs spaCy).
 - **Tier:** Tier 4 (ROADMAP → "Dialogue-Specific Voice Audit … Round 2 of `pov_voice_profile.py` — character voice collapse often appears in dialogue first, narration second.").
 - **GPU required:** no, but **needs spaCy** for dialogue tokenization + POS/dep.
 - **License:** N/A (local).

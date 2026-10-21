@@ -5,7 +5,7 @@
 > (here/now/this), evaluative-adjective density, and FID markers — for developmental
 > editing of literary fiction.
 
-- **Status:** Spec (full-deps box — needs spaCy).
+- **Status:** Shipped (`narratorial_distance_audit`; needs spaCy).
 - **Tier:** Tier 4 (ROADMAP → "Narratorial Distance / Free Indirect Audit … outside standard stylometry literature but valuable for developmental editing of literary fiction. Adjacent to per-POV voice profile.").
 - **GPU required:** no, but **needs spaCy** (POS/dep + lemma for verb classes).
 - **License:** N/A (local).

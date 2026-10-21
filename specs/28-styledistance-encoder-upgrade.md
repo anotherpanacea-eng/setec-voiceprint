@@ -19,7 +19,7 @@ here): **StyleDistance** — synthetic near-paraphrase contrastive training for
 authorship-representation encoder for crosslingual style
 ([arXiv:2509.16531](https://arxiv.org/abs/2509.16531)).
 
-- **Status:** Reviewed (GO-WITH-CHANGES); review findings folded into this text —
+- **Status:** Shipped (encoder seam behind `voice_fingerprint` / `crosslingual_voice_distance`). Reviewed (GO-WITH-CHANGES); review findings folded into this text —
   see "Review findings folded in (M1)" at the foot of this spec.
 - **Tier:** "Capability-shortlist item 8 (IMPROVES) — stronger style encoder." It
   is on `setec-scratch/arxiv-capability-review/{SHORT-LIST,LONG-LIST}.md` mapped to

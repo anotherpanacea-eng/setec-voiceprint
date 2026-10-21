@@ -4,7 +4,7 @@
 > span of each syntactic link) — mean dependency distance (MDD) + its shape — a working-memory /
 > complexity axis no current SETEC surface measures.
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (verdict NEEDS-REWORK → reworked). Fixes:
+- **Status:** Shipped (`dependency_distance_audit`); adversarially reviewed 2026-06-19 (verdict NEEDS-REWORK → reworked). Fixes:
   the scalar MDD already ships as `variance_audit.mdd_stats` → **reframed to the distribution as the
   new axis + reuse mdd_stats**; **punctuation kept** (align with mdd_stats) so the numeric pins +
   `n_links` invariant are defined; whole-surface degradation via `build_error_output` (general_imposters

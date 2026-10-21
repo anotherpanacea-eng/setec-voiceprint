@@ -4,7 +4,7 @@
 > independently reviewed draft constituents, one fresh exact-head integration
 > train, one complete hosted run, and one merge to `main`.
 
-- **Status:** Implementation review in progress on `codex/draft-first-integration-trains`
+- **Status:** Adopted (PR #423, merged 2026-09-03); `AGENTS.md` carries the live workflow
 - **Tier:** repository process / CI policy
 - **GPU required:** no
 - **Upstream / prior art:** the repo's existing `AGENTS.md` Actions-conservation

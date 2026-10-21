@@ -54,7 +54,7 @@ Both are **stdlib over an existing logit series** (no new model, no new backend 
 they re-use the vector `score_text` already returns), which is exactly what makes their
 core CI-testable with an injected synthetic sequence.
 
-- **Status:** Draft for review (pre-build; this is a design doc, not an implementation).
+- **Status:** Shipped (`specdetect_audit`). The design doc below predates the build.
 
 ## Goal
 

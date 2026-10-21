@@ -4,7 +4,7 @@
 > (Unicode/homoglyph, paraphrase, language-switch, short-text) and report robustness
 > per signal — extending the validation surface, not adding a detector.
 
-- **Status:** Ready
+- **Status:** Shipped (`pan_replay`).
 - **Tier:** near-term
 - **GPU required:** no
 - **Upstream / prior art:** PAN@CLEF 2024/2025 Generative-AI Authorship Verification ([PAN24 task](https://pan.webis.de/clef24/pan24-web/generated-content-analysis.html)); complements the existing `adversarial_fixtures.py` + `adversarial_robustness_card.py`.

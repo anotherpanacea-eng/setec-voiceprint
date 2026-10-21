@@ -4,7 +4,7 @@
 > pointers) and a **warrant probe** (Toulmin critical-question coverage). **Descriptive flags for the
 > human, never a "bad argument" / "fallacious" / soundness verdict.**
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 3 P1s fixed: (1) **the
+- **Status:** Shipped (`fallacy_scan`, `warrant_probe`); adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 3 P1s fixed: (1) **the
   data shape must not adjudicate** — `fallacy_tally`/`fallacy_spans` → `rhetorical_move_flags` /
   `candidate_pattern_tally` (`candidate_type`) + a `not in`-on-keys guard (the operator's hard line);
   (2) **dropped the fabricated `--register` hard-abstain** (no classifier; soft `register_warnings`

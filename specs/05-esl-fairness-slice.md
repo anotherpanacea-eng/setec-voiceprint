@@ -4,7 +4,7 @@
 > per-language-status FPR/TPR so SETEC can measure (and refuse to exceed) the
 > documented non-native-English false-positive failure mode.
 
-- **Status:** Ready
+- **Status:** Shipped inside `validation_harness` (the per-`language_status` slice; no standalone capability).
 - **Tier:** near-term
 - **GPU required:** no
 - **Upstream / prior art:** Liang et al., *Patterns* 2023 — 61% of human TOEFL essays flagged as AI ([arXiv:2304.02819](https://arxiv.org/abs/2304.02819)). SETEC already cites this in its "Why no verdict" posture and has a `language_status` manifest field + ESL ratchet in `manifest_validator.py`.

@@ -5,7 +5,7 @@
 > the named lens **tracks** vs **diverges** from the embedding. An explanation layer — it adds **no new
 > verdict** and **no fabricated number**, it makes the existing cosine inspectable.
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). The make-or-break P1:
+- **Status:** Shipped (`cosine_explanation`); adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). The make-or-break P1:
   you **cannot** partition a single neural cosine scalar into explained+residual without a fit (the cited
   Residualized Similarity *is* a fitted method), so the original "no-fit `explained_fraction`/
   `residual_fraction`" was fabricated and the "residual headline" would read as an AI verdict. Fixed:

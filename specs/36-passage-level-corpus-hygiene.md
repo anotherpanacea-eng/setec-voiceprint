@@ -12,7 +12,7 @@
 > set-level-diversity surfaces must NOT consume a passage-deduped corpus (marker + `pool_guard`
 > scan + a coverage drift test over the complete, grep-derived loader table).
 
-- **Status:** Draft (rework 2 — folds the adversarial spec-review round: M2 cut, detection unit
+- **Status:** M1 shipped (`near_dup_dedup.py --passages`; see ROADMAP). Spec rework 2 folds the adversarial spec-review round: M2 cut, detection unit
   redesigned, export made schema-valid, drift test made day-one-green, private-run references
   sanitized, spec made self-contained)
 - **Tier:** near-term (CI-runnable; Stage A needs only the existing optional `datasketch`

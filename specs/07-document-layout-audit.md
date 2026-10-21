@@ -5,7 +5,7 @@
 > as its own small audit under a new `document_layout` task surface, with
 > claim-licensing that explicitly refuses any voice/authorship/AI inference.
 
-- **Status:** Ready → building (this PR).
+- **Status:** Shipped (`document_layout_audit`).
 - **Tier:** Tier 5 "adjacent surface" (Stylometric surface expansion → ship as a non-voice surface with explicit claim-language guards).
 - **GPU required:** no — stdlib only (`re`, `statistics`).
 - **Upstream / prior art:** ROADMAP "Tier 5 — Adjacent surfaces (ship under different framing) → Document Structure / Layout Audit."

@@ -5,7 +5,7 @@
 > repetition, asides, very-short sentences. Reports how a *draft* moves relative to
 > the *writer's own stable roughness pattern* — never an absolute "good/rough" call.
 
-- **Status:** Spec (build on the full-deps box — needs spaCy).
+- **Status:** Shipped (`productive_roughness_audit`; needs spaCy).
 - **Tier:** Tier 4 (ROADMAP → "Productive Roughness Audit … methodologically fragile … has to be **strictly baseline-relative** … never absolute. Otherwise it encodes editorial preferences as voice. Build only with that constraint frontloaded.").
 - **GPU required:** no, but **needs spaCy** (`en_core_web_sm`) for fragment / finite-verb detection — which is why this is a box build, not a sandbox build.
 - **License:** N/A (local).

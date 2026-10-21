@@ -5,7 +5,7 @@
 > holistic voice fingerprint that complements SETEC's scalar signals and refuses an
 > identity/AI verdict.
 
-- **Status:** Ready
+- **Status:** Shipped (`voice_fingerprint`).
 - **Tier:** near-term
 - **GPU required:** inference-optional (CPU-feasible for forensic batch sizes; <2 GB VRAM if available)
 - **Upstream / prior art:** LUAR ([EMNLP 2021](https://aclanthology.org/2021.emnlp-main.70/), [LLNL/LUAR](https://github.com/LLNL/LUAR), weights `rrivera1849/LUAR-MUD`); Wegmann et al. 2022 "Same Author or Just Same Topic?" ([RepL4NLP](https://aclanthology.org/2022.repl4nlp-1.26/), `AnnaWegmann/Style-Embedding`).

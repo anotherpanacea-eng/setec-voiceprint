@@ -4,7 +4,7 @@
 > text and measure how much it changes — LLMs edit their own (AI-like) prose less than
 > human prose. A paraphrase-robust axis orthogonal to perplexity signals.
 
-- **Status:** Spec (research-grade; full-deps box; needs LLM access).
+- **Status:** Shipped (`rewriting_invariance_audit`; research-grade; needs LLM access).
 - **Tier:** Research (research brief §D).
 - **GPU required:** no (uses an LLM API or a local instruct model); network/key if API.
 - **Upstream:** Mao et al., "Raidar: geneRative AI Detection viA Rewriting" ([ICLR 2024, arXiv:2401.12970](https://arxiv.org/abs/2401.12970)).

@@ -4,7 +4,7 @@
 > much a text was AI-edited, framed as a **same-corpus calibrated estimate with
 > explicit OOD caveats** — never an absolute "% AI."
 
-- **Status:** Spec (research-grade; full-deps box; needs a corpus + GPU fine-tune).
+- **Status:** Shipped (`edit_magnitude_audit`; research-grade; the fine-tune needs a corpus + GPU).
 - **Tier:** Research (research brief §C; ROADMAP calibration track).
 - **GPU required:** **yes** (fine-tune RoBERTa-Large; ~355M params).
 - **Upstream:** EditLens (Thai et al., ICLR 2026, [arXiv:2510.03154](https://arxiv.org/abs/2510.03154)).

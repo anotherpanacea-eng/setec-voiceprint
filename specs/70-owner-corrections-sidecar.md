@@ -3,7 +3,7 @@
 > Canonicalize the repeated owner-correction staging pattern as a deterministic,
 > fail-closed JSONL pre-registration pass without mutating source manifests.
 
-- **Status:** In build (`codex/owner-corrections-sidecar`)
+- **Status:** Built (`apply_owner_corrections.py`, PR #337, merged 2026-07-21)
 - **Tier:** near-term
 - **GPU required:** no
 - **Source contract:** fleet refill packet B4 and update-14 Windows portability guidance

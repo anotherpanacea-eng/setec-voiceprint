@@ -7,7 +7,7 @@
 > framework currently treats only as a fairness *caution*. Honest about its
 > ceiling: language-*agnostic*, not language-*aware*.
 
-- **Status:** Ready → building (this group).
+- **Status:** Shipped (`crosslingual_voice_distance`).
 - **Tier:** "Capability-whitespace additions (2026-06-07) → W5". The shipped pipeline is English-only (spaCy `en`); multilingual exists only as the fairness-guardrail caution + the planned ESL/L2 fairness fixture slice (`specs/05`), both about *English written by L2 speakers*.
 - **GPU required:** no — stdlib only (`re`, `unicodedata`, `collections`, `math`, `statistics`).
 - **License decision:** N/A — local code; character-n-gram authorship distance is classical (Kešelj et al. 2003; Stamatatos surveys) and content-independent by construction.
