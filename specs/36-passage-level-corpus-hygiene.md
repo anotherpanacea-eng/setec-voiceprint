@@ -14,7 +14,7 @@
 
 - **Status:** M1 shipped (`near_dup_dedup.py --passages`; see ROADMAP). Spec rework 2 folds the adversarial spec-review round: M2 cut, detection unit
   redesigned, export made schema-valid, drift test made day-one-green, private-run references
-  sanitized, spec made self-contained)
+  sanitized, spec made self-contained.
 - **Tier:** near-term (CI-runnable; Stage A needs only the existing optional `datasketch`
   acquisition dep, Stage B is pure stdlib)
 - **GPU required:** no

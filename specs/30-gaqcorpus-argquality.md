@@ -7,8 +7,8 @@
 > "argument quality" score, never a "good/bad argument" / "high-quality" / "weak" label — a profile of
 > three descriptive bands a human reads, the operator's standing line.**
 
-- **Status:** Shipped (`argquality_dimension_profile`). The pre-build design note follows. Captures
-  the dedup decision, the data-shape posture, and the M1/M2 split. The eventual M1 PR is gated behind a
+- **Status:** Shipped (`argquality_dimension_profile`). This began as a pre-build design doc that
+  captured the dedup decision, the data-shape posture, and the M1/M2 split, with the M1 PR gated behind a
   pre-build adversarial review (the `26-fallacy-warrant-scan` precedent: NEEDS-REWORK → reworked → Ready).
 - **Tier:** research-grade (**judge-tier** — mirrors `argument_decision_audit` / `fallacy_scan` judge
   wiring; **mock judge in CI**, real LLM judge on the API/box). NOT a GPU/torch surface.
