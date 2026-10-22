@@ -6,7 +6,7 @@
 > voice/AI inference **and** explicitly flags topic-leakage — reference ecology
 > changes with subject matter, not with authorial voice.
 
-- **Status:** Ready → building (this PR).
+- **Status:** Shipped (`reference_ecology_audit`).
 - **Tier:** Tier 5 "adjacent surface" (ROADMAP → "Reference Ecology Audit … heavily topic-bound … ship with claim-licensing that explicitly refuses voice attribution. Better as a thematic / register profile than a voice tool.").
 - **GPU required:** no — stdlib only (`re`, `statistics`, `collections`).
 - **Upstream / prior art:** ROADMAP "Tier 5 — Adjacent surfaces → Reference Ecology Audit" (+ the adjacent Allusion / Quotation Habit note, folded in here as quotation/attribution density).

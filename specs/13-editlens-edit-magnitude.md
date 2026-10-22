@@ -4,7 +4,7 @@
 > much a text was AI-edited, framed as a **same-corpus calibrated estimate with
 > explicit OOD caveats** — never an absolute "% AI."
 
-- **Status:** Spec (research-grade; full-deps box; needs a corpus + GPU fine-tune).
+- **Status:** Shipped (`edit_magnitude_audit`; research-grade; the fine-tune needs a corpus + GPU).
 - **Tier:** Research (research brief §C; ROADMAP calibration track).
 - **GPU required:** **yes** (fine-tune RoBERTa-Large; ~355M params).
 - **Upstream:** EditLens (Thai et al., ICLR 2026, [arXiv:2510.03154](https://arxiv.org/abs/2510.03154)).
@@ -39,7 +39,7 @@ target (BERTScore-family) computed between original/edited text pairs from a
 ## Contract
 
 - **task_surface:** new `edit_magnitude` (discrimination family; add to enum + labels). Uncalibrated by default.
-- **CLI:** `python3 scripts/edit_magnitude_audit.py TARGET [--model PATH] [--json] [--out PATH]`; training in a sibling `scripts/calibration/train_edit_magnitude.py`.
+- **CLI:** `python3 scripts/edit_magnitude_audit.py TARGET [--model PATH] [--json] [--out PATH]`; training in a sibling `plugins/setec-voiceprint/scripts/calibration/train_edit_magnitude.py`.
 - **JSON envelope:** `results` = magnitude score + (if a calibrated model supplied) the same-corpus band + the corpus provenance. `ClaimLicense`.
 - **Claim license:** *licenses* "an edit-magnitude estimate relative to the specific corpus the model was calibrated on"; *refuses* an absolute "% AI" / dosage claim, cross-corpus generalization, and any per-sentence localization. States the OOD-collapse caveat explicitly.
 - **capabilities.yaml:** `id: edit_magnitude_audit`, `surface: edit_magnitude`, `status: heuristic` until a PROVENANCE-logged calibration exists, `compute: {tier: surprisal}`, `dependencies.python: [transformers, torch]`.

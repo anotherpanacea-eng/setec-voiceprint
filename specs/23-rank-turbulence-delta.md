@@ -4,7 +4,7 @@
 > rank-turbulence divergence (RTD) — that says *which words drive the difference*, the
 > attribution layer Burrows Delta's single aggregate score can't give.
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (P1 fixes: **function-words-only M1 default**
+- **Status:** Shipped (`rank_turbulence_audit`); adversarially reviewed 2026-06-19 (P1 fixes: **function-words-only M1 default**
   to kill the topic confound; Z(α) normalization + reconstruction invariant pinned; **mandatory
   self-exclusion** of the target from its own baseline; tie-rule + α-monotonicity numeric pins). M1
   cleared to build.

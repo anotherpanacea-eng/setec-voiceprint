@@ -7,7 +7,7 @@
 > Ships as an **orthographic-onset proxy** (stdlib, no pronunciation dictionary)
 > and says so plainly. Non-verdict.
 
-- **Status:** Ready → building (this group).
+- **Status:** Shipped (`sound_texture_audit`).
 - **Tier:** Tier 4 "specialized / fiction-specific" (ROADMAP → "Capability-whitespace additions (2026-06-07) → W2"). Sound is a real voice dimension for literary registers and is absent from every shipped signal.
 - **GPU required:** no — stdlib only (`re`, `collections`, `math`, `statistics`).
 - **License decision:** N/A — local code; the consonant-class letter mapping is

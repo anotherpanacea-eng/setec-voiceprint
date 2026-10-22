@@ -1,6 +1,6 @@
 # SVP dependency inversion: non-text helpers
 
-**Status:** draft, 2026-10-13 · **Card:** CB-5 (Fleet #708) · **Repo:** setec-voiceprint
+**Status:** closed by the owner 2026-10-14 after 13 units (last: train PR #788) · **Card:** CB-5 (Fleet #708) · **Repo:** setec-voiceprint
 
 ## Goal
 

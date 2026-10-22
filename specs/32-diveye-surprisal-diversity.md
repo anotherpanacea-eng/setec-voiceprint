@@ -6,7 +6,7 @@
 > the five already-shipped surprisal moments into a 9-signal DivEye vector.
 
 - **Status:** Shipped (M1) — merged via **PR #258** (`diveye_signals.py`; model-free signal
-  aggregation + CI tests). M2 (the registered `diveye_audit.py` discrimination
+  aggregation + CI tests). M2 (a registered `diveye_audit` discrimination
   surface + XGBoost calibration) is experiment-gated and NOT in this build; the M2
   real-surprisal path remains local/gated.
 - **Tier:** near-term (M1, stdlib, CPU); research-grade (M2, gated).
@@ -29,7 +29,7 @@
 > **Path adaptation note.** This spec was authored for the Code-PC checkout
 > (a Windows workstation). Every path below has been adapted to the macOS
 > checkout of this repo. The
-> Code-PC-only experiment scaffolds (`_diveye_smoke.py`, `_diveye_empirical.py`,
+> Code-PC-only experiment scaffolds (`_diveye_smoke`, `_diveye_empirical`,
 > `_litprose_frontier_2026-06-20`, `_raid_tier4`) are M0/M2 local artifacts and
 > are NOT created in this repo by the M1 build.
 
@@ -57,21 +57,21 @@ duplicating the math.
 
 Existing code audited in the Code-Mac checkout:
 
-- `scripts/surprisal_audit.py` — per-token surprisal series + mean / variance /
+- `plugins/setec-voiceprint/scripts/surprisal_audit.py` — per-token surprisal series + mean / variance /
   skew / excess-kurtosis / ACF (lags 1,2,3,5,10) / sliding-window. **Covers F1–F4
   and F9.** `TASK_SURFACE = "smoothing_diagnosis"`. Exposes the reusable helpers
   `_mean`, `_sample_variance`, `_sample_sd`, `_acf_at_lag`, `_skew`,
   `_excess_kurtosis`, and `MIN_SERIES_FOR_ACF = 30` (verified on this checkout).
-- `scripts/variance_audit.py` — Tier-4 glass-box (stylometry + surprisal
+- `plugins/setec-voiceprint/scripts/variance_audit.py` — Tier-4 glass-box (stylometry + surprisal
   embedding). Emits mean/sd/acf1. No temporal-difference or distribution-entropy
   signals.
-- `scripts/fast_detect_curvature.py` — Fast-DetectGPT conditional curvature
+- `plugins/setec-voiceprint/scripts/fast_detect_curvature.py` — Fast-DetectGPT conditional curvature
   (probability-space z-score). Its docstring already names "DivEye-style per-token
   surprisal moments" as a distinct, orthogonal method. No DivEye diversity
   signals. Confirmed orthogonal.
-- `scripts/binoculars_audit.py` — two-model cross-perplexity ratio
+- `plugins/setec-voiceprint/scripts/binoculars_audit.py` — two-model cross-perplexity ratio
   (`TASK_SURFACE = "binoculars_discrimination"`). No per-token diversity features.
-- `scripts/rank_turbulence_audit.py` (REVIEW N1) — Rank-Turbulence Divergence
+- `plugins/setec-voiceprint/scripts/rank_turbulence_audit.py` (REVIEW N1) — Rank-Turbulence Divergence
   (Dodds et al. 2020) over **function-word frequency distributions** between a
   target and a baseline corpus. `TASK_SURFACE = "voice_coherence"`. No per-token
   surprisal, no temporal-difference signals, no entropy of a surprisal histogram.
@@ -95,7 +95,7 @@ Existing code audited in the Code-Mac checkout:
 
 ## Method
 
-A pure-Python, stdlib-only module `scripts/diveye_signals.py`. No torch /
+A pure-Python, stdlib-only module `plugins/setec-voiceprint/scripts/diveye_signals.py`. No torch /
 transformers / scipy / sklearn / xgboost import at module level. `TASK_SURFACE =
 None` — it is a math helper, not a registered surface, so it requires no
 capabilities.d entry, no golden fragment, and no claim-license file (the drift
@@ -226,7 +226,7 @@ ships `calibration_status: heuristic` until a new held-out corpus is calibrated
 
 ## Out of scope / non-goals (this M1 build)
 
-- No `diveye_audit.py` registered surface, no `build_output` wiring, no XGBoost /
+- No `diveye_audit` registered surface, no `build_output` wiring, no XGBoost /
   logistic classifier, no `capabilities.d` / golden / claim-license registration
   (all M2; gated on the M0 lit-horror direction check + M2-Tier-1 empirics).
 - No real surprisal forward pass; no GPU; no model load.

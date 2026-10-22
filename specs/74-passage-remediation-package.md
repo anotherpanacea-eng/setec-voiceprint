@@ -7,7 +7,7 @@
 > or make Stage-B span decisions.
 
 - **Status:** Independent six-lens spec review and implementation review clear;
-  Increment 1 built and locally verified
+  Increment 1 built and merged (PR #350, 2026-07-27)
 - **Tier:** core / stdlib / CPU-only
 - **Repository:** `setec-voiceprint`
 - **Capability id:** `passage_remediation`

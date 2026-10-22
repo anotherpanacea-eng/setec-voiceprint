@@ -4,7 +4,7 @@
 > discrimination-evidence signal — a zero-shot statistic genuinely distinct from
 > Binoculars' cross-perplexity ratio and DivEye's surprisal moments.
 
-- **Status:** Ready
+- **Status:** Shipped (`fast_detect_curvature`).
 - **Tier:** near-term
 - **GPU required:** optional (one small causal LM; laptop-feasible)
 - **Upstream / prior art:** Bao et al., Fast-DetectGPT, ICLR 2024 ([arXiv:2310.05130](https://arxiv.org/abs/2310.05130), [repo](https://github.com/baoguangsheng/fast-detect-gpt)).

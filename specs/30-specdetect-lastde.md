@@ -26,15 +26,15 @@
 >   load-bearing design question requires; the surface output emits SpecDetect only.
 
 
-Builds on `scripts/surprisal_audit.py` (the existing per-token surprisal pipeline —
+Builds on `plugins/setec-voiceprint/scripts/surprisal_audit.py` (the existing per-token surprisal pipeline —
 `SurprisalBackend.score_text(text) -> list[float]` in bits, with the test-friendly
-`score_fn` injection seam `audit_surprisal` already exposes), `scripts/fast_detect_curvature.py`
+`score_fn` injection seam `audit_surprisal` already exposes), `plugins/setec-voiceprint/scripts/fast_detect_curvature.py`
 (spec `03-fast-detectgpt-curvature.md` — the **NEW Surface-5 zero-shot signal** precedent:
 its own `discrimination_curvature` task surface, a `score_fn` stub so no model loads in CI,
 **no shipped threshold and no verdict band**, and a `does_not_license` block that names its
 orthogonality to Binoculars + DivEye out loud), and the drop-in `capabilities.d/` +
 both-goldens registration discipline (`_golden_capabilities.json` count + `_golden_task_surface_labels.json`
-+ the `== N` count bump in `tests/test_capabilities_dropin.py`).
++ the `== N` count bump in `plugins/setec-voiceprint/scripts/tests/test_capabilities_dropin.py`).
 
 Two zero-shot detectors that read the **same per-token sequence** SETEC already computes,
 through two lenses the existing moments (mean / SD / ACF / skew / kurtosis) don't:
@@ -54,7 +54,7 @@ Both are **stdlib over an existing logit series** (no new model, no new backend 
 they re-use the vector `score_text` already returns), which is exactly what makes their
 core CI-testable with an injected synthetic sequence.
 
-- **Status:** Draft for review (pre-build; this is a design doc, not an implementation).
+- **Status:** Shipped (`specdetect_audit`). The design doc below predates the build.
 
 ## Goal
 
@@ -196,7 +196,7 @@ this spec's to force. Left as the Open Question below.)
 
 ## Design (stdlib core over the existing sequence; the real-model run is the model seam)
 
-A new `scripts/specdetect_audit.py`. **Imports no torch at module load** (the
+A new `plugins/setec-voiceprint/scripts/specdetect_audit.py`. **Imports no torch at module load** (the
 `import` stays stdlib); the real `SurprisalBackend` is touched only in the M2 CLI path, lazily,
 exactly as `surprisal_audit` / `fast_detect_curvature` do. The audit entrypoint takes either a
 backend **or** an injected `score_fn` / a raw sequence, so the whole spectral + entropy core

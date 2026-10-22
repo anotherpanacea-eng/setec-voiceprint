@@ -7,7 +7,7 @@
 > guaranteed error rate at this operating point." A methodology wrapper, **not** a
 > new detector — and an empty or full prediction set is a *licensed* output.
 
-- **Status:** Ready → building (this group).
+- **Status:** Shipped (`conformal_gate`).
 - **Tier:** Trustworthiness → "Validation upgrades" (ROADMAP → "Capability-whitespace additions (2026-06-07) → W7"). The framework abstains a lot (GI gray zone, `uncalibrated` bands, evidentiary-posture labels) and reports bootstrap CIs, but the abstention itself carries no formal coverage guarantee.
 - **GPU required:** no — stdlib only (`json`, `math`, `statistics`).
 - **License decision:** N/A — local code; split-conformal prediction is standard published methodology (Vovk; Angelopoulos & Bates 2023 gentle-intro).

@@ -5,7 +5,7 @@
 > matched memorization battery can spend its probes where corpus-only evidence
 > says reproduction risk may be highest.
 
-- **Status:** M1 implementation complete — independently reviewed; native exact-head CI gate pending
+- **Status:** M1 built (`reconstructibility_probe_set.py`, PR #359, merged 2026-07-25)
 - **Tier:** near-term M1 builder; optional M2 consumer seams are deferred
 - **GPU required:** no for M1; any tokenizer, generation, checkpoint, or GPU use
   is an operator-authorized M2 action outside this build

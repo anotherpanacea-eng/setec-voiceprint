@@ -4,7 +4,7 @@
 > pointers) and a **warrant probe** (Toulmin critical-question coverage). **Descriptive flags for the
 > human, never a "bad argument" / "fallacious" / soundness verdict.**
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 3 P1s fixed: (1) **the
+- **Status:** Shipped (`fallacy_scan`, `warrant_probe`); adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 3 P1s fixed: (1) **the
   data shape must not adjudicate** — `fallacy_tally`/`fallacy_spans` → `rhetorical_move_flags` /
   `candidate_pattern_tally` (`candidate_type`) + a `not in`-on-keys guard (the operator's hard line);
   (2) **dropped the fabricated `--register` hard-abstain** (no classifier; soft `register_warnings`
@@ -137,7 +137,7 @@ For each major claim the judge identifies, run the Critical-Questions-of-Thought
 
 ## Test contract (mock judge; torch-free)
 
-`tests/test_fallacy_scan.py` (M1): a `mock` judge returning a fixed candidate-flag set →
+`plugins/setec-voiceprint/scripts/tests/test_fallacy_scan.py` (M1): a `mock` judge returning a fixed candidate-flag set →
 - deterministic `rhetorical_move_flags` + `candidate_pattern_tally` shape (each flag has
   `candidate_type`/`span_text` (paragraph-anchored verbatim)/`paragraph_index`/`reconstruction`).
 - **no-verdict DATA-SHAPE guard** — `not in` over results KEYS for `fallacy_tally`, `fallacy_spans`,
@@ -150,7 +150,7 @@ For each major claim the judge identifies, run the Critical-Questions-of-Thought
 - **provenance (own fingerprint)** — `prompt_fingerprint_sha256` equals `fallacy_judge.fingerprint_prompt()`
   (NOT `argument_judge.fingerprint_prompt()` — assert they differ); `judge.provenance` present; `mock`
   labelled a stub.
-`tests/test_warrant_probe.py` (M2): analogous over `warrant_coverage` (no "unsound" key/label).
+`plugins/setec-voiceprint/scripts/tests/test_warrant_probe.py` (M2): analogous over `warrant_coverage` (no "unsound" key/label).
 
 ## Calibration posture
 

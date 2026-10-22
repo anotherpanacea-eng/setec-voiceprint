@@ -1,6 +1,6 @@
 # SVP hermetic backend mode
 
-- **Status:** draft, 2026-10-13 · **Card:** CB-6 (Fleet #709) · **Repo:** `setec-voiceprint`
+- **Status:** in build; units 1–10 landed 2026-10-13/14, three cases pending (below) · **Card:** CB-6 (Fleet #709) · **Repo:** `setec-voiceprint`
 - **History:** the August design is on `origin/spec/hermetic-amendment`
   (`43b46325`). Its blocker, the claim-license guard, was removed on 2026-08-07
   (`specs/svp-packaging-conversion.md` §3). Nothing here recreates it.
@@ -84,9 +84,9 @@ boundary.
   IDs; units 7–10 added `position_pair_register` (mock judge, marked input),
   `voice_profile` (`--no-spacy`), `s5_distance`, `voice_distance` and
   `idiolect_detector` (after making their tie ordering independent of the hash
-  seed) and `general_imposters` (a synthetic five-impostor corpus). Five are
-  pending: `author_corpus_export` and `gmail_author_pipeline` need source
-  fixtures, `binoculars_audit`'s refusal text depends on whether torch is
+  seed) and `general_imposters` (a synthetic five-impostor corpus). The
+  `author_corpus_export` and `gmail_author_pipeline` cases landed after unit 10
+  on synthetic inputs. Three are pending: `binoculars_audit`'s refusal text depends on whether torch is
   installed, `pov_voice_profile` always uses spaCy dependency features, and
   `voice_fingerprint` needs transformers.
 

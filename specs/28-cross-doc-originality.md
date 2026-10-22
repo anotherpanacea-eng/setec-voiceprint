@@ -67,8 +67,9 @@ count bump.** Verified against the live tree:
   `claim_license.py:53–65`), so **no `VALID_TASK_SURFACES` / `TASK_SURFACE_LABELS` edit** is allowed
   or needed.
 - The capabilities-golden test derives its count from the fragment set
-  (`tests/test_capabilities_dropin.py:78`, `assert len(m["entries"]) == len(golden)` — comment at
-  line 41 notes there is *"no `==N` count literal"*), so adding the new ids is a matter of dropping a
+  (at M1, `plugins/setec-voiceprint/scripts/tests/test_capabilities_dropin.py` asserted
+  `len(m["entries"]) == len(golden)` with *"no `==N` count literal"*; that check was culled
+  2026-10-16), so adding the new ids is a matter of dropping a
   `capabilities.d/<id>.yaml` fragment **and** a per-id `tests/_golden_capabilities/<id>.json`
   fragment — **no count bump, no shared-dict edit.**
 
@@ -86,8 +87,9 @@ target document excluded from its own reference.
 **Tuple-arity adapter (FOLDED FROM FINDINGS, P2).** The §S2 loader returns
 `list[tuple[source, text, resolved_path]]` (3-tuples), but `audit_originality`'s `reference` arg is
 `list[tuple[str, str]]` (2-tuples). Per leave-one-out iteration, drop the self doc by resolved_path
-**then strip to 2-tuples** before calling `audit_originality` — mirroring
-`originality_audit.py:249–251` verbatim:
+**then strip to 2-tuples** before calling `audit_originality` — mirroring the
+`originality_audit` self-exclusion as it stood at M1 (it has since gained a content-fingerprint
+guard; see `originality_audit.py:103`):
 
     this_abs = loaded[i][2]
     reference = [(src, text) for src, text, pth in loaded if pth != this_abs]
@@ -228,7 +230,7 @@ script seams and the `_golden_capabilities/` goldens are under `scripts/`.
 
 ## Test contract (names + invariants the build must satisfy)
 
-`scripts/tests/test_corpus_novelty_audit.py` and `test_skeleton_overlap_audit.py`:
+`plugins/setec-voiceprint/scripts/tests/test_corpus_novelty_audit.py` and `test_skeleton_overlap_audit.py`:
 
 1. **deterministic-output** — same corpus → byte-identical `results`.
 2. **envelope-shape** — `build_output()` keys present; `task_surface == "set_level_diversity"`;

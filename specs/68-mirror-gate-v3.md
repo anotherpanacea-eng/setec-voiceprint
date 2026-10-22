@@ -1,6 +1,6 @@
 # Spec 68 draft — External-mirror production gate v3
 
-Status: **implementation-ready draft; no calibration claim**
+Status: **built (PR #338, 2026-07-21); no calibration claim**
 Board item: **B1 / gate-v3**
 Intended repository: `setec-voiceprint`
 Canonical implementation location: `plugins/setec-voiceprint/scripts/_mirror_gate.py`
