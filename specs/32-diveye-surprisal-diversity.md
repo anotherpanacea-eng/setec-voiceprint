@@ -27,8 +27,8 @@
   vendored). gpt2 is the paper's scorer for the eventual M2 forward pass.
 
 > **Path adaptation note.** This spec was authored for the Code-PC checkout
-> (`D:\Code-PC\...`). Every path below has been adapted to the Code-Mac live
-> checkout at `/Users/anotherpanacea/Documents/Code-Mac/setec-voiceprint`. The
+> (a Windows workstation). Every path below has been adapted to the macOS
+> checkout of this repo. The
 > Code-PC-only experiment scaffolds (`_diveye_smoke`, `_diveye_empirical`,
 > `_litprose_frontier_2026-06-20`, `_raid_tier4`) are M0/M2 local artifacts and
 > are NOT created in this repo by the M1 build.

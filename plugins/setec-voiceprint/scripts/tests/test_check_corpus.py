@@ -155,7 +155,7 @@ def test_warn_default_threshold_is_a_million() -> None:
 def test_warn_quotes_manifest_path_with_spaces() -> None:
     """Codex P2 on PR #52: paths in this workspace commonly
     contain spaces (today's runtime path is under
-    ``C:\\Users\\Joshua\\Documents\\Claude Cowork Working
+    ``C:\\Users\\<name>\\Documents\\My Working
     Folder\\...``). The copy-pasteable recipe in the warning
     must shell-quote the manifest path so the command actually
     works for the operator."""

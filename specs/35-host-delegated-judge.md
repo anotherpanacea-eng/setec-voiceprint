@@ -12,7 +12,7 @@
 - **GPU required:** no
 - **Upstream / prior art:** MCP **sampling** (`sampling/createMessage` — the standardized
   "server asks the host's LLM to complete this" primitive, modelcontextprotocol.io);
-  the M2-wave empirical finding (`D:\Code-PC\_m2_results.md`, 2026-06-23): a host subagent
+  the M2-wave empirical finding (private M2 results notes, 2026-06-23): a host subagent
   judges authorship at **0.90** (vs a local 3B's 0.50 and the LUAR embedding's 0.85) and
   argument-quality at 6/8 (vs 1/8) — the host model is a capable judge available free in-harness.
 - **License decision:** N/A — no weights wrapped; the judgment is produced by the host

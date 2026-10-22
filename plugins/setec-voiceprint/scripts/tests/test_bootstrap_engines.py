@@ -498,9 +498,8 @@ class TestHarnessCommand:
 
     def test_manifest_path_with_spaces_is_shell_quoted(self):
         """Codex P2 (PR #53): operator workspaces routinely sit
-        under directories whose paths contain spaces (``OCA Claude
-        Folder``, and historically ``Claude Cowork Working
-        Folder``). The unquoted recipe would split the path
+        under directories whose paths contain spaces (for example
+        ``My Working Folder``). The unquoted recipe would split the path
         across tokens — copy-paste replay would fail with
         ``manifest: file not found`` or worse, silently pick up a
         differently-named manifest. ``shlex.quote`` wraps the
@@ -511,8 +510,8 @@ class TestHarnessCommand:
         original path."""
         import shlex
         path_with_spaces = Path(
-            "/users/anotherpanacea/Documents/"
-            "OCA Claude Folder/manifest.jsonl"
+            "/users/example/Documents/"
+            "My Working Folder/manifest.jsonl"
         )
         cmd = _build_harness_command(
             manifest_path=path_with_spaces,
