@@ -1,11 +1,47 @@
 {
-  "_seeded_at": "2026-05-28",
-  "compute": {
-    "cost_note": "one variance_audit pass per benchmark text; tier 2 uses spaCy unless --no-tier2",
-    "length_floor_words": null,
-    "tier": "core"
-  },
+  "id": "calibration_drift_monitor",
+  "script_path": "plugins/setec-voiceprint/scripts/calibration_drift_monitor.py",
+  "surface": "validation",
+  "status": "structural_only",
+  "handoff": "none",
   "consumers": [],
+  "family": "reproducibility",
+  "purpose": "Infrastructure-drift detector. snapshot records variance_audit signal values and threshold constants over a fixed benchmark set together with the dependency-stack versions; check recomputes them and reports per-signal stable, drifted or unknown verdicts, so a spaCy, model, NLTK, scipy or Python change that moves outputs is caught before claims are published. A benchmark that errored at snapshot or check is reported as unmeasured and counts as drift.",
+  "use_when": [
+    "after upgrading spaCy, its model, NLTK, scipy or Python, before relying on earlier calibrated thresholds",
+    "pinning a reproducibility snapshot alongside published results"
+  ],
+  "do_not_use_when": [
+    "you want an authorship or AI judgment; this only reports reproducibility of the framework's outputs",
+    "you have no fixed benchmark text set to snapshot"
+  ],
+  "inputs": {
+    "target": "a benchmark directory of .txt/.md files, plus a prior snapshot for check",
+    "required": [
+      "mode (snapshot or check)",
+      "--benchmark-dir",
+      "snapshot needs --out; check needs --snapshot"
+    ],
+    "optional": [
+      "optional flags --snapshot-label, --no-tier2, --include-filenames (snapshot); --relative-threshold, --exit-nonzero-on-drift, --json, --out (check) (see --help)"
+    ]
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "snapshot JSON (snapshot mode)",
+      "drift report, Markdown or JSON (check mode)"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "one variance_audit pass per benchmark text; tier 2 uses spaCy unless --no-tier2",
+    "length_floor_words": null
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
   "dependencies": {
     "python": [],
     "python_optional": [
@@ -14,55 +50,18 @@
       "scipy"
     ]
   },
-  "do_not_use_when": [
-    "you want an authorship or AI judgment; this only reports reproducibility of the framework's outputs",
-    "you have no fixed benchmark text set to snapshot"
-  ],
   "examples": [
     {
-      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration_drift_monitor.py snapshot --benchmark-dir benchmarks/ --out snapshots/current.json",
-      "description": "Snapshot current behavior over a benchmark set"
+      "description": "Snapshot current behavior over a benchmark set",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration_drift_monitor.py snapshot --benchmark-dir benchmarks/ --out snapshots/current.json"
     },
     {
-      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration_drift_monitor.py check --benchmark-dir benchmarks/ --snapshot snapshots/current.json --json --out drift.json",
-      "description": "Check against a recorded snapshot"
+      "description": "Check against a recorded snapshot",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration_drift_monitor.py check --benchmark-dir benchmarks/ --snapshot snapshots/current.json --json --out drift.json"
     }
   ],
-  "family": "reproducibility",
-  "handoff": "none",
-  "id": "calibration_drift_monitor",
-  "inputs": {
-    "optional": [
-      "optional flags --snapshot-label, --no-tier2, --include-filenames (snapshot); --relative-threshold, --exit-nonzero-on-drift, --json, --out (check) (see --help)"
-    ],
-    "required": [
-      "mode (snapshot or check)",
-      "--benchmark-dir",
-      "snapshot needs --out; check needs --snapshot"
-    ],
-    "target": "a benchmark directory of .txt/.md files, plus a prior snapshot for check"
-  },
-  "outputs": {
-    "artifacts": [
-      "snapshot JSON (snapshot mode)",
-      "drift report, Markdown or JSON (check mode)"
-    ],
-    "schema_version": "1.0"
-  },
-  "purpose": "Infrastructure-drift detector. snapshot records variance_audit signal values and threshold constants over a fixed benchmark set together with the dependency-stack versions; check recomputes them and reports per-signal stable, drifted or unknown verdicts, so a spaCy, model, NLTK, scipy or Python change that moves outputs is caught before claims are published.",
   "references": [
     "plugins/setec-voiceprint/capabilities.d/variance_audit.yaml"
   ],
-  "registers": [
-    "all_fiction",
-    "all_nonfiction"
-  ],
-  "script_path": "plugins/setec-voiceprint/scripts/calibration_drift_monitor.py",
-  "status": "todo",
-  "todo_reason": "Blocked by a reproducibility bug: take_snapshot() stores a failed benchmark measurement as {\"error\": ...}, and detect_drift() then compares the absent signals and compression dictionaries without checking for that error, so a failure present at both snapshot and check is reported as no drift. Curated content is kept below; promote once errored benchmarks are refused or reported as unknown.",
-  "surface": "validation",
-  "use_when": [
-    "after upgrading spaCy, its model, NLTK, scipy or Python, before relying on earlier calibrated thresholds",
-    "pinning a reproducibility snapshot alongside published results"
-  ]
+  "_seeded_at": "2026-05-28"
 }
