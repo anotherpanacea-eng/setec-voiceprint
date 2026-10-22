@@ -12,16 +12,16 @@ truth for each contract.
 
 ## Index
 
-> **Reconciled 2026-07-02** against `capabilities.d/` + `fleet_inventory.py` (the docs had drifted — the shortlist build loop shipped faster than this index updated). Statuses below are oracle-verified. Specs **22–35** were not indexed here; see [§ Specs 22–35](#specs-2235--arxiv-shortlist-wave). Tier annotations mark cloud-buildability: **Tier 1/2 (stdlib/spaCy) → cloud** (CI installs spaCy + runs the suite); **torch/embeddings/surprisal/judge → local box** (`skipif` in CI).
+> **Reconciled 2026-07-02** (rows 03–05 and 69–82 re-checked 2026-10-20 against `capabilities.d/` and merged PRs) against `capabilities.d/` + the fleet inventory (the docs had drifted — the shortlist build loop shipped faster than this index updated). Statuses below are oracle-verified. Specs **22–35** were not indexed here; see [§ Specs 22–35](#specs-2235--arxiv-shortlist-wave). Tier annotations mark cloud-buildability: **Tier 1/2 (stdlib/spaCy) → cloud** (CI installs spaCy + runs the suite); **torch/embeddings/surprisal/judge → local box** (`skipif` in CI).
 
 | File | What |
 |---|---|
 | [`00-stylometry-kit-research-brief.md`](00-stylometry-kit-research-brief.md) | Frontier survey (RoBERTa / embeddings / EditLens / zero-shot / PAN / ESL / watermark); ranked shortlist; license-verification TODO. |
 | [`01-stylometry-kit-build-plan.md`](01-stylometry-kit-build-plan.md) | The spec→build→review→merge loop, sequencing, cross-cutting constraints. |
 | [`02-voice-fingerprint-embedding.md`](02-voice-fingerprint-embedding.md) | **Shipped** (`voice_fingerprint`, surface `authorship_embedding`). Same-author style-embedding verification (LUAR + Wegmann). torch/embeddings → local tier. |
-| [`03-fast-detectgpt-curvature.md`](03-fast-detectgpt-curvature.md) | **Ready.** Conditional-probability curvature detector (Surface 5 add). |
-| [`04-pan-obfuscation-replay-harness.md`](04-pan-obfuscation-replay-harness.md) | **Ready.** Replay SETEC signals against PAN obfuscation fixtures. |
-| [`05-esl-fairness-slice.md`](05-esl-fairness-slice.md) | **Ready** *(unverified — no standalone capability; likely folded into `validation_harness`)*. ESL/L2 + translated-text fairness slice in the validation harness. |
+| [`03-fast-detectgpt-curvature.md`](03-fast-detectgpt-curvature.md) | **Shipped** (`fast_detect_curvature`). Conditional-probability curvature detector (Surface 5 add). |
+| [`04-pan-obfuscation-replay-harness.md`](04-pan-obfuscation-replay-harness.md) | **Shipped** (`pan_replay`). Replay SETEC signals against PAN obfuscation fixtures. |
+| [`05-esl-fairness-slice.md`](05-esl-fairness-slice.md) | **Shipped** inside `validation_harness` (per-`language_status` slice; no standalone capability). ESL/L2 + translated-text fairness slice in the validation harness. |
 | [`06-voice-matching-companion.md`](06-voice-matching-companion.md) | **Draft.** The generative inverse — a companion project that writes in an authorized author's voice using SETEC as a held-out fitness function. Defines SETEC's side of the contract; built in a separate repo (TBD). |
 | [`07-document-layout-audit.md`](07-document-layout-audit.md) | **Built** (this round). Non-voice document structure / layout profile on a new `document_layout` surface — descriptive only, refuses voice/AI inference. |
 | [`08-reference-ecology-audit.md`](08-reference-ecology-audit.md) | **Built** (this round). Non-voice reference-ecology profile (citation/quote/attribution/link-domain breadth) on a new `reference_ecology` surface — descriptive, refuses voice/AI, flags topic-leakage. (07 = document-layout, in PR #148.) |
@@ -38,14 +38,14 @@ truth for each contract.
 | [`19-crosslingual-voice-distance.md`](19-crosslingual-voice-distance.md) | **Built** (group W5). Language-agnostic, parser-free voice distance (char n-grams, punctuation, length distributions, script stats) on `voice_coherence`; language-agnostic not language-aware. stdlib. |
 | [`20-conformal-abstention-gate.md`](20-conformal-abstention-gate.md) | **Built** (group W7). Split-conformal p-value + prediction set over operator calibration scores on `validation`; distribution-free finite-sample abstention. stdlib. |
 | [`21-attribution-refusal-lab.md`](21-attribution-refusal-lab.md) | **Spec (research; build-gated).** Refusal-curve lab on the `validation` surface for the no-verdict-about-the-person cluster (open-set attribution / demographic profiling / identity linkage). Dispatchable contract: harness entrypoint, lab-manifest schema, aggregate-only output, claim license, + three go/no-go gates (consent / redaction / foil-strength) and a testable E3 non-leak rule. Build deferred behind the strong-foil decision; reports strength-of-evidence only, never an identity. |
-| [`69-manifest-conflict-copy-tripwire.md`](69-manifest-conflict-copy-tripwire.md) | **Implementation review GO; draft PR pending.** Opt-in, fail-closed sync-conflict preflight for `manifest_validator`; deterministic relative listings, no link following, native-Windows regression lane. |
-| [`72-nonprose-sweep.md`](72-nonprose-sweep.md) | **Draft PR #341; implementation review GO; implementation-head CI green; merge held.** Bounded stdlib transcript/non-prose staging screen on `validation`: fixed VTT, speaker-label, disfluency, and short-line thresholds plus an exact authored-residual/transcript word split; operational and uncalibrated, never a disposition or authorship verdict. |
+| [`69-manifest-conflict-copy-tripwire.md`](69-manifest-conflict-copy-tripwire.md) | **Built** (PR #335, merged 2026-07-21). Opt-in, fail-closed sync-conflict preflight for `manifest_validator`; deterministic relative listings, no link following, native-Windows regression lane. |
+| [`72-nonprose-sweep.md`](72-nonprose-sweep.md) | **Built** (`nonprose_sweep`, PR #341, merged 2026-07-22). Bounded stdlib transcript/non-prose staging screen on `validation`: fixed VTT, speaker-label, disfluency, and short-line thresholds plus an exact authored-residual/transcript word split; operational and uncalibrated, never a disposition or authorship verdict. |
 | [`73-register-composition-sweep.md`](73-register-composition-sweep.md) | **Built** — H2 landed 2026-07-26 via PR #361 (merge `48f1a13`) as the `register_composition_sweep` capability. Aggregate register-family count inventory for a corpus-hygiene hand-check only; never a calibrated/reportable distribution or explanation of multimodality. Specs 37 and 76 are landed, and the strict closeout gate validated the exact PR #352 landed-main push attempt plus immutable review/artifact history. The closeout landed in `c6d7cbc`, and its receipt's raw SHA-256 is now pinned as the implementation constant `H1_RECEIPT_SHA256`. Free-text `source`, per-document `source_id`, and optional categorical `source_family` are omitted from the closed projection and every H2 identity; source-family analysis remains a separate reviewed follow-on. stdlib. |
-| [`74-passage-remediation-package.md`](74-passage-remediation-package.md) | **Independent review clear; Increment 1 in build.** Deterministic ingestion of private C1 passage inventories and the Stage-A-only masking, loss-exclusion, and pairing-exclusion decision core. |
-| [`75-reconstructibility-targeted-probe-set.md`](75-reconstructibility-targeted-probe-set.md) | **Independent spec review CLEAR; build-ready.** Private, stdlib/model-free training-side builder that precommits exact-text memorization probes from the high document-level leave-one-out DJ-Search coverage tail. Emits a hash-bound no-prose receipt; mutating M1 publication is Darwin-only behind descriptor-based mode/ACL checks, with Linux, native Windows, and other hosts failing closed before private input access or disk mutation. M1 consumes no model/generation, invokes or licenses no trainer, and emits no trainer-native activation artifact. |
+| [`74-passage-remediation-package.md`](74-passage-remediation-package.md) | **Increment 1 built** (PR #350, merged 2026-07-27). Deterministic ingestion of private C1 passage inventories and the Stage-A-only masking, loss-exclusion, and pairing-exclusion decision core. |
+| [`75-reconstructibility-targeted-probe-set.md`](75-reconstructibility-targeted-probe-set.md) | **M1 built** (PR #359, merged 2026-07-25). Private, stdlib/model-free training-side builder that precommits exact-text memorization probes from the high document-level leave-one-out DJ-Search coverage tail. Emits a hash-bound no-prose receipt; mutating M1 publication is Darwin-only behind descriptor-based mode/ACL checks, with Linux, native Windows, and other hosts failing closed before private input access or disk mutation. M1 consumes no model/generation, invokes or licenses no trainer, and emits no trainer-native activation artifact. |
 | [`76-register-classifier-refusal-reasons.md`](76-register-classifier-refusal-reasons.md) | **H1 built and merged 2026-07-24.** H1-only additive structured refusal taxonomy for `classify_register`, so the H2 register-composition sweep can consume short/all-weak/tie outcomes without parsing warnings or reimplementing classifier rules. |
-| [`81-draft-first-integration-trains.md`](81-draft-first-integration-trains.md) | **Implementation review in progress.** Repository delivery policy: independently cleared draft constituents, one fresh exact-head train, one complete hosted run, and a ruleset-independent exact-base landing. |
-| [`82-verbatim-mosaic-audit.md`](82-verbatim-mosaic-audit.md) | **M1 built and independently reviewed in draft PR #480; M2 gated.** Descriptive verbatim-mosaic profile on `set_level_diversity` (source multiplicity and junction style distance against a named pool, extending the DJ-Search `originality_audit`). The local replay of shipped signals on public-domain Frankentext-style mosaics (arXiv 2505.18128) remains M2. No verdict; stdlib M1. |
+| [`81-draft-first-integration-trains.md`](81-draft-first-integration-trains.md) | **Adopted** (PR #423, merged 2026-09-03). Repository delivery policy: independently cleared draft constituents, one fresh exact-head train, one complete hosted run, and a ruleset-independent exact-base landing. |
+| [`82-verbatim-mosaic-audit.md`](82-verbatim-mosaic-audit.md) | **M1 built** (PR #480, merged 2026-09-24); **M2 gated.** Descriptive verbatim-mosaic profile on `set_level_diversity` (source multiplicity and junction style distance against a named pool, extending the DJ-Search `originality_audit`). The local replay of shipped signals on public-domain Frankentext-style mosaics (arXiv 2505.18128) remains M2. No verdict; stdlib M1. |
 | `_TEMPLATE.md` | Copy this to start a new spec. |
 
 The research-grade specs once listed here as future work — EditLens edit-magnitude (13),
@@ -55,7 +55,7 @@ the flipped statuses above); their model/corpus tiers run on the local box.
 ## Specs 22–35 — arXiv-shortlist wave
 
 Built by the autonomous shortlist loop and **not** in the index above. Status verified
-2026-07-02 against `capabilities.d/` + `fleet_inventory.py`. Spec numbers repeat (a number
+2026-07-02 against `capabilities.d/` + the fleet inventory. Spec numbers repeat (a number
 is a wave group, not a unique id).
 
 **Shipped:** 22 set-level-diversity (`set_level_diversity`) · 23 rank-turbulence-delta
@@ -91,7 +91,7 @@ local branches, as the open-signal):
 | 21 attribution-refusal-lab | build-gated on the strong-foil decision | ✅ M1 cloud (Tier 2), gated |
 | **Spec 25 tail coordinate** *(open thread)* | spec reconciled to the shipped `curvature_t` (PR #294); `p_value_t` removed as unsupported — **do not re-add**. Still open: `curvature_t` is a constant rescale of `curvature_score` (discrimination-inert), so whether to expose T-Detect's tail comparison as a renamed non-probability heuristic coordinate | maintainer design call |
 
-**In build:** 71 deterministic shingle-dedup library (`shingle_dedup`) on the
+**Built:** 71 deterministic shingle-dedup library (`shingle_dedup`; PR #339, merged 2026-07-22) on the
 existing `voice_coherence_acquisition` surface. It is a stdlib, CPU-only staging
 utility for exact 8-token overlap measurement, not a new inference surface. Its
 0.35/0.60 containment tiers are operationally uncalibrated review-queue labels;
@@ -103,7 +103,7 @@ or AI/human claim. See [`71-shingle-dedup-library.md`](71-shingle-dedup-library.
 1. **Draft** — fill `_TEMPLATE.md`; resolve the license gate from the research brief.
 2. **Ready** — contract section complete enough to dispatch; listed "ready" in the plan.
 3. **In build** — a feature branch implements against the contract.
-4. **Shipped** — merged; `capabilities.yaml` entry added; readiness matrix regenerates;
+4. **Shipped** — merged; `capabilities.d/<id>.yaml` fragment added; readiness matrix regenerates;
    CHANGELOG line written; spec's "status" updated to point at the shipped script.
 5. **Calibrated** (optional) — labeled-corpus calibration + PROVENANCE entry promotes
    the capability's manifest `status` from `heuristic`/`empirically_oriented`.

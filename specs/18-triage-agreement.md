@@ -7,7 +7,7 @@
 > "source triage is judgment work" — by giving that judgment an actual measured
 > number, without ever asserting which side is right.
 
-- **Status:** Ready → building (this group).
+- **Status:** Shipped (`triage_agreement`).
 - **Tier:** Trustworthiness → "Validation upgrades" (ROADMAP → "Capability-whitespace additions (2026-06-07) → W3"). The shipped suite validates against labeled *corpora* (RAID/MAGE/EditLens) but never against *human raters*.
 - **GPU required:** no — stdlib only (`json`, `csv`, `random`, `math`, `collections`).
 - **License decision:** N/A — local code; Cohen's κ / PABAK are standard published statistics.

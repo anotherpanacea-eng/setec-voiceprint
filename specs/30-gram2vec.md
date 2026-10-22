@@ -2,7 +2,7 @@
 
 **Status:** BUILT (M1). Findings folded (see the "Findings folded" note at the end of each affected section).
 **Surface:** `voice_coherence` (existing — no new surface).
-**Tool name:** `style_vectorizer` (`scripts/style_vectorizer.py`).
+**Tool name:** `style_vectorizer` (`plugins/setec-voiceprint/scripts/style_vectorizer.py`).
 **arXiv root:** *gram2vec: An Interpretable Document Vectorizer*, arXiv:2406.12131 — <https://arxiv.org/abs/2406.12131>. (Per the fleet rule, the build cites this in the PR body AND the `changelog.d/` fragment, not only here.)
 
 ---

@@ -1,6 +1,6 @@
 # Spec 71 — deterministic shingle-dedup library
 
-**Status:** IN BUILD (Long Pull B3)  
+**Status:** Built (`shingle_dedup`, PR #339, merged 2026-07-22)\
 **Owner:** Mac bottom-up lane  
 **Implementation:** `plugins/setec-voiceprint/scripts/shingle_dedup.py`  
 **Surface:** `voice_coherence_acquisition` (existing surface; no new inference surface)  

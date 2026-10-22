@@ -1,6 +1,6 @@
 # Spec — stop redistributing the Brysbaert concreteness dataset
 
-**Status:** proposed.
+**Status:** done (the dataset left the default branch via PR #415, 2026-09-02).
 **Date:** 2026-08-30.
 **Owner:** `setec-voiceprint`.
 

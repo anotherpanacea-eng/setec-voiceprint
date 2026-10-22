@@ -5,7 +5,7 @@
 > (here/now/this), evaluative-adjective density, and FID markers — for developmental
 > editing of literary fiction.
 
-- **Status:** Spec (full-deps box — needs spaCy).
+- **Status:** Shipped (`narratorial_distance_audit`; needs spaCy).
 - **Tier:** Tier 4 (ROADMAP → "Narratorial Distance / Free Indirect Audit … outside standard stylometry literature but valuable for developmental editing of literary fiction. Adjacent to per-POV voice profile.").
 - **GPU required:** no, but **needs spaCy** (POS/dep + lemma for verb classes).
 - **License:** N/A (local).
@@ -34,7 +34,7 @@ and a heuristic FID score (past-tense + proximal-deixis + no quotation/tag). Rep
 - **Claim license:** *licenses* "descriptive narratorial-distance / FID features and their trajectory across the text"; *refuses* authorship, AI, and quality inference; notes FID detection is heuristic, not a parse of literary intent.
 - **capabilities.yaml:** `id: narratorial_distance_audit`, `surface: narratorial_distance`, `status: heuristic`, `compute: {tier: spacy, length_floor_words: 1500}`, `dependencies.python: [spacy]`.
 
-## Test contract (`tests/test_narratorial_distance_audit.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_narratorial_distance_audit.py`)
 
 - `test_surface_registered`; `test_perception_verb_density`; `test_deixis_split` (proximal vs distal); `test_fid_heuristic`; `test_trajectory_shape`; `test_claim_license_refuses_verdict`; `test_envelope_shape`; `test_deterministic`.
 

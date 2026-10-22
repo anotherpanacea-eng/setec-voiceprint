@@ -6,7 +6,7 @@
 > explicitly **not** an AI-signal: many writers use these phrases legitimately,
 > and the list drifts as language changes.
 
-- **Status:** Ready → building (this PR).
+- **Status:** Shipped (`formulaicity_audit`).
 - **Tier:** Tier 5 "adjacent surface" (ROADMAP → "Stockness / Formulaicity Audit … the framing has to be *phraseological texture*, not *AI signal* … Build with skepticism, ship with very explicit claim-licensing.").
 - **GPU required:** no — stdlib only (`re`).
 - **License decision:** N/A — local code; the built-in phrase list is generic English idiom, not sourced from any vendor's "AI words" list.

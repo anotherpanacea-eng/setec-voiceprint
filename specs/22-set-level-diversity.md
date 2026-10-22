@@ -4,7 +4,7 @@
 > material already in a reference pool (**originality**), and how tightly a *set* of texts
 > clusters together (**homogeneity** — the "AI hivemind" / mode-collapse axis).
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (P1 fixes applied: LUAR surface/privacy-gate
+- **Status:** M1 shipped (`originality_audit`, PR #225); adversarially reviewed 2026-06-19 (P1 fixes applied: LUAR surface/privacy-gate
   naming, reconstructibility-not-"human" orientation; + status/test/paper-trail fixes). **M1 cleared to
   build; M2 POC-gated** (`BRAINSTORM.md` #3).
 - **Tier:** near-term (M1 originality, stdlib) · research-grade (M2 homogeneity, embeddings + POC-gated)

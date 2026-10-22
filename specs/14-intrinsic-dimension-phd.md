@@ -5,7 +5,7 @@
 > intrinsic dimension than AI prose. A topological axis fully orthogonal to SETEC's
 > lexical / perplexity signals.
 
-- **Status:** Spec (research-grade; full-deps box).
+- **Status:** Shipped (`intrinsic_dimension_audit`; research-grade; full-deps box).
 - **Tier:** Research (research brief §D — "most orthogonal axis"; multilingual, robust).
 - **GPU required:** optional (embedding forward passes; CPU-feasible but slow).
 - **Upstream:** Tulchinskii et al., "Intrinsic Dimension Estimation for Robust Detection of AI-Generated Texts" ([arXiv:2306.04723](https://arxiv.org/abs/2306.04723); GPTID repo).

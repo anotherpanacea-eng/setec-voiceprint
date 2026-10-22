@@ -13,7 +13,7 @@
 > features, with a **relative** out-of-distribution gate. **No normalized posterior, no attribution
 > verdict, no AI-vs-human verdict.** Raw ranked evidence for a human, under heavy abstention.
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 4 P1s fixed: (1)
+- **Status:** Shipped (`model_family_attribution`); adversarially reviewed 2026-06-19 (NEEDS-REWORK → reworked). 4 P1s fixed: (1)
   **dropped the normalized `advisory_posterior`** — a sum-to-1 quantity over families reads as P(family)
   and renormalizes to look confident on a bad fit (the #231 `residual_fraction` lesson); M1 emits only
   raw per-family similarities. (2) **OOD is now RELATIVE** — a per-family within-scatter baseline, not a
@@ -129,7 +129,7 @@ style-embedding tier → gated/skipif like `voice_fingerprint`. Lands separately
 
 ## Test contract (stdlib; torch-free; CI-runnable end to end)
 
-`tests/test_model_family_attribution.py` — small synthetic per-family corpora (≥ MIN_DOCS_PER_FAMILY) with
+`plugins/setec-voiceprint/scripts/tests/test_model_family_attribution.py` — small synthetic per-family corpora (≥ MIN_DOCS_PER_FAMILY) with
 distinct stylometric profiles →
 - deterministic `family_ranking` (target drawn from family X ranks X top) over RAW similarities; **no key
   sums to 1** (assert no `advisory_posterior`).

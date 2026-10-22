@@ -36,7 +36,7 @@
   This number is a LEAD; it is never asserted as a measured result in any artifact this harness
   emits, and no test pins it.
 
-**Status:** M1 build-ready (model-free orchestration over INJECTED scorer outputs). The detector
+**Status:** M1 shipped (`paraphrase_robustness`; model-free orchestration over INJECTED scorer outputs). The detector
 re-scoring and any GPU model load is the M2 seam, off by default and never reached in CI.
 
 **Drafted:** 2026-06-20. **Adapted + built (M1):** 2026-06-21.

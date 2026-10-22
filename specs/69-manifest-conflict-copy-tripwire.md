@@ -2,7 +2,7 @@
 
 > Add an opt-in, fail-closed sync-conflict preflight to the existing manifest validator so a Dropbox conflict fork cannot silently enter a corpus run.
 
-- **Status:** Implementation review GO (`codex/manifest-conflict-copy-check`); draft PR pending
+- **Status:** Built (PR #335, merged 2026-07-21)
 - **Tier:** near-term
 - **GPU required:** no
 - **Source contract:** fleet refill packet B5 and the corpus `_conflict_check.ps1` tripwire

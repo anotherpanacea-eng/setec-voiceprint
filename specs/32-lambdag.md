@@ -6,7 +6,7 @@
 > **log-likelihood-ratio (λ_G)** plus a leaning band. A likelihood-ratio sibling to Burrows's Delta in
 > `voice_distance.py` — one advisory AV signal among many, **no verdict**.
 
-- **Status:** Ready — M1 stdlib, CI-runnable, build-gated on the posture/fairness sign-off (below).
+- **Status:** Shipped (`lambdag_audit`; M1 stdlib, CI-runnable).
 - **Tier:** near-term (additive). M1 = stdlib (no model). M2 = an optional learned-POS backend (deferred, skipif-gated).
 - **GPU required:** **no.** M1 is a pure-Python n-gram LM over POS sequences. M2's parser tier is CPU spaCy (already vendored); no GPU anywhere in this surface.
 - **Upstream / prior art:**

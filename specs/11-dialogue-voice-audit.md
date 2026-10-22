@@ -5,7 +5,7 @@
 > / discourse-marker signatures — to catch character-voice collapse, which shows up in
 > dialogue before narration.
 
-- **Status:** Spec (full-deps box — needs spaCy).
+- **Status:** Shipped (`dialogue_voice_audit`; needs spaCy).
 - **Tier:** Tier 4 (ROADMAP → "Dialogue-Specific Voice Audit … Round 2 of `pov_voice_profile.py` — character voice collapse often appears in dialogue first, narration second.").
 - **GPU required:** no, but **needs spaCy** for dialogue tokenization + POS/dep.
 - **License:** N/A (local).
@@ -35,7 +35,7 @@ low divergence = converged/flat character voices.
 - **Claim license:** *licenses* "per-character dialogue-voice profiles and their cross-character divergence within this manuscript"; *refuses* author-identity, AI-provenance, and quality inference; notes attribution is tag-heuristic (unattributed dialogue is bucketed separately).
 - **capabilities.yaml:** `id: dialogue_voice_audit`, `surface: voice_coherence`, `status: heuristic`, `compute: {tier: spacy, length_floor_words: 2000}`, `dependencies.python: [spacy]`.
 
-## Test contract (`tests/test_dialogue_voice_audit.py`)
+## Test contract (`plugins/setec-voiceprint/scripts/tests/test_dialogue_voice_audit.py`)
 
 - `test_surface_registered`; `test_dialogue_extraction` (quotes + tags → speaker buckets); `test_unattributed_bucketed`; `test_divergence_matrix_shape`; `test_claim_license_refuses_identity`; `test_envelope_shape`; `test_deterministic`.
 

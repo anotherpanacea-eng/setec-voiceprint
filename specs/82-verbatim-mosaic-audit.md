@@ -6,7 +6,7 @@
 > how many distinct sources its covered spans come from, and how the style
 > shifts at the joins between them.
 
-- **Status:** M1 built and independently reviewed in draft PR #480;
+- **Status:** M1 built and merged (PR #480, 2026-09-24);
   M2 gated on a separate replay protocol and operator authorization (2026-09-23).
 - **Tier:** near-term for M1 (stdlib); M2 replay of model-backed signals on the
   local box.
