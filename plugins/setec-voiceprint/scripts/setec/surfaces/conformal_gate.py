@@ -126,19 +126,23 @@ def author_unit_warning(n_texts: int, n_authors: int, *,
     """Warn when several calibration texts share an author.
 
     Exchangeability holds across authors, not across one author's texts, so
-    the effective calibration size is the author count.
+    the pooled per-text calculation carries no guarantee for a new author.
+    Counting authors does not correct it; the warning only says so.
     """
     if n_authors >= n_texts:
         return None
     warning = (
         f"Calibration carries {n_texts} texts from {n_authors} authors. The "
-        "author, not the text, is the exchangeable unit, so the guarantee is "
-        f"only as strong as {n_authors} calibration draws."
+        "author, not the text, is the exchangeable unit, so this pooled "
+        "per-text calibration does not carry its stated guarantee for a new "
+        "author; an author-level guarantee needs author-level calibration "
+        "(for example, one score per author)."
     )
     if fpr_bound is not None and math.floor(fpr_bound * n_authors + 1e-9) == 0:
         warning += (
-            f" {n_authors} authors cannot express fpr_bound = {fpr_bound}; "
-            f"that needs at least {math.ceil(1 / fpr_bound)} authors."
+            f" Even then, {n_authors} authors cannot express fpr_bound = "
+            f"{fpr_bound}; that needs at least {math.ceil(1 / fpr_bound)} "
+            "authors."
         )
     return warning
 

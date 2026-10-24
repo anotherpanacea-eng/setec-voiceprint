@@ -268,6 +268,7 @@ def test_author_count_reported_and_warned(tmp_path):
     assert payload["results"]["n_calibration_authors"] == 10
     [warning] = payload["warnings"]
     assert "exchangeable unit" in warning
+    assert "does not carry its stated guarantee" in warning
     assert "10 authors cannot express fpr_bound = 0.05" in warning
 
 
