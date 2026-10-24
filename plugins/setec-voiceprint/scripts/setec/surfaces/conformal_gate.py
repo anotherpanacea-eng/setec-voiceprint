@@ -97,6 +97,52 @@ def load_scores(path: Path) -> list[float]:
     return out
 
 
+def load_author_ids(path: Path) -> list[str] | None:
+    """Author ids from a newline-delimited ``score,author`` calibration file.
+
+    Returns one id per score line, or None unless every score line carries a
+    non-empty second column (JSON lists and bare scores carry no author).
+    """
+    raw = path.read_text(encoding="utf-8").strip()
+    try:
+        if isinstance(json.loads(raw), list):
+            return None
+    except json.JSONDecodeError:
+        pass
+    authors: list[str] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(",")
+        if len(parts) < 2 or not parts[1].strip():
+            return None
+        authors.append(parts[1].strip())
+    return authors or None
+
+
+def author_unit_warning(n_texts: int, n_authors: int, *,
+                        fpr_bound: float | None) -> str | None:
+    """Warn when several calibration texts share an author.
+
+    Exchangeability holds across authors, not across one author's texts, so
+    the effective calibration size is the author count.
+    """
+    if n_authors >= n_texts:
+        return None
+    warning = (
+        f"Calibration carries {n_texts} texts from {n_authors} authors. The "
+        "author, not the text, is the exchangeable unit, so the guarantee is "
+        f"only as strong as {n_authors} calibration draws."
+    )
+    if fpr_bound is not None and math.floor(fpr_bound * n_authors + 1e-9) == 0:
+        warning += (
+            f" {n_authors} authors cannot express fpr_bound = {fpr_bound}; "
+            f"that needs at least {math.ceil(1 / fpr_bound)} authors."
+        )
+    return warning
+
+
 def _require_finite_scores(values: list[float], *, name: str) -> None:
     for index, value in enumerate(values):
         try:
@@ -280,8 +326,11 @@ def threshold_at_fpr_bound(
         "threshold_rule": (
             f"a target raw score {raw_score_comparator} "
             "`raw_score_threshold` is flagged "
-            "out-of-reference; the reference-class false-positive rate is "
-            "bounded by `fpr_bound` under exchangeability. This is a "
+            "out-of-reference; a score equal to the threshold is flagged. "
+            "The reference-class false-positive rate is bounded by "
+            "`fpr_bound` under exchangeability for untied scores. On "
+            "discretized scores a new point can tie the threshold, so the "
+            "flag rate can exceed `fpr_bound`. This is a "
             "reference-class FPR ceiling, NOT P(AI) and NOT a guarantee on "
             "the positive (AI) class."
         ),
@@ -451,10 +500,16 @@ def render_report(payload: dict[str, Any]) -> str:
                 f"(prediction set {r.get('prediction_set')})"
             )
         lines.append(
+            f"- **Flag rule:** score {r['raw_score_comparator']} threshold; a "
+            "score equal to the threshold is flagged. On discretized scores a "
+            "new point can tie the threshold, so the flag rate can exceed q."
+        )
+        lines.append(
             "- _The threshold bounds the reference-class false-positive rate "
             "by q under exchangeability. It is NOT P(AI) and NOT a guarantee "
             "on the positive (AI) class — the operator applies it._"
         )
+        lines += _render_warnings(payload)
         lines += ["", payload["claim_license_rendered"] or ""]
         return "\n".join(lines) + "\n"
 
@@ -473,10 +528,14 @@ def render_report(payload: dict[str, Any]) -> str:
         lines.append(f"- **p-values:** {r['p_values']}")
     lines += [
         f"- **Prediction set (coverage {r['coverage']}):** {r['prediction_set']}",
-        "",
-        payload["claim_license_rendered"] or "",
     ]
+    lines += _render_warnings(payload)
+    lines += ["", payload["claim_license_rendered"] or ""]
     return "\n".join(lines) + "\n"
+
+
+def _render_warnings(payload: dict[str, Any]) -> list[str]:
+    return [f"- **Warning:** {w}" for w in payload.get("warnings", [])]
 
 
 def _require_distinct_class_labels(reference_label: str, positive_label: str) -> None:
@@ -489,7 +548,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--calibration", required=True,
                    help="Required: nonconformity scores for the reference class "
-                        "(JSON list or newline-delimited floats).")
+                        "(JSON list or newline-delimited floats). Lines may "
+                        "read `score,author`; the gate then reports the "
+                        "author count, since authors are the exchangeable "
+                        "unit.")
     # --score is conditionally required: required for the one-class/two-class
     # gate, OPTIONAL when --fpr-bound is supplied (that mode can return just a
     # threshold without a target). Enforced in main() so the default path
@@ -580,6 +642,8 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         sys.stderr.write(f"Could not read calibration scores: {exc}\n")
         return 2
+    authors = load_author_ids(cal_path) if calibration else None
+    n_authors = len(set(authors)) if authors else None
     if not calibration:
         payload = build_payload(
             {}, target_path=cal_path, available=False,
@@ -622,6 +686,14 @@ def main(argv: list[str] | None = None) -> int:
             calibration, args.score, alpha=args.alpha, direction=args.direction,
             reference_label=args.reference_label)
         payload = build_payload(results, target_path=cal_path, available=True)
+
+    if n_authors is not None:
+        if payload["available"]:
+            payload["results"]["n_calibration_authors"] = n_authors
+        warning = author_unit_warning(
+            len(calibration), n_authors, fpr_bound=args.fpr_bound)
+        if warning:
+            payload["warnings"].append(warning)
 
     text_out = (json.dumps(payload, indent=2, default=str)
                 if args.json else render_report(payload))
