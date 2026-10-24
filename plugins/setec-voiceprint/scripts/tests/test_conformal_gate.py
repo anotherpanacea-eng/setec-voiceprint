@@ -239,19 +239,39 @@ def test_fpr_bound_n30_q005_picks_maximum_and_small_n_abstains():
         assert "too small" in small["reason"]
 
 
-def test_fpr_bound_output_states_tie_inclusive_flag_rule(tmp_path):
+def test_fpr_bound_output_states_strict_rule_and_marginal_guarantee(tmp_path):
     f = tmp_path / "cal.txt"
     f.write_text("\n".join(str(x) for x in range(1, 31)), encoding="utf-8")
     out = tmp_path / "o.md"
     assert cg.main(["--calibration", str(f), "--fpr-bound", "0.05",
                     "--out", str(out)]) == 0
     report = out.read_text()
-    assert "score >= threshold" in report
-    assert "can exceed q" in report
+    assert "score > threshold (strict)" in report
+    assert "marginal" in report
+    assert "about 21%" in report and "at least 59" in report
     r = cg.threshold_at_fpr_bound(
         [float(x) for x in range(1, 31)], fpr_bound=0.05,
         direction="higher_is_nonconforming")
-    assert "can exceed `fpr_bound`" in r["threshold_rule"]
+    assert "is NOT flagged" in r["threshold_rule"]
+    assert "marginal" in r["threshold_rule"]
+
+
+def test_fpr_bound_tied_score_is_not_flagged_and_keeps_bound():
+    # EV-1 (2): with discretized scores a new point can tie the threshold. Under
+    # exchangeability the marginal flag rate equals the leave-one-out rate over a
+    # pool of n + 1 values; the tied top pair makes `>=` flag 2/21 > 0.05.
+    pool = [float(x) for x in range(1, 20)] + [20.0, 20.0]
+    q = 0.05
+    flagged = 0
+    for i, held_out in enumerate(pool):
+        r = cg.gate_fpr_bound(
+            pool[:i] + pool[i + 1:], held_out, fpr_bound=q,
+            direction="higher_is_nonconforming", reference_label="reference")
+        assert r["raw_score_comparator"] == ">"
+        if held_out == r["raw_score_threshold"]:
+            assert r["in_reference_set"] is True
+        flagged += not r["in_reference_set"]
+    assert flagged / len(pool) <= q
 
 
 def test_author_count_reported_and_warned(tmp_path):

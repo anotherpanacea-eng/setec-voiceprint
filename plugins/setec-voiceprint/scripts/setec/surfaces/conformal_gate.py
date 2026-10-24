@@ -218,8 +218,8 @@ def threshold_at_fpr_bound(
 
     Internally, ``t_nc`` is the conformal quantile of the calibration
     nonconformity scores at level ``q`` with the standard +1 finite-sample
-    correction. The fraction of calibration nonconformity scores at or above
-    ``t_nc`` is the empirical reference-class false-positive rate. The legacy
+    correction. The fraction of calibration nonconformity scores strictly
+    above ``t_nc`` is the empirical reference-class false-positive rate. The legacy
     ``threshold`` result retains that nonconformity-space cutoff. For safe
     operator application, the result also emits ``raw_score_threshold`` and a
     direction-specific ``raw_score_comparator``; a target is flagged
@@ -254,67 +254,41 @@ def threshold_at_fpr_bound(
             "fpr_bound": fpr_bound,
             "direction": direction,
         }
-    median = statistics.median(calibration)
-    cal_nc = sorted(_nonconformity(calibration, direction, median))
-    # Conformal quantile at level q with the finite-sample +1 correction.
-    # We want the smallest threshold t such that #{cal_nc >= t} / n <= q.
-    # The (ceil((n+1)*(1-q)))-th order statistic (1-indexed) gives a
-    # distribution-free guarantee that at most q of the reference mass is
-    # flagged. Clamp the rank into [1, n].
-    rank = math.ceil((n + 1) * (1.0 - fpr_bound))
-    rank = max(1, min(n, rank))
-    nonconformity_threshold = cal_nc[rank - 1]
-    # TIE-SAFETY (Codex P1): the flag rule is `score >= threshold`, so ANY calibration scores TIED at
-    # the threshold are all flagged. When the tail is tied (e.g. ten identical scores, q=0.1) the
-    # order-statistic threshold flags the whole block -> empirical reference FPR 1.0, violating the
-    # claimed <= q. Raise the threshold to the smallest calibration value whose at-or-above count
-    # keeps the empirical FPR <= q; if no finite value qualifies (the whole tail is tied), flag NOTHING
-    # (threshold = +inf, FPR 0). Raising the threshold only ever flags FEWER, so the conformal guarantee
-    # for new points is preserved (more conservative), and the reported empirical FPR is honest.
-    max_flagged = math.floor(fpr_bound * n + 1e-9)   # FPR <= q  =>  flagged <= floor(q*n)
-    def _flagged_at(t: float) -> int:
-        return sum(1 for c in cal_nc if c >= t)
-    if _flagged_at(nonconformity_threshold) > max_flagged:
-        higher = sorted({c for c in cal_nc if c > nonconformity_threshold})
-        nonconformity_threshold = next(
-            (h for h in higher if _flagged_at(h) <= max_flagged), None
-        )
-    if nonconformity_threshold is None:
-        # No FINITE threshold keeps the empirical FPR <= q without flagging the whole reference set.
-        # TWO distinct causes land here, and the reason must not conflate them (Codex #28 P3):
-        #   (a) max_flagged == 0 — floor(q*n)==0, so n is simply too small for this q: NO non-empty
-        #       flag set can satisfy the bound, even with perfectly distinct scores. Not a ties issue.
-        #   (b) otherwise — the tail is over-tied: raising the threshold can only flag the whole tied
-        #       block, so the only bound-honoring threshold flags nothing (a vacuous gate).
-        # Either way we abstain with a reason rather than emit a non-JSON `inf` threshold (Codex P1).
-        if max_flagged == 0:
-            reason = (
+    # floor(q*n) == 0 means n is too small for this q (this also covers every n whose
+    # conformal rank below would exceed n, where no finite threshold bounds the rate).
+    if math.floor(fpr_bound * n + 1e-9) == 0:
+        return {
+            "available": False,
+            "reason": (
                 "calibration n too small to bound FPR <= fpr_bound: "
                 "floor(fpr_bound * n_calibration) = 0, so no non-empty flag set can satisfy the "
                 "bound; need n_calibration >= ceil(1/fpr_bound)."
-            )
-        else:
-            reason = (
-                "degenerate calibration: too many tied scores to place a finite threshold that bounds "
-                "the reference FPR <= fpr_bound without flagging the whole reference set. Supply "
-                "calibration scores with variation."
-            )
-        return {
-            "available": False,
-            "reason": reason,
+            ),
             "mode": "fpr_bound",
             "fpr_bound": fpr_bound,
             "direction": direction,
             "n_calibration": n,
         }
-    n_flagged = _flagged_at(nonconformity_threshold)
+    median = statistics.median(calibration)
+    cal_nc = sorted(_nonconformity(calibration, direction, median))
+    # Conformal quantile at level q with the finite-sample +1 correction: the
+    # (ceil((n+1)*(1-q)))-th order statistic (1-indexed). The flag rule is STRICT
+    # (`nonconformity > threshold`): a new point that exceeds the k-th order statistic
+    # ranks at least k+1 of n+1 under any tie-breaking, so P(flag) <= (n+1-k)/(n+1)
+    # <= q even on tied (discretized) scores, and at most n-k < q*n calibration scores
+    # are flagged. A `>=` rule would also flag a new point tied with the threshold
+    # and can break the bound.
+    rank = math.ceil((n + 1) * (1.0 - fpr_bound))
+    rank = max(1, min(n, rank))
+    nonconformity_threshold = cal_nc[rank - 1]
+    n_flagged = sum(1 for c in cal_nc if c > nonconformity_threshold)
     empirical_fpr = n_flagged / n
     if direction == "lower_is_nonconforming":
         raw_score_threshold = -nonconformity_threshold
-        raw_score_comparator = "<="
+        raw_score_comparator = "<"
     else:
         raw_score_threshold = nonconformity_threshold
-        raw_score_comparator = ">="
+        raw_score_comparator = ">"
     return {
         "available": True,
         "mode": "fpr_bound",
@@ -330,11 +304,16 @@ def threshold_at_fpr_bound(
         "threshold_rule": (
             f"a target raw score {raw_score_comparator} "
             "`raw_score_threshold` is flagged "
-            "out-of-reference; a score equal to the threshold is flagged. "
-            "The reference-class false-positive rate is bounded by "
-            "`fpr_bound` under exchangeability for untied scores. On "
-            "discretized scores a new point can tie the threshold, so the "
-            "flag rate can exceed `fpr_bound`. This is a "
+            "out-of-reference; a score equal to the threshold is NOT "
+            "flagged. With this strict rule the reference-class "
+            "false-positive rate is bounded by `fpr_bound` under "
+            "exchangeability, tied (discretized) scores included. The "
+            "guarantee is marginal: it averages over calibration draws, and "
+            "for one fixed calibration set the realized rate can exceed "
+            "`fpr_bound`. With untied scores at n = 30 and fpr_bound = 0.05 "
+            "it exceeds 5% for about 21% of calibration draws; a 95/95 "
+            "tolerance statement at 0.05 needs at least 59 independent "
+            "calibration texts, and this gate does not make one. This is a "
             "reference-class FPR ceiling, NOT P(AI) and NOT a guarantee on "
             "the positive (AI) class."
         ),
@@ -361,10 +340,10 @@ def gate_fpr_bound(
         return result
     result["target_score"] = score
     if score is not None:
-        if result["raw_score_comparator"] == "<=":
-            out_of_reference = score <= result["raw_score_threshold"]
+        if result["raw_score_comparator"] == "<":
+            out_of_reference = score < result["raw_score_threshold"]
         else:
-            out_of_reference = score >= result["raw_score_threshold"]
+            out_of_reference = score > result["raw_score_threshold"]
         result["in_reference_set"] = not out_of_reference
         result["prediction_set"] = [] if out_of_reference else [reference_label]
     return result
@@ -504,9 +483,17 @@ def render_report(payload: dict[str, Any]) -> str:
                 f"(prediction set {r.get('prediction_set')})"
             )
         lines.append(
-            f"- **Flag rule:** score {r['raw_score_comparator']} threshold; a "
-            "score equal to the threshold is flagged. On discretized scores a "
-            "new point can tie the threshold, so the flag rate can exceed q."
+            f"- **Flag rule:** score {r['raw_score_comparator']} threshold "
+            "(strict); a score equal to the threshold is not flagged, so a "
+            "new point tied with it cannot break the bound."
+        )
+        lines.append(
+            "- **Guarantee:** marginal, averaged over calibration draws. For "
+            "one fixed calibration set the realized false-positive rate can "
+            "exceed q: with untied scores at n = 30 and q = 0.05 it exceeds "
+            "5% for about 21% of calibration draws. A 95/95 tolerance "
+            "statement at q = 0.05 needs at least 59 independent calibration "
+            "texts; this gate does not make one."
         )
         lines.append(
             "- _The threshold bounds the reference-class false-positive rate "
