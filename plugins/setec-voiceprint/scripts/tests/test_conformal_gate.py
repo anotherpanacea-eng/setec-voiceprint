@@ -220,3 +220,65 @@ def test_cli_one_class_envelope(tmp_path):
     payload = json.loads(out.read_text())
     assert payload["task_surface"] == "validation"
     assert payload["results"]["mode"] == "one_class"
+
+
+def test_fpr_bound_n30_q005_picks_maximum_and_small_n_abstains():
+    # EV-1: rank = ceil((n + 1)(1 - q)) = ceil(29.45) = 30 at n = 30, so the
+    # threshold is the calibration maximum (marginal rate 1/31) and the gate
+    # stays available; below 20 texts floor(q * n) = 0 and the gate abstains.
+    cal = [float(x) for x in range(1, 31)]
+    r = cg.threshold_at_fpr_bound(
+        cal, fpr_bound=0.05, direction="higher_is_nonconforming")
+    assert r["available"] is True
+    assert r["order_statistic_rank"] == 30
+    assert r["raw_score_threshold"] == 30.0
+    for n in (19, 10):
+        small = cg.threshold_at_fpr_bound(
+            cal[:n], fpr_bound=0.05, direction="higher_is_nonconforming")
+        assert small["available"] is False
+        assert "too small" in small["reason"]
+
+
+def test_fpr_bound_output_states_tie_inclusive_flag_rule(tmp_path):
+    f = tmp_path / "cal.txt"
+    f.write_text("\n".join(str(x) for x in range(1, 31)), encoding="utf-8")
+    out = tmp_path / "o.md"
+    assert cg.main(["--calibration", str(f), "--fpr-bound", "0.05",
+                    "--out", str(out)]) == 0
+    report = out.read_text()
+    assert "score >= threshold" in report
+    assert "can exceed q" in report
+    r = cg.threshold_at_fpr_bound(
+        [float(x) for x in range(1, 31)], fpr_bound=0.05,
+        direction="higher_is_nonconforming")
+    assert "can exceed `fpr_bound`" in r["threshold_rule"]
+
+
+def test_author_count_reported_and_warned(tmp_path):
+    # 30 texts from 10 authors: the author is the exchangeable unit, and 10
+    # authors cannot express q = 0.05.
+    f = tmp_path / "cal.txt"
+    f.write_text("\n".join(f"{x},author{x % 10}" for x in range(1, 31)),
+                 encoding="utf-8")
+    out = tmp_path / "o.json"
+    assert cg.main(["--calibration", str(f), "--fpr-bound", "0.05", "--json",
+                    "--out", str(out)]) == 0
+    payload = json.loads(out.read_text())
+    assert payload["results"]["n_calibration"] == 30
+    assert payload["results"]["n_calibration_authors"] == 10
+    [warning] = payload["warnings"]
+    assert "exchangeable unit" in warning
+    assert "does not carry its stated guarantee" in warning
+    assert "10 authors cannot express fpr_bound = 0.05" in warning
+
+
+def test_one_text_per_author_adds_no_warning(tmp_path):
+    f = tmp_path / "cal.txt"
+    f.write_text("\n".join(f"{x},author{x}" for x in range(1, 31)),
+                 encoding="utf-8")
+    out = tmp_path / "o.json"
+    assert cg.main(["--calibration", str(f), "--score", "5", "--json",
+                    "--out", str(out)]) == 0
+    payload = json.loads(out.read_text())
+    assert payload["results"]["n_calibration_authors"] == 30
+    assert payload["warnings"] == []
