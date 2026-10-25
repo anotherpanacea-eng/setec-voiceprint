@@ -35,6 +35,9 @@
 # Tier 2 of variance_audit.py and the POS-trigram / dependency-label
 # n-gram families in stylometry_core.py.
 spacy>=3.7,<4
+# preshed 3.0.14 makes spacy.load('en_core_web_sm') raise OverflowError in
+# Tokenizer._flush_specials (seen 2026-10-25 with spaCy 3.8.15/3.8.16).
+preshed<3.0.14
 
 # Length-matched bootstrap intervals for variance_audit.py and
 # voice_distance.py (Phase 1 step 3); also pulled in by scikit-learn.
