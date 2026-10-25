@@ -685,8 +685,13 @@ def main(argv: list[str] | None = None) -> int:
             len(calibration), n_authors, fpr_bound=args.fpr_bound)
         if warning:
             payload["warnings"].append(warning)
+    if fpr_bound_mode and payload["available"] and len(set(calibration)) == 1:
+        payload["warnings"].append(
+            "All calibration scores are identical, so the FPR-bound threshold "
+            "flags any target strictly beyond that one value. Check that the "
+            "calibration scores were read correctly before relying on it.")
 
-    text_out = (json.dumps(payload, indent=2, default=str)
+    text_out =(json.dumps(payload, indent=2, default=str)
                 if args.json else render_report(payload))
     if args.out:
         Path(args.out).write_text(text_out, encoding="utf-8")

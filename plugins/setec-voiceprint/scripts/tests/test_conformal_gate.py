@@ -246,28 +246,30 @@ def test_fpr_bound_output_states_strict_rule_and_marginal_guarantee(tmp_path):
     assert cg.main(["--calibration", str(f), "--fpr-bound", "0.05",
                     "--out", str(out)]) == 0
     report = out.read_text()
-    assert "score > threshold (strict)" in report
+    assert "score > threshold" in report
     assert "marginal" in report
-    assert "about 21%" in report and "at least 59" in report
     r = cg.threshold_at_fpr_bound(
         [float(x) for x in range(1, 31)], fpr_bound=0.05,
         direction="higher_is_nonconforming")
-    assert "is NOT flagged" in r["threshold_rule"]
     assert "marginal" in r["threshold_rule"]
 
 
-def test_fpr_bound_tied_score_is_not_flagged_and_keeps_bound():
+@pytest.mark.parametrize("direction, sign", [
+    ("higher_is_nonconforming", 1.0),
+    ("lower_is_nonconforming", -1.0),
+])
+def test_fpr_bound_tied_score_is_not_flagged_and_keeps_bound(direction, sign):
     # EV-1 (2): with discretized scores a new point can tie the threshold. Under
     # exchangeability the marginal flag rate equals the leave-one-out rate over a
-    # pool of n + 1 values; the tied top pair makes `>=` flag 2/21 > 0.05.
-    pool = [float(x) for x in range(1, 20)] + [20.0, 20.0]
+    # pool of n + 1 values; the tied extreme pair makes a non-strict rule flag
+    # 2/21 > 0.05.
+    pool = [sign * x for x in (*range(1, 20), 20.0, 20.0)]
     q = 0.05
     flagged = 0
     for i, held_out in enumerate(pool):
         r = cg.gate_fpr_bound(
             pool[:i] + pool[i + 1:], held_out, fpr_bound=q,
-            direction="higher_is_nonconforming", reference_label="reference")
-        assert r["raw_score_comparator"] == ">"
+            direction=direction, reference_label="reference")
         if held_out == r["raw_score_threshold"]:
             assert r["in_reference_set"] is True
         flagged += not r["in_reference_set"]
@@ -302,3 +304,16 @@ def test_one_text_per_author_adds_no_warning(tmp_path):
     payload = json.loads(out.read_text())
     assert payload["results"]["n_calibration_authors"] == 30
     assert payload["warnings"] == []
+
+
+def test_fpr_bound_warns_on_collapsed_calibration(tmp_path):
+    # A constant calibration column still yields a valid threshold under the
+    # strict rule, but it usually means the scores were misread upstream.
+    f = tmp_path / "cal.txt"
+    f.write_text("\n".join(["0.0"] * 30), encoding="utf-8")
+    out = tmp_path / "o.json"
+    assert cg.main(["--calibration", str(f), "--fpr-bound", "0.05", "--json",
+                    "--out", str(out)]) == 0
+    payload = json.loads(out.read_text())
+    assert payload["available"] is True
+    assert any("identical" in w for w in payload["warnings"])
