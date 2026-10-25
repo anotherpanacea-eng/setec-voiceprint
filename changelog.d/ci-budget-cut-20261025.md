@@ -1,0 +1,3 @@
+### Changed
+
+CI trim (chore, PATCH-class, owner-approved 2026-10-25, fleet-coordination#1099). The sys.path count ratchet (`tools/check_syspath_ratchet.py`) and the flat-module freeze (`tools/check_no_new_flat_modules.py` with `flat_module_exemptions.yaml`) are removed: they pinned counts for the paused packaging migration, and a new module or bootstrap line is visible in review. The whole-tree spec-anchor lint and the changed-spec dependency check leave hosted CI; both tools stay for local build pre-flight. The layering, zero-install and packaging-migration gates stay. No runtime behavior changes.
