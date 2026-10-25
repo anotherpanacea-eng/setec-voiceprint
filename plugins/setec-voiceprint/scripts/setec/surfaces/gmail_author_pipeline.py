@@ -49,7 +49,7 @@ def _load_contract(name: str) -> Any:
     so it must reach the real builder rather than hand-rolling a twelfth-key
     copy of the contract.  It is loaded by path rather than imported because a
     directly launched nested script has only its own directory on sys.path:
-    `sys.path.insert` is out (check_syspath_ratchet.py is shrink-only) and a
+    new `sys.path` mutation is avoided during the packaging migration, and a
     __file__ anchor is out (check_packaging_migration.py --strict forbids new
     ones).  Registering each module under its plain name lets output_schema's
     own `from claim_license import ...` resolve.  When P2 moves these modules
