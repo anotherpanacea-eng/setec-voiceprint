@@ -56,43 +56,28 @@ def test_programmatic_fpr_bound_rejects_nonfinite_calibration():
 
 
 def test_ties_do_not_violate_fpr_bound():
-    # Codex #242: with the `>= threshold` rule, ties at the threshold are all flagged, so an all-tied
-    # tail used to flag the whole block (empirical FPR 1.0). When NO finite threshold can bound the FPR
-    # <= q without flagging everything (whole tail tied / over-tied at this q), the gate must ABSTAIN
-    # (available=False, with a reason) — NEVER emit a non-JSON `inf` threshold (Codex #242 follow-up).
+    # With the strict `> threshold` rule, scores tied at the threshold are never flagged, so a tied
+    # tail cannot push the empirical FPR above q (Codex #242 hit this under the old `>=` rule).
     for direction in cg.FPR_BOUND_DIRECTIONS:
         r = cg.threshold_at_fpr_bound([0.0] * 10, fpr_bound=0.1, direction=direction)
-        assert r["available"] is False
-        assert "threshold" not in r                       # no inf (or any) threshold emitted
-        assert "degenerate" in r["reason"] and "tied" in r["reason"]
-    # an over-tied boundary at a strict q also abstains (can't flag 1 of a 5-way tie)
-    cal = [1.0] * 5 + [9.0] * 5
-    r = cg.threshold_at_fpr_bound(cal, fpr_bound=0.1, direction="higher_is_nonconforming")
-    assert r["available"] is False
-    # but a looser q that can include the whole tied block finds a FINITE threshold within bound
-    r2 = cg.threshold_at_fpr_bound(cal, fpr_bound=0.5, direction="higher_is_nonconforming")
-    assert r2["available"] is True
-    assert math.isfinite(r2["threshold"])
-    assert r2["empirical_reference_fpr_at_threshold"] <= 0.5 + 1e-12, r2
+        assert r["available"] is True
+        assert math.isfinite(r["threshold"])
+        assert r["empirical_reference_fpr_at_threshold"] == 0.0
+    for q in (0.1, 0.5):
+        r = cg.threshold_at_fpr_bound(
+            [1.0] * 5 + [9.0] * 5, fpr_bound=q, direction="higher_is_nonconforming")
+        assert r["available"] is True
+        assert r["empirical_reference_fpr_at_threshold"] <= q + 1e-12, r
 
 
-def test_small_n_reason_distinct_from_tied_reason():
-    # Codex #28 P3: the `threshold is None` branch ALSO fires when scores are fully DISTINCT and
-    # floor(fpr_bound*n) == 0 (n too small for q) — nothing to do with ties. The reason must name
-    # the small-n cause, not mislead with "too many tied scores".
+def test_small_n_abstains_with_reason():
+    # Codex #28 P3: floor(fpr_bound*n) == 0 means n is too small for q; the reason names that cause.
     r = cg.threshold_at_fpr_bound(
         [1.0, 2.0, 3.0, 4.0, 5.0], fpr_bound=0.1, direction="higher_is_nonconforming")
     assert r["available"] is False
     assert "threshold" not in r
     assert "n too small" in r["reason"]
     assert "ceil(1/fpr_bound)" in r["reason"]
-    assert "tied" not in r["reason"]           # NOT the tied-scores message
-    # A genuinely over-tied case still gets the tied-scores message (unchanged).
-    r2 = cg.threshold_at_fpr_bound(
-        [0.0] * 10, fpr_bound=0.1, direction="higher_is_nonconforming")
-    assert r2["available"] is False
-    assert "tied" in r2["reason"]
-    assert "n too small" not in r2["reason"]
 
 
 def test_threshold_monotonic_in_bound():
@@ -114,8 +99,8 @@ def test_lower_direction_supported():
 
 def test_published_raw_threshold_rule_matches_classification_both_directions():
     for direction, comparator in (
-        ("higher_is_nonconforming", ">="),
-        ("lower_is_nonconforming", "<="),
+        ("higher_is_nonconforming", ">"),
+        ("lower_is_nonconforming", "<"),
     ):
         threshold_only = cg.gate_fpr_bound(
             CAL, None, fpr_bound=0.1, direction=direction,
@@ -129,12 +114,12 @@ def test_published_raw_threshold_rule_matches_classification_both_directions():
         )
         expected_raw = (
             -threshold_only["threshold"]
-            if comparator == "<=" else threshold_only["threshold"]
+            if comparator == "<" else threshold_only["threshold"]
         )
         assert threshold == expected_raw
 
-        outside_score = threshold
-        inside_score = threshold - 1.0 if comparator == ">=" else threshold + 1.0
+        outside_score = threshold + 1.0 if comparator == ">" else threshold - 1.0
+        inside_score = threshold
         for score, expected_outside in (
             (outside_score, True),
             (inside_score, False),
@@ -143,7 +128,7 @@ def test_published_raw_threshold_rule_matches_classification_both_directions():
                 CAL, score, fpr_bound=0.1, direction=direction,
                 reference_label="reference")
             published_rule_flags = (
-                score >= threshold if comparator == ">=" else score <= threshold
+                score > threshold if comparator == ">" else score < threshold
             )
             assert published_rule_flags is expected_outside
             assert result["in_reference_set"] is (not expected_outside)
@@ -172,7 +157,7 @@ def test_with_score_classifies_target():
     out = cg.gate_fpr_bound(
         CAL, 95.0, fpr_bound=0.1, direction="higher_is_nonconforming",
         reference_label="reference")
-    assert out["in_reference_set"] is False  # 95 nc >= threshold
+    assert out["in_reference_set"] is False  # 95 nc > threshold
     assert out["prediction_set"] == []
     inside = cg.gate_fpr_bound(
         CAL, 50.0, fpr_bound=0.1, direction="higher_is_nonconforming",
