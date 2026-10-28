@@ -255,6 +255,8 @@ A full pass over the 1.42 → 1.109 CHANGELOG and the shipped script catalog, re
 
 ## Current state
 
+Each live goal below has a stable goal ID (`VP-G1` to `VP-G5`, under its heading). Fleet backlog cards name it in their `goal` field, so keep an ID when a heading is renamed and never reuse one. The status reconciliations above are history and carry no IDs.
+
 The framework ships a three-layer architecture (Layer A distributional diagnostics, Layer B AIC pattern flags, Layer C source triage), six task surfaces (smoothing diagnosis, voice coherence, validation + calibration, craft restoration, Surface 5 discrimination evidence shipped uncalibrated by default — Binoculars two-model perplexity + the SETEC external-mirror methodology + Tier-4 surprisal — and Surface 6 narrative decision audit), a full interpretation/trustworthiness layer (confounder audit, register conditioning, evidentiary-conditions gate, surface-disagreement resolver, negative/positive controls, ablation, calibration-drift monitor, fairness guardrails) plus a capabilities discoverability layer, a script catalog spanning all surfaces (full per-script catalog at `plugins/setec-voiceprint/scripts/README.md`), and a reference-documentation tree under `plugins/setec-voiceprint/references/` (signals glossary + per-layer math + per-corpus calibration findings + craft-pattern references).
 
 What is shipped:
@@ -268,6 +270,8 @@ What is shipped:
 Every script's JSON output carries a `task_surface` tag so downstream consumers can route by surface. The framework refuses the unifying "is this AI" verdict; the math does not entitle it.
 
 ## Architecture: MVP to cathedral
+
+Goal ID: `VP-G1`
 
 The framework currently sits at MVP: it answers "how far is this draft from this baseline?" given a baseline corpus and a target document. Cathedral status would answer the grown-up version: given the right comparison set, length, register, time period, and known failure modes, what can be responsibly inferred, how confident, where in the text the signal lives, and what the practical revision decision is.
 
@@ -479,6 +483,8 @@ The seven are independently shippable. RAID and MAGE shipped in 1.42.x (the sect
 
 ## Stylometric surface expansion
 
+Goal ID: `VP-G2`
+
 The shipped suite covers the core modern stylometry stack: lexical diversity, sentence/rhythm variance, POS/dependency n-grams, character n-grams, function words, Burrows Delta, General Imposters, keyness/collocation, and per-window localization. Recent reviewer-track work surfaced a longer list of candidate surfaces drawn from classical writeprint research and recent stylometry surveys (lexical / syntactic / structural / content-specific / idiosyncratic feature families; the persistent challenges around genre, topic leakage, short texts, and forensic reliability). This section catalogs each candidate with an honest priority — including the ones I'd indefinitely defer or explicitly *not* ship as voice surfaces.
 
 The general framing: the existing suite is strong at measuring **distributional compression and distance from baseline**. The candidate surfaces below mostly measure **where the writer's choices live** — at the paragraph, discourse, agency, construction, and trajectory layers. That's where AI smoothing often does its most interesting damage and where the existing suite is structurally blind.
@@ -575,6 +581,8 @@ The Tier 4 specialized surfaces (Dialogue, Narratorial Distance, Productive Roug
 **Status update (2026-06-23):** `within_doc_segmentation` (spec tier4b, board resolution 2026-06-23) shipped as a new `document_segmentation` surface — the within-document register-discontinuity locator described in § Multi-author / multi-source segmentation above (Tier 4 Trustworthiness). M1 (stylometric cosine distance, stdlib, model-free). Mechanical never-authorship guarantee via `FORBIDDEN_RESULT_KEYS` + `assert_no_authorship` guard. `calibration_status: provisional`.
 
 ## Trustworthiness expansion
+
+Goal ID: `VP-G3`
 
 The `Stylometric surface expansion` section above catalogues *new things to measure*. This section catalogues *failure-mode control, interpretability, adversarial realism, and user workflow discipline* — the parts that stop a sophisticated stylometric tool from becoming a numerically impressive overclaimer. The shipped suite answers "what does this text look like stylometrically?" Trustworthiness work answers a different question:
 
@@ -904,6 +912,8 @@ The 2026-05-18 Tier-4 surprisal audit writeup against the *Conceptual Repair and
 
 ## Capability-whitespace additions (2026-06-07)
 
+Goal ID: `VP-G4`
+
 A capability-whitespace survey asked the inverse of every section above: not "what's the next signal / guardrail on the planned tracks," but *what could a tool like this do that is absent from both this roadmap and the `specs/` frontier brief?* The `specs/00` brief already saturates the detection / stylometry / neural-embedding frontier (LUAR/Wegmann, Fast-DetectGPT, intrinsic dimension, Raidar, watermark-key, the generative voice-matching companion). The genuine whitespace sits **off** those axes — in measurement dimensions outside lexis/syntax/distribution, in validating against humans rather than labeled corpora, in language-agnostic operation, and in the statistical-rigor layer under the abstention calls. Four such themes are adopted here. Each ships its flagship capability first (stdlib-only, laptop-trivial, **no verdict, PROVISIONAL/descriptive** by default, per "Stylometry to the people"); each names sibling work deferred behind it. Build contracts live in `specs/17`–`specs/20`.
 
 These four are independently shippable and do not sit on the R1–R12 paired-release rhythm — they are research-driven additions in the same idiom as the Post-R12 and Post-1.101 sections above.
@@ -992,5 +1002,7 @@ The framework's privacy posture is therefore protective by default. Personal bas
 **Do not target raw metrics in revision prompts.** Metrics diagnose drift; they are not prose goals. A good restoration prompt names the local prose pattern and the allowed move, not the number. "Reduce `DET+ADJ+NOUN` packages by replacing generic descriptor labels with concrete actors or verbs" is a usable instruction. "Lower POS-bigram KL" is not.
 
 ## Tooling & portability follow-ups
+
+Goal ID: `VP-G5`
 
 **~~`tools/` gates crash printing a status glyph on a non-UTF-8 (Windows) console.~~ Resolved.** The doc/capability gates `print`ed glyphs (`✔`, `≥`, `→`, `⇒`) that raise `UnicodeEncodeError` under a cp1252 default console *after* the check ran (a pass → nonzero exit). CI is Linux/UTF-8 so it never fired there; it only bit a maintainer running the gate locally on Windows. *Surfaced 2026-06-19 propagating the AGENTS.md workflow refinement; fixed the same day.* The audit found **four** affected tools (the literal-`✔` predicate had missed two — `gen_calibration_readiness.py`'s `≥`/`--help` docstring and `seed_capabilities.py`'s `→`-to-stderr): a shared `tools/_console.enable_utf8_stdio()` now reconfigures stdout/stderr to UTF-8 at the top of each tool's `main()` (preserves the glyphs → local↔CI parity; guarded), pinned by `test_tools_console_utf8.py`. Same class as the apodictic gate-parity fix (apodictic #115/#118).
