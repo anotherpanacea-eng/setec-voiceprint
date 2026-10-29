@@ -13,7 +13,11 @@ register rates for a passage. This module provides:
     installed (the dependency_distance_audit.py whole-surface abstain pattern).
 
 M1 (model-free, CI): uses the BIBER_FEATURE_SCHEMA + normalizer + the injectable tagger seam.
-M2 (deferred): the real Neurobiber tagger behind a lazy torch/transformers import.
+M2 (VP-RS2): the real Neurobiber tagger (Blablablab/neurobiber, a RoBERTa multi-label
+  classifier) behind a lazy torch/transformers import. Each feature's value is the mean
+  sigmoid probability across the passage's chunks (the model card thresholds the max at
+  0.5; the mean keeps a graded value for distances), and the share of chunks where the
+  feature is detected is reported beside it.
 
 arXiv root: Neurobiber: Fast and Interpretable Stylistic Feature Extraction (arXiv:2502.18590).
 Dual-use citation: Do LLMs Write Like Humans? Variation in Grammatical and Rhetorical Styles
@@ -53,107 +57,110 @@ SCRIPT_VERSION = "1.0"
 # PINNED at 96 per arXiv:2502.18590 (M0-verified; the prior draft's 67 is
 # superseded).
 #
-# Feature ids follow the BIN_* convention (Biber INdicator prefix).
-# Labels are human-readable descriptions from the Neurobiber panel.
+# Ids and order are the real Neurobiber output labels: biberplus
+# BIBER_PLUS_TAGS with the BIN_ prefix, identical to the checkpoint's
+# config.id2label (Blablablab/neurobiber). The real tagger checks its
+# id2label against this tuple and refuses to run on any mismatch.
+# Labels are short human-readable glosses of the biberplus tag rules.
 # ---------------------------------------------------------------------------
 
 BIBER_FEATURE_SCHEMA: tuple[tuple[str, str], ...] = (
-    ("BIN_past_tense_verb", "Past tense verbs"),
-    ("BIN_perfect_aspect", "Perfect aspect (have + past participle)"),
-    ("BIN_present_tense_verb", "Present tense verbs"),
-    ("BIN_place_adverb", "Place adverbials"),
-    ("BIN_time_adverb", "Time adverbials"),
-    ("BIN_first_person_pronoun", "First-person pronouns (I/me/my/mine/myself)"),
-    ("BIN_second_person_pronoun", "Second-person pronouns (you/your/yourself)"),
-    ("BIN_third_person_pronoun", "Third-person pronouns (he/she/it/they)"),
-    ("BIN_pronoun_it", "Pronoun 'it'"),
-    ("BIN_demonstrative_pronoun", "Demonstrative pronouns (this/that/these/those)"),
-    ("BIN_indefinite_pronoun", "Indefinite pronouns (anyone/everyone/something)"),
-    ("BIN_nominalization", "Nominalizations (-tion/-ness/-ity/-ment suffixes)"),
-    ("BIN_noun_phrase_head", "Noun phrase heads (simple NP density proxy)"),
-    ("BIN_gerund_noun", "Gerunds as nouns (-ing nominal)"),
-    ("BIN_attributive_adjective", "Attributive adjectives (pre-nominal)"),
-    ("BIN_predicative_adjective", "Predicative adjectives (post-copula)"),
-    ("BIN_adverb_rate", "General adverb rate"),
-    ("BIN_modal_possibility", "Possibility modals (can/could/may/might)"),
-    ("BIN_modal_necessity", "Necessity modals (must/shall/should/need)"),
-    ("BIN_modal_predictive", "Predictive modals (will/would)"),
-    ("BIN_public_verb", "Public verbs (say/show/tell/argue/claim)"),
-    ("BIN_private_verb", "Private verbs (think/know/believe/feel/find)"),
-    ("BIN_suasive_verb", "Suasive verbs (suggest/recommend/require/propose)"),
-    ("BIN_seem_appear", "Seem/appear (stance verbs)"),
-    ("BIN_that_clause_verb", "Verb + that-clause complement"),
-    ("BIN_that_clause_adjective", "Adjective + that-clause complement"),
-    ("BIN_that_clause_noun", "Noun + that-clause complement"),
-    ("BIN_to_clause_verb", "Verb + to-infinitive complement"),
-    ("BIN_to_clause_adjective", "Adjective + to-infinitive complement"),
-    ("BIN_wh_clause", "WH-clause complement"),
-    ("BIN_pied_piping", "Pied-piping (preposition stranding avoidance)"),
-    ("BIN_prep_phrase", "Prepositional phrases per sentence"),
-    ("BIN_adj_attr_count", "Attributive adjective count (raw rate)"),
-    ("BIN_type_token_ratio", "Type-token ratio (lexical diversity proxy)"),
-    ("BIN_word_length_mean", "Mean word length in characters"),
-    ("BIN_coordinating_conjunction", "Coordinating conjunctions (and/but/or)"),
-    ("BIN_subordinating_conjunction", "Subordinating conjunctions (because/although/while)"),
-    ("BIN_conditional_subordinator", "Conditional subordinators (if/unless)"),
-    ("BIN_concessive_adverb", "Concessive adverbs (however/nevertheless/nonetheless)"),
-    ("BIN_discourse_particle", "Discourse particles (well/now/of_course/I_mean)"),
-    ("BIN_hedge", "Hedges (maybe/perhaps/possibly/probably/sort_of/kind_of)"),
-    ("BIN_amplifier", "Amplifiers (very/really/absolutely/extremely)"),
-    ("BIN_downtoner", "Downtoners (almost/barely/hardly/merely/nearly)"),
-    ("BIN_emphatic", "Emphatics (for_sure/a_lot/such_a)"),
-    ("BIN_agentless_passive", "Agentless passives"),
-    ("BIN_by_passive", "By-passives (passive with by-phrase)"),
-    ("BIN_passive_participle", "Passive participial clauses (past part. post-NP)"),
-    ("BIN_existential_there", "Existential there (there is/there are)"),
-    ("BIN_demonstrative_that", "Demonstrative 'that' (not complementizer)"),
-    ("BIN_stranded_preposition", "Stranded prepositions (end-of-clause prep)"),
-    ("BIN_split_infinitive", "Split infinitives (to X verb)"),
-    ("BIN_split_auxiliary", "Split auxiliaries (e.g. have always been)"),
-    ("BIN_sentence_length_mean", "Mean sentence length in words"),
-    ("BIN_question_rate", "Direct question rate"),
-    ("BIN_direct_speech", "Direct speech / quoted material rate"),
-    ("BIN_contraction", "Contraction rate (n't/'ve/'ll etc.)"),
-    ("BIN_negation", "Negation rate (not/never/no)"),
-    ("BIN_analytic_negation", "Analytic negation (not separate token)"),
-    ("BIN_synthetic_negation", "Synthetic negation (-n't clitic)"),
-    ("BIN_causative_adverbial", "Causative adverbials (because/since/as)"),
-    ("BIN_concessive_clause", "Concessive clauses (although/though/even_though)"),
-    ("BIN_conditional_clause", "Conditional clauses (if/unless/provided_that)"),
-    ("BIN_relative_clause_subject", "Relative clauses on subject NP"),
-    ("BIN_relative_clause_object", "Relative clauses on object NP"),
-    ("BIN_wh_relative_subject", "WH relative clauses on subject (who/which)"),
-    ("BIN_wh_relative_object", "WH relative clauses on object (who/which)"),
-    ("BIN_that_relative", "That-relative clauses"),
-    ("BIN_zero_relative", "Zero relative clauses (omitted relativizer)"),
-    ("BIN_comparative_adj", "Comparative adjectives (-er/more)"),
-    ("BIN_superlative_adj", "Superlative adjectives (-est/most)"),
-    ("BIN_attributive_adj_superlative", "Attributive superlative adjectives"),
-    ("BIN_predicative_adj_superlative", "Predicative superlative adjectives"),
-    ("BIN_verb_nominalization", "Verb-derived nominalizations (-tion/-sion/-ment)"),
-    ("BIN_adjective_nominalization", "Adjective-derived nominalizations (-ness/-ity/-acy)"),
-    ("BIN_participle_clause", "Participial clauses (ed/ing adjuncts)"),
-    ("BIN_adverbial_subordinate", "Adverbial subordinate clauses (all types)"),
-    ("BIN_noun_complement", "Noun complement clauses (fact_that/idea_that)"),
-    ("BIN_final_preposition", "Final prepositions (preposition at sentence end)"),
-    ("BIN_extraposed_subject", "Extraposed subjects (it is important that)"),
-    ("BIN_passive_agentless_short", "Short passives without agent (agentless subset)"),
-    ("BIN_discourse_new_this", "Discourse-new demonstrative 'this'"),
-    ("BIN_discourse_new_that", "Discourse-old demonstrative 'that'"),
-    ("BIN_first_person_plural", "First-person plural (we/us/our/ours/ourselves)"),
-    ("BIN_third_person_animate", "Third-person animate (he/she/him/her)"),
-    ("BIN_third_person_inanimate", "Third-person inanimate (it/its/itself)"),
-    ("BIN_indefinite_article", "Indefinite article (a/an)"),
-    ("BIN_definite_article", "Definite article (the)"),
-    ("BIN_numeral", "Numeral rate (cardinal + ordinal)"),
-    ("BIN_foreign_word", "Foreign word / loan rate"),
-    ("BIN_modal_epistemic", "Epistemic modals (may/might/could/would in epistemic use)"),
-    ("BIN_modal_deontic", "Deontic modals (must/should/shall/need in deontic use)"),
-    ("BIN_stance_adverb", "Stance adverbs (certainly/apparently/obviously/frankly)"),
-    ("BIN_focus_particle", "Focus particles (only/even/just/also/at_least)"),
-    ("BIN_question_tag", "Question tags (isn't it/don't you)"),
-    ("BIN_imperative", "Imperative clauses (bare verb at sentence start)"),
-    ("BIN_passive_progressive", "Progressive passive constructions (is being done)"),
+    ("BIN_QUAN", "Quantifiers (each/all/every/many/much/few/several/some/any)"),
+    ("BIN_QUPR", "Quantifier pronouns (everybody/somebody/anything/nothing ...)"),
+    ("BIN_AMP", "Amplifiers (absolutely/extremely/completely/totally/very ...)"),
+    ("BIN_PASS", "Agentless passives"),
+    ("BIN_XX0", "Analytic negation (not / n't)"),
+    ("BIN_JJ", "Attributive adjectives"),
+    ("BIN_BEMA", "Be as main verb"),
+    ("BIN_CAUS", "Causative adverbial subordinator (because)"),
+    ("BIN_CONC", "Concessive adverbial subordinators (although/though)"),
+    ("BIN_COND", "Conditional adverbial subordinators (if/unless)"),
+    ("BIN_CONJ", "Conjuncts (however/therefore/thus/furthermore ...)"),
+    ("BIN_CONT", "Contractions"),
+    ("BIN_DPAR", "Discourse particles (well/now/anyhow/anyways, clause-initial)"),
+    ("BIN_DWNT", "Downtoners (almost/barely/hardly/merely/nearly/only ...)"),
+    ("BIN_EX", "Existential there"),
+    ("BIN_FPP1", "First-person pronouns"),
+    ("BIN_GER", "Gerunds"),
+    ("BIN_RB", "Adverbs (any)"),
+    ("BIN_PIN", "Prepositional phrases (total prepositions)"),
+    ("BIN_INPR", "Indefinite pronouns (anybody/anyone/everything/nobody ...)"),
+    ("BIN_TO", "Infinitives (to + verb)"),
+    ("BIN_NEMD", "Necessity modals (ought/should/must)"),
+    ("BIN_OSUB", "Other adverbial subordinators (since/while/whereas/so that ...)"),
+    ("BIN_PASTP", "Past participial clauses"),
+    ("BIN_VBD", "Past tense verbs"),
+    ("BIN_PHC", "Phrasal coordination (and joining like categories)"),
+    ("BIN_PIRE", "Pied-piping relative clauses (preposition + who/whom/whose/which)"),
+    ("BIN_PLACE", "Place adverbials"),
+    ("BIN_POMD", "Possibility modals (can/may/might/could)"),
+    ("BIN_PRMD", "Predictive modals (will/would/shall)"),
+    ("BIN_WZPRES", "Present participial WHIZ deletion relatives"),
+    ("BIN_VPRT", "Present tense verbs"),
+    ("BIN_PRIV", "Private verbs (think/know/believe/feel/find ...)"),
+    ("BIN_PIT", "Pronoun it"),
+    ("BIN_PUBV", "Public verbs (say/tell/argue/claim/report ...)"),
+    ("BIN_SPP2", "Second-person pronouns (incl. thou/thee/thy)"),
+    ("BIN_SMP", "Seem / appear"),
+    ("BIN_SERE", "Sentence relatives (, which)"),
+    ("BIN_STPR", "Stranded prepositions"),
+    ("BIN_SUAV", "Suasive verbs (suggest/recommend/insist/propose ...)"),
+    ("BIN_SYNE", "Synthetic negation (no/neither/nor + noun or adjective)"),
+    ("BIN_TPP3", "Third-person personal pronouns (excluding it)"),
+    ("BIN_TIME", "Time adverbials"),
+    ("BIN_NOMZ", "Nominalizations (-tion/-ment/-ness/-ity)"),
+    ("BIN_BYPA", "By-passives"),
+    ("BIN_PRED", "Predicative adjectives"),
+    ("BIN_TOBJ", "That relative clauses on object position"),
+    ("BIN_TSUB", "That relative clauses on subject position"),
+    ("BIN_THVC", "That verb complements"),
+    ("BIN_NN", "Other nouns (not nominalizations or gerunds)"),
+    ("BIN_DEMP", "Demonstrative pronouns"),
+    ("BIN_DEMO", "Demonstratives (determiner use)"),
+    ("BIN_WHQU", "Direct WH-questions"),
+    ("BIN_EMPH", "Emphatics (for sure/a lot/such a/really/just ...)"),
+    ("BIN_HDG", "Hedges (at about/something like/more or less/almost/maybe)"),
+    ("BIN_WZPAST", "Past participial WHIZ deletion relatives"),
+    ("BIN_THAC", "That adjective complements"),
+    ("BIN_PEAS", "Perfect aspect"),
+    ("BIN_ANDC", "Independent clause coordination (clause-initial and)"),
+    ("BIN_PRESP", "Present participial clauses"),
+    ("BIN_PROD", "Pro-verb do"),
+    ("BIN_SPAU", "Split auxiliaries"),
+    ("BIN_SPIN", "Split infinitives"),
+    ("BIN_THATD", "Subordinator that deletion"),
+    ("BIN_WHOBJ", "WH relative clauses on object position"),
+    ("BIN_WHSUB", "WH relative clauses on subject position"),
+    ("BIN_WHCL", "WH clauses (after public/private/suasive verbs)"),
+    ("BIN_ART", "Articles"),
+    ("BIN_AUXB", "Auxiliary be"),
+    ("BIN_CAP", "Capitalized words"),
+    ("BIN_SCONJ", "Subordinating conjunctions"),
+    ("BIN_CCONJ", "Coordinating conjunctions"),
+    ("BIN_DET", "Determiners"),
+    ("BIN_EMOJ", "Emoji"),
+    ("BIN_EMOT", "Emoticons"),
+    ("BIN_EXCL", "Exclamation marks"),
+    ("BIN_HASH", "Hashtags"),
+    ("BIN_INF", "Infinitive verb forms"),
+    ("BIN_UH", "Interjections"),
+    ("BIN_NUM", "Numerals"),
+    ("BIN_LAUGH", "Laughter acronyms (lol/haha ...)"),
+    ("BIN_PRP", "Possessive pronouns"),
+    ("BIN_PREP", "Prepositions"),
+    ("BIN_NNP", "Proper nouns"),
+    ("BIN_QUES", "Question marks"),
+    ("BIN_QUOT", "Quotation marks"),
+    ("BIN_AT", "@-mentions"),
+    ("BIN_SBJP", "Subject pronouns"),
+    ("BIN_URL", "URLs"),
+    ("BIN_WH", "WH words"),
+    ("BIN_INDA", "Indefinite articles"),
+    ("BIN_ACCU", "Accusative-case pronouns"),
+    ("BIN_PGAS", "Progressive aspect"),
+    ("BIN_CMADJ", "Comparative adjectives"),
+    ("BIN_SPADJ", "Superlative adjectives"),
+    ("BIN_X", "Tokens with no part-of-speech tag (other)"),
 )
 
 # Verify the schema has exactly 96 entries — a load-time assertion so any
@@ -247,9 +254,14 @@ def run_biber_panel(
         result_dict is suitable for build_output's results kwarg.
     """
     raw_vector: dict[str, float]
+    detail: dict[str, Any] | None = None
     if biber_vector is not None:
         raw_vector = biber_vector
         tagger_name = "precomputed"
+    elif biber_tagger is not None and hasattr(biber_tagger, "detail"):
+        raw_vector, shares, n_chunks = biber_tagger.detail(text)
+        detail = {"detection_share": biber_family_features(shares), "n_chunks": n_chunks}
+        tagger_name = getattr(biber_tagger, "_tagger_name", "stub")
     elif biber_tagger is not None:
         raw_vector = biber_tagger(text)
         tagger_name = getattr(biber_tagger, "_tagger_name", "stub")
@@ -273,6 +285,7 @@ def run_biber_panel(
             "n_features": len(BIBER_FEATURE_SCHEMA),
             "features": features,
             "tagger": tagger_name,
+            **(detail or {}),
             "calibration_status": "provisional",
             "assumptions": {
                 "method": "Biber lexico-grammatical register panel (Neurobiber, arXiv:2502.18590)",
@@ -283,6 +296,11 @@ def run_biber_panel(
                 "tagger_tier": (
                     "model-CPU (Neurobiber) in production; "
                     "deterministic injected/stub vector in M1/CI"
+                ),
+                "feature_value": (
+                    "Neurobiber: mean per-chunk sigmoid probability that the feature is "
+                    "present (not a per-word rate); detection_share is the share of "
+                    "chunks above 0.5"
                 ),
             },
         },
@@ -304,18 +322,15 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             reason_category="bad_input",
         )
 
-    # M1 production default: no tagger wired, no model installed → abstain.
-    # M2: pass a real NeurobiberTagger instance via --tagger-module (out of scope here;
-    # the seam is the biber_tagger kwarg in run_biber_panel).
-    biber_tagger = _try_load_real_tagger()
+    biber_tagger = _try_load_real_tagger(chunk_words=args.chunk_words, device=args.device)
     if biber_tagger is None:
         return build_error_output(
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
             target_path=str(target_path),
             reason=(
-                "Biber tagger not available. Install the neurobiber package "
-                "(pip install neurobiber) or torch+transformers with the Neurobiber "
-                "checkpoint to run this surface."
+                "Biber tagger not available. The Neurobiber tagger needs torch and "
+                "transformers (pip install -r requirements-surprisal.txt) and the "
+                f"{NEUROBIBER_MODEL_ID} checkpoint (downloaded on first use)."
             ),
             reason_category="missing_dependency",
         )
@@ -333,30 +348,85 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
-def _try_load_real_tagger() -> Callable[[str], dict[str, float]] | None:
-    """Attempt to load the real Neurobiber tagger (M2 path).
+NEUROBIBER_MODEL_ID = "Blablablab/neurobiber"
+NEUROBIBER_MAX_TOKENS = 512  # trained with max_length=512 (model card)
+DEFAULT_CHUNK_WORDS = 512    # model card chunks on whitespace words before tokenizing
 
-    ALWAYS returns None in this M1 build — the M2 NeurobiberTagger adapter is
-    not yet implemented. This holds whether or not the ``neurobiber`` package is
-    importable: a present dependency is a deferred-integration state, NOT a
-    usable tagger. Returning None (rather than raising) keeps the CLI guard's
-    missing_dependency abstention intact — installing the named package must not
-    turn a clean rc=3 envelope into an uncaught traceback (Codex round-2 P2).
 
-    M2 body (deferred, out of scope for this build): instantiate a
-    _NeurobiberTagger whose _load() does:
-        import torch
-        import transformers
-        ...
-    modelled on voice_fingerprint._LUAREncoder._load() (voice_fingerprint.py:196-201).
-    Until that adapter exists, the importability of ``neurobiber`` is irrelevant
-    and this function stays a no-op.
+class _NeurobiberTagger:
+    """Real Neurobiber tagger (M2). Never loaded in CI.
+
+    Follows the model card: split on whitespace into ``chunk_words`` chunks,
+    tokenize each to at most 512 tokens, sigmoid the 96 logits. Where the card
+    thresholds the max over chunks at 0.5, this keeps the mean probability
+    (graded, so baseline distances move smoothly) and reports the share of
+    chunks above 0.5 beside it.
     """
-    # M2 NeurobiberTagger adapter is deferred — there is no real tagger to load
-    # yet, so abstain unconditionally. Do NOT probe `import neurobiber` here:
-    # raising on a present package would escape the CLI's missing_dependency
-    # guard and crash voice_distance/voice_profile/biber_features (Codex round-2).
-    return None
+
+    _tagger_name = "neurobiber"
+
+    def __init__(self, *, chunk_words: int = DEFAULT_CHUNK_WORDS, device: str | None = None,
+                 batch_size: int = 16) -> None:
+        import torch  # type: ignore
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer  # type: ignore
+
+        self._torch = torch
+        self._tok = AutoTokenizer.from_pretrained(NEUROBIBER_MODEL_ID, use_fast=True)
+        self._model = AutoModelForSequenceClassification.from_pretrained(NEUROBIBER_MODEL_ID)
+        self._model.eval()
+        self._device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self._model.to(self._device)
+        id2label = {int(k): v for k, v in self._model.config.id2label.items()}
+        self._ids = [id2label[i] for i in range(len(id2label))]
+        if self._ids != [fid for fid, _ in BIBER_FEATURE_SCHEMA]:
+            raise RuntimeError(
+                f"{NEUROBIBER_MODEL_ID} id2label does not match BIBER_FEATURE_SCHEMA; "
+                "refusing to map features by position"
+            )
+        self._chunk_words = max(1, int(chunk_words))
+        self._batch_size = batch_size
+
+    def detail(self, text: str) -> tuple[dict[str, float], dict[str, float], int]:
+        torch = self._torch
+        words = text.split()
+        chunks = [" ".join(words[i:i + self._chunk_words])
+                  for i in range(0, len(words), self._chunk_words)]
+        if not chunks:
+            zeros = {fid: 0.0 for fid in self._ids}
+            return zeros, dict(zeros), 0
+        probs = []
+        with torch.no_grad():
+            for i in range(0, len(chunks), self._batch_size):
+                enc = self._tok(chunks[i:i + self._batch_size], return_tensors="pt", padding=True,
+                                truncation=True, max_length=NEUROBIBER_MAX_TOKENS).to(self._device)
+                probs.append(torch.sigmoid(self._model(**enc).logits.float()).cpu())
+        p = torch.cat(probs, dim=0)
+        means = p.mean(dim=0).tolist()
+        shares = (p > 0.5).float().mean(dim=0).tolist()
+        return (dict(zip(self._ids, means)), dict(zip(self._ids, shares)), len(chunks))
+
+    def __call__(self, text: str) -> dict[str, float]:
+        return self.detail(text)[0]
+
+
+def _try_load_real_tagger(*, chunk_words: int = DEFAULT_CHUNK_WORDS,
+                          device: str | None = None) -> Callable[[str], dict[str, float]] | None:
+    """Load the real Neurobiber tagger, or None when it cannot run here.
+
+    None (never a raise) keeps the CLI's missing_dependency abstention intact:
+    torch/transformers absent, or the checkpoint unavailable (offline, no
+    cache). Whether the separate ``neurobiber`` pip package is installed does
+    not matter; the tagger loads the checkpoint through transformers.
+    """
+    try:
+        import torch  # type: ignore  # noqa: F401
+        import transformers  # type: ignore  # noqa: F401
+    except ImportError:
+        return None
+    try:
+        return _NeurobiberTagger(chunk_words=chunk_words, device=device)
+    except OSError:
+        return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -367,6 +437,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("target", help="Path to the target text file.")
     ap.add_argument("--json", action="store_true", help="Emit the JSON envelope to stdout.")
     ap.add_argument("--out", help="Write the JSON envelope to this path.")
+    ap.add_argument("--chunk-words", type=int, default=DEFAULT_CHUNK_WORDS,
+                    help="Whitespace words per Neurobiber chunk (default 512, as the model card).")
+    ap.add_argument("--device", default=None, help="torch device for the tagger (default: cuda if available).")
     args = ap.parse_args(argv)
 
     envelope = _run(args)
