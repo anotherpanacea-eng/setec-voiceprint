@@ -74,6 +74,7 @@ def _candidates(seed=1, n=80, *, shift_years=0.0, shift_p=0.0, n_words=None, len
 
 def _run(cands, ref, **kw):
     kw.setdefault("n_null", 300)
+    kw.setdefault("channels", ("date", "authenticity"))
     return pr.run_period_ruler(cands, ref, **kw)
 
 
@@ -196,7 +197,8 @@ class TestCli:
         out = io.StringIO()
         with redirect_stdout(out):
             rc = pr.main(["--candidates", str(tmp_path / "c.jsonl"), "--reference",
-                          str(tmp_path / "r.jsonl"), "--n-null", "200", "--json"])
+                          str(tmp_path / "r.jsonl"), "--n-null", "200", "--channels", "date,authenticity",
+                          "--json"])
         env = json.loads(out.getvalue())
         assert rc == 0 and env["available"] is True
         assert env["task_surface"] == "period_register"
@@ -210,7 +212,7 @@ class TestCli:
         out = io.StringIO()
         with redirect_stdout(out):
             rc = pr.main(["--candidates", str(tmp_path / "c.jsonl"), "--reference",
-                          str(tmp_path / "r.jsonl"), "--json"])
+                          str(tmp_path / "r.jsonl"), "--channels", "date,authenticity", "--json"])
         env = json.loads(out.getvalue())
         assert rc == 3
         assert env["reason_category"] == "missing_dependency"
@@ -232,7 +234,140 @@ class TestCli:
         proc = subprocess.run(
             [sys.executable, str(SCRIPTS / "period_ruler.py"), "--candidates",
              str(tmp_path / "c.jsonl"), "--reference", str(tmp_path / "r.jsonl"),
-             "--n-null", "100", "--json"],
+             "--n-null", "100", "--channels", "date,authenticity", "--json"],
             cwd=tmp_path, capture_output=True, text=True)
         assert proc.returncode == 0, proc.stderr
         assert json.loads(proc.stdout)["tool"] == "period_ruler"
+
+
+# ---------------------------------------------------------------------------
+# Architecture band (p22 Score A)
+# ---------------------------------------------------------------------------
+
+_ARCH = ("clause_depth_weighted", "sentence_length_mean", "dependency_distance_mean", "hypotaxis_per_100_median")
+_WORDS = [f"w{i}" for i in range(3000)]
+
+
+def _arch_text(rng, n=1000, loop=False):
+    if loop:
+        return " ".join((["the", "old", "grey", "house"] * (n // 4 + 1))[:n])
+    return " ".join(rng.choice(_WORDS) for _ in range(n))
+
+
+def _arch_rows(seed, n, *, shift=0.0, groups=12, loop=False, kind="ref"):
+    rng = random.Random(seed)
+    rows = []
+    for i in range(n):
+        feats = {f: rng.gauss(10 + j, 1.0) + shift for j, f in enumerate(_ARCH)}
+        row = {"id": f"{kind}{i}", "year": 1860, "text": _arch_text(rng, loop=loop),
+               "architecture_features": feats}
+        row["n_words"] = pr.count_words(row["text"])
+        if kind == "ref":
+            row["group"] = f"g{i % groups}"
+        rows.append(row)
+    return rows
+
+
+def _arch(cands, ref, **kw):
+    kw.setdefault("n_null", 300)
+    results, _ = pr.run_period_ruler(cands, ref, channels=("architecture",), **kw)
+    return results["period_ruler"]["channels"]["architecture"]
+
+
+class TestArchitectureBand:
+    def test_real_like_windows_sit_inside_the_band(self):
+        block = _arch(_arch_rows(2, 60, kind="c"), _arch_rows(1, 600))
+        assert block["band"] == "within_reference_noise"
+        assert block["displacement_direction"] == "inside"
+        assert 0.6 < block["in_band_share"] <= 1.0
+        lo, hi = block["null_in_band_share_interval_95"]
+        assert lo <= block["in_band_share"] <= 1.0
+
+    def test_overshoot_reads_as_over_not_better(self):
+        block = _arch(_arch_rows(2, 60, shift=2.5, kind="c"), _arch_rows(1, 600))
+        assert block["band"] == "beyond_reference_noise"
+        assert block["displacement_direction"] == "over"
+        assert block["signed_displacement"] > 30
+        assert block["in_band_share"] < 0.5
+
+    def test_undershoot_reads_as_under(self):
+        block = _arch(_arch_rows(2, 60, shift=-2.5, kind="c"), _arch_rows(1, 600))
+        assert block["displacement_direction"] == "under"
+        assert block["signed_displacement"] < -30
+
+    def test_looping_windows_are_vetoed_and_count_as_failures(self):
+        block = _arch(_arch_rows(2, 30, kind="c", loop=True), _arch_rows(1, 600))
+        assert block["veto_rate"] == 1.0
+        assert block["in_band_share"] == 0.0
+        assert block["band"] == "beyond_reference_noise"
+
+    def test_per_feature_reading_names_the_axis_that_moved(self):
+        cands = _arch_rows(2, 60, kind="c")
+        for c in cands:
+            c["architecture_features"]["sentence_length_mean"] += 4.0
+        per = _arch(cands, _arch_rows(1, 600))["per_feature"]
+        assert per["sentence_length_mean"]["signed_displacement"] > 40
+        assert abs(per["clause_depth_weighted"]["signed_displacement"]) < 15
+
+    def test_texts_are_cut_into_windows_and_featurized(self):
+        def feature_fn(text):
+            n = len(text.split())
+            return {"sentence_length_mean": float(len(set(text.split())) % 17), "_sentence_lengths": [n % 40 + 5, 20, 30]}
+
+        rng = random.Random(4)
+        ref = [{"id": f"r{i}", "year": 1860, "group": f"g{i % 6}", "text": _arch_text(rng, 2500)} for i in range(60)]
+        cands = [{"id": f"c{i}", "year": 1860, "text": _arch_text(rng, 2500)} for i in range(10)]
+        for r in ref + cands:
+            r["n_words"] = pr.count_words(r["text"])
+        block = _arch(cands, ref, feature_fn=feature_fn)
+        assert block["n_candidate_windows"] == 20  # 2 x 1,000 words each; the 500-word tail is dropped
+        assert "sentence_length_w1_to_pool" in block["per_feature"]
+
+    def test_split_windows_keeps_a_lone_short_text(self):
+        assert len(pr.split_windows(_words(300), 1000)) == 1
+        assert len(pr.split_windows(_words(2700), 1000)) == 3
+
+    def test_results_carry_no_verdict_or_selection_keys(self):
+        block = _arch(_arch_rows(2, 20, kind="c"), _arch_rows(1, 200), include_per_candidate=True)
+        assert not (set(_walk_keys(block)) & _FORBIDDEN_KEYS)
+
+    def test_cli_architecture_only_with_precomputed_features(self, tmp_path):
+        def dump(path, rows, year_key):
+            with path.open("w", encoding="utf-8") as fh:
+                for r in rows:
+                    out = {k: v for k, v in r.items() if k not in ("n_words", "year")}
+                    out[year_key] = r["year"]
+                    fh.write(json.dumps(out) + "\n")
+
+        dump(tmp_path / "c.jsonl", _arch_rows(2, 20, kind="c"), "target_year")
+        dump(tmp_path / "r.jsonl", _arch_rows(1, 200), "year")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = pr.main(["--candidates", str(tmp_path / "c.jsonl"), "--reference", str(tmp_path / "r.jsonl"),
+                          "--channels", "architecture", "--n-null", "200", "--json"])
+        env = json.loads(out.getvalue())
+        assert rc == 0
+        assert set(env["results"]["period_ruler"]["channels"]) == {"architecture"}
+
+    def test_cli_abstains_without_a_parser(self, tmp_path, monkeypatch):
+        _write_jsonl(tmp_path / "c.jsonl", _candidates(n=5), "target_year")
+        _write_jsonl(tmp_path / "r.jsonl", _reference(n=50), "year")
+        monkeypatch.setattr(pr, "_load_feature_fn", lambda: None)
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = pr.main(["--candidates", str(tmp_path / "c.jsonl"), "--reference", str(tmp_path / "r.jsonl"),
+                          "--json"])
+        assert rc == 3
+        assert json.loads(out.getvalue())["reason_category"] == "missing_dependency"
+
+
+_HAS_PARSER = pr._load_feature_fn() is not None
+
+
+@pytest.mark.skipif(not _HAS_PARSER, reason="spaCy en_core_web_sm not installed")
+def test_real_parser_features_are_finite():
+    text = ("When the old man, who had lived there forty years, came at last to the door, "
+            "he stood; and the rain fell. It was late. ") * 20
+    feats = pr._load_feature_fn()(text)
+    assert feats["sentence_length_mean"] > 0
+    assert feats["clauses_per_sentence"] > 0

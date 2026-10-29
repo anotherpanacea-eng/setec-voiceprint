@@ -31,6 +31,21 @@ https://github.com/Historical-AI-Lab/Chronologic-EN) onto SETEC's envelope:
      W1 / mean q set the 100 point of each 0-100 fidelity score; their 95%
      interval is the noise floor the observed set is read against.
 
+  5. Architecture band (third channel, from the p22 answer's Score A): each
+     candidate is cut into ~1,000-word windows; Spec 99-style syntax features
+     (root deferral, pre-root load, weighted clause depth, hypotaxis and
+     parataxis, mean dependency distance and its IQR, interruptions, sentence
+     length mean / IQR / W1 to the pool, long-then-short turns) become mid-rank
+     percentiles against length-matched REAL windows (pool-wide, no date
+     window; reference windows leave their own group out). A window is in band
+     on a feature between the 10th and 90th percentile; the set reports its
+     in-band share, a SIGNED displacement (over or under, never "more is
+     better"), W1 of all percentiles from uniform, per-feature readings, and a
+     stdlib degradation veto (a word 4-gram repeated 3+ times, or a
+     distinct-token ratio outside the real 5th-95th band) whose windows count
+     as failures. Same pseudo-model noise floor. Parser: spaCy en_core_web_sm,
+     or ``architecture_features`` precomputed on each row.
+
 Descriptive instrument. It validates a training run; it must never be its
 reward (the Chronologic authors warn the authenticity half is easy to inflate
 by fine-tuning). It is not a passage-level detector and does not date
@@ -71,7 +86,8 @@ DEFAULT_SEED = 1913
 # A candidate whose reference cell holds fewer passages than this gets a
 # percentile from a thin window; it is kept but counted and warned about.
 THIN_CELL = 10
-CHANNELS = ("date", "authenticity")
+CHANNELS = ("date", "authenticity", "architecture")
+MODEL_CHANNELS = ("date", "authenticity")
 
 ScorerFn = Callable[[list[str]], list[float]]
 
@@ -230,6 +246,8 @@ def load_jsonl(path: Path, *, year_field: str, kind: str) -> list[dict[str, Any]
             for field in ("date_estimate_year", "p_synthetic"):
                 if field in obj and obj[field] is not None:
                     row[field] = float(obj[field])
+            if isinstance(obj.get("architecture_features"), dict):
+                row["architecture_features"] = obj["architecture_features"]
             rows.append(row)
     return rows
 
@@ -387,6 +405,304 @@ def simulate_null(reference, profile: Counter, n_null: int, rng: random.Random):
 
 
 # ---------------------------------------------------------------------------
+# Architecture band (p22 answer, section 2, Score A): Spec 99-style syntax
+# features of ~1,000-word windows as percentiles against length-matched real
+# windows, read as a 10-90 band with signed displacement, beside a stdlib
+# degradation veto. Pool-wide (no date window): the register is one period.
+# ---------------------------------------------------------------------------
+
+DEFAULT_ARCH_WINDOW_WORDS = 1000
+ARCH_MIN_WINDOW_FRACTION = 0.6
+BAND_LO, BAND_HI = 0.10, 0.90
+VETO_NGRAM, VETO_REPEATS = 4, 3
+SUBORD_DEPS = frozenset({"advcl", "ccomp", "xcomp", "acl", "relcl"})
+PARA_DEPS = frozenset({"conj", "parataxis"})
+_INTERRUPTERS = frozenset({";", ":", "(", ")", "-", "--"})
+
+FeatureFn = Callable[[str], dict[str, float | None]]
+
+
+def split_windows(text: str, window_words: int) -> list[str]:
+    """Consecutive windows of ``window_words`` words; a short tail under
+    ``ARCH_MIN_WINDOW_FRACTION`` of a window is dropped unless it is the only one."""
+    words = text.split()
+    out = [" ".join(words[i:i + window_words]) for i in range(0, len(words), window_words)]
+    if len(out) > 1 and len(out[-1].split()) < ARCH_MIN_WINDOW_FRACTION * window_words:
+        out.pop()
+    return out
+
+
+def _quantile(xs: list[float], p: float) -> float | None:
+    return _percentile(sorted(xs), p) if xs else None
+
+
+def _median(xs: list[float]) -> float | None:
+    return _quantile(xs, 0.5)
+
+
+def _iqr(xs: list[float]) -> float | None:
+    return (_quantile(xs, 0.75) - _quantile(xs, 0.25)) if len(xs) >= 4 else None
+
+
+def _clause_depth(tok) -> int:
+    d = 0
+    while True:
+        if tok.dep_ in SUBORD_DEPS:
+            d += 1
+        if tok.head.i == tok.i:
+            return d
+        tok = tok.head
+
+
+def architecture_features(text: str, nlp) -> dict[str, float | None]:
+    """Spec 99-style architecture features, with the p22 answer's continuous
+    forms in place of the floored ones (mean dependency distance and its IQR
+    for the p90; weighted clause depth; sentence-length IQR). The
+    sentence-length distribution itself rides along as ``_sentence_lengths``
+    so the band can read its W1 against the reference pool."""
+    doc = nlp(normalize_typography(text))
+    rd, pre, mdd, hypo, para, depths, lengths, interrupt = [], [], [], [], [], [], [], []
+    n_clauses = 0
+    for s in doc.sents:
+        toks = [t for t in s if not t.is_space]
+        words = [t for t in toks if t.is_alpha]
+        if len(words) < 2:
+            continue
+        n = len(toks)
+        lengths.append(len(words))
+        root = s.root
+        if root.pos_ in ("VERB", "AUX"):
+            idx = [t.i for t in toks].index(root.i)
+            rd.append(idx / n)
+            pre.append(idx)
+        dists = [abs(t.i - t.head.i) for t in toks if t.head.i != t.i]
+        if dists:
+            mdd.append(sum(dists) / len(dists))
+        heads = [t for t in toks if t.dep_ in SUBORD_DEPS]
+        n_clauses += len(heads)
+        depths.extend(_clause_depth(t) for t in heads)
+        hypo.append(100 * len(heads) / n)
+        para.append(100 * sum(t.dep_ in PARA_DEPS for t in toks) / n)
+        interrupt.append(sum(t.text in _INTERRUPTERS for t in toks))
+    if not lengths:
+        return {}
+    turns = sum(1 for a, b in zip(lengths, lengths[1:]) if a >= 40 and b <= 12)
+    return {
+        "root_deferral_median": _median(rd),
+        "pre_root_tokens_median": _median(pre),
+        "clause_depth_weighted": (sum(depths) / n_clauses) if n_clauses else 0.0,
+        "clauses_per_sentence": n_clauses / len(lengths),
+        "hypotaxis_per_100_median": _median(hypo),
+        "parataxis_per_100_median": _median(para),
+        "dependency_distance_mean": _mean(mdd) if mdd else None,
+        "dependency_distance_iqr": _iqr(mdd),
+        "interruptions_per_sentence": _mean(interrupt),
+        "sentence_length_mean": _mean(lengths),
+        "sentence_length_iqr": _iqr(lengths),
+        "long_short_turns_per_sentence": turns / len(lengths),
+        "_sentence_lengths": lengths,
+    }
+
+
+def _load_feature_fn() -> FeatureFn | None:
+    try:
+        from setec.core.dependency_primitives import _NLP  # type: ignore
+    except ImportError:
+        return None
+    if _NLP is None:
+        return None
+    return lambda text: architecture_features(text, _NLP)
+
+
+def degradation_signals(text: str) -> dict[str, float]:
+    """Stdlib veto inputs: the most-repeated word 4-gram and the distinct-token ratio."""
+    toks = [w.strip(".,;:!?\"'()").lower() for w in text.split()]
+    toks = [w for w in toks if w]
+    grams = Counter(tuple(toks[i:i + VETO_NGRAM]) for i in range(len(toks) - VETO_NGRAM + 1))
+    return {"max_4gram_repeats": max(grams.values()) if grams else 0,
+            "distinct_token_ratio": len(set(toks)) / len(toks) if toks else 0.0}
+
+
+def _quantile_points(xs: list[float], k: int = 50) -> list[float]:
+    s = sorted(xs)
+    return [_percentile(s, (i + 0.5) / k) for i in range(k)]
+
+
+def _w1_samples(a: list[float], b_points: list[float]) -> float:
+    a_points = _quantile_points(a, len(b_points))
+    return _mean([abs(x - y) for x, y in zip(a_points, b_points)])
+
+
+def q_mid(value: float, reference: list[float]) -> float | None:
+    """Mid-rank percentile: ties split evenly, so the band is symmetric."""
+    if not reference:
+        return None
+    below = sum(1 for r in reference if r < value)
+    equal = sum(1 for r in reference if r == value)
+    return (below + 0.5 * equal) / len(reference)
+
+
+def build_windows(rows, *, window_words: int, feature_fn: FeatureFn | None, kind: str):
+    """Rows carrying ``architecture_features`` are one window each; others are cut
+    into windows and featurized."""
+    out = []
+    for r in rows:
+        given = r.get("architecture_features")
+        texts = [r["text"]] if given else split_windows(r["text"], window_words)
+        for i, t in enumerate(texts):
+            if given:
+                feats = dict(given)
+            elif feature_fn is None:
+                raise LookupError(f"{kind} {r['id']} has no architecture_features and no parser is loaded")
+            else:
+                feats = feature_fn(t)
+            out.append({"id": f"{r['id']}#{i}", "group": r.get("group"), "n_words": count_words(t),
+                        "features": feats, **degradation_signals(t)})
+    return out
+
+
+def _arch_percentiles(win, pool_by_bin, names, len_points, exclude_group=None):
+    pool = [p for p in pool_by_bin.get(win["length_bin"], [])
+            if exclude_group is None or p["group"] != exclude_group]
+    qs: dict[str, float | None] = {}
+    for name in names:
+        v = win["features"].get(name)
+        ref = [p["features"][name] for p in pool if p["features"].get(name) is not None]
+        qs[name] = q_mid(v, ref) if v is not None else None
+    lens = win["features"].get("_sentence_lengths")
+    if lens and len_points.get(win["length_bin"]):
+        own = _w1_samples(lens, len_points[win["length_bin"]])
+        ref = [p["len_w1"] for p in pool if p.get("len_w1") is not None]
+        qs["sentence_length_w1_to_pool"] = q_mid(own, ref)
+    return qs
+
+
+def _vetoed(win, veto_band) -> bool:
+    lo, hi = veto_band.get(win["length_bin"], (0.0, 1.0))
+    return (win["max_4gram_repeats"] >= VETO_REPEATS
+            or not lo <= win["distinct_token_ratio"] <= hi)
+
+
+def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not wins:
+        return None
+    shares, disp, pooled = [], [], []
+    for w in wins:
+        qs = [q for q in w["qs"].values() if q is not None]
+        if w["vetoed"] or not qs:
+            shares.append(0.0)
+            continue
+        shares.append(sum(BAND_LO <= q <= BAND_HI for q in qs) / len(qs))
+        disp.append(_mean([100 * (q - 0.5) for q in qs]))
+        pooled.extend(qs)
+    return {
+        "in_band_share": _mean(shares),
+        "signed_displacement": _mean(disp) if disp else None,
+        "w1_from_uniform": wasserstein1_uniform(pooled) if pooled else None,
+        "veto_rate": sum(w["vetoed"] for w in wins) / len(wins),
+    }
+
+
+def run_architecture_band(
+    candidates, reference, *, feature_fn: FeatureFn | None, window_words: int,
+    n_length_bins: int, n_null: int, rng: random.Random, include_per_candidate: bool,
+) -> tuple[dict[str, Any], list[str]]:
+    warnings: list[str] = []
+    ref_w = build_windows(reference, window_words=window_words, feature_fn=feature_fn, kind="reference")
+    cand_w = build_windows(candidates, window_words=window_words, feature_fn=feature_fn, kind="candidate")
+    if not ref_w or not cand_w:
+        raise PeriodRulerError("architecture band needs at least one reference and one candidate window")
+    edges = fit_length_edges((w["n_words"] for w in ref_w), n_length_bins)
+    for w in ref_w + cand_w:
+        w["length_bin"] = length_bin(w["n_words"], edges)
+    pool_by_bin: dict[int, list[dict[str, Any]]] = {}
+    for w in ref_w:
+        pool_by_bin.setdefault(w["length_bin"], []).append(w)
+    names = sorted({k for w in ref_w for k, v in w["features"].items()
+                    if not k.startswith("_") and v is not None}
+                   & {k for w in cand_w for k in w["features"] if not k.startswith("_")})
+    if not names:
+        raise PeriodRulerError("candidates and reference share no architecture features")
+    len_points = {b: _quantile_points([n for w in ws for n in w["features"].get("_sentence_lengths") or []])
+                  for b, ws in pool_by_bin.items()
+                  if any(w["features"].get("_sentence_lengths") for w in ws)}
+    for w in ref_w:
+        lens = w["features"].get("_sentence_lengths")
+        w["len_w1"] = _w1_samples(lens, len_points[w["length_bin"]]) if lens and w["length_bin"] in len_points else None
+    veto_band = {}
+    for b, ws in pool_by_bin.items():
+        ratios = sorted(w["distinct_token_ratio"] for w in ws)
+        veto_band[b] = (_percentile(ratios, 0.05), _percentile(ratios, 0.95))
+    for w in ref_w:
+        w["qs"] = _arch_percentiles(w, pool_by_bin, names, len_points, exclude_group=w["group"])
+        w["vetoed"] = _vetoed(w, veto_band)
+    for w in cand_w:
+        w["qs"] = _arch_percentiles(w, pool_by_bin, names, len_points)
+        w["vetoed"] = _vetoed(w, veto_band)
+
+    observed = _arm_stats(cand_w)
+    profile = Counter(w["length_bin"] for w in cand_w)
+    cells = {b: {} for b in pool_by_bin}
+    for w in ref_w:
+        cells[w["length_bin"]].setdefault(w["group"], []).append(w)
+    null = []
+    for _ in range(n_null):
+        drawn = []
+        for b, n in sorted(profile.items()):
+            drawn.extend(_volume_blocked(cells.get(b, {}), n, rng))
+        stats = _arm_stats(drawn)
+        if stats:
+            null.append(stats)
+    if not null:
+        raise PeriodRulerError("pseudo-model null is empty for the architecture band")
+
+    def interval(key):
+        vals = sorted(s[key] for s in null if s[key] is not None)
+        return [_percentile(vals, 0.025), _percentile(vals, 0.975)] if vals else None
+
+    share_iv, disp_iv, w1_iv = interval("in_band_share"), interval("signed_displacement"), interval("w1_from_uniform")
+    beyond = observed["in_band_share"] < share_iv[0] or (
+        observed["w1_from_uniform"] is not None and w1_iv and observed["w1_from_uniform"] > w1_iv[1])
+    direction = "inside"
+    if observed["signed_displacement"] is not None and disp_iv:
+        if observed["signed_displacement"] > disp_iv[1]:
+            direction = "over"
+        elif observed["signed_displacement"] < disp_iv[0]:
+            direction = "under"
+    all_names = names + (["sentence_length_w1_to_pool"] if len_points else [])
+    per_feature = {}
+    for name in all_names:
+        qs = [w["qs"].get(name) for w in cand_w if not w["vetoed"] and w["qs"].get(name) is not None]
+        per_feature[name] = {
+            "in_band_share": sum(BAND_LO <= q <= BAND_HI for q in qs) / len(qs) if qs else None,
+            "signed_displacement": _mean([100 * (q - 0.5) for q in qs]) if qs else None,
+            "n_windows": len(qs),
+        }
+    if any(not w["features"] for w in cand_w):
+        warnings.append("some candidate windows yielded no parseable sentences")
+    block = {
+        **observed,
+        "null_in_band_share_interval_95": share_iv,
+        "null_signed_displacement_interval_95": disp_iv,
+        "null_w1_interval_95": w1_iv,
+        "band": "beyond_reference_noise" if beyond else "within_reference_noise",
+        "displacement_direction": direction,
+        "per_feature": per_feature,
+        "n_candidate_windows": len(cand_w),
+        "n_reference_windows": len(ref_w),
+        "window_words": window_words,
+        "band_percentiles": [BAND_LO, BAND_HI],
+        "length_bin_edges_log_words": edges,
+        "veto": {"repeated_4gram_at": VETO_REPEATS,
+                 "distinct_token_ratio": "outside the reference 5th to 95th percentile for the length bin"},
+    }
+    if include_per_candidate:
+        block["per_window"] = [{"id": w["id"], "length_bin": w["length_bin"], "vetoed": w["vetoed"],
+                                "percentiles": w["qs"]} for w in cand_w]
+    return block, warnings
+
+
+# ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
 
@@ -397,6 +713,8 @@ def run_period_ruler(
     channels: tuple[str, ...] = CHANNELS,
     date_scorer: ScorerFn | None = None,
     auth_scorer: ScorerFn | None = None,
+    feature_fn: FeatureFn | None = None,
+    arch_window_words: int = DEFAULT_ARCH_WINDOW_WORDS,
     window_years: int = DEFAULT_WINDOW_YEARS,
     n_length_bins: int = DEFAULT_LENGTH_BINS,
     n_null: int = DEFAULT_N_NULL,
@@ -413,121 +731,140 @@ def run_period_ruler(
     if n_null < 100:
         raise PeriodRulerError("n_null must be at least 100")
     warnings: list[str] = []
-    score_rows(candidates + reference, channels=channels, date_scorer=date_scorer,
-               auth_scorer=auth_scorer, cache_path=cache_path, batch_size=batch_size,
-               progress=progress)
-
-    edges = fit_length_edges((r["n_words"] for r in reference), n_length_bins)
-    for r in candidates + reference:
-        r["length_bin"] = length_bin(r["n_words"], edges)
-    compute_lovo_qs(reference, window_years, channels)
-
-    by_year = _index_by_year(reference)
-    per_candidate, q_date, q_auth = [], [], []
-    drift_years: list[float] = []
-    profile: Counter = Counter()
-    thin = empty = 0
-    for c in candidates:
-        window = _window(by_year, c["year"], window_years, c["length_bin"])
-        if not window:
-            empty += 1
-            continue
-        if len(window) < THIN_CELL:
-            thin += 1
-        qd, qa = _channel_values(c, window, c["year"], channels)
-        if qd is not None:
-            q_date.append(qd)
-            local_bias = _mean([w["date_estimate_year"] - w["year"] for w in window])
-            drift_years.append(c["date_estimate_year"] - c["year"] - local_bias)
-        if qa is not None:
-            q_auth.append(qa)
-        profile[(decade_of(c["year"]), c["length_bin"])] += 1
-        per_candidate.append({
-            "id": c["id"], "target_year": c["year"], "n_words": c["n_words"],
-            "length_bin": c["length_bin"], "q_date": qd, "q_authenticity": qa,
-            "window_passages": len(window), "window_groups": len({w["group"] for w in window}),
-        })
-    if not per_candidate:
-        raise PeriodRulerError(
-            f"no candidate has reference passages within ±{window_years} years in its length bin")
-    if empty:
-        warnings.append(f"{empty} candidate(s) had no reference passages in their date/length cell and were left out")
-    if thin:
-        warnings.append(f"{thin} candidate(s) were scored against fewer than {THIN_CELL} reference passages")
-
+    want_arch = "architecture" in channels
+    channels = tuple(c for c in channels if c in MODEL_CHANNELS)
     rng = random.Random(seed)
-    null, unmet = simulate_null(reference, profile, n_null, rng)
-    if unmet:
-        warnings.append(f"{unmet} pseudo-model slots across {n_null} draws had no reference rows to draw from")
-    observed = _set_stats(q_date, q_auth)
+    block: dict[str, Any] = {"channels": {}, "n_candidates": len(candidates), "n_reference": len(reference),
+                             "n_reference_groups": len({r["group"] for r in reference}),
+                             "n_pseudo_models": n_null, "seed": seed, "calibration_status": "provisional"}
+    if channels:
+        score_rows(candidates + reference, channels=channels, date_scorer=date_scorer,
+                   auth_scorer=auth_scorer, cache_path=cache_path, batch_size=batch_size,
+                   progress=progress)
 
-    channel_blocks: dict[str, Any] = {}
-    if "date" in channels:
-        w_null = sorted(d["w1"] for d in null if d["w1"] is not None)
-        if not w_null:
-            raise PeriodRulerError("pseudo-model null is empty for the date channel")
-        w0 = _mean(w_null)
-        null_scores = sorted(period_fidelity(w, w0) for w in w_null)
-        hi = _percentile(w_null, 0.975)
-        channel_blocks["date"] = {
-            "period_fidelity": period_fidelity(observed["w1"], w0),
-            "w1_from_uniform": observed["w1"],
-            "null_w1_mean": w0,
-            "null_w1_interval_95": [_percentile(w_null, 0.025), hi],
-            "null_period_fidelity_interval_95": [_percentile(null_scores, 0.025),
-                                                 _percentile(null_scores, 0.975)],
-            "mean_q": observed["mean_q_date"],
-            "mean_abs_q_deviation": observed["mean_abs_q_dev"],
-            "drift_years_bias_corrected": _mean(drift_years),
-            "band": "beyond_reference_noise" if observed["w1"] > hi else "within_reference_noise",
-            "n_scored": len(q_date),
-        }
-    if "authenticity" in channels:
-        a_null = sorted(d["mean_q_auth"] for d in null if d["mean_q_auth"] is not None)
-        if not a_null:
-            raise PeriodRulerError("pseudo-model null is empty for the authenticity channel")
-        mu0 = _mean(a_null)
-        null_scores = sorted(authenticity_fidelity(a, mu0) for a in a_null)
-        hi = _percentile(a_null, 0.975)
-        channel_blocks["authenticity"] = {
-            "authenticity_fidelity": authenticity_fidelity(observed["mean_q_auth"], mu0),
-            "mean_q": observed["mean_q_auth"],
-            "null_mean_q": mu0,
-            "null_mean_q_interval_95": [_percentile(a_null, 0.025), hi],
-            "null_authenticity_fidelity_interval_95": [_percentile(null_scores, 0.025),
-                                                       _percentile(null_scores, 0.975)],
-            "band": "beyond_reference_noise" if observed["mean_q_auth"] > hi else "within_reference_noise",
-            "n_scored": len(q_auth),
-        }
+        edges = fit_length_edges((r["n_words"] for r in reference), n_length_bins)
+        for r in candidates + reference:
+            r["length_bin"] = length_bin(r["n_words"], edges)
+        compute_lovo_qs(reference, window_years, channels)
 
-    cells = [
-        {"target_decade": dec, "length_bin": lb, "n_candidates": n,
-         "n_reference_passages": sum(1 for r in reference
-                                     if decade_of(r["year"]) == dec and r["length_bin"] == lb)}
-        for (dec, lb), n in sorted(profile.items())
-    ]
-    block: dict[str, Any] = {
-        "channels": channel_blocks,
-        "n_candidates": len(candidates),
-        "n_candidates_in_reference_cells": len(per_candidate),
-        "n_reference": len(reference),
-        "n_reference_groups": len({r["group"] for r in reference}),
-        "window_years": window_years,
-        "length_bin_edges_log_words": edges,
-        "n_pseudo_models": n_null,
-        "seed": seed,
-        "cells": cells,
-        "calibration_status": "provisional",
-        "assumptions": {
-            "method": "Chronologic conformal scoring (arXiv:2609.23178): length-binned, date-windowed "
-                      "percentiles vs real passages; W1 from uniform; pseudo-model noise floor",
-            "instruments": f"{DATE_MODEL_ID} (T={DATE_TEMPERATURE}) and {AUTH_MODEL_ID}, or precomputed scores",
-            "reference": "operator-supplied dated real passages with a source group per passage",
-            "use": "validator for a set of generations; never a training reward",
-        },
-    }
-    if include_per_candidate:
-        block["per_candidate"] = per_candidate
+        by_year = _index_by_year(reference)
+        per_candidate, q_date, q_auth = [], [], []
+        drift_years: list[float] = []
+        profile: Counter = Counter()
+        thin = empty = 0
+        for c in candidates:
+            window = _window(by_year, c["year"], window_years, c["length_bin"])
+            if not window:
+                empty += 1
+                continue
+            if len(window) < THIN_CELL:
+                thin += 1
+            qd, qa = _channel_values(c, window, c["year"], channels)
+            if qd is not None:
+                q_date.append(qd)
+                local_bias = _mean([w["date_estimate_year"] - w["year"] for w in window])
+                drift_years.append(c["date_estimate_year"] - c["year"] - local_bias)
+            if qa is not None:
+                q_auth.append(qa)
+            profile[(decade_of(c["year"]), c["length_bin"])] += 1
+            per_candidate.append({
+                "id": c["id"], "target_year": c["year"], "n_words": c["n_words"],
+                "length_bin": c["length_bin"], "q_date": qd, "q_authenticity": qa,
+                "window_passages": len(window), "window_groups": len({w["group"] for w in window}),
+            })
+        if not per_candidate:
+            raise PeriodRulerError(
+                f"no candidate has reference passages within ±{window_years} years in its length bin")
+        if empty:
+            warnings.append(f"{empty} candidate(s) had no reference passages in their date/length cell and were left out")
+        if thin:
+            warnings.append(f"{thin} candidate(s) were scored against fewer than {THIN_CELL} reference passages")
+
+        rng = random.Random(seed)
+        null, unmet = simulate_null(reference, profile, n_null, rng)
+        if unmet:
+            warnings.append(f"{unmet} pseudo-model slots across {n_null} draws had no reference rows to draw from")
+        observed = _set_stats(q_date, q_auth)
+
+        channel_blocks: dict[str, Any] = {}
+        if "date" in channels:
+            w_null = sorted(d["w1"] for d in null if d["w1"] is not None)
+            if not w_null:
+                raise PeriodRulerError("pseudo-model null is empty for the date channel")
+            w0 = _mean(w_null)
+            null_scores = sorted(period_fidelity(w, w0) for w in w_null)
+            hi = _percentile(w_null, 0.975)
+            channel_blocks["date"] = {
+                "period_fidelity": period_fidelity(observed["w1"], w0),
+                "w1_from_uniform": observed["w1"],
+                "null_w1_mean": w0,
+                "null_w1_interval_95": [_percentile(w_null, 0.025), hi],
+                "null_period_fidelity_interval_95": [_percentile(null_scores, 0.025),
+                                                     _percentile(null_scores, 0.975)],
+                "mean_q": observed["mean_q_date"],
+                "mean_abs_q_deviation": observed["mean_abs_q_dev"],
+                "drift_years_bias_corrected": _mean(drift_years),
+                "band": "beyond_reference_noise" if observed["w1"] > hi else "within_reference_noise",
+                "n_scored": len(q_date),
+            }
+        if "authenticity" in channels:
+            a_null = sorted(d["mean_q_auth"] for d in null if d["mean_q_auth"] is not None)
+            if not a_null:
+                raise PeriodRulerError("pseudo-model null is empty for the authenticity channel")
+            mu0 = _mean(a_null)
+            null_scores = sorted(authenticity_fidelity(a, mu0) for a in a_null)
+            hi = _percentile(a_null, 0.975)
+            channel_blocks["authenticity"] = {
+                "authenticity_fidelity": authenticity_fidelity(observed["mean_q_auth"], mu0),
+                "mean_q": observed["mean_q_auth"],
+                "null_mean_q": mu0,
+                "null_mean_q_interval_95": [_percentile(a_null, 0.025), hi],
+                "null_authenticity_fidelity_interval_95": [_percentile(null_scores, 0.025),
+                                                           _percentile(null_scores, 0.975)],
+                "band": "beyond_reference_noise" if observed["mean_q_auth"] > hi else "within_reference_noise",
+                "n_scored": len(q_auth),
+            }
+
+        cells = [
+            {"target_decade": dec, "length_bin": lb, "n_candidates": n,
+             "n_reference_passages": sum(1 for r in reference
+                                         if decade_of(r["year"]) == dec and r["length_bin"] == lb)}
+            for (dec, lb), n in sorted(profile.items())
+        ]
+        block: dict[str, Any] = {
+            "channels": channel_blocks,
+            "n_candidates": len(candidates),
+            "n_candidates_in_reference_cells": len(per_candidate),
+            "n_reference": len(reference),
+            "n_reference_groups": len({r["group"] for r in reference}),
+            "window_years": window_years,
+            "length_bin_edges_log_words": edges,
+            "n_pseudo_models": n_null,
+            "seed": seed,
+            "cells": cells,
+            "calibration_status": "provisional",
+            "assumptions": {
+                "method": "Chronologic conformal scoring (arXiv:2609.23178): length-binned, date-windowed "
+                          "percentiles vs real passages; W1 from uniform; pseudo-model noise floor",
+                "instruments": f"{DATE_MODEL_ID} (T={DATE_TEMPERATURE}) and {AUTH_MODEL_ID}, or precomputed scores",
+                "reference": "operator-supplied dated real passages with a source group per passage",
+                "use": "validator for a set of generations; never a training reward",
+            },
+        }
+        if include_per_candidate:
+            block["per_candidate"] = per_candidate
+    if want_arch:
+        arch_block, arch_warnings = run_architecture_band(
+            candidates, reference, feature_fn=feature_fn, window_words=arch_window_words,
+            n_length_bins=n_length_bins, n_null=n_null, rng=rng,
+            include_per_candidate=include_per_candidate)
+        block["channels"]["architecture"] = arch_block
+        warnings.extend(arch_warnings)
+        block.setdefault("assumptions", {})["architecture"] = (
+            "p22 Score A: Spec 99-style syntax features of ~1,000-word windows as mid-rank "
+            "percentiles against length-matched real windows (leave-one-group-out for the "
+            "reference), 10-90 band, signed displacement, stdlib degradation veto; pool-wide, "
+            "no date window")
     return {"period_ruler": block}, warnings
 
 
@@ -611,7 +948,9 @@ def _claim_license() -> dict[str, str]:
             "A model-level description of how a SET of candidate passages, each written for a "
             "target year, sits against length-matched real passages from within the date window, "
             "on a date channel (W1 of percentiles from uniform) and an authenticity channel (mean "
-            "percentile), each read against a pseudo-model noise floor drawn from the reference. "
+            "percentile) and an architecture band (share of syntax-feature percentiles inside the "
+            "10-90 band of length-matched real windows, with signed displacement), each read "
+            "against a pseudo-model noise floor drawn from the reference. "
             "Fidelity scores are relative to the supplied reference corpus and instruments."
         ),
         "does_not_license": (
@@ -651,7 +990,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     cache = Path(args.score_cache) if args.score_cache else None
     cached = _load_cache(cache)
     need_model = any(fields[ch] not in r and fields[ch] not in cached.get(_row_key(r["text"]), {})
-                     for ch in args.channels for r in candidates + reference)
+                     for ch in args.channels if ch in MODEL_CHANNELS for r in candidates + reference)
     scorers: dict[str, ScorerFn] = {}
     if need_model:
         loaded = _load_scorers(args.channels, args.device)
@@ -664,6 +1003,17 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                 "missing_dependency", args.candidates)
         scorers = loaded
 
+    feature_fn = None
+    if "architecture" in args.channels and any(
+            "architecture_features" not in r for r in candidates + reference):
+        feature_fn = _load_feature_fn()
+        if feature_fn is None:
+            return _error(
+                "The architecture channel needs spaCy with en_core_web_sm to parse windows "
+                "(pip install spacy && python -m spacy download en_core_web_sm), or "
+                "architecture_features on every row; or drop it with --channels date,authenticity.",
+                "missing_dependency", args.candidates)
+
     def progress(msg: str) -> None:
         print(msg, file=sys.stderr, flush=True)
 
@@ -671,6 +1021,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         results, warnings = run_period_ruler(
             candidates, reference, channels=args.channels,
             date_scorer=scorers.get("date"), auth_scorer=scorers.get("authenticity"),
+            feature_fn=feature_fn, arch_window_words=args.arch_window_words,
             window_years=args.window_years, n_length_bins=args.length_bins,
             n_null=args.n_null, seed=args.seed, include_per_candidate=args.per_candidate,
             cache_path=cache, batch_size=args.batch_size, progress=progress)
@@ -696,7 +1047,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reference", required=True,
                     help="JSONL of real dated passages: {id, text, year, group[, date_estimate_year, p_synthetic]}")
     ap.add_argument("--channels", type=_parse_channels, default=CHANNELS,
-                    help="comma list from: date,authenticity (default both)")
+                    help="comma list from: date,authenticity,architecture (default all three)")
+    ap.add_argument("--arch-window-words", type=int, default=DEFAULT_ARCH_WINDOW_WORDS,
+                    help="window size for the architecture band (default 1000 words)")
     ap.add_argument("--window-years", type=int, default=DEFAULT_WINDOW_YEARS)
     ap.add_argument("--length-bins", type=int, default=DEFAULT_LENGTH_BINS)
     ap.add_argument("--n-null", type=int, default=DEFAULT_N_NULL)

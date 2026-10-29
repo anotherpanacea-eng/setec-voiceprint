@@ -19,7 +19,13 @@ entries:
     scores and their 95% interval is reported beside them. Real instruments are the released
     chronologic/chronologic-date-deberta (T=1.0551) and chronologic-authenticity-deberta
     checkpoints behind a lazy torch/transformers import; rows that already carry scores (or a
-    --score-cache) run model-free. Descriptive validator only: not a reward, not a passage-level
+    --score-cache) run model-free. A third channel, the architecture band (p22 Score A), cuts
+    each candidate into ~1,000-word windows and reads Spec 99-style syntax features (clause
+    depth, hypotaxis, root deferral, dependency distance, sentence-length shape, interruptions)
+    as percentiles against length-matched real windows: in-band share (10th to 90th), signed
+    displacement so overshoot reads as over rather than better, per-feature readings, and a
+    stdlib veto for looping or degraded windows; spaCy en_core_web_sm parses, or rows carry
+    architecture_features. Descriptive validator only: not a reward, not a passage-level
     detector, does not date a document.
 
     '
@@ -43,6 +49,7 @@ entries:
     - stdout JSON envelope (default), --json, or --out PATH
     - 'results.period_ruler.channels.date: period_fidelity, w1_from_uniform, null interval, drift years'
     - 'results.period_ruler.channels.authenticity: authenticity_fidelity, mean_q, null interval'
+    - 'results.period_ruler.channels.architecture: in_band_share, signed_displacement, veto_rate, per_feature, null intervals'
   compute:
     tier: surprisal
     cost_note: Two DeBERTa-v3-large forward passes per passage (GPU recommended); model-free when
@@ -55,6 +62,7 @@ entries:
     python_optional:
     - torch
     - transformers
+    - spacy
   examples:
   - description: Score a set of generations against a dated reference pool (loads both instruments)
     cmd: python3 plugins/setec-voiceprint/scripts/period_ruler.py --candidates gens.jsonl

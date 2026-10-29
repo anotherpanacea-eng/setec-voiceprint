@@ -6,7 +6,7 @@
   "handoff": "none",
   "consumers": [],
   "family": "period-register",
-  "purpose": "Model-level period-register ruler ported from Chronologic-EN (arXiv:2609.23178, code MIT). Two frozen instruments score every passage: a decade-distribution date model (signed residual of its mean year from the target year) and an authentic-vs-LLM-imitation classifier (P(synthetic)). Each candidate becomes a percentile against REAL reference passages in the same log-word-count length bin and within +/-10 years of its target year (ties go against the candidate). A set of candidates is summarised by the W1 distance of its date percentiles from uniform and by its mean authenticity percentile, each read against a noise floor of pseudo-models drawn leave-one-group-out from the reference itself (default 2,000); the pseudo-model means set the 100 point of 0-100 period_fidelity and authenticity_fidelity scores and their 95% interval is reported beside them. Real instruments are the released chronologic/chronologic-date-deberta (T=1.0551) and chronologic-authenticity-deberta checkpoints behind a lazy torch/transformers import; rows that already carry scores (or a --score-cache) run model-free. Descriptive validator only: not a reward, not a passage-level detector, does not date a document.\n",
+  "purpose": "Model-level period-register ruler ported from Chronologic-EN (arXiv:2609.23178, code MIT). Two frozen instruments score every passage: a decade-distribution date model (signed residual of its mean year from the target year) and an authentic-vs-LLM-imitation classifier (P(synthetic)). Each candidate becomes a percentile against REAL reference passages in the same log-word-count length bin and within +/-10 years of its target year (ties go against the candidate). A set of candidates is summarised by the W1 distance of its date percentiles from uniform and by its mean authenticity percentile, each read against a noise floor of pseudo-models drawn leave-one-group-out from the reference itself (default 2,000); the pseudo-model means set the 100 point of 0-100 period_fidelity and authenticity_fidelity scores and their 95% interval is reported beside them. Real instruments are the released chronologic/chronologic-date-deberta (T=1.0551) and chronologic-authenticity-deberta checkpoints behind a lazy torch/transformers import; rows that already carry scores (or a --score-cache) run model-free. A third channel, the architecture band (p22 Score A), cuts each candidate into ~1,000-word windows and reads Spec 99-style syntax features (clause depth, hypotaxis, root deferral, dependency distance, sentence-length shape, interruptions) as percentiles against length-matched real windows: in-band share (10th to 90th), signed displacement so overshoot reads as over rather than better, per-feature readings, and a stdlib veto for looping or degraded windows; spaCy en_core_web_sm parses, or rows carry architecture_features. Descriptive validator only: not a reward, not a passage-level detector, does not date a document.\n",
   "use_when": [
     "You have a set of generated passages, each written for a target year, and want to know how far the set sits from real prose of those years",
     "You need a register ruler with length matching, a date window and a measured noise floor (the failures of the earlier wikitext-referenced ruler)",
@@ -29,7 +29,8 @@
     "artifacts": [
       "stdout JSON envelope (default), --json, or --out PATH",
       "results.period_ruler.channels.date: period_fidelity, w1_from_uniform, null interval, drift years",
-      "results.period_ruler.channels.authenticity: authenticity_fidelity, mean_q, null interval"
+      "results.period_ruler.channels.authenticity: authenticity_fidelity, mean_q, null interval",
+      "results.period_ruler.channels.architecture: in_band_share, signed_displacement, veto_rate, per_feature, null intervals"
     ]
   },
   "compute": {
@@ -44,7 +45,8 @@
     "python": [],
     "python_optional": [
       "torch",
-      "transformers"
+      "transformers",
+      "spacy"
     ]
   },
   "examples": [
