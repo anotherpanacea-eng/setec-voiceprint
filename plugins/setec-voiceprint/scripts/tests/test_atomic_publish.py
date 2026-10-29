@@ -178,7 +178,11 @@ def test_atomic_write_cleans_descriptor_and_temp_after_identity_failure(
             identity_events.append("name")
         return real_stat(path, follow_symlinks=follow_symlinks)
 
-    def fail_fstat(_descriptor: int):
+    def fail_fstat(descriptor: int):
+        # os is shared with pytest, which fstats its own descriptors (9.2+);
+        # fail only the publisher's temporary descriptor.
+        if not created or descriptor != created[0][0]:
+            return real_fstat(descriptor)
         identity_events.append("descriptor")
         raise OSError(errno.EIO, "synthetic identity failure")
 
