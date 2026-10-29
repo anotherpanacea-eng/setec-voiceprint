@@ -19,9 +19,9 @@ Model pairs (``--pair``):
   pre-1931 text and on modern web text (both Apache-2.0). Both ship custom model
   code, so loading needs ``--trust-remote-code``; pass ``--period-model`` /
   ``--modern-model`` to point at transformers conversions.
-* ``typewriter``: typewriter-ai 1913 7B base. Its repo declares no license, so it
-  loads only with ``--allow-undeclared-license``, and it has no modern twin: pass
-  ``--modern-model``.
+* ``typewriter``: typewriter-ai 1913 7B base. Its repo declares no license; it
+  loads for private research use with a warning in the output. It has no modern
+  twin: pass ``--modern-model``.
 
 Rows that carry ``period_bpb`` and ``modern_bpb`` run model-free, and
 ``--score-cache`` appends per-batch scores so an interrupted GPU run resumes.
@@ -55,7 +55,7 @@ PAIRS: dict[str, tuple[str, str | None]] = {
     "talkie": ("talkie-lm/talkie-1930-13b-base", "talkie-lm/talkie-web-13b-base"),
     "typewriter": ("typewriter-ai/typewriter-1913-7B-base", None),
 }
-# Repos with no declared license: refused unless the operator acknowledges it.
+# Repos with no declared license: loaded for private research use, with a warning.
 UNDECLARED_LICENSE_PREFIXES = ("typewriter-ai/",)
 DEFAULT_MAX_TOKENS = 1024
 DEFAULT_N_BOOT = 2000
@@ -69,7 +69,7 @@ class ContrastError(ValueError):
 
 
 class PolicyRefusal(RuntimeError):
-    """A model the operator has not acknowledged (license or remote code)."""
+    """A model repo that ships custom code the operator has not allowed."""
 
 
 def _bootstrap_mean_ci(values: list[float], n_boot: int, rng: random.Random) -> list[float] | None:
@@ -182,11 +182,11 @@ def run_contrast(
     return {"period_lm_contrast": out}
 
 
-def check_model_policy(model_id: str, *, allow_undeclared_license: bool) -> None:
-    if model_id.startswith(UNDECLARED_LICENSE_PREFIXES) and not allow_undeclared_license:
-        raise PolicyRefusal(
-            f"{model_id} declares no license; pass --allow-undeclared-license to load it "
-            "for private research after checking its terms yourself")
+def license_warning(model_id: str) -> str | None:
+    if model_id.startswith(UNDECLARED_LICENSE_PREFIXES):
+        return (f"{model_id} declares no license; loaded for private research use only, "
+                "check its terms before any other use")
+    return None
 
 
 class _CausalLMBpb:
@@ -286,10 +286,10 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError, ContrastError) as exc:
         return error(f"cannot read input: {exc}", "bad_input")
     rows = passages + (reference or [])
+    warnings = [w for w in map(license_warning, (period_model, modern_model)) if w]
     try:
         scorers = {}
         for field, model_id in (("period_bpb", period_model), ("modern_bpb", modern_model)):
-            check_model_policy(model_id, allow_undeclared_license=args.allow_undeclared_license)
             needs = any(r.get(field) is None for r in rows)
             scorers[field] = _load_scorer(model_id, device=args.device, max_tokens=args.max_tokens,
                                           trust_remote_code=args.trust_remote_code) if needs else None
@@ -313,6 +313,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         baseline={"n_files": len(reference or []), "words": words(reference or [])},
         results=results,
         claim_license=from_legacy(_claim_license(), task_surface=TASK_SURFACE),
+        warnings=warnings or None,
         validate_bounds=True,
     )
 
@@ -326,8 +327,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--modern-model", help="override the modern twin (HF id)")
     ap.add_argument("--trust-remote-code", action="store_true",
                     help="allow model repos that ship custom code (the talkie repos do)")
-    ap.add_argument("--allow-undeclared-license", action="store_true",
-                    help="load repos that declare no license (typewriter-ai)")
     ap.add_argument("--max-tokens", type=int, default=DEFAULT_MAX_TOKENS)
     ap.add_argument("--batch-size", type=int, default=4)
     ap.add_argument("--device")

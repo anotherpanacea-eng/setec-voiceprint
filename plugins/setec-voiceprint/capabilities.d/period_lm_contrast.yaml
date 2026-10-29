@@ -14,8 +14,8 @@ entries:
     easier, and a seeded bootstrap 95% interval of the mean; with a reference of real period
     passages it also reports the candidate-minus-reference gap with its own interval. Default
     pair is talkie-lm 1930 base vs talkie-web base (13B twins, Apache-2.0, custom model code so
-    loading needs --trust-remote-code). The typewriter-ai 1913 7B base declares no license and
-    loads only with --allow-undeclared-license, with a --modern-model of the operator''s choice.
+    loading needs --trust-remote-code). The typewriter-ai 1913 7B base declares no license; it
+    loads for private research use with a warning, with a --modern-model of the operator''s choice.
     Rows with precomputed bpb run model-free and --score-cache resumes. Descriptive: not a
     register verdict and not a reward.
 

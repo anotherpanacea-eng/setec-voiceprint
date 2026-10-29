@@ -98,11 +98,9 @@ class TestContrast:
 
 
 class TestPolicy:
-    def test_undeclared_license_model_is_refused_without_acknowledgement(self):
-        with pytest.raises(plc.PolicyRefusal, match="declares no license"):
-            plc.check_model_policy("typewriter-ai/typewriter-1913-7B-base", allow_undeclared_license=False)
-        plc.check_model_policy("typewriter-ai/typewriter-1913-7B-base", allow_undeclared_license=True)
-        plc.check_model_policy("talkie-lm/talkie-1930-13b-base", allow_undeclared_license=False)
+    def test_undeclared_license_model_gets_a_warning(self):
+        assert "declares no license" in plc.license_warning("typewriter-ai/typewriter-1913-7B-base")
+        assert plc.license_warning("talkie-lm/talkie-1930-13b-base") is None
 
 
 class TestCli:
@@ -123,15 +121,17 @@ class TestCli:
         assert rc == 0 and env["task_surface"] == "period_register"
         assert env["results"]["period_lm_contrast"]["modern_model"] == "talkie-lm/talkie-web-13b-base"
 
-    def test_typewriter_without_acknowledgement_is_policy_refused(self, tmp_path):
-        rc, env = self._main(["--passages", self._write(tmp_path / "p.jsonl", _rows(3, 1)),
+    def test_typewriter_loads_by_default_with_a_license_warning(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(plc, "_load_scorer", lambda model_id, **_: _period if "1913" in model_id else _modern)
+        rc, env = self._main(["--passages", self._write(tmp_path / "p.jsonl", _rows(4, 1)),
                               "--pair", "typewriter", "--modern-model", "talkie-lm/talkie-web-13b-base",
-                              "--json"])
-        assert rc == 3 and env["reason_category"] == "policy_refused"
+                              "--n-boot", "100", "--json"])
+        assert rc == 0
+        assert any("declares no license" in w for w in env["warnings"])
 
     def test_typewriter_needs_a_modern_twin(self, tmp_path):
         rc, env = self._main(["--passages", self._write(tmp_path / "p.jsonl", _rows(3, 1)),
-                              "--pair", "typewriter", "--allow-undeclared-license", "--json"])
+                              "--pair", "typewriter", "--json"])
         assert rc == 3 and env["reason_category"] == "bad_input"
 
     def test_detached_launcher_abstains_without_models(self, tmp_path):

@@ -392,43 +392,24 @@ def _fake_transformers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
 
 
-def test_star_alias_refused_without_license_acknowledgement(monkeypatch):
+def test_star_loads_lazily_by_default(monkeypatch):
     monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
     _fake_transformers(monkeypatch)
-    with pytest.raises(vf.VoiceFingerprintError, match="declares no license"):
-        vf._load_encoder("star")
-    with pytest.raises(vf.VoiceFingerprintError, match="declares no license"):
-        vf._load_encoder("AIDA-UPM/star")
-
-
-def test_star_loads_lazily_once_acknowledged(monkeypatch):
-    monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
-    _fake_transformers(monkeypatch)
-    enc = vf._load_encoder("star", allow_undeclared_license=True)
-    assert enc.model_id == "AIDA-UPM/star"
-    assert type(enc).__name__ == "_STAREncoder"
-
-
-def test_star_cli_exits_cleanly_without_acknowledgement(tmp_path, monkeypatch):
-    monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
-    _fake_transformers(monkeypatch)
-    src = _write(tmp_path, "draft.txt", _multi_para_text())
-    assert vf.main([str(src), "--model", "star", "--json"]) == 3
+    for model in ("star", "AIDA-UPM/star"):
+        enc = vf._load_encoder(model)
+        assert enc.model_id == "AIDA-UPM/star"
+        assert type(enc).__name__ == "_STAREncoder"
 
 
 def test_star_run_records_its_model_and_caveat(tmp_path, monkeypatch, capsys):
-    seen = {}
-
-    def _loader(model, device=None, **kwargs):
-        seen.update(kwargs)
+    def _loader(model, device=None):
         return _StubEncoder(model_id=vf.MODEL_ALIASES.get(model, model))
 
     monkeypatch.setattr(vf, "_load_encoder", _loader)
     src = _write(tmp_path, "draft.txt", _multi_para_text())
-    rc = vf.main([str(src), "--model", "star", "--allow-undeclared-license", "--json"])
+    rc = vf.main([str(src), "--model", "star", "--json"])
     payload = json.loads(capsys.readouterr().out)
     assert rc == 0
-    assert seen == {"allow_undeclared_license": True}
     assert payload["results"]["model_id"] == "AIDA-UPM/star"
     caveats = " ".join(payload["claim_license"]["additional_caveats"])
     assert "STAR" in caveats and "no license" in caveats

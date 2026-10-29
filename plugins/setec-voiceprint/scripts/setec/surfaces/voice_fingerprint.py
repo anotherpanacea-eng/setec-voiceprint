@@ -125,10 +125,8 @@ DEFAULT_MODEL = "luar"
 # 2026 author-style-transfer papers report (AuthorMix, the steering /
 # hypernetwork study). Its weights card and code repository declare NO
 # license (checked 2026-10-29: no license tag on AIDA-UPM/star, no LICENSE
-# in github.com/jahuerta92/star). Unlike the permissive encoders above, it
-# loads only when the operator acknowledges that explicitly
-# (--allow-undeclared-license); otherwise the loader refuses with guidance.
-_UNDECLARED_LICENSE_MODEL_IDS: frozenset[str] = frozenset({"AIDA-UPM/star"})
+# in github.com/jahuerta92/star). It loads by default for private research use
+# (owner ruling 2026-10-28) and its caveat names the missing license.
 
 # mUAR's intended publisher id is registered as an alias, but NO public checkpoint exists yet —
 # verified against the publisher inventory (https://huggingface.co/rrivera1849/models lists only
@@ -535,8 +533,6 @@ class _STAREncoder:
 def _load_encoder(
     model: str,
     device: str | None = None,
-    *,
-    allow_undeclared_license: bool = False,
 ) -> StyleEncoder:
     """Return a frozen style encoder for ``model``.
 
@@ -584,15 +580,6 @@ def _load_encoder(
             f"Universal Authorship Representation, arXiv:2509.16531) is registered but SPEC-ONLY "
             f"until weights ship. Pass an explicit mUAR-family checkpoint via --model <hf-id-or-path>, "
             f"or use --model luar (the calibrated default)."
-        )
-
-    if resolved in _UNDECLARED_LICENSE_MODEL_IDS and not allow_undeclared_license:
-        raise VoiceFingerprintError(
-            f"--model {model}: {resolved} declares no license (no license tag on its weights "
-            f"card, no LICENSE in its code repository), so SETEC will not load it by default. "
-            f"Pass --allow-undeclared-license to load it for your own research use after "
-            f"checking the terms yourself, or use a permissively licensed encoder "
-            f"(--model luar or --model styledistance)."
         )
 
     if is_wegmann:
@@ -963,7 +950,8 @@ _STAR_CONTENT_CAVEAT = (
     "style scorer the author-style-transfer literature reports, which "
     "makes it useful for comparison with published numbers, not more "
     "content-independent than StyleDistance. Its weights declare no "
-    "license; it loads only with --allow-undeclared-license."
+    "license: it loads for private research use; check its terms before any "
+    "other use."
 )
 
 
@@ -1201,18 +1189,10 @@ def _build_argparser() -> argparse.ArgumentParser:
             "(AnnaWegmann/Style-Embedding, via sentence-transformers), "
             "`styledistance` (more content-independent, arXiv:2410.12757), "
             "`muar` (multilingual, arXiv:2509.16531), `star` "
-            "(AIDA-UPM/star, arXiv:2310.11081; no declared license, needs "
-            "--allow-undeclared-license), or a full "
+            "(AIDA-UPM/star, arXiv:2310.11081; no declared license, for "
+            "private research use), or a full "
             "HuggingFace id. Cross-encoder cosines are NOT comparable. "
             "Default: %(default)s."
-        ),
-    )
-    p.add_argument(
-        "--allow-undeclared-license",
-        action="store_true",
-        help=(
-            "load an encoder whose weights declare no license (currently "
-            "STAR). You are responsible for checking its terms."
         ),
     )
     p.add_argument(
@@ -1299,13 +1279,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # Load the encoder LAST, after cheap validation, so a clean
         # error (missing dir, bad mode) doesn't pay the import cost.
-        # Pass the acknowledgement only when given, so the loader's
-        # two-argument call shape (the seam tests stub) stays unchanged.
-        license_ack = (
-            {"allow_undeclared_license": True}
-            if args.allow_undeclared_license else {}
-        )
-        encoder = _load_encoder(args.model, device=args.device, **license_ack)
+        encoder = _load_encoder(args.model, device=args.device)
 
         envelope = assemble_output(
             target_path=target,

@@ -17,7 +17,7 @@ entries:
     StyleDistance (arXiv:2410.12757) is a more content-independent manifold than LUAR;
     mUAR (arXiv:2509.16531) is a multilingual authorship encoder. STAR (arXiv:2310.11081)
     is the style scorer the author-style-transfer literature reports; its weights declare no
-    license, so it loads only with --allow-undeclared-license. Cross-encoder cosines
+    license, so it loads for private research use and says so in its caveat. Cross-encoder cosines
     are NOT comparable. The default stays LUAR (no silent flip). Refuses any identity /
     AI verdict; ships PROVISIONAL with no threshold, per encoder.
 
@@ -49,9 +49,6 @@ entries:
     required: false
   - flag: --model
     type: string
-    required: false
-  - flag: --allow-undeclared-license
-    type: bool
     required: false
   - flag: --json
     type: bool
@@ -87,7 +84,7 @@ entries:
       styledistance --json
   - description: STAR encoder, for comparison with published style-transfer numbers (no declared license)
     cmd: python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --model
-      star --allow-undeclared-license --json
+      star --json
   references:
   - specs/02-voice-fingerprint-embedding.md
   - specs/28-styledistance-encoder-upgrade.md
