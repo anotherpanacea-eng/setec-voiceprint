@@ -1,0 +1,60 @@
+entries:
+- id: meaning_preservation
+  script_path: plugins/setec-voiceprint/scripts/meaning_preservation.py
+  surface: craft_restoration
+  status: heuristic
+  handoff: none
+  # consumers: no code importer yet; built as the content-fidelity read beside register-shift scores (VP-RS5).
+  consumers: []
+  family: non-voice-structure
+  purpose: 'Model-based meaning-preservation reads for (source, rewrite) pairs, the pair that
+    style-transfer work reports beside every style score. Channel mis is the Mutual Implication
+    Score (Babakov et al. 2022), a symmetric 0-1 RoBERTa-large read of whether each text implies
+    the other, loaded at run time from s-nlp/Mutual_Implication_Score through the
+    mutual-implication-score package; those weights are CC BY-NC-SA 4.0, are never vendored, and
+    the license is carried in the output. Channel sbert is the cosine of sentence-transformers
+    embeddings through the shared SETEC embedding backend (default mxbai). Reports per-pair values
+    and per-channel mean, median, minimum and quartiles; a channel whose model cannot load is
+    dropped with a warning and the run abstains only when none loads. Both models truncate at
+    512 tokens, so long pairs are warned about. No cut-off is calibrated.
+
+    '
+  use_when:
+  - You rewrote passages (style transfer, register shift, a reviser run) and want a model read of how much meaning each rewrite kept
+  - You need a content-fidelity number to report beside a style or register score
+  do_not_use_when:
+  - You need to catch dropped facts, negation flips or entity swaps (use semantic_preservation_check)
+  - You want a quality judgment or a pass/fail gate
+  - Your pairs are much longer than a paragraph and you cannot chunk them (both models truncate)
+  inputs:
+    pairs: 'JSONL {id, source, rewrite}'
+    source: single source text file (with --rewrite)
+    rewrite: single rewrite text file (with --source)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+    - 'results.meaning_preservation.channels: mis, sbert_cosine summaries'
+    - 'results.meaning_preservation.per_pair: mis, sbert_cosine, word counts, length_ratio'
+  compute:
+    tier: optional
+    cost_note: One RoBERTa-large pair pass (MIS) and two embedding passes (SBERT) per pair; GPU
+      helps for large sets, CPU is fine for a few hundred paragraphs.
+    length_floor_words: 5
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional:
+    - mutual-implication-score
+    - sentence-transformers
+  examples:
+  - description: Both channels for a set of rewrite pairs
+    cmd: python3 plugins/setec-voiceprint/scripts/meaning_preservation.py --pairs pairs.jsonl --json
+  - description: SBERT channel only, with a small embedding model
+    cmd: python3 plugins/setec-voiceprint/scripts/meaning_preservation.py --pairs pairs.jsonl
+      --channels sbert --sbert-model minilm --json
+  references:
+  - 'Large Scale Evaluation of Mutual Implication Score (Babakov et al. 2022, ACL Findings): https://aclanthology.org/2022.findings-acl.153/'
+  - 'Mutual_Implication_Score weights (CC BY-NC-SA 4.0): https://huggingface.co/s-nlp/Mutual_Implication_Score'
