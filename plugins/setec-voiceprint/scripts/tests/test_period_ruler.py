@@ -328,6 +328,53 @@ class TestArchitectureBand:
         assert "sentence_length_w1_to_pool" in block["per_feature"]
 
 
+def _authored_rows(seed, n_authors, *, offsets=None, works=3, per_work=10, prefix="a", kind="ref"):
+    """Windows whose features vary mostly between authors, a little between works."""
+    rng = random.Random(seed)
+    rows = []
+    for a in range(n_authors):
+        off = offsets[a] if offsets else rng.gauss(0, 1.5)
+        for w in range(works):
+            for k in range(per_work):
+                feats = {f: 10 + j + off + rng.gauss(0, 0.3) for j, f in enumerate(_ARCH)}
+                row = {"id": f"{prefix}{a}w{w}k{k}", "year": 1860, "text": _arch_text(rng),
+                       "architecture_features": feats}
+                row["n_words"] = pr.count_words(row["text"])
+                if kind == "ref":
+                    row.update(group=f"{prefix}{a}w{w}", author=f"{prefix}{a}")
+                rows.append(row)
+    return rows
+
+
+class TestAuthorBlocking:
+    def test_loader_blocks_by_author_when_rows_name_one(self, tmp_path):
+        path = tmp_path / "r.jsonl"
+        path.write_text(json.dumps({"text": "x y z.", "year": 1860, "group": "w1", "author": "A"}) + "\n"
+                        + json.dumps({"text": "x y z.", "year": 1860, "group": "w2"}) + "\n", encoding="utf-8")
+        rows = pr.load_jsonl(path, year_field="year", kind="reference")
+        assert [(r["group"], r["block"]) for r in rows] == [("w1", "A"), ("w2", "w2")]
+
+    def test_unseen_authors_read_inside_when_the_null_matches_their_sources(self):
+        """Real held-out authors must read as noise: each pseudo-model is drawn from as
+        many reference authors as the arm has, so between-author spread is in the floor.
+        Drawing every pseudo-model from all authors at once hides it (VP-RS1 qualification)."""
+        ref = [{**r, "block": r["author"]} for r in _authored_rows(5, 16)]
+        cands = [{**r, "block": f"new{r['id'][3]}"} for r in _authored_rows(6, 3, prefix="new", kind="cand")]
+        matched = _arch(cands, ref)
+        assert matched["null_sources_per_pseudo_model"] == 3
+        assert matched["null_sources_from"] == "candidate_authors"
+        assert matched["band"] == "within_reference_noise"
+        unnamed = [{k: v for k, v in r.items() if k != "block"} for r in cands]
+        pooled = _arch(unnamed, ref, null_blocks=16)
+        assert pooled["band"] == "beyond_reference_noise"
+
+    def test_an_arm_with_no_named_authors_is_read_as_one_voice(self):
+        ref = [{**r, "block": r["author"]} for r in _authored_rows(5, 16)]
+        block = _arch(_authored_rows(6, 1, offsets=[0.0], prefix="m", kind="cand"), ref)
+        assert block["null_sources_per_pseudo_model"] == 1
+        assert block["null_blocked_by"] == "author"
+
+
 class TestSceneWindows:
     def test_windows_are_complete_and_inside_the_word_range(self):
         text = _arch_text(random.Random(0), 2500)

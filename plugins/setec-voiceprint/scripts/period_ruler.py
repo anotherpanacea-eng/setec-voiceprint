@@ -243,6 +243,8 @@ def load_jsonl(path: Path, *, year_field: str, kind: str) -> list[dict[str, Any]
                 "text": text,
                 "n_words": count_words(text),
             }
+            if kind == "candidate" and obj.get("author"):
+                row["block"] = str(obj["author"])
             if kind == "reference":
                 group = obj.get("group", obj.get("volume_id", obj.get("author")))
                 if group is None:
@@ -251,6 +253,9 @@ def load_jsonl(path: Path, *, year_field: str, kind: str) -> list[dict[str, Any]
                         "so the noise floor can leave a whole source out"
                     )
                 row["group"] = str(group)
+                # Leave-one-out and the pseudo-model nulls block by author when the
+                # reference names one, so between-author variation is in the noise floor.
+                row["block"] = str(obj["author"]) if obj.get("author") else row["group"]
             for field in ("date_estimate_year", "p_synthetic"):
                 if field in obj and obj[field] is not None:
                     row[field] = float(obj[field])
@@ -342,7 +347,7 @@ def _window(by_year, year: int, h: int, lbin: int, exclude_group: str | None = N
     rows = []
     for y in range(year - h, year + h + 1):
         rows.extend(r for r in by_year.get(y, ())
-                    if r["length_bin"] == lbin and r["group"] != exclude_group)
+                    if r["length_bin"] == lbin and r["block"] != exclude_group)
     return rows
 
 
@@ -361,7 +366,7 @@ def compute_lovo_qs(reference: list[dict[str, Any]], h: int, channels) -> None:
     row: the material pseudo-models are drawn from."""
     by_year = _index_by_year(reference)
     for r in reference:
-        window = _window(by_year, r["year"], h, r["length_bin"], exclude_group=r["group"])
+        window = _window(by_year, r["year"], h, r["length_bin"], exclude_group=r["block"])
         r["lovo_q_date"], r["lovo_q_auth"] = _channel_values(r, window, r["year"], channels)
 
 
@@ -399,7 +404,7 @@ def simulate_null(reference, profile: Counter, n_null: int, rng: random.Random):
     for r in reference:
         if r["lovo_q_date"] is None and r["lovo_q_auth"] is None:
             continue
-        cells.setdefault((decade_of(r["year"]), r["length_bin"]), {}).setdefault(r["group"], []).append(r)
+        cells.setdefault((decade_of(r["year"]), r["length_bin"]), {}).setdefault(r["block"], []).append(r)
     draws, unmet = [], 0
     for _ in range(n_null):
         drawn = []
@@ -422,6 +427,7 @@ def simulate_null(reference, profile: Counter, n_null: int, rng: random.Random):
 # and a stdlib degradation veto. Pool-wide (no date window): one period.
 # ---------------------------------------------------------------------------
 
+DEFAULT_NULL_BLOCKS = 1
 DEFAULT_SCENE_MIN_WORDS = 500
 DEFAULT_SCENE_MAX_WORDS = 800
 DIALOGUE_BINS = 3
@@ -627,7 +633,8 @@ def build_windows(rows, *, scene_words: tuple[int, int], feature_fn: FeatureFn |
                 raise LookupError(f"{kind} {r['id']} has no architecture_features and no parser is loaded")
             else:
                 feats = feature_fn(t)
-            out.append({"id": f"{r['id']}#{i}", "group": r.get("group"), "n_words": count_words(t),
+            out.append({"id": f"{r['id']}#{i}", "group": r.get("group"), "block": r.get("block", r.get("group")),
+                        "n_words": count_words(t),
                         "features": feats, **degradation_signals(t), **narrative_strata(t)})
     return out
 
@@ -650,7 +657,7 @@ def _matched_pool(win, pools, exclude_group=None):
             (win["length_bin"], win["dialogue_bin"]), (win["length_bin"],)]
     pool: list[dict[str, Any]] = []
     for level, key in enumerate(keys):
-        pool = [p for p in pools.get(key, []) if exclude_group is None or p["group"] != exclude_group]
+        pool = [p for p in pools.get(key, []) if exclude_group is None or p["block"] != exclude_group]
         if len(pool) >= THIN_CELL:
             return pool, level
     return pool, len(keys) - 1
@@ -667,6 +674,54 @@ def _arch_percentiles(win, pool, names, len_points):
         own = _w1_samples(lens, len_points[win["length_bin"]])
         ref = [p["len_w1"] for p in pool if p.get("len_w1") is not None]
         qs["sentence_length_w1_to_pool"] = q_mid(own, ref)
+    return qs
+
+
+def _block_rank_counts(win, pools, names, len_points):
+    """Per feature, per source block: (below, equal, n) of the window's value in
+    its matched pool, so its percentile can be re-taken without any set of blocks."""
+    pool = pools.get(_pool_key(win, pools), [])
+    counts: dict[str, dict[str, list[int]]] = {}
+
+    def add(name, value, ref_values):
+        per = counts.setdefault(name, {})
+        for b, r in ref_values:
+            c = per.setdefault(b, [0, 0, 0])
+            c[0] += r < value
+            c[1] += r == value
+            c[2] += 1
+
+    for name in names:
+        v = win["features"].get(name)
+        if v is not None:
+            add(name, v, [(p["block"], p["features"][name]) for p in pool if p["features"].get(name) is not None])
+    if win.get("len_w1") is not None:
+        add("sentence_length_w1_to_pool", win["len_w1"],
+            [(p["block"], p["len_w1"]) for p in pool if p.get("len_w1") is not None])
+    return counts
+
+
+def _pool_key(win, pools):
+    keys = [(win["length_bin"], win["dialogue_bin"], win["narrative_mode"]),
+            (win["length_bin"], win["dialogue_bin"]), (win["length_bin"],)]
+    for key in keys:
+        if sum(1 for p in pools.get(key, []) if p["block"] != win["block"]) >= THIN_CELL:
+            return key
+    return keys[-1]
+
+
+def _qs_without(win, blocks) -> dict[str, float | None]:
+    qs: dict[str, float | None] = {}
+    for name in win["qs"]:
+        per = win["q_counts"].get(name)
+        if not per:
+            qs[name] = None
+            continue
+        below = equal = n = 0
+        for b, (lo, eq, k) in per.items():
+            if b not in blocks:
+                below, equal, n = below + lo, equal + eq, n + k
+        qs[name] = (below + 0.5 * equal) / n if n else win["qs"][name]
     return qs
 
 
@@ -728,7 +783,7 @@ def _draw_matched(profile_wins, pools, rng, groups=None):
     for w in profile_wins:
         pool, _ = _matched_pool(w, pools)
         if groups is not None:
-            pool = [p for p in pool if p["group"] in groups]
+            pool = [p for p in pool if p["block"] in groups]
         if pool:
             out.append(rng.choice(pool))
     return out
@@ -737,6 +792,7 @@ def _draw_matched(profile_wins, pools, rng, groups=None):
 def run_architecture_band(
     candidates, reference, *, feature_fn: FeatureFn | None, scene_words: tuple[int, int],
     n_length_bins: int, n_null: int, rng: random.Random, include_per_candidate: bool,
+    null_blocks: int = DEFAULT_NULL_BLOCKS,
 ) -> tuple[dict[str, Any], list[str]]:
     warnings: list[str] = []
     ref_w = build_windows(reference, scene_words=scene_words, feature_fn=feature_fn, kind="reference")
@@ -777,8 +833,9 @@ def run_architecture_band(
         ratios = sorted(w["distinct_token_ratio"] for w in ws)
         veto_band[b] = (_percentile(ratios, 0.05), _percentile(ratios, 0.95))
     for w in ref_w:
-        pool, _ = _matched_pool(w, pools, exclude_group=w["group"])
+        pool, _ = _matched_pool(w, pools, exclude_group=w["block"])
         w["qs"] = _arch_percentiles(w, pool, names, len_points)
+        w["q_counts"] = _block_rank_counts(w, pools, names, len_points)
         w["vetoed"] = _vetoed(w, veto_band)
     match_levels: Counter = Counter()
     for w in cand_w:
@@ -799,7 +856,7 @@ def run_architecture_band(
     if len(sample) >= 2:
         arm = [_draw_matched(sample, pools, rng) for _ in range(ENERGY_ARM_DRAWS)]
         energy = _mean([energy_distance([vec(w) for w in sample], [vec(r) for r in d]) for d in arm if d])
-        groups = sorted({w["group"] for w in ref_w})
+        groups = sorted({w["block"] for w in ref_w})
         null_e = []
         for _ in range(ENERGY_NULL_DRAWS):
             rng.shuffle(groups)
@@ -820,17 +877,37 @@ def run_architecture_band(
     cells: dict[tuple, dict[str, list[dict[str, Any]]]] = {}
     for key in profile:
         for w in pools.get(key, []):
-            cells.setdefault(key, {}).setdefault(w["group"], []).append(w)
+            cells.setdefault(key, {}).setdefault(w["block"], []).append(w)
+    # Each pseudo-model writes like as many real sources (authors when the
+    # reference names them) as the arm has: its named authors when every
+    # candidate names one, else ``null_blocks`` (default 1: a generated arm is
+    # one voice, not an average of every reference author).
+    all_blocks = sorted({w["block"] for w in ref_w})
+    cand_sources = {r.get("block") for r in candidates}
+    from_candidates = None not in cand_sources
+    k_blocks = len(cand_sources) if from_candidates else null_blocks
+    k_blocks = max(1, min(k_blocks, len(all_blocks)))
     null = []
+    widened = 0
     for _ in range(n_null):
+        chosen = set(rng.sample(all_blocks, k_blocks))
         drawn = []
         for key, n in sorted(profile.items()):
-            drawn.extend(_volume_blocked(cells.get(key, {}), n, rng))
-        stats = _arm_stats(drawn)
+            cell = {b: ws for b, ws in cells.get(key, {}).items() if b in chosen}
+            if not cell:
+                cell = cells.get(key, {})
+                widened += 1
+            drawn.extend(_volume_blocked(cell, n, rng))
+        # A pseudo-model is held out the way the arm is: every window is ranked
+        # against the reference without any of the chosen sources.
+        stats = _arm_stats([{**w, "qs": _qs_without(w, chosen)} for w in drawn])
         if stats:
             null.append(stats)
     if not null:
         raise PeriodRulerError("pseudo-model null is empty for the architecture band")
+    if widened:
+        warnings.append(f"{widened} pseudo-model cell draw(s) had no window from the chosen "
+                        f"{k_blocks} source(s) and drew from every source instead")
 
     def interval(key):
         vals = sorted(s[key] for s in null if s[key] is not None)
@@ -871,6 +948,9 @@ def run_architecture_band(
         "per_feature": per_feature,
         "n_candidate_windows": len(cand_w),
         "n_reference_windows": len(ref_w),
+        "null_sources_per_pseudo_model": k_blocks,
+        "null_sources_from": "candidate_authors" if from_candidates else "null_blocks",
+        "null_blocked_by": ("author" if any(w["block"] != w["group"] for w in ref_w) else "group"),
         "scene_window_words": list(scene_words),
         "dialogue_bin_edges": d_edges,
         "candidate_match_levels": {"length_dialogue_mode": match_levels[0],
@@ -905,14 +985,18 @@ def run_period_ruler(
     n_null: int = DEFAULT_N_NULL,
     seed: int = DEFAULT_SEED,
     include_per_candidate: bool = False,
+    null_blocks: int = DEFAULT_NULL_BLOCKS,
     cache_path: Path | None = None,
     batch_size: int = 32,
     progress: Callable[[str], None] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     if not candidates:
         raise PeriodRulerError("no candidate passages")
-    if len({r["group"] for r in reference}) < 2:
-        raise PeriodRulerError("reference needs passages from at least two groups for a leave-one-group-out null")
+    for r in reference:
+        r.setdefault("block", r["group"])
+    if len({r["block"] for r in reference}) < 2:
+        raise PeriodRulerError("reference needs passages from at least two groups (or authors) for a "
+                               "leave-one-out null")
     if n_null < 100:
         raise PeriodRulerError("n_null must be at least 100")
     warnings: list[str] = []
@@ -921,6 +1005,7 @@ def run_period_ruler(
     rng = random.Random(seed)
     block: dict[str, Any] = {"channels": {}, "n_candidates": len(candidates), "n_reference": len(reference),
                              "n_reference_groups": len({r["group"] for r in reference}),
+                             "n_reference_blocks": len({r["block"] for r in reference}),
                              "n_pseudo_models": n_null, "seed": seed, "calibration_status": "provisional"}
     if channels:
         score_rows(candidates + reference, channels=channels, date_scorer=date_scorer,
@@ -1024,6 +1109,7 @@ def run_period_ruler(
             "n_candidates_in_reference_cells": len(per_candidate),
             "n_reference": len(reference),
             "n_reference_groups": len({r["group"] for r in reference}),
+            "n_reference_blocks": len({r["block"] for r in reference}),
             "window_years": window_years,
             "length_bin_edges_log_words": edges,
             "n_pseudo_models": n_null,
@@ -1034,7 +1120,8 @@ def run_period_ruler(
                 "method": "Chronologic conformal scoring (arXiv:2609.23178): length-binned, date-windowed "
                           "percentiles vs real passages; W1 from uniform; pseudo-model noise floor",
                 "instruments": f"{DATE_MODEL_ID} (T={DATE_TEMPERATURE}) and {AUTH_MODEL_ID}, or precomputed scores",
-                "reference": "operator-supplied dated real passages with a source group per passage",
+                "reference": "operator-supplied dated real passages with a source group per passage; "
+                             "leave-one-out and nulls block by author when rows name one",
                 "use": "validator for a set of generations; never a training reward",
             },
         }
@@ -1044,7 +1131,7 @@ def run_period_ruler(
         arch_block, arch_warnings = run_architecture_band(
             candidates, reference, feature_fn=feature_fn, scene_words=scene_words,
             n_length_bins=n_length_bins, n_null=n_null, rng=rng,
-            include_per_candidate=include_per_candidate)
+            include_per_candidate=include_per_candidate, null_blocks=null_blocks)
         block["channels"]["architecture"] = arch_block
         warnings.extend(arch_warnings)
         block.setdefault("assumptions", {})["architecture"] = (
@@ -1215,6 +1302,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             feature_fn=feature_fn, scene_words=(args.scene_min_words, args.scene_max_words),
             window_years=args.window_years, n_length_bins=args.length_bins,
             n_null=args.n_null, seed=args.seed, include_per_candidate=args.per_candidate,
+            null_blocks=args.null_blocks,
             cache_path=cache, batch_size=args.batch_size, progress=progress)
     except PeriodRulerError as exc:
         return _error(str(exc), "bad_input", args.candidates)
@@ -1246,6 +1334,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--window-years", type=int, default=DEFAULT_WINDOW_YEARS)
     ap.add_argument("--length-bins", type=int, default=DEFAULT_LENGTH_BINS)
     ap.add_argument("--n-null", type=int, default=DEFAULT_N_NULL)
+    ap.add_argument("--null-blocks", type=int, default=DEFAULT_NULL_BLOCKS,
+                    help="architecture band: real sources (authors, else groups) per pseudo-model (default 1)")
     ap.add_argument("--seed", type=int, default=DEFAULT_SEED)
     ap.add_argument("--score-cache", help="JSONL cache of instrument scores; appended per batch and reused on resume")
     ap.add_argument("--batch-size", type=int, default=32)
