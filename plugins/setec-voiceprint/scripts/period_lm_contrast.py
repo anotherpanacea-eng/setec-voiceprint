@@ -239,6 +239,12 @@ class _CausalLMBpb:
     def __call__(self, texts):
         return [self._bits(t) / max(1, len(t.encode("utf-8"))) for t in texts]
 
+    def close(self) -> None:
+        """Free the weights so the next model loads into the same memory."""
+        self.model = None
+        if self.device.startswith("cuda"):
+            self._torch.cuda.empty_cache()
+
 
 def _load_scorer(model_id, *, device, max_tokens, trust_remote_code) -> BpbScorer | None:
     if os.environ.get("setec_hermetic_backend") == "stub":
@@ -307,14 +313,21 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         cache_path = Path(args.score_cache) if args.score_cache else None
         cache = _load_cache(cache_path)
         context = scoring_context(args.max_tokens)
-        scorers = {}
+        # One model resident at a time: fill a column, free its model, then load the twin.
         for field, model_id in (("period_bpb", period_model), ("modern_bpb", modern_model)):
-            needs = cache_misses(rows, field, model_id, context, cache) > 0
-            scorers[field] = _load_scorer(model_id, device=args.device, max_tokens=args.max_tokens,
-                                          trust_remote_code=args.trust_remote_code) if needs else None
+            if cache_misses(rows, field, model_id, context, cache) == 0:
+                continue
+            scorer = _load_scorer(model_id, device=args.device, max_tokens=args.max_tokens,
+                                  trust_remote_code=args.trust_remote_code)
+            try:
+                for rs in (passages, reference or []):
+                    _score_column(rs, field, model_id, context, scorer, cache, cache_path,
+                                  args.batch_size, True)
+            finally:
+                if hasattr(scorer, "close"):
+                    scorer.close()
         results = run_contrast(
             passages, reference, period_model=period_model, modern_model=modern_model,
-            period_scorer=scorers["period_bpb"], modern_scorer=scorers["modern_bpb"],
             cache_path=cache_path, max_tokens=args.max_tokens,
             batch_size=args.batch_size, n_boot=args.n_boot, seed=args.seed,
             include_per_passage=args.per_passage, progress=True)

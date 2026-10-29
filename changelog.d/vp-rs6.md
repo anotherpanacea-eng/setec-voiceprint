@@ -10,4 +10,4 @@ so need `--trust-remote-code`. The typewriter-ai 1913 7B base declares no licens
 research use and the envelope carries a license warning. Precomputed scores run
 model-free, and `--score-cache` resumes an interrupted GPU run. Cached scores are keyed by
 model, scoring policy and `--max-tokens` (reported as `scoring_context`), and a run whose rows are
-all cached loads no model.
+all cached loads no model. The twins are loaded one at a time, so peak GPU memory is one 13B model.

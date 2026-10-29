@@ -153,6 +153,27 @@ class TestCli:
         assert rc == 0 and loaded == []
         assert again["results"] == first["results"]
 
+    def test_twins_are_never_resident_together(self, tmp_path, monkeypatch):
+        """Peak memory is one model: the period scorer is freed before its twin loads (Codex re-review)."""
+        events = []
+
+        class Fake:
+            def __init__(self, model_id):
+                self.model_id, self.fn = model_id, _period if "1930" in model_id else _modern
+                events.append(("load", model_id))
+
+            def __call__(self, texts):
+                return self.fn(texts)
+
+            def close(self):
+                events.append(("close", self.model_id))
+
+        monkeypatch.setattr(plc, "_load_scorer", lambda model_id, **_: Fake(model_id))
+        rc, _ = self._main(["--passages", self._write(tmp_path / "p.jsonl", _rows(4, 1)), "--n-boot", "100", "--json"])
+        assert rc == 0
+        period, modern = plc.PAIRS["talkie"]
+        assert events == [("load", period), ("close", period), ("load", modern), ("close", modern)]
+
     def test_typewriter_needs_a_modern_twin(self, tmp_path):
         rc, env = self._main(["--passages", self._write(tmp_path / "p.jsonl", _rows(3, 1)),
                               "--pair", "typewriter", "--json"])
