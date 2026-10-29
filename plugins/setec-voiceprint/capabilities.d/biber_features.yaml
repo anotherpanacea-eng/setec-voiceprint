@@ -23,8 +23,12 @@ entries:
     96-rate panel plus calibration_status: provisional. Dual-use: Biber features separate
     human-vs-LLM AND LLM-vs-LLM (arXiv:2410.16107) — that inference is REFUSED; the claim
     license explicitly names that paper and refuses model-family attribution, AI/human
-    provenance, and authorship. M1 (this build): model-free CI over an injected/stub tagger;
-    M2 (deferred): the real Neurobiber tagger behind a lazy torch/transformers import.
+    provenance, and authorship. M1: model-free CI over an injected/stub tagger. M2 (VP-RS2):
+    the real Neurobiber tagger (Blablablab/neurobiber) behind a lazy torch/transformers import,
+    with feature ids equal to the checkpoint''s id2label (biberplus tags, BIN_ prefix); each
+    value is the mean per-chunk presence probability, with the share of chunks detected
+    beside it. voice_distance / voice_profile still refuse --include-biber until they are wired
+    to the same tagger.
 
     '
   use_when:
@@ -49,8 +53,8 @@ entries:
     - 'families.biber_features (comparative): family_distance keys + n_features=96'
   compute:
     tier: optional
-    cost_note: "small CPU Biber tagger (Neurobiber); model load is M2 — M1 runs over
-      an injected/stub vector"
+    cost_note: "small RoBERTa-base tagger (Neurobiber, 125M params; CPU is workable,
+      GPU faster); M1 runs over an injected/stub vector"
     length_floor_words: 150
   registers:
   - blog_essay
@@ -63,7 +67,7 @@ entries:
     - torch
     - transformers
   examples:
-  - description: Standalone Biber register panel (abstains without real tagger in M1)
+  - description: Standalone Biber register panel (abstains cleanly without torch/transformers)
     cmd: python3 plugins/setec-voiceprint/scripts/biber_features.py target.md --json
   - description: Comparative voice_distance with Biber family (M2; requires tagger)
     cmd: python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir

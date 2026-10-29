@@ -366,6 +366,10 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
 
     readiness_label = STATUS_READINESS.get(status, (status or "—", ""))[0]
     hardware = TIER_HARDWARE.get(tier, tier)
+    if compute.get("hardware"):
+        # A capability whose models are far from the tier's typical size states
+        # its own hardware line (e.g. 13B twins on a surprisal-tier surface).
+        hardware = str(compute["hardware"])
     if tier == "acquisition":
         # Network acquisition may use a third-party client or the stdlib. Honor
         # the capability's explicit cost declaration so urllib-only leaves do

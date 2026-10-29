@@ -1,0 +1,58 @@
+{
+  "id": "phrase_overuse_profile",
+  "script_path": "plugins/setec-voiceprint/scripts/phrase_overuse_profile.py",
+  "surface": "formulaicity",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "non-voice-structure",
+  "purpose": "Corpus-level over-represented phrase profile, the profiling half of Antislop (arXiv:2510.15061, code MIT). Counts word n-grams (default 2 and 3, never across sentence punctuation or line breaks) in a target corpus and a human reference corpus and lists the n-grams the target uses more often, ordered by an add-half smoothed per-token frequency ratio, with counts, per-million rates and Dunning G2 beside each. An n-gram must appear at least 3 times and in at least 2 target documents; n-grams made only of function words are dropped by default. Abstains below 20,000 reference tokens. Stdlib only. Descriptive: names phrases a writer or model leans on, does not say who or what wrote the target.\n",
+  "use_when": [
+    "You have many outputs from one model or writer and want the phrases it leans on, against a human reference",
+    "You want a slop list to check a fine-tune or a prompt change against",
+    "You want to see which period or genre phrases a register-shift run over- or under-produces"
+  ],
+  "do_not_use_when": [
+    "You want an AI-provenance call or a quality judgment",
+    "The reference is under 20,000 word tokens (it abstains)",
+    "You want the density of a fixed stock-phrase list in one document (use formulaicity_audit)"
+  ],
+  "inputs": {
+    "target": "text file, directory of .txt/.md, or JSONL with a text field",
+    "reference": "human reference in the same formats"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH",
+      "results.phrase_overuse.over_represented: ngram, counts, per-million rates, overuse_ratio, g2"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "Pure-Python n-gram counting; linear in corpus size.",
+    "length_floor_words": 300
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Bigrams and trigrams a model overuses against a human reference",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/phrase_overuse_profile.py --target gens.jsonl --reference human_ref/ --json"
+    },
+    {
+      "description": "Four-grams, keep function-word n-grams, top 100",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/phrase_overuse_profile.py --target gens.jsonl --reference human_ref/ --n 4 --keep-function-ngrams --max-reported 100 --json"
+    }
+  ],
+  "references": [
+    "Antislop: A Comprehensive Framework for Identifying and Eliminating Repetitive Patterns in Language Models (arXiv:2510.15061): https://arxiv.org/abs/2510.15061",
+    "Antislop code (MIT): https://github.com/sam-paech/auto-antislop"
+  ]
+}

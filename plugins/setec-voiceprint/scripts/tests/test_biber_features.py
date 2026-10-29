@@ -163,12 +163,12 @@ class TestBiberFamilyFeatures:
 
     def test_unknown_key_silently_dropped(self):
         """AC2: unknown keys are SILENTLY DROPPED — no raise."""
-        vec = {"BIN_not_in_schema": 99.9, "BIN_past_tense_verb": 0.5}
+        vec = {"BIN_not_in_schema": 99.9, "BIN_VBD": 0.5}
         out = bf.biber_family_features(vec)
         # Unknown key absent from output
         assert "BIN_not_in_schema" not in out
         # Known key preserved
-        assert out["BIN_past_tense_verb"] == pytest.approx(0.5)
+        assert out["BIN_VBD"] == pytest.approx(0.5)
         # Exactly 96 keys
         assert len(out) == 96
 
@@ -521,7 +521,7 @@ class TestStandaloneAbstain:
         from contextlib import redirect_stdout
 
         # Ensure _try_load_real_tagger returns None (M1 default).
-        monkeypatch.setattr(bf, "_try_load_real_tagger", lambda: None)
+        monkeypatch.setattr(bf, "_try_load_real_tagger", lambda **_: None)
 
         t = tmp_path / "target.txt"
         t.write_text(TARGET_TEXT, encoding="utf-8")
@@ -686,78 +686,98 @@ class TestStubDeterminism:
 # ===========================================================================
 
 # ===========================================================================
-# AC13 — M2 seam inert in CI (skipif guard for real tagger smoke)
+# M2 (VP-RS2) — the real Neurobiber tagger contract; its smoke is skipif-gated
 # ===========================================================================
 
-_has_neurobiber = False
-try:
-    import neurobiber  # type: ignore  # noqa: F401
-    _has_neurobiber = True
-except ImportError:
-    pass
+class _DetailStub:
+    """Stub shaped like the real tagger: detail() returns means, shares, chunks."""
 
-@pytest.mark.skipif(not _has_neurobiber, reason="neurobiber package not installed (M2 only)")
-def test_real_neurobiber_tagger_smoke():
-    """AC13 M2 smoke: real tagger produces 96 named features (CI skips; run out-of-band)."""
-    # M2 implementation stub — this test body is a placeholder for when
-    # the real _NeurobiberTagger is wired in.
-    pytest.skip("M2 NeurobiberTagger not yet implemented (deferred)")
+    _tagger_name = "neurobiber"
+
+    def detail(self, text):
+        means = stub_biber_tagger(text)
+        return means, {k: float(v > 0.5) for k, v in means.items()}, 2
+
+    def __call__(self, text):
+        return self.detail(text)[0]
 
 
-# ===========================================================================
-# Codex round-2 P2 — installing the named dependency must NOT turn the clean
-# missing_dependency abstention into an uncaught traceback.
-#
-# Round-1 added the CLI guard, but _try_load_real_tagger() raised
-# NotImplementedError as soon as `neurobiber` was importable — escaping the
-# `except ImportError` handler and crashing the guard in all three CLIs.
-# Ref: Codex round-2 P2 finding on biber_features.py:355.
-# ===========================================================================
+class TestRealTaggerContract:
+    def test_schema_ids_are_the_neurobiber_output_labels(self):
+        """The real checkpoint's id2label starts BIN_QUAN, BIN_QUPR, BIN_AMP and
+        ends BIN_X; the tagger refuses to map by position on any mismatch."""
+        ids = [fid for fid, _ in bf.BIBER_FEATURE_SCHEMA]
+        assert ids[:4] == ["BIN_QUAN", "BIN_QUPR", "BIN_AMP", "BIN_PASS"]
+        assert ids[24] == "BIN_VBD" and ids[43] == "BIN_NOMZ" and ids[-1] == "BIN_X"
 
-class TestPackagePresentDoesNotCrash:
-    """The M2 adapter is deferred; a *present* neurobiber must still abstain.
+    def test_detail_tagger_reports_detection_share_and_chunks(self):
+        result, _ = bf.run_biber_panel(TARGET_TEXT, biber_tagger=_DetailStub())
+        panel = result["biber_panel"]
+        assert panel["tagger"] == "neurobiber"
+        assert panel["n_chunks"] == 2
+        assert list(panel["detection_share"]) == [fid for fid, _ in bf.BIBER_FEATURE_SCHEMA]
+        assert set(panel["detection_share"].values()) <= {0.0, 1.0}
 
-    Pre-fix: with a stub `neurobiber` in sys.modules, _try_load_real_tagger()
-    raises NotImplementedError, which propagates out of the CLI guard as an
-    uncaught traceback (rc != 3, no JSON envelope).
-    Post-fix: _try_load_real_tagger() returns None unconditionally (the M2
-    adapter does not exist yet), so the CLI emits a clean
-    available:false / missing_dependency envelope with rc=3.
-    """
-
-    def test_try_load_returns_none_when_neurobiber_importable(self, monkeypatch):
-        """biber_features._try_load_real_tagger() returns None even if neurobiber imports."""
-        import types as _types
-
-        # Inject a stub `neurobiber` so `import neurobiber` SUCCEEDS (the
-        # package-present path the round-2 finding reproduces).
-        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
-
-        # Must NOT raise NotImplementedError; the deferred M2 adapter abstains.
-        result = bf._try_load_real_tagger()
-        assert result is None, (
-            "Installing/importing neurobiber must not produce a tagger while the "
-            f"M2 adapter is deferred; expected None, got {result!r}"
-        )
-
-    def test_cli_abstains_when_neurobiber_importable(self, tmp_path, monkeypatch):
-        """biber_features CLI with a present neurobiber → rc=3 / missing_dependency (no traceback)."""
+    def test_cli_runs_end_to_end_with_a_loaded_tagger(self, tmp_path, monkeypatch):
         import io
-        import json as _json
-        import types as _types
         from contextlib import redirect_stdout
 
-        # Package PRESENT — but the real CLI must NOT be monkeypatched at the
-        # _try_load_real_tagger seam; we exercise the function's own logic.
-        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
-
+        monkeypatch.setattr(bf, "_try_load_real_tagger", lambda **_: _DetailStub())
         t = tmp_path / "target.txt"
         t.write_text(TARGET_TEXT, encoding="utf-8")
         out = io.StringIO()
-        # Must NOT raise (pre-fix: NotImplementedError escapes main()).
         with redirect_stdout(out):
             rc = bf.main([str(t), "--json"])
-        env = _json.loads(out.getvalue())
+        env = json.loads(out.getvalue())
+        assert rc == 0 and env["available"] is True
+        assert env["results"]["biber_panel"]["n_features"] == 96
+
+
+_has_torch_stack = False
+try:
+    import torch  # type: ignore  # noqa: F401
+    import transformers  # type: ignore  # noqa: F401
+    _has_torch_stack = True
+except ImportError:
+    pass
+
+
+@pytest.mark.skipif(not _has_torch_stack, reason="torch + transformers not installed (M2 only)")
+def test_real_neurobiber_tagger_smoke():
+    """M2 smoke (CI skips): the real checkpoint loads and yields 96 bounded values."""
+    tagger = bf._try_load_real_tagger(chunk_words=64)
+    if tagger is None:
+        pytest.skip("Neurobiber checkpoint unavailable (offline)")
+    result, _ = bf.run_biber_panel(TARGET_TEXT * 3, biber_tagger=tagger)
+    feats = result["biber_panel"]["features"]
+    assert len(feats) == 96 and all(0.0 <= v <= 1.0 for v in feats.values())
+
+
+class TestAbstainsWithoutTorch:
+    """A present `neurobiber` package is irrelevant: the tagger needs torch +
+    transformers, and without them the CLI abstains cleanly (rc=3), never a
+    traceback (the Codex round-2 P2 regression)."""
+
+    def test_try_load_returns_none_without_torch(self, monkeypatch):
+        import types as _types
+
+        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
+        monkeypatch.setitem(sys.modules, "torch", None)
+        assert bf._try_load_real_tagger() is None
+
+    def test_cli_abstains_without_torch(self, tmp_path, monkeypatch):
+        import io
+        import types as _types
+        from contextlib import redirect_stdout
+
+        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
+        monkeypatch.setitem(sys.modules, "torch", None)
+        t = tmp_path / "target.txt"
+        t.write_text(TARGET_TEXT, encoding="utf-8")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = bf.main([str(t), "--json"])
+        env = json.loads(out.getvalue())
         assert env["available"] is False
         assert env["reason_category"] == "missing_dependency"
         assert rc == 3

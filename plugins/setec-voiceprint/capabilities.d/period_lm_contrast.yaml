@@ -1,0 +1,64 @@
+entries:
+- id: period_lm_contrast
+  script_path: plugins/setec-voiceprint/scripts/period_lm_contrast.py
+  surface: period_register
+  status: heuristic
+  handoff: none
+  # consumers: no code importer yet; built as a second register read beside period_ruler (VP-RS6).
+  consumers: []
+  family: period-register
+  purpose: 'Per-passage likelihood contrast between a period-trained causal LM and its
+    modern-trained twin, in bits per UTF-8 byte (period minus modern; negative means the period
+    LM finds the passage easier). Bits per byte keeps models with different tokenizers
+    comparable. Reports mean and median contrast, the share of passages the period LM finds
+    easier, and a seeded bootstrap 95% interval of the mean; with a reference of real period
+    passages it also reports the candidate-minus-reference gap with its own interval. Default
+    pair is talkie-lm 1930 base vs talkie-web base (13B twins, Apache-2.0, custom model code so
+    loading needs --trust-remote-code). The typewriter-ai 1913 7B base declares no license; it
+    loads for private research use with a warning, with a --modern-model of the operator''s choice.
+    Rows with precomputed bpb run model-free and --score-cache resumes. Descriptive: not a
+    register verdict and not a reward.
+
+    '
+  use_when:
+  - You want a second, model-likelihood read of how period-like a set of passages is, beside period_ruler
+  - You can run two 7-13B causal LMs (GPU), or already have their bits-per-byte scores
+  - You want to compare generated passages with real period passages on the same two models
+  do_not_use_when:
+  - You want to date a passage or certify its register
+  - You want a training reward (topic and vocabulary move the contrast as much as syntax)
+  - You cannot run 13B models and have no precomputed scores
+  inputs:
+    passages: 'JSONL {id, text[, period_bpb, modern_bpb]}'
+    reference: optional JSONL of real period passages, same shape
+    score_cache: optional JSONL cache of per-model bpb (appended per batch; resumes)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+    - 'results.period_lm_contrast.candidates: mean/median contrast_bpb, bootstrap interval, share_period_easier'
+    - 'results.period_lm_contrast.reference and candidate_minus_reference_* when --reference is given'
+  compute:
+    tier: surprisal
+    hardware: GPU with ~30 GB or more (two 13B models in bf16, loaded one at a time, ~26 GB of weights each on disk); model-free with precomputed bpb
+    cost_note: Two causal-LM forward passes per passage (13B twins by default, loaded one at a time,
+      GPU with ~30 GB or more in bf16); model-free when every row carries precomputed bpb.
+    length_floor_words: 15
+  registers:
+  - literary_fiction
+  dependencies:
+    python: []
+    python_optional:
+    - torch
+    - transformers
+  examples:
+  - description: Talkie twins against a real period reference, caching scores
+    cmd: python3 plugins/setec-voiceprint/scripts/period_lm_contrast.py --passages gens.jsonl
+      --reference victorian_ref.jsonl --trust-remote-code --score-cache bpb.jsonl --json
+  - description: Model-free summary of precomputed bpb
+    cmd: python3 plugins/setec-voiceprint/scripts/period_lm_contrast.py --passages scored.jsonl
+      --per-passage --json
+  references:
+  - 'talkie-1930-13b-base (Apache-2.0): https://huggingface.co/talkie-lm/talkie-1930-13b-base'
+  - 'talkie-web-13b-base (Apache-2.0): https://huggingface.co/talkie-lm/talkie-web-13b-base'
+  - 'typewriter-1913-7B-base (no declared license): https://huggingface.co/typewriter-ai/typewriter-1913-7B-base'

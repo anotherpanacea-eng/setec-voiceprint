@@ -378,3 +378,42 @@ def test_window_strategy_parity(tmp_path: Path):
 # --------------- 8. Capabilities entry present ------------------
 
 
+
+
+# --------------- STAR encoder (VP-RS3) ---------------------------
+
+
+def _fake_transformers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make `import transformers` succeed without the real package, so the
+    real loader reaches its license gate. No weights load: encoders are lazy."""
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
+
+
+def test_star_loads_lazily_by_default(monkeypatch):
+    monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
+    _fake_transformers(monkeypatch)
+    for model in ("star", "AIDA-UPM/star"):
+        enc = vf._load_encoder(model)
+        assert enc.model_id == "AIDA-UPM/star"
+        assert type(enc).__name__ == "_STAREncoder"
+
+
+def test_star_run_records_its_model_and_caveat(tmp_path, monkeypatch, capsys):
+    def _loader(model, device=None):
+        return _StubEncoder(model_id=vf.MODEL_ALIASES.get(model, model))
+
+    monkeypatch.setattr(vf, "_load_encoder", _loader)
+    src = _write(tmp_path, "draft.txt", _multi_para_text())
+    rc = vf.main([str(src), "--model", "star", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert payload["results"]["model_id"] == "AIDA-UPM/star"
+    caveats = " ".join(payload["claim_license"]["additional_caveats"])
+    assert "STAR" in caveats and "no license" in caveats
+    # STAR earns no verdict: its refusal text is the same as LUAR's.
+    luar = vf._claim_license(model_id=vf.MODEL_ALIASES["luar"], mode="single")
+    star = vf._claim_license(model_id=vf.MODEL_ALIASES["star"], mode="single")
+    assert luar.does_not_license == star.does_not_license
