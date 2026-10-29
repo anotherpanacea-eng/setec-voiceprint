@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "task_surface": null,
+  "tool": "setec_run",
+  "version": "1.0.0",
+  "available": false,
+  "target": {
+    "path": null,
+    "words": 0
+  },
+  "baseline": null,
+  "results": {},
+  "claim_license": null,
+  "claim_license_rendered": null,
+  "warnings": [],
+  "ai_status": null,
+  "reason": "setec_hermetic_backend=stub: binoculars_audit requires model module(s) the mode disables: transformers, torch.",
+  "reason_category": "missing_dependency",
+  "missing_dependency": {
+    "python": [
+      "transformers",
+      "torch"
+    ]
+  },
+  "surface": "binoculars_audit"
+}

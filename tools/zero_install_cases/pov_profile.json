@@ -1,0 +1,1399 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "voice_coherence",
+  "tool": "pov_voice_profile",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "consumer-pov.jsonl",
+    "words": 488
+  },
+  "baseline": null,
+  "results": {
+    "n_povs": 2,
+    "povs": [
+      {
+        "label": "a",
+        "n_docs": 2,
+        "n_words": 264
+      },
+      {
+        "label": "b",
+        "n_docs": 2,
+        "n_words": 224
+      }
+    ],
+    "inputs": {
+      "manifest": "consumer-pov.jsonl",
+      "use": "voice_profile",
+      "min_docs_per_pov": 2,
+      "collapse_threshold": 0.5
+    },
+    "dropped_povs": [],
+    "cross_pov_distances_per_family": {
+      "char_ngrams_3": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 0.9477168777767264,
+          "cosine_distance": 0.5749166309659964
+        }
+      ],
+      "char_ngrams_4": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 0.970729759795822,
+          "cosine_distance": 0.7437545612416211
+        }
+      ],
+      "char_ngrams_5": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 0.9897983762717978,
+          "cosine_distance": 0.85682384228559
+        }
+      ],
+      "function_words": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 0.8829655587776024,
+          "cosine_distance": 0.435547165028517
+        }
+      ],
+      "paragraph_dialogue": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 1.3493368017483514,
+          "cosine_distance": 0.0024621602136147835
+        }
+      ],
+      "pronoun_modal_negation": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 1.0,
+          "cosine_distance": 1.0
+        }
+      ],
+      "punctuation": [
+        {
+          "pov_a": "a",
+          "pov_b": "b",
+          "burrows_delta": 1.1655888469178535,
+          "cosine_distance": 0.026921839017817084
+        }
+      ]
+    },
+    "cross_pov_distances_weighted": [
+      {
+        "pov_a": "a",
+        "pov_b": "b",
+        "burrows_delta": 1.036150657406705,
+        "cosine_distance": 0.4597270533130876
+      }
+    ],
+    "pov_vs_corpus_mean": {
+      "a": {
+        "burrows_delta": 0.4756101378260288,
+        "cosine_distance": 0.09061346966480015
+      },
+      "b": {
+        "burrows_delta": 0.5605405195806763,
+        "cosine_distance": 0.19858729776760461
+      }
+    },
+    "distinguishing_features": {
+      "a": {
+        "char_ngrams_3": [
+          {
+            "feature": "ch3:rai",
+            "this_pov_value": 0.0,
+            "others_mean": 0.018154311649016642,
+            "delta": -0.018154311649016642,
+            "log2_ratio": -24.113808893199725
+          },
+          {
+            "feature": "ch3:ain",
+            "this_pov_value": 0.0,
+            "others_mean": 0.018154311649016642,
+            "delta": -0.018154311649016642,
+            "log2_ratio": -24.113808893199725
+          },
+          {
+            "feature": "ch3:ver",
+            "this_pov_value": 0.017066020613544453,
+            "others_mean": 0.0,
+            "delta": 0.017066020613544453,
+            "log2_ratio": 24.024623359929873
+          },
+          {
+            "feature": "ch3:er ",
+            "this_pov_value": 0.017066020613544453,
+            "others_mean": 0.0,
+            "delta": 0.017066020613544453,
+            "log2_ratio": 24.024623359929873
+          },
+          {
+            "feature": "ch3:he ",
+            "this_pov_value": 0.034461660166993195,
+            "others_mean": 0.018154311649016642,
+            "delta": 0.016307348517976553,
+            "log2_ratio": 0.9246799750992132
+          },
+          {
+            "feature": "ch3: th",
+            "this_pov_value": 0.016736401673640166,
+            "others_mean": 0.029500756429652043,
+            "delta": -0.012764354756011877,
+            "log2_ratio": -0.8177625653353053
+          },
+          {
+            "feature": "ch3:and",
+            "this_pov_value": 0.005578800557880056,
+            "others_mean": 0.018154311649016642,
+            "delta": -0.012575511091136585,
+            "log2_ratio": -1.7022853479153692
+          },
+          {
+            "feature": "ch3:nd ",
+            "this_pov_value": 0.005578800557880056,
+            "others_mean": 0.018154311649016642,
+            "delta": -0.012575511091136585,
+            "log2_ratio": -1.7022853479153692
+          },
+          {
+            "feature": "ch3: ra",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012102874432677761,
+            "delta": -0.012102874432677761,
+            "log2_ratio": -23.52884639247857
+          },
+          {
+            "feature": "ch3:d w",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012102874432677761,
+            "delta": -0.012102874432677761,
+            "log2_ratio": -23.52884639247857
+          },
+          {
+            "feature": "ch3: wa",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012102874432677761,
+            "delta": -0.012102874432677761,
+            "log2_ratio": -23.52884639247857
+          },
+          {
+            "feature": "ch3:rin",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012102874432677761,
+            "delta": -0.012102874432677761,
+            "log2_ratio": -23.52884639247857
+          },
+          {
+            "feature": "ch3:pri",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012102874432677761,
+            "delta": -0.012102874432677761,
+            "log2_ratio": -23.52884639247857
+          },
+          {
+            "feature": "ch3:me ",
+            "this_pov_value": 0.0114872200556644,
+            "others_mean": 0.0,
+            "delta": 0.0114872200556644,
+            "log2_ratio": 23.453526367577783
+          },
+          {
+            "feature": "ch3:e h",
+            "this_pov_value": 0.0114872200556644,
+            "others_mean": 0.0,
+            "delta": 0.0114872200556644,
+            "log2_ratio": 23.453526367577783
+          }
+        ],
+        "char_ngrams_4": [
+          {
+            "feature": "ch4:ver ",
+            "this_pov_value": 0.01709034412085551,
+            "others_mean": 0.0,
+            "delta": 0.01709034412085551,
+            "log2_ratio": 24.026678110754755
+          },
+          {
+            "feature": "ch4: he ",
+            "this_pov_value": 0.017011834319526627,
+            "others_mean": 0.0,
+            "delta": 0.017011834319526627,
+            "log2_ratio": 24.02003537376109
+          },
+          {
+            "feature": "ch4:and ",
+            "this_pov_value": 0.00558659217877095,
+            "others_mean": 0.01818181818181818,
+            "delta": -0.01259522600304723,
+            "log2_ratio": -1.7024560637395967
+          },
+          {
+            "feature": "ch4:d th",
+            "this_pov_value": 0.00558659217877095,
+            "others_mean": 0.01818181818181818,
+            "delta": -0.01259522600304723,
+            "log2_ratio": -1.7024560637395967
+          },
+          {
+            "feature": "ch4:ed t",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.012121212121212121,
+            "log2_ratio": -23.531030639740447
+          },
+          {
+            "feature": "ch4: rai",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.012121212121212121,
+            "log2_ratio": -23.531030639740447
+          },
+          {
+            "feature": "ch4:nd w",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.012121212121212121,
+            "log2_ratio": -23.531030639740447
+          },
+          {
+            "feature": "ch4:d wa",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.012121212121212121,
+            "log2_ratio": -23.531030639740447
+          },
+          {
+            "feature": "ch4:rain",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.012121212121212121,
+            "log2_ratio": -23.531030639740447
+          },
+          {
+            "feature": "ch4:ain ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.012121212121212121,
+            "log2_ratio": -23.531030639740447
+          },
+          {
+            "feature": "ch4: ove",
+            "this_pov_value": 0.0111731843575419,
+            "others_mean": 0.0,
+            "delta": 0.0111731843575419,
+            "log2_ratio": 23.413537076722005
+          },
+          {
+            "feature": "ch4:over",
+            "this_pov_value": 0.0111731843575419,
+            "others_mean": 0.0,
+            "delta": 0.0111731843575419,
+            "log2_ratio": 23.413537076722005
+          },
+          {
+            "feature": "ch4: the",
+            "this_pov_value": 0.01675977653631285,
+            "others_mean": 0.023484848484848487,
+            "delta": -0.006725071948535638,
+            "log2_ratio": -0.4867273726841597
+          },
+          {
+            "feature": "ch4: and",
+            "this_pov_value": 0.00558659217877095,
+            "others_mean": 0.012121212121212121,
+            "delta": -0.006534619942441171,
+            "log2_ratio": -1.1174935630184406
+          },
+          {
+            "feature": "ch4:he f",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006060606060606061,
+            "delta": -0.006060606060606061,
+            "log2_ratio": -22.531030639740447
+          }
+        ],
+        "char_ngrams_5": [
+          {
+            "feature": "ch5:d the",
+            "this_pov_value": 0.005594405594405594,
+            "others_mean": 0.018209408194233688,
+            "delta": -0.012615002599828094,
+            "log2_ratio": -1.7026272773788562
+          },
+          {
+            "feature": "ch5:ed th",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012139605462822459,
+            "delta": -0.012139605462822459,
+            "log2_ratio": -23.533218198978208
+          },
+          {
+            "feature": "ch5:and w",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012139605462822459,
+            "delta": -0.012139605462822459,
+            "log2_ratio": -23.533218198978208
+          },
+          {
+            "feature": "ch5:nd wa",
+            "this_pov_value": 0.0,
+            "others_mean": 0.012139605462822459,
+            "delta": -0.012139605462822459,
+            "log2_ratio": -23.533218198978208
+          },
+          {
+            "feature": "ch5: over",
+            "this_pov_value": 0.011188811188811189,
+            "others_mean": 0.0,
+            "delta": 0.011188811188811189,
+            "log2_ratio": 23.41555342232051
+          },
+          {
+            "feature": "ch5:over ",
+            "this_pov_value": 0.011188811188811189,
+            "others_mean": 0.0,
+            "delta": 0.011188811188811189,
+            "log2_ratio": 23.41555342232051
+          },
+          {
+            "feature": "ch5: and ",
+            "this_pov_value": 0.005594405594405594,
+            "others_mean": 0.012139605462822459,
+            "delta": -0.006545199868416864,
+            "log2_ratio": -1.1176647766577001
+          },
+          {
+            "feature": "ch5:the f",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5:he fe",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5:e fer",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5: ferr",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5:ferry",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5:erry ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5:rry l",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          },
+          {
+            "feature": "ch5:ry le",
+            "this_pov_value": 0.0,
+            "others_mean": 0.006069802731411229,
+            "delta": -0.006069802731411229,
+            "log2_ratio": -22.533218198978208
+          }
+        ],
+        "function_words": [
+          {
+            "feature": "he",
+            "this_pov_value": 0.08333333333333333,
+            "others_mean": 0.0,
+            "delta": 0.08333333333333333,
+            "log2_ratio": 26.312390353265105
+          },
+          {
+            "feature": "over",
+            "this_pov_value": 0.06666666666666667,
+            "others_mean": 0.0,
+            "delta": 0.06666666666666667,
+            "log2_ratio": 25.990462258377743
+          },
+          {
+            "feature": "and",
+            "this_pov_value": 0.03333333333333333,
+            "others_mean": 0.07142857142857142,
+            "delta": -0.03809523809523809,
+            "log2_ratio": -1.0995356735509143
+          },
+          {
+            "feature": "again",
+            "this_pov_value": 0.0,
+            "others_mean": 0.03571428571428571,
+            "delta": -0.03571428571428571,
+            "log2_ratio": -25.089997931928657
+          },
+          {
+            "feature": "for",
+            "this_pov_value": 0.0,
+            "others_mean": 0.03571428571428571,
+            "delta": -0.03571428571428571,
+            "log2_ratio": -25.089997931928657
+          },
+          {
+            "feature": "their",
+            "this_pov_value": 0.0,
+            "others_mean": 0.03571428571428571,
+            "delta": -0.03571428571428571,
+            "log2_ratio": -25.089997931928657
+          },
+          {
+            "feature": "this",
+            "this_pov_value": 0.0,
+            "others_mean": 0.03571428571428571,
+            "delta": -0.03571428571428571,
+            "log2_ratio": -25.089997931928657
+          },
+          {
+            "feature": "a",
+            "this_pov_value": 0.027777777777777776,
+            "others_mean": 0.0,
+            "delta": 0.027777777777777776,
+            "log2_ratio": 24.727427852543947
+          },
+          {
+            "feature": "all",
+            "this_pov_value": 0.027777777777777776,
+            "others_mean": 0.0,
+            "delta": 0.027777777777777776,
+            "log2_ratio": 24.727427852543947
+          },
+          {
+            "feature": "his",
+            "this_pov_value": 0.027777777777777776,
+            "others_mean": 0.0,
+            "delta": 0.027777777777777776,
+            "log2_ratio": 24.727427852543947
+          },
+          {
+            "feature": "in",
+            "this_pov_value": 0.027777777777777776,
+            "others_mean": 0.0,
+            "delta": 0.027777777777777776,
+            "log2_ratio": 24.727427852543947
+          },
+          {
+            "feature": "some",
+            "this_pov_value": 0.027777777777777776,
+            "others_mean": 0.0,
+            "delta": 0.027777777777777776,
+            "log2_ratio": 24.727427852543947
+          },
+          {
+            "feature": "at",
+            "this_pov_value": 0.027777777777777776,
+            "others_mean": 0.03571428571428571,
+            "delta": -0.007936507936507936,
+            "log2_ratio": -0.36257007938470825
+          },
+          {
+            "feature": "the",
+            "this_pov_value": 0.1,
+            "others_mean": 0.10714285714285714,
+            "delta": -0.007142857142857131,
+            "log2_ratio": -0.09953567355091422
+          },
+          {
+            "feature": "about",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ],
+        "paragraph_dialogue": [
+          {
+            "feature": "paragraph_count_per_1000_words",
+            "this_pov_value": 61.111111111111114,
+            "others_mean": 71.42857142857143,
+            "delta": -10.317460317460316,
+            "log2_ratio": -0.22506655563477324
+          },
+          {
+            "feature": "paragraph_words_mean",
+            "this_pov_value": 16.5,
+            "others_mean": 14.0,
+            "delta": 2.5,
+            "log2_ratio": 0.23703919730084938
+          },
+          {
+            "feature": "dialogue_paragraph_ratio",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "paragraph_words_sd",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "quote_span_words_mean",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "quoted_word_ratio",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "short_paragraph_ratio",
+            "this_pov_value": 1.0,
+            "others_mean": 1.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ],
+        "pronoun_modal_negation": [
+          {
+            "feature": "third_person_singular_per_1000",
+            "this_pov_value": 111.1111111111111,
+            "others_mean": 0.0,
+            "delta": 111.1111111111111,
+            "log2_ratio": 36.69321213720603
+          },
+          {
+            "feature": "third_person_plural_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 35.714285714285715,
+            "delta": -35.714285714285715,
+            "log2_ratio": -35.05578221659074
+          },
+          {
+            "feature": "negation_per_1000",
+            "this_pov_value": 27.777777777777775,
+            "others_mean": 0.0,
+            "delta": 27.777777777777775,
+            "log2_ratio": 34.69321213720603
+          },
+          {
+            "feature": "contractions_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "first_person_plural_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "first_person_singular_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "hedge_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "modal_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "second_person_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ],
+        "punctuation": [
+          {
+            "feature": "punct_per_100_words",
+            "this_pov_value": 18.333333333333332,
+            "others_mean": 14.285714285714285,
+            "delta": 4.0476190476190474,
+            "log2_ratio": 0.35989594508638295
+          },
+          {
+            "feature": "comma_per_100_words",
+            "this_pov_value": 3.3333333333333335,
+            "others_mean": 0.0,
+            "delta": 3.3333333333333335,
+            "log2_ratio": 31.634318448152467
+          },
+          {
+            "feature": "semicolon_per_100_words",
+            "this_pov_value": 2.7777777777777777,
+            "others_mean": 0.0,
+            "delta": 2.7777777777777777,
+            "log2_ratio": 31.371284042318674
+          },
+          {
+            "feature": "colon_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "dash_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "ellipsis_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "exclamation_per_100_sentences",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "paren_pair_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "question_per_100_sentences",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "quote_mark_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "terminal_punct_per_sentence",
+            "this_pov_value": 1.0,
+            "others_mean": 1.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ]
+      },
+      "b": {
+        "char_ngrams_3": [
+          {
+            "feature": "ch3:rai",
+            "this_pov_value": 0.018154311649016642,
+            "others_mean": 0.0,
+            "delta": 0.018154311649016642,
+            "log2_ratio": 24.113808893199725
+          },
+          {
+            "feature": "ch3:ain",
+            "this_pov_value": 0.018154311649016642,
+            "others_mean": 0.0,
+            "delta": 0.018154311649016642,
+            "log2_ratio": 24.113808893199725
+          },
+          {
+            "feature": "ch3:ver",
+            "this_pov_value": 0.0,
+            "others_mean": 0.017066020613544453,
+            "delta": -0.017066020613544453,
+            "log2_ratio": -24.024623359929873
+          },
+          {
+            "feature": "ch3:er ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.017066020613544453,
+            "delta": -0.017066020613544453,
+            "log2_ratio": -24.024623359929873
+          },
+          {
+            "feature": "ch3:he ",
+            "this_pov_value": 0.018154311649016642,
+            "others_mean": 0.034461660166993195,
+            "delta": -0.016307348517976553,
+            "log2_ratio": -0.9246799750992132
+          },
+          {
+            "feature": "ch3: th",
+            "this_pov_value": 0.029500756429652043,
+            "others_mean": 0.016736401673640166,
+            "delta": 0.012764354756011877,
+            "log2_ratio": 0.8177625653353054
+          },
+          {
+            "feature": "ch3:and",
+            "this_pov_value": 0.018154311649016642,
+            "others_mean": 0.005578800557880056,
+            "delta": 0.012575511091136585,
+            "log2_ratio": 1.7022853479153695
+          },
+          {
+            "feature": "ch3:nd ",
+            "this_pov_value": 0.018154311649016642,
+            "others_mean": 0.005578800557880056,
+            "delta": 0.012575511091136585,
+            "log2_ratio": 1.7022853479153695
+          },
+          {
+            "feature": "ch3: ra",
+            "this_pov_value": 0.012102874432677761,
+            "others_mean": 0.0,
+            "delta": 0.012102874432677761,
+            "log2_ratio": 23.52884639247857
+          },
+          {
+            "feature": "ch3:d w",
+            "this_pov_value": 0.012102874432677761,
+            "others_mean": 0.0,
+            "delta": 0.012102874432677761,
+            "log2_ratio": 23.52884639247857
+          },
+          {
+            "feature": "ch3: wa",
+            "this_pov_value": 0.012102874432677761,
+            "others_mean": 0.0,
+            "delta": 0.012102874432677761,
+            "log2_ratio": 23.52884639247857
+          },
+          {
+            "feature": "ch3:rin",
+            "this_pov_value": 0.012102874432677761,
+            "others_mean": 0.0,
+            "delta": 0.012102874432677761,
+            "log2_ratio": 23.52884639247857
+          },
+          {
+            "feature": "ch3:pri",
+            "this_pov_value": 0.012102874432677761,
+            "others_mean": 0.0,
+            "delta": 0.012102874432677761,
+            "log2_ratio": 23.52884639247857
+          },
+          {
+            "feature": "ch3:me ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0114872200556644,
+            "delta": -0.0114872200556644,
+            "log2_ratio": -23.453526367577783
+          },
+          {
+            "feature": "ch3:e h",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0114872200556644,
+            "delta": -0.0114872200556644,
+            "log2_ratio": -23.453526367577783
+          }
+        ],
+        "char_ngrams_4": [
+          {
+            "feature": "ch4:ver ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.01709034412085551,
+            "delta": -0.01709034412085551,
+            "log2_ratio": -24.026678110754755
+          },
+          {
+            "feature": "ch4: he ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.017011834319526627,
+            "delta": -0.017011834319526627,
+            "log2_ratio": -24.02003537376109
+          },
+          {
+            "feature": "ch4:and ",
+            "this_pov_value": 0.01818181818181818,
+            "others_mean": 0.00558659217877095,
+            "delta": 0.01259522600304723,
+            "log2_ratio": 1.7024560637395967
+          },
+          {
+            "feature": "ch4:d th",
+            "this_pov_value": 0.01818181818181818,
+            "others_mean": 0.00558659217877095,
+            "delta": 0.01259522600304723,
+            "log2_ratio": 1.7024560637395967
+          },
+          {
+            "feature": "ch4:ed t",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.0,
+            "delta": 0.012121212121212121,
+            "log2_ratio": 23.531030639740447
+          },
+          {
+            "feature": "ch4: rai",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.0,
+            "delta": 0.012121212121212121,
+            "log2_ratio": 23.531030639740447
+          },
+          {
+            "feature": "ch4:nd w",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.0,
+            "delta": 0.012121212121212121,
+            "log2_ratio": 23.531030639740447
+          },
+          {
+            "feature": "ch4:d wa",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.0,
+            "delta": 0.012121212121212121,
+            "log2_ratio": 23.531030639740447
+          },
+          {
+            "feature": "ch4:rain",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.0,
+            "delta": 0.012121212121212121,
+            "log2_ratio": 23.531030639740447
+          },
+          {
+            "feature": "ch4:ain ",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.0,
+            "delta": 0.012121212121212121,
+            "log2_ratio": 23.531030639740447
+          },
+          {
+            "feature": "ch4: ove",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0111731843575419,
+            "delta": -0.0111731843575419,
+            "log2_ratio": -23.413537076722005
+          },
+          {
+            "feature": "ch4:over",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0111731843575419,
+            "delta": -0.0111731843575419,
+            "log2_ratio": -23.413537076722005
+          },
+          {
+            "feature": "ch4: the",
+            "this_pov_value": 0.023484848484848487,
+            "others_mean": 0.01675977653631285,
+            "delta": 0.006725071948535638,
+            "log2_ratio": 0.48672737268415983
+          },
+          {
+            "feature": "ch4: and",
+            "this_pov_value": 0.012121212121212121,
+            "others_mean": 0.00558659217877095,
+            "delta": 0.006534619942441171,
+            "log2_ratio": 1.1174935630184404
+          },
+          {
+            "feature": "ch4:he f",
+            "this_pov_value": 0.006060606060606061,
+            "others_mean": 0.0,
+            "delta": 0.006060606060606061,
+            "log2_ratio": 22.531030639740447
+          }
+        ],
+        "char_ngrams_5": [
+          {
+            "feature": "ch5:d the",
+            "this_pov_value": 0.018209408194233688,
+            "others_mean": 0.005594405594405594,
+            "delta": 0.012615002599828094,
+            "log2_ratio": 1.7026272773788562
+          },
+          {
+            "feature": "ch5:ed th",
+            "this_pov_value": 0.012139605462822459,
+            "others_mean": 0.0,
+            "delta": 0.012139605462822459,
+            "log2_ratio": 23.533218198978208
+          },
+          {
+            "feature": "ch5:and w",
+            "this_pov_value": 0.012139605462822459,
+            "others_mean": 0.0,
+            "delta": 0.012139605462822459,
+            "log2_ratio": 23.533218198978208
+          },
+          {
+            "feature": "ch5:nd wa",
+            "this_pov_value": 0.012139605462822459,
+            "others_mean": 0.0,
+            "delta": 0.012139605462822459,
+            "log2_ratio": 23.533218198978208
+          },
+          {
+            "feature": "ch5: over",
+            "this_pov_value": 0.0,
+            "others_mean": 0.011188811188811189,
+            "delta": -0.011188811188811189,
+            "log2_ratio": -23.41555342232051
+          },
+          {
+            "feature": "ch5:over ",
+            "this_pov_value": 0.0,
+            "others_mean": 0.011188811188811189,
+            "delta": -0.011188811188811189,
+            "log2_ratio": -23.41555342232051
+          },
+          {
+            "feature": "ch5: and ",
+            "this_pov_value": 0.012139605462822459,
+            "others_mean": 0.005594405594405594,
+            "delta": 0.006545199868416864,
+            "log2_ratio": 1.1176647766577001
+          },
+          {
+            "feature": "ch5:the f",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5:he fe",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5:e fer",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5: ferr",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5:ferry",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5:erry ",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5:rry l",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          },
+          {
+            "feature": "ch5:ry le",
+            "this_pov_value": 0.006069802731411229,
+            "others_mean": 0.0,
+            "delta": 0.006069802731411229,
+            "log2_ratio": 22.533218198978208
+          }
+        ],
+        "function_words": [
+          {
+            "feature": "he",
+            "this_pov_value": 0.0,
+            "others_mean": 0.08333333333333333,
+            "delta": -0.08333333333333333,
+            "log2_ratio": -26.312390353265105
+          },
+          {
+            "feature": "over",
+            "this_pov_value": 0.0,
+            "others_mean": 0.06666666666666667,
+            "delta": -0.06666666666666667,
+            "log2_ratio": -25.990462258377743
+          },
+          {
+            "feature": "and",
+            "this_pov_value": 0.07142857142857142,
+            "others_mean": 0.03333333333333333,
+            "delta": 0.03809523809523809,
+            "log2_ratio": 1.0995356735509143
+          },
+          {
+            "feature": "again",
+            "this_pov_value": 0.03571428571428571,
+            "others_mean": 0.0,
+            "delta": 0.03571428571428571,
+            "log2_ratio": 25.089997931928657
+          },
+          {
+            "feature": "for",
+            "this_pov_value": 0.03571428571428571,
+            "others_mean": 0.0,
+            "delta": 0.03571428571428571,
+            "log2_ratio": 25.089997931928657
+          },
+          {
+            "feature": "their",
+            "this_pov_value": 0.03571428571428571,
+            "others_mean": 0.0,
+            "delta": 0.03571428571428571,
+            "log2_ratio": 25.089997931928657
+          },
+          {
+            "feature": "this",
+            "this_pov_value": 0.03571428571428571,
+            "others_mean": 0.0,
+            "delta": 0.03571428571428571,
+            "log2_ratio": 25.089997931928657
+          },
+          {
+            "feature": "a",
+            "this_pov_value": 0.0,
+            "others_mean": 0.027777777777777776,
+            "delta": -0.027777777777777776,
+            "log2_ratio": -24.727427852543947
+          },
+          {
+            "feature": "all",
+            "this_pov_value": 0.0,
+            "others_mean": 0.027777777777777776,
+            "delta": -0.027777777777777776,
+            "log2_ratio": -24.727427852543947
+          },
+          {
+            "feature": "his",
+            "this_pov_value": 0.0,
+            "others_mean": 0.027777777777777776,
+            "delta": -0.027777777777777776,
+            "log2_ratio": -24.727427852543947
+          },
+          {
+            "feature": "in",
+            "this_pov_value": 0.0,
+            "others_mean": 0.027777777777777776,
+            "delta": -0.027777777777777776,
+            "log2_ratio": -24.727427852543947
+          },
+          {
+            "feature": "some",
+            "this_pov_value": 0.0,
+            "others_mean": 0.027777777777777776,
+            "delta": -0.027777777777777776,
+            "log2_ratio": -24.727427852543947
+          },
+          {
+            "feature": "at",
+            "this_pov_value": 0.03571428571428571,
+            "others_mean": 0.027777777777777776,
+            "delta": 0.007936507936507936,
+            "log2_ratio": 0.36257007938470837
+          },
+          {
+            "feature": "the",
+            "this_pov_value": 0.10714285714285714,
+            "others_mean": 0.1,
+            "delta": 0.007142857142857131,
+            "log2_ratio": 0.09953567355091437
+          },
+          {
+            "feature": "about",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ],
+        "paragraph_dialogue": [
+          {
+            "feature": "paragraph_count_per_1000_words",
+            "this_pov_value": 71.42857142857143,
+            "others_mean": 61.111111111111114,
+            "delta": 10.317460317460316,
+            "log2_ratio": 0.2250665556347733
+          },
+          {
+            "feature": "paragraph_words_mean",
+            "this_pov_value": 14.0,
+            "others_mean": 16.5,
+            "delta": -2.5,
+            "log2_ratio": -0.2370391973008493
+          },
+          {
+            "feature": "dialogue_paragraph_ratio",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "paragraph_words_sd",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "quote_span_words_mean",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "quoted_word_ratio",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "short_paragraph_ratio",
+            "this_pov_value": 1.0,
+            "others_mean": 1.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ],
+        "pronoun_modal_negation": [
+          {
+            "feature": "third_person_singular_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 111.1111111111111,
+            "delta": -111.1111111111111,
+            "log2_ratio": -36.69321213720603
+          },
+          {
+            "feature": "third_person_plural_per_1000",
+            "this_pov_value": 35.714285714285715,
+            "others_mean": 0.0,
+            "delta": 35.714285714285715,
+            "log2_ratio": 35.05578221659074
+          },
+          {
+            "feature": "negation_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 27.777777777777775,
+            "delta": -27.777777777777775,
+            "log2_ratio": -34.69321213720603
+          },
+          {
+            "feature": "contractions_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "first_person_plural_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "first_person_singular_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "hedge_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "modal_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "second_person_per_1000",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ],
+        "punctuation": [
+          {
+            "feature": "punct_per_100_words",
+            "this_pov_value": 14.285714285714285,
+            "others_mean": 18.333333333333332,
+            "delta": -4.0476190476190474,
+            "log2_ratio": -0.3598959450863828
+          },
+          {
+            "feature": "comma_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 3.3333333333333335,
+            "delta": -3.3333333333333335,
+            "log2_ratio": -31.634318448152467
+          },
+          {
+            "feature": "semicolon_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 2.7777777777777777,
+            "delta": -2.7777777777777777,
+            "log2_ratio": -31.371284042318674
+          },
+          {
+            "feature": "colon_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "dash_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "ellipsis_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "exclamation_per_100_sentences",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "paren_pair_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "question_per_100_sentences",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "quote_mark_per_100_words",
+            "this_pov_value": 0.0,
+            "others_mean": 0.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          },
+          {
+            "feature": "terminal_punct_per_sentence",
+            "this_pov_value": 1.0,
+            "others_mean": 1.0,
+            "delta": 0.0,
+            "log2_ratio": 0.0
+          }
+        ]
+      }
+    },
+    "voice_collapse_verdict": []
+  },
+  "claim_license": {
+    "task_surface": "voice_coherence",
+    "licenses": "Per-POV voiceprint summary, pairwise POV voice-distance matrix, POV-vs-corpus-mean distance, top distinguishing features per POV, and a heuristic voice-collapse verdict flagging pairs of POVs whose pairwise Burrows-Delta falls below the configured threshold.",
+    "does_not_license": "AI provenance, authorship attribution across writers, or a claim that the writer's POVs are 'good' or 'bad.' The voice-collapse verdict is a diagnostic flag, not a craft judgment \u2014 collapsed POVs may be intentional (close third with limited POV differentiation) or symptomatic (writer's neutral default leaking into multiple characters); the writer's local read decides.",
+    "comparison_set": {
+      "n_povs": 2,
+      "pov_labels": [
+        "a",
+        "b"
+      ],
+      "n_docs_per_pov": {
+        "a": 2,
+        "b": 2
+      },
+      "n_words_per_pov": {
+        "a": 264,
+        "b": 224
+      },
+      "n_collapse_flags": 0,
+      "manifest_path": "consumer-pov.jsonl"
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "POV voice-collapse is a heuristic flag, not a craft verdict. Close-third narration with deliberately limited POV differentiation will register as collapsed; the writer's intent matters more than the score.",
+      "Per-POV voiceprints are voice-cloning-grade input. The script enforces a privacy ratchet by refusing public output paths unless `--allow-public-output` is set.",
+      "Burrows Delta between POVs is sensitive to per-POV corpus size. Below ~5K words per POV the comparison becomes noisy; the `--min-words-per-pov` gate is the right place to tune this."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** Per-POV voiceprint summary, pairwise POV voice-distance matrix, POV-vs-corpus-mean distance, top distinguishing features per POV, and a heuristic voice-collapse verdict flagging pairs of POVs whose pairwise Burrows-Delta falls below the configured threshold.\n\n**Does NOT report:** AI provenance, authorship attribution across writers, or a claim that the writer's POVs are 'good' or 'bad.' The voice-collapse verdict is a diagnostic flag, not a craft judgment \u2014 collapsed POVs may be intentional (close third with limited POV differentiation) or symptomatic (writer's neutral default leaking into multiple characters); the writer's local read decides.\n\n### Comparison context\n\n- **manifest path:** consumer-pov.jsonl\n- **n collapse flags:** 0\n- **n docs per pov:** {'a': 2, 'b': 2}\n- **n povs:** 2\n- **n words per pov:** {'a': 264, 'b': 224}\n- **pov labels:** ['a', 'b']\n\n### Caveats\n\n- POV voice-collapse is a heuristic flag, not a craft verdict. Close-third narration with deliberately limited POV differentiation will register as collapsed; the writer's intent matters more than the score.\n- Per-POV voiceprints are voice-cloning-grade input. The script enforces a privacy ratchet by refusing public output paths unless `--allow-public-output` is set.\n- Burrows Delta between POVs is sensitive to per-POV corpus size. Below ~5K words per POV the comparison becomes noisy; the `--min-words-per-pov` gate is the right place to tune this.",
+  "warnings": [],
+  "ai_status": null
+}
