@@ -146,6 +146,7 @@ _Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readi
 | `narratorial_distance_audit` | Heuristic (uncalibrated) | Yes | --verb-lexicon to override the perception/cognition verb set (optional) | req: spacy | CPU + spaCy model | 1500 |
 | `originality_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `paragraph_audit` | Heuristic (uncalibrated) | Yes | input (required); register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
+| `period_lm_contrast` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: torch, transformers | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 15 |
 | `period_ruler` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: torch, transformers | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 15 |
 | `phrase_overuse_profile` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `phraseological_signature_audit` | Heuristic (uncalibrated) | No | target (required); register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
