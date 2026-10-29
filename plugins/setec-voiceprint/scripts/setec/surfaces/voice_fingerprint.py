@@ -117,8 +117,16 @@ MODEL_ALIASES: dict[str, str] = {
     "wegmann": "AnnaWegmann/Style-Embedding",
     "styledistance": "StyleDistance/styledistance",
     "muar": "rrivera1849/mUAR",
+    "star": "AIDA-UPM/star",
 }
 DEFAULT_MODEL = "luar"
+
+# STAR (Huertas-Tato et al., arXiv:2310.11081) is the style scorer the
+# 2026 author-style-transfer papers report (AuthorMix, the steering /
+# hypernetwork study). Its weights card and code repository declare NO
+# license (checked 2026-10-29: no license tag on AIDA-UPM/star, no LICENSE
+# in github.com/jahuerta92/star). It loads by default for private research use
+# (owner ruling 2026-10-28) and its caveat names the missing license.
 
 # mUAR's intended publisher id is registered as an alias, but NO public checkpoint exists yet —
 # verified against the publisher inventory (https://huggingface.co/rrivera1849/models lists only
@@ -467,7 +475,65 @@ class _MUAREncoder:
         return _unit_normalize_rows(vecs)
 
 
-def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
+class _STAREncoder:
+    """Real-path STAR encoder (``AIDA-UPM/star``). Constructed lazily by
+    ``_load_encoder``; NEVER executed in tests (the suite stubs the loader).
+
+    Integration details (model card + github.com/jahuerta92/star model.py):
+      * RoBERTa-large ``AutoModel``; the repository ships its tokenizer.
+      * The embedding is ``pooler_output`` — STAR was trained through the
+        pooler (model.py returns ``.pooler_output``), unlike StyleDistance,
+        whose pooler is untrained and must be skipped.
+      * Inputs truncate at 512 tokens (the training CHUNK_SIZE).
+      * Rows are L2-normalized before return.
+    """
+
+    def __init__(self, model_id: str, device: str | None = None) -> None:
+        self.model_id = model_id
+        self._device = device
+        self._tokenizer: Any = None
+        self._model: Any = None
+        self._torch: Any = None
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
+        import torch  # type: ignore
+        from transformers import AutoModel, AutoTokenizer  # type: ignore
+
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        self._model = AutoModel.from_pretrained(self.model_id)
+        getattr(self._model, "eval")()
+        if self._device:
+            self._model.to(self._device)
+        self._torch = torch
+
+    def encode(self, texts: list[str]) -> Any:
+        import numpy as np  # type: ignore
+
+        if not texts:
+            return np.empty((0, 0), dtype="float32")
+        self._load()
+        torch = self._torch
+        enc = self._tokenizer(
+            texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=512,
+        )
+        if self._device:
+            enc = {k: v.to(self._device) for k, v in enc.items()}
+        with torch.no_grad():
+            out = self._model(**enc)
+        vecs = out.pooler_output.float().detach().cpu().numpy().astype("float32")
+        return _unit_normalize_rows(vecs)
+
+
+def _load_encoder(
+    model: str,
+    device: str | None = None,
+) -> StyleEncoder:
     """Return a frozen style encoder for ``model``.
 
     INJECTION POINT. Tests monkeypatch this function to return a
@@ -493,6 +559,7 @@ def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
     is_muar = (
         model == "muar" or resolved == MODEL_ALIASES["muar"]
     )
+    is_star = model == "star" or resolved == MODEL_ALIASES["star"]
     # Gate on transformers presence up front so the error is clean and
     # actionable regardless of which encoder was requested. (LUAR /
     # StyleDistance / mUAR use transformers directly; sentence-
@@ -538,6 +605,8 @@ def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
         return _StyleDistanceEncoder(resolved, device=device)
     if is_muar:
         return _MUAREncoder(resolved, device=device)
+    if is_star:
+        return _STAREncoder(resolved, device=device)
     return _LUAREncoder(resolved, device=device)
 
 
@@ -873,6 +942,18 @@ _MUAR_CONTENT_CAVEAT = (
     "silent default of an encoder swap."
 )
 
+_STAR_CONTENT_CAVEAT = (
+    "Content control: STAR (`AIDA-UPM/star`, arXiv:2310.11081) is a "
+    "supervised-contrastive authorship encoder trained on social-media "
+    "text, so its manifold carries REGISTER SKEW toward short informal "
+    "posts and, like every learned manifold, topic leakage. It is the "
+    "style scorer the author-style-transfer literature reports, which "
+    "makes it useful for comparison with published numbers, not more "
+    "content-independent than StyleDistance. Its weights declare no "
+    "license: it loads for private research use; check its terms before any "
+    "other use."
+)
+
 
 def _content_control_caveat(model_id: str) -> str:
     """Pick the per-encoder content-control caveat by resolved
@@ -883,6 +964,8 @@ def _content_control_caveat(model_id: str) -> str:
         return _STYLEDISTANCE_CONTENT_CAVEAT
     if model_id in ("muar", MODEL_ALIASES["muar"]):
         return _MUAR_CONTENT_CAVEAT
+    if model_id in ("star", MODEL_ALIASES["star"]):
+        return _STAR_CONTENT_CAVEAT
     if model_id in ("wegmann", MODEL_ALIASES["wegmann"]):
         return _WEGMANN_CONTENT_CAVEAT
     return _LUAR_CONTENT_CAVEAT
@@ -1105,7 +1188,9 @@ def _build_argparser() -> argparse.ArgumentParser:
             "rrivera1849/LUAR-MUD, Apache-2.0), `wegmann` "
             "(AnnaWegmann/Style-Embedding, via sentence-transformers), "
             "`styledistance` (more content-independent, arXiv:2410.12757), "
-            "`muar` (multilingual, arXiv:2509.16531), or a full "
+            "`muar` (multilingual, arXiv:2509.16531), `star` "
+            "(AIDA-UPM/star, arXiv:2310.11081; no declared license, for "
+            "private research use), or a full "
             "HuggingFace id. Cross-encoder cosines are NOT comparable. "
             "Default: %(default)s."
         ),
