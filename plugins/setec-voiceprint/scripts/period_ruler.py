@@ -31,13 +31,20 @@ https://github.com/Historical-AI-Lab/Chronologic-EN) onto SETEC's envelope:
      W1 / mean q set the 100 point of each 0-100 fidelity score; their 95%
      interval is the noise floor the observed set is read against.
 
-  5. Architecture band (third channel, from the p22 answer's Score A): each
-     candidate is cut into ~1,000-word windows; Spec 99-style syntax features
+  5. Architecture band, the PRIMARY channel (p22 answers: Fable's Score A with
+     GPT Pro's panel amendments; date and authenticity are secondary
+     diagnostics that never bar or pass an arm alone): each candidate is cut
+     into complete 500-800-word scene windows (paragraph or sentence
+     boundaries, scene breaks always close a window); Spec 99-style syntax features
      (root deferral, pre-root load, weighted clause depth, hypotaxis and
      parataxis, mean dependency distance and its IQR, interruptions, sentence
      length mean / IQR / W1 to the pool, long-then-short turns) become mid-rank
-     percentiles against length-matched REAL windows (pool-wide, no date
-     window; reference windows leave their own group out). A window is in band
+     percentiles against REAL windows matched on length, dialogue share and
+     narrative mode (thin cells fall back to length and dialogue, then length;
+     pool-wide, no date window; reference windows leave their own group out).
+     An energy distance of the arm's standardized feature vectors from matched
+     real windows is read against a human-vs-human band built from
+     work-disjoint halves of the reference. A window is in band
      on a feature between the 10th and 90th percentile; the set reports its
      in-band share, a SIGNED displacement (over or under, never "more is
      better"), W1 of all percentiles from uniform, per-feature readings, and a
@@ -61,6 +68,7 @@ import hashlib
 import json
 import math
 import random
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -405,14 +413,22 @@ def simulate_null(reference, profile: Counter, n_null: int, rng: random.Random):
 
 
 # ---------------------------------------------------------------------------
-# Architecture band (p22 answer, section 2, Score A): Spec 99-style syntax
-# features of ~1,000-word windows as percentiles against length-matched real
-# windows, read as a 10-90 band with signed displacement, beside a stdlib
-# degradation veto. Pool-wide (no date window): the register is one period.
+# Architecture band, the primary channel of the panel (p22 answers: Fable's
+# Score A with GPT Pro's amendments). Spec 99-style syntax features of complete
+# 500-800-word scene windows, cut at paragraph or sentence boundaries, become
+# percentiles against real windows matched on length, dialogue share and
+# narrative mode; read as a 10-90 band with signed displacement, a
+# multivariate energy distance against a work-disjoint human-vs-human band,
+# and a stdlib degradation veto. Pool-wide (no date window): one period.
 # ---------------------------------------------------------------------------
 
-DEFAULT_ARCH_WINDOW_WORDS = 1000
-ARCH_MIN_WINDOW_FRACTION = 0.6
+DEFAULT_SCENE_MIN_WORDS = 500
+DEFAULT_SCENE_MAX_WORDS = 800
+DIALOGUE_BINS = 3
+FIRST_PERSON_PER_100 = 2.0
+ENERGY_MAX_WINDOWS = 200
+ENERGY_ARM_DRAWS = 20
+ENERGY_NULL_DRAWS = 200
 BAND_LO, BAND_HI = 0.10, 0.90
 VETO_NGRAM, VETO_REPEATS = 4, 3
 SUBORD_DEPS = frozenset({"advcl", "ccomp", "xcomp", "acl", "relcl"})
@@ -422,14 +438,59 @@ _INTERRUPTERS = frozenset({";", ":", "(", ")", "-", "--"})
 FeatureFn = Callable[[str], dict[str, float | None]]
 
 
-def split_windows(text: str, window_words: int) -> list[str]:
-    """Consecutive windows of ``window_words`` words; a short tail under
-    ``ARCH_MIN_WINDOW_FRACTION`` of a window is dropped unless it is the only one."""
-    words = text.split()
-    out = [" ".join(words[i:i + window_words]) for i in range(0, len(words), window_words)]
-    if len(out) > 1 and len(out[-1].split()) < ARCH_MIN_WINDOW_FRACTION * window_words:
-        out.pop()
-    return out
+_SCENE_BREAK = re.compile(r"^\s*(?:(?:\*\s*){3,}|#{1,3}\s*$|(?:CHAPTER|Chapter|BOOK|Book)\b.*)$")
+_SENTENCE_END = re.compile(r"(?<=[.!?][\"')\]])\s+|(?<=[.!?])\s+")
+
+
+def split_scene_windows(text: str, min_words: int, max_words: int) -> list[str]:
+    """Complete windows of ``min_words`` to ``max_words`` words, never cut inside a
+    sentence. Paragraph ends are preferred cut points; a scene break (a row of
+    asterisks, a chapter heading) always closes the window. A remainder under
+    ``min_words`` is dropped, unless the text has no other window."""
+    windows: list[str] = []
+    buf: list[str] = []
+    n_buf = 0
+
+    def flush(force: bool = False) -> None:
+        nonlocal buf, n_buf
+        if buf and (n_buf >= min_words or force):
+            windows.append(" ".join(buf))
+        buf, n_buf = [], 0
+
+    for para in re.split(r"\n\s*\n", text):
+        if _SCENE_BREAK.match(para.strip()):
+            flush()
+            continue
+        for sent in (x for x in _SENTENCE_END.split(" ".join(para.split())) if x):
+            n = len(sent.split())
+            if buf and n_buf + n > max_words and n_buf >= min_words:
+                flush()
+            buf.append(sent)
+            n_buf += n
+        if n_buf >= min_words:
+            flush()
+    if not windows and buf:
+        flush(force=True)
+    else:
+        flush()
+    return windows
+
+
+_QUOTED = re.compile(r'"[^"]*"')
+_FIRST_PERSON = frozenset({"i", "me", "my", "mine", "myself", "we", "us", "our", "ours"})
+
+
+def narrative_strata(text: str) -> dict[str, float | str]:
+    """Dialogue share (words inside double quotes, after typography folding) and
+    narrative mode (first person when I/me/my/we... outside quotes reach
+    ``FIRST_PERSON_PER_100`` per 100 words)."""
+    t = normalize_typography(text)
+    total = max(1, len(t.split()))
+    quoted = sum(len(m.group(0).split()) for m in _QUOTED.finditer(t))
+    outside = [w.strip(".,;:!?'()").lower() for w in _QUOTED.sub(" ", t).split()]
+    fp = 100 * sum(w in _FIRST_PERSON for w in outside) / max(1, len(outside))
+    return {"dialogue_share": quoted / total,
+            "narrative_mode": "first_person" if fp >= FIRST_PERSON_PER_100 else "third_person"}
 
 
 def _quantile(xs: list[float], p: float) -> float | None:
@@ -542,13 +603,13 @@ def q_mid(value: float, reference: list[float]) -> float | None:
     return (below + 0.5 * equal) / len(reference)
 
 
-def build_windows(rows, *, window_words: int, feature_fn: FeatureFn | None, kind: str):
+def build_windows(rows, *, scene_words: tuple[int, int], feature_fn: FeatureFn | None, kind: str):
     """Rows carrying ``architecture_features`` are one window each; others are cut
-    into windows and featurized."""
+    into scene windows and featurized."""
     out = []
     for r in rows:
         given = r.get("architecture_features")
-        texts = [r["text"]] if given else split_windows(r["text"], window_words)
+        texts = [r["text"]] if given else split_scene_windows(r["text"], *scene_words)
         for i, t in enumerate(texts):
             if given:
                 feats = dict(given)
@@ -557,13 +618,25 @@ def build_windows(rows, *, window_words: int, feature_fn: FeatureFn | None, kind
             else:
                 feats = feature_fn(t)
             out.append({"id": f"{r['id']}#{i}", "group": r.get("group"), "n_words": count_words(t),
-                        "features": feats, **degradation_signals(t)})
+                        "features": feats, **degradation_signals(t), **narrative_strata(t)})
     return out
 
 
-def _arch_percentiles(win, pool_by_bin, names, len_points, exclude_group=None):
-    pool = [p for p in pool_by_bin.get(win["length_bin"], [])
-            if exclude_group is None or p["group"] != exclude_group]
+def _matched_pool(win, pools, exclude_group=None):
+    """Reference windows matched on (length bin, dialogue bin, narrative mode),
+    falling back to (length, dialogue) and then length alone when a cell holds
+    fewer than ``THIN_CELL`` windows. Returns (pool, level)."""
+    keys = [(win["length_bin"], win["dialogue_bin"], win["narrative_mode"]),
+            (win["length_bin"], win["dialogue_bin"]), (win["length_bin"],)]
+    pool: list[dict[str, Any]] = []
+    for level, key in enumerate(keys):
+        pool = [p for p in pools.get(key, []) if exclude_group is None or p["group"] != exclude_group]
+        if len(pool) >= THIN_CELL:
+            return pool, level
+    return pool, len(keys) - 1
+
+
+def _arch_percentiles(win, pool, names, len_points):
     qs: dict[str, float | None] = {}
     for name in names:
         v = win["features"].get(name)
@@ -603,21 +676,66 @@ def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
+def _standardizer(ref_w, names):
+    stats = {}
+    for name in names:
+        vals = [w["features"][name] for w in ref_w if w["features"].get(name) is not None]
+        mu = _mean(vals)
+        sd = math.sqrt(_mean([(v - mu) ** 2 for v in vals])) or 1.0
+        stats[name] = (mu, sd)
+
+    def vec(w):
+        return [((w["features"].get(n) if w["features"].get(n) is not None else mu) - mu) / sd
+                for n, (mu, sd) in stats.items()]
+    return vec
+
+
+def _mean_dist(xs, ys) -> float:
+    return _mean([math.sqrt(sum((a - b) ** 2 for a, b in zip(x, y))) for x in xs for y in ys])
+
+
+def energy_distance(xs: list[list[float]], ys: list[list[float]]) -> float:
+    """Szekely-Rizzo energy distance (V-statistic, never negative) between two
+    samples of feature vectors: 2E|X-Y| - E|X-X'| - E|Y-Y'|. Zero when the
+    samples coincide; it sees spread as well as location."""
+    return 2 * _mean_dist(xs, ys) - _mean_dist(xs, xs) - _mean_dist(ys, ys)
+
+
+def _draw_matched(profile_wins, pools, rng, groups=None):
+    """One reference window per profile window from its matched pool (optionally
+    restricted to ``groups``)."""
+    out = []
+    for w in profile_wins:
+        pool, _ = _matched_pool(w, pools)
+        if groups is not None:
+            pool = [p for p in pool if p["group"] in groups]
+        if pool:
+            out.append(rng.choice(pool))
+    return out
+
+
 def run_architecture_band(
-    candidates, reference, *, feature_fn: FeatureFn | None, window_words: int,
+    candidates, reference, *, feature_fn: FeatureFn | None, scene_words: tuple[int, int],
     n_length_bins: int, n_null: int, rng: random.Random, include_per_candidate: bool,
 ) -> tuple[dict[str, Any], list[str]]:
     warnings: list[str] = []
-    ref_w = build_windows(reference, window_words=window_words, feature_fn=feature_fn, kind="reference")
-    cand_w = build_windows(candidates, window_words=window_words, feature_fn=feature_fn, kind="candidate")
+    ref_w = build_windows(reference, scene_words=scene_words, feature_fn=feature_fn, kind="reference")
+    cand_w = build_windows(candidates, scene_words=scene_words, feature_fn=feature_fn, kind="candidate")
     if not ref_w or not cand_w:
         raise PeriodRulerError("architecture band needs at least one reference and one candidate window")
     edges = fit_length_edges((w["n_words"] for w in ref_w), n_length_bins)
+    shares = sorted(w["dialogue_share"] for w in ref_w)
+    d_edges = sorted({_percentile(shares, i / DIALOGUE_BINS) for i in range(1, DIALOGUE_BINS)})
     for w in ref_w + cand_w:
         w["length_bin"] = length_bin(w["n_words"], edges)
+        w["dialogue_bin"] = sum(1 for cut in d_edges if w["dialogue_share"] > cut)
     pool_by_bin: dict[int, list[dict[str, Any]]] = {}
+    pools: dict[tuple, list[dict[str, Any]]] = {}
     for w in ref_w:
         pool_by_bin.setdefault(w["length_bin"], []).append(w)
+        for key in ((w["length_bin"], w["dialogue_bin"], w["narrative_mode"]),
+                    (w["length_bin"], w["dialogue_bin"]), (w["length_bin"],)):
+            pools.setdefault(key, []).append(w)
     names = sorted({k for w in ref_w for k, v in w["features"].items()
                     if not k.startswith("_") and v is not None}
                    & {k for w in cand_w for k in w["features"] if not k.startswith("_")})
@@ -634,11 +752,40 @@ def run_architecture_band(
         ratios = sorted(w["distinct_token_ratio"] for w in ws)
         veto_band[b] = (_percentile(ratios, 0.05), _percentile(ratios, 0.95))
     for w in ref_w:
-        w["qs"] = _arch_percentiles(w, pool_by_bin, names, len_points, exclude_group=w["group"])
+        pool, _ = _matched_pool(w, pools, exclude_group=w["group"])
+        w["qs"] = _arch_percentiles(w, pool, names, len_points)
         w["vetoed"] = _vetoed(w, veto_band)
+    match_levels: Counter = Counter()
     for w in cand_w:
-        w["qs"] = _arch_percentiles(w, pool_by_bin, names, len_points)
+        pool, level = _matched_pool(w, pools)
+        match_levels[level] += 1
+        w["qs"] = _arch_percentiles(w, pool, names, len_points)
         w["vetoed"] = _vetoed(w, veto_band)
+    if match_levels[1] or match_levels[2]:
+        warnings.append(f"{match_levels[1] + match_levels[2]} candidate window(s) were matched on length "
+                        "(and dialogue) only, because their full length/dialogue/mode cell was thin")
+
+    # Multivariate read: energy distance of the arm from matched real windows,
+    # against a human-vs-human band from work-disjoint halves of the reference.
+    vec = _standardizer(ref_w, names)
+    live = [w for w in cand_w if not w["vetoed"]]
+    sample = rng.sample(live, min(len(live), ENERGY_MAX_WINDOWS)) if live else []
+    energy = energy_band = None
+    if len(sample) >= 2:
+        arm = [_draw_matched(sample, pools, rng) for _ in range(ENERGY_ARM_DRAWS)]
+        energy = _mean([energy_distance([vec(w) for w in sample], [vec(r) for r in d]) for d in arm if d])
+        groups = sorted({w["group"] for w in ref_w})
+        null_e = []
+        for _ in range(ENERGY_NULL_DRAWS):
+            rng.shuffle(groups)
+            half_a, half_b = set(groups[: len(groups) // 2]), set(groups[len(groups) // 2:])
+            a = _draw_matched(sample, pools, rng, groups=half_a)
+            b = _draw_matched(sample, pools, rng, groups=half_b)
+            if len(a) >= 2 and len(b) >= 2:
+                null_e.append(energy_distance([vec(r) for r in a], [vec(r) for r in b]))
+        if null_e:
+            null_e.sort()
+            energy_band = [_percentile(null_e, 0.5), _percentile(null_e, 0.95)]
 
     observed = _arm_stats(cand_w)
     profile = Counter(w["length_bin"] for w in cand_w)
@@ -681,7 +828,12 @@ def run_architecture_band(
     if any(not w["features"] for w in cand_w):
         warnings.append("some candidate windows yielded no parseable sentences")
     block = {
+        "role": "primary",
         **observed,
+        "energy_distance": energy,
+        "human_vs_human_energy_median_and_95th": energy_band,
+        "energy_band": (None if energy is None or energy_band is None else
+                        "beyond_human_vs_human" if energy > energy_band[1] else "within_human_vs_human"),
         "null_in_band_share_interval_95": share_iv,
         "null_signed_displacement_interval_95": disp_iv,
         "null_w1_interval_95": w1_iv,
@@ -690,14 +842,18 @@ def run_architecture_band(
         "per_feature": per_feature,
         "n_candidate_windows": len(cand_w),
         "n_reference_windows": len(ref_w),
-        "window_words": window_words,
+        "scene_window_words": list(scene_words),
+        "dialogue_bin_edges": d_edges,
+        "candidate_match_levels": {"length_dialogue_mode": match_levels[0],
+                                   "length_dialogue": match_levels[1], "length_only": match_levels[2]},
         "band_percentiles": [BAND_LO, BAND_HI],
         "length_bin_edges_log_words": edges,
         "veto": {"repeated_4gram_at": VETO_REPEATS,
                  "distinct_token_ratio": "outside the reference 5th to 95th percentile for the length bin"},
     }
     if include_per_candidate:
-        block["per_window"] = [{"id": w["id"], "length_bin": w["length_bin"], "vetoed": w["vetoed"],
+        block["per_window"] = [{"id": w["id"], "length_bin": w["length_bin"], "dialogue_share": w["dialogue_share"],
+                                "narrative_mode": w["narrative_mode"], "vetoed": w["vetoed"],
                                 "percentiles": w["qs"]} for w in cand_w]
     return block, warnings
 
@@ -714,7 +870,7 @@ def run_period_ruler(
     date_scorer: ScorerFn | None = None,
     auth_scorer: ScorerFn | None = None,
     feature_fn: FeatureFn | None = None,
-    arch_window_words: int = DEFAULT_ARCH_WINDOW_WORDS,
+    scene_words: tuple[int, int] = (DEFAULT_SCENE_MIN_WORDS, DEFAULT_SCENE_MAX_WORDS),
     window_years: int = DEFAULT_WINDOW_YEARS,
     n_length_bins: int = DEFAULT_LENGTH_BINS,
     n_null: int = DEFAULT_N_NULL,
@@ -795,6 +951,7 @@ def run_period_ruler(
             null_scores = sorted(period_fidelity(w, w0) for w in w_null)
             hi = _percentile(w_null, 0.975)
             channel_blocks["date"] = {
+                "role": "secondary_diagnostic",
                 "period_fidelity": period_fidelity(observed["w1"], w0),
                 "w1_from_uniform": observed["w1"],
                 "null_w1_mean": w0,
@@ -815,6 +972,7 @@ def run_period_ruler(
             null_scores = sorted(authenticity_fidelity(a, mu0) for a in a_null)
             hi = _percentile(a_null, 0.975)
             channel_blocks["authenticity"] = {
+                "role": "secondary_diagnostic",
                 "authenticity_fidelity": authenticity_fidelity(observed["mean_q_auth"], mu0),
                 "mean_q": observed["mean_q_auth"],
                 "null_mean_q": mu0,
@@ -855,16 +1013,20 @@ def run_period_ruler(
             block["per_candidate"] = per_candidate
     if want_arch:
         arch_block, arch_warnings = run_architecture_band(
-            candidates, reference, feature_fn=feature_fn, window_words=arch_window_words,
+            candidates, reference, feature_fn=feature_fn, scene_words=scene_words,
             n_length_bins=n_length_bins, n_null=n_null, rng=rng,
             include_per_candidate=include_per_candidate)
         block["channels"]["architecture"] = arch_block
         warnings.extend(arch_warnings)
         block.setdefault("assumptions", {})["architecture"] = (
-            "p22 Score A: Spec 99-style syntax features of ~1,000-word windows as mid-rank "
-            "percentiles against length-matched real windows (leave-one-group-out for the "
-            "reference), 10-90 band, signed displacement, stdlib degradation veto; pool-wide, "
-            "no date window")
+            "primary channel (p22 panel): Spec 99-style syntax features of complete 500-800-word "
+            "scene windows as mid-rank percentiles against real windows matched on length, "
+            "dialogue share and narrative mode (leave-one-group-out for the reference), 10-90 "
+            "band, signed displacement, energy distance against a work-disjoint human band, "
+            "stdlib degradation veto; pool-wide, no date window")
+        block["assumptions"]["reading_rule"] = (
+            "architecture is the primary read; date and authenticity are secondary diagnostics "
+            "and never bar or pass an arm alone")
     return {"period_ruler": block}, warnings
 
 
@@ -1021,7 +1183,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         results, warnings = run_period_ruler(
             candidates, reference, channels=args.channels,
             date_scorer=scorers.get("date"), auth_scorer=scorers.get("authenticity"),
-            feature_fn=feature_fn, arch_window_words=args.arch_window_words,
+            feature_fn=feature_fn, scene_words=(args.scene_min_words, args.scene_max_words),
             window_years=args.window_years, n_length_bins=args.length_bins,
             n_null=args.n_null, seed=args.seed, include_per_candidate=args.per_candidate,
             cache_path=cache, batch_size=args.batch_size, progress=progress)
@@ -1048,8 +1210,10 @@ def main(argv: list[str] | None = None) -> int:
                     help="JSONL of real dated passages: {id, text, year, group[, date_estimate_year, p_synthetic]}")
     ap.add_argument("--channels", type=_parse_channels, default=CHANNELS,
                     help="comma list from: date,authenticity,architecture (default all three)")
-    ap.add_argument("--arch-window-words", type=int, default=DEFAULT_ARCH_WINDOW_WORDS,
-                    help="window size for the architecture band (default 1000 words)")
+    ap.add_argument("--scene-min-words", type=int, default=DEFAULT_SCENE_MIN_WORDS,
+                    help="architecture band: shortest complete scene window (default 500 words)")
+    ap.add_argument("--scene-max-words", type=int, default=DEFAULT_SCENE_MAX_WORDS,
+                    help="architecture band: longest scene window before a cut (default 800 words)")
     ap.add_argument("--window-years", type=int, default=DEFAULT_WINDOW_YEARS)
     ap.add_argument("--length-bins", type=int, default=DEFAULT_LENGTH_BINS)
     ap.add_argument("--n-null", type=int, default=DEFAULT_N_NULL)

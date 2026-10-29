@@ -12,9 +12,11 @@ beside a noise floor of 2,000 leave-one-group-out pseudo-models drawn from the r
 instruments are the released `chronologic/chronologic-date-deberta` (T=1.0551) and
 `chronologic-authenticity-deberta` checkpoints behind a lazy torch/transformers import; rows that
 already carry scores, or a `--score-cache`, run model-free and the cache resumes an interrupted
-scoring run. Validator only: not a reward, not a passage-level detector. A third channel, the **architecture band** (from the p22 answer's Score A), cuts candidates
-into ~1,000-word windows and reads Spec 99-style syntax features as percentiles against
-length-matched real windows: in-band share (10th to 90th percentile), signed displacement so an
-overshoot reads as over rather than better, per-feature readings, and a stdlib degradation veto
-whose windows count as failures, all beside the same pseudo-model noise floor. It parses with
-spaCy `en_core_web_sm`, or reads `architecture_features` precomputed on each row.
+scoring run. Validator only: not a reward, not a passage-level detector. The primary channel is the **architecture band** (the p22 panel: Fable's Score A with GPT
+Pro's amendments). It cuts candidates into complete 500-800-word scene windows and reads Spec
+99-style syntax features as percentiles against real windows matched on length, dialogue share
+and narrative mode: in-band share (10th to 90th percentile), signed displacement so an overshoot
+reads as over rather than better, per-feature readings, an energy distance against a
+work-disjoint human-vs-human band, and a stdlib degradation veto whose windows count as failures.
+Date and authenticity are reported as secondary diagnostics. It parses with spaCy
+`en_core_web_sm`, or reads `architecture_features` precomputed on each row.

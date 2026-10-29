@@ -248,18 +248,22 @@ _ARCH = ("clause_depth_weighted", "sentence_length_mean", "dependency_distance_m
 _WORDS = [f"w{i}" for i in range(3000)]
 
 
-def _arch_text(rng, n=1000, loop=False):
+def _arch_text(rng, n=600, loop=False, dialogue=False):
     if loop:
         return " ".join((["the", "old", "grey", "house"] * (n // 4 + 1))[:n])
-    return " ".join(rng.choice(_WORDS) for _ in range(n))
+    words = [rng.choice(_WORDS) for _ in range(n)]
+    sents = [" ".join(words[i:i + 20]) + "." for i in range(0, n, 20)]
+    if dialogue:
+        sents = [f'"{x}"' if k % 2 == 0 else x for k, x in enumerate(sents)]
+    return " ".join(sents)
 
 
-def _arch_rows(seed, n, *, shift=0.0, groups=12, loop=False, kind="ref"):
+def _arch_rows(seed, n, *, shift=0.0, groups=12, loop=False, kind="ref", dialogue=False):
     rng = random.Random(seed)
     rows = []
     for i in range(n):
         feats = {f: rng.gauss(10 + j, 1.0) + shift for j, f in enumerate(_ARCH)}
-        row = {"id": f"{kind}{i}", "year": 1860, "text": _arch_text(rng, loop=loop),
+        row = {"id": f"{kind}{i}", "year": 1860, "text": _arch_text(rng, loop=loop, dialogue=dialogue),
                "architecture_features": feats}
         row["n_words"] = pr.count_words(row["text"])
         if kind == "ref":
@@ -320,12 +324,62 @@ class TestArchitectureBand:
         for r in ref + cands:
             r["n_words"] = pr.count_words(r["text"])
         block = _arch(cands, ref, feature_fn=feature_fn)
-        assert block["n_candidate_windows"] == 20  # 2 x 1,000 words each; the 500-word tail is dropped
+        assert block["n_candidate_windows"] == 30  # 3 x 800 words each; the 100-word tail is dropped
         assert "sentence_length_w1_to_pool" in block["per_feature"]
 
-    def test_split_windows_keeps_a_lone_short_text(self):
-        assert len(pr.split_windows(_words(300), 1000)) == 1
-        assert len(pr.split_windows(_words(2700), 1000)) == 3
+
+class TestSceneWindows:
+    def test_windows_are_complete_and_inside_the_word_range(self):
+        text = _arch_text(random.Random(0), 2500)
+        wins = pr.split_scene_windows(text, 500, 800)
+        assert all(500 <= len(w.split()) <= 800 for w in wins)
+        assert all(w.endswith(".") for w in wins)  # never cut inside a sentence
+
+    def test_paragraph_end_is_preferred_and_a_scene_break_closes_the_window(self):
+        rng = random.Random(1)
+        text = _arch_text(rng, 520) + "\n\n" + _arch_text(rng, 300) + "\n\n* * *\n\n" + _arch_text(rng, 560)
+        wins = pr.split_scene_windows(text, 500, 800)
+        assert [len(w.split()) for w in wins] == [520, 560]  # 300 words before the break are too short
+
+    def test_a_lone_short_text_is_one_window(self):
+        assert len(pr.split_scene_windows(_words(300) + ".", 500, 800)) == 1
+
+    def test_narrative_strata(self):
+        st = pr.narrative_strata('"Come in," she said. I sat by my fire and we talked.')
+        assert st["narrative_mode"] == "first_person"
+        assert 0 < st["dialogue_share"] < 0.5
+
+    def test_dialogue_heavy_windows_are_read_against_dialogue_heavy_real_windows(self):
+        # Real dialogue windows have shorter sentences; a dialogue-heavy arm with
+        # real-like values must not read as under-shifted against narration.
+        ref = _arch_rows(1, 300, dialogue=True) + _arch_rows(3, 300, shift=3.0)
+        for i, r in enumerate(ref):
+            r["id"], r["group"] = f"r{i}", f"g{i % 12}"
+        cands = _arch_rows(2, 60, kind="c", dialogue=True)
+        block = _arch(cands, ref)
+        assert block["candidate_match_levels"]["length_dialogue_mode"] == 60
+        assert block["displacement_direction"] == "inside"
+        assert abs(block["signed_displacement"]) < 12
+
+    def test_energy_distance_sits_in_the_human_band_for_real_like_and_beyond_for_overshoot(self):
+        ref = _arch_rows(1, 600)
+        real_like = _arch(_arch_rows(2, 60, kind="c"), ref)
+        over = _arch(_arch_rows(2, 60, shift=2.5, kind="c"), ref)
+        assert real_like["energy_band"] == "within_human_vs_human"
+        assert over["energy_band"] == "beyond_human_vs_human"
+        assert over["energy_distance"] > real_like["energy_distance"]
+
+    def test_architecture_is_primary_and_the_model_channels_secondary(self):
+        ref = _reference()
+        for r in ref:
+            r["architecture_features"] = {"sentence_length_mean": random.Random(r["id"]).gauss(20, 3)}
+        cands = _candidates()
+        for c in cands:
+            c["architecture_features"] = {"sentence_length_mean": random.Random(c["id"]).gauss(20, 3)}
+        results, _ = pr.run_period_ruler(cands, ref, n_null=200)
+        ch = results["period_ruler"]["channels"]
+        assert ch["architecture"]["role"] == "primary"
+        assert ch["date"]["role"] == ch["authenticity"]["role"] == "secondary_diagnostic"
 
     def test_results_carry_no_verdict_or_selection_keys(self):
         block = _arch(_arch_rows(2, 20, kind="c"), _arch_rows(1, 200), include_per_candidate=True)

@@ -19,13 +19,14 @@ entries:
     scores and their 95% interval is reported beside them. Real instruments are the released
     chronologic/chronologic-date-deberta (T=1.0551) and chronologic-authenticity-deberta
     checkpoints behind a lazy torch/transformers import; rows that already carry scores (or a
-    --score-cache) run model-free. A third channel, the architecture band (p22 Score A), cuts
-    each candidate into ~1,000-word windows and reads Spec 99-style syntax features (clause
-    depth, hypotaxis, root deferral, dependency distance, sentence-length shape, interruptions)
-    as percentiles against length-matched real windows: in-band share (10th to 90th), signed
-    displacement so overshoot reads as over rather than better, per-feature readings, and a
+    --score-cache) run model-free. The primary channel is the architecture band (p22 panel):
+    complete 500-800-word scene windows, Spec 99-style syntax features (clause depth, hypotaxis,
+    root deferral, dependency distance, sentence-length shape, interruptions) as percentiles
+    against real windows matched on length, dialogue share and narrative mode: in-band share
+    (10th to 90th), signed displacement so overshoot reads as over rather than better,
+    per-feature readings, an energy distance against a work-disjoint human-vs-human band, and a
     stdlib veto for looping or degraded windows; spaCy en_core_web_sm parses, or rows carry
-    architecture_features. Descriptive validator only: not a reward, not a passage-level
+    architecture_features. Date and authenticity are secondary diagnostics. Descriptive validator only: not a reward, not a passage-level
     detector, does not date a document.
 
     '
