@@ -1230,7 +1230,8 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
 
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
-    tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
+    # resolve(): on macOS the temp dir is a /var symlink to /private/var.
+    tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_")).resolve()
     try:
         bare_root = make_bare_copy(tmp_root)
         outside_cwd = tmp_root
