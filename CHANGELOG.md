@@ -7,6 +7,1134 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.133.0] - 2026-10-29
+
+### Added
+
+**`binoculars_calibrate` is now recoverable, visible and continuable.**
+Calibration runs two causal LMs per manifest entry, so it is held to the
+long-running-surfaces rule. Progress (entries done, scored, resumed and an
+estimated time remaining) is logged to stderr every `--progress-every`
+entries. The new opt-in `--scores-cache PATH` checkpoints each scored entry
+atomically, and `--resume` continues a killed or hung run, re-scoring only
+unfinished entries and producing the same report as an uninterrupted run. A
+checkpoint is reused only for the same manifest bytes, model pair, score
+version, label sets and subsample, and only for entries whose text is
+unchanged; otherwise `--resume` is refused. An existing checkpoint is never
+overwritten without `--resume`. With this, `binoculars_calibrate` is promoted
+to a curated `structural_only` capability entry.
+
+**Repetition consumer case in the zero-install gate (CB-6).** `repetition_audit` now
+runs in the bare copy against a small synthetic baseline folder that the gate
+writes. Each row carries its full argument list. On Windows, path strings in an
+envelope are compared in POSIX form.
+
+**Consumer-case table in the zero-install gate (CB-6).**
+`tools/check_zero_install.py` now runs real `setec run <surface> --json` cases in
+the bare copy with `setec_hermetic_backend=stub`. Each envelope is compared
+exactly with a checked-in file in `tools/zero_install_cases/`; only a row's listed
+fields, such as a run timestamp, are normalized. A pending set means every
+capability that apodictic or setec-voicewright consumes is either cased or
+listed as pending. The first cases cover punctuation cadence, manuscript audit,
+narrative decision (mock judge, and an API judge refused by stub mode) and
+argument decision.
+
+**Hermetic backend mode.** With `setec_hermetic_backend=stub` set, the API judge
+factory and the embedding and surprisal loaders refuse with their existing error
+types, before any provider setup, cached model or dependency import. Through
+`setec run` an API-judge surface returns its usual unavailable envelope, and the
+direct launchers exit 3 with their usual error prefix. Mock and manifest judges
+keep working. With the variable unset, nothing changes. This lets the zero-install
+gate run real consumer cases without models (CB-6).
+
+**Mimicry consumer case in the zero-install gate (CB-6).** `mimicry_cosplay_audit`
+runs in the bare copy with synthetic upstream inputs written by the gate. The
+idiolect phrases all occur in the target and the distance is high, so the case
+exercises the `cosplay_suspected` path; breaking phrase matching fails it.
+
+**Comment-triggered `@claude` workflow.** A `.github/workflows/claude.yml` job
+runs claude-code-action when an owner, member, or collaborator mentions
+`@claude` in an issue, PR comment, or review. It has no `pull_request` trigger,
+refuses fork PRs before checkout, pins both actions to commit SHAs, and keeps
+the workflow token read-only apart from `id-token: write`. `test_claude_workflow.py`
+guards those boundaries, and the closed workflow inventory now lists the file.
+
+The closed workflow policy refuses fork-guard overrides and untrusted checkout
+inputs while accepting redundant gate parentheses; Spec 81 records this bounded
+on-demand exception separately from the seven train-clearance lanes.
+
+- Draft Spec 83 defines English source-matched editing-mode fixtures for descriptive use of existing audits, with separate generation references and no detector tuning or selection. No runtime behavior changes (docs; PATCH class).
+
+- Add a fixture-only, stdlib `setec.core.argument_annotation_contract` candidate validator with strict source/map byte bindings, independent role and mode states, adjacency-run projection, and an aggregate validation summary. This helper does not produce accepted annotations or baseline statistics.
+
+- Importable `setec.core.argument_descriptive_report` builder for hash-bound, declared Arc 2 pilot evidence. It validates the complete protocol/source/run/adjudication/applicability graph and returns a private final-only descriptive report with an aggregate, content-free receipt. Synthetic tests cover the calculation and refusal contract; this adds no admission or production baseline.
+
+- acquire_everycrsreport: add bounded, resumable historical-version discovery with candidate-only output and private reconciliation receipts. Preserve the legacy latest-version route. (feat: MINOR)
+
+- Add `build_tanner_source_list`, a deterministic and per-page-checkpointed
+  public-metadata crawler that produces an `acquire_pdf_urls` feed for the
+  private `academic_philosophy` impostor pool while enforcing Tanner's
+  ten-second crawl floor and never fetching PDF bodies.
+
+Added the `grant_proposal_academic` and `grant_proposal_nonprofit` register
+leaves to the `acquire_pdf_urls` and `argmove_profile` capability metadata.
+The legacy bare `grant_proposal` input remains accepted during the warning
+window and now emits an actionable validator deprecation warning naming both
+replacement leaves. Normal validation accepts the compatibility input with
+exit code 0; `--strict` promotes the warning to exit code 1. Bump class:
+`feat` (MINOR).
+
+Regression coverage for `acquire_magazine` preserves story prose inside a plain div and the existing empty-title fallback when the configured title selector misses. A proposed optional primary-extractor migration reproduced both losses and remains deferred pending a source-specific preservation contract; runtime extraction is unchanged.
+
+- Add `build_opengrants_zenodo_source_list`, a metadata-only resolver for pinned Open Grants Git objects and Zenodo record JSON. It emits a candidate feed and provenance sidecar for later private `acquire_pdf_urls` review, without downloading PDF bytes or assigning corpus roles. This is a feature (MINOR-class) change.
+
+- Add the internal artifact census and private two-direction calibration command
+  for ingestion preflight, with a closed detector table, bounded work, strict
+  receipts, and explicit intake-refusal accounting.
+
+Internal final-packet projection checks and a P7 receipt report that binds
+the assembled packet to intake and slice evidence. The report keeps semantic
+deduplication and two-tail surprisal unavailable, so it cannot clear a packet
+for training.
+
+- Add an independent holdout firewall that publishes a private pairwise audit
+  and a candidate-only conflict list when each sealed set meets its release floor.
+
+- Add an internal multiplicity audit for operator admission maps, including
+  cluster weight checks and a reconciled withholding partition.
+
+- Add an offline internal command that reports exact, fuzzy, and declared-span
+  overlap clusters and checks a supplied split map. It publishes a private detail
+  bundle and an aggregate receipt without making an eligibility decision.
+
+- Add an internal byte-exact source-span proof and boundary-class report with
+  private per-record findings and an aggregate coordination receipt.
+
+`setec-voiceprint`: `setec.calibration.storyscope_atlas`, an operator-side runner that builds StoryScope judge manifests for public-domain long-form fiction (`feat`, MINOR). It fetches Project Gutenberg texts, plans chapters and spec-79 segments, records stdlib counts per chapter, and writes Message Batches requests for four steps: Sonnet chapter cards, Sonnet segment features, an Opus gold subset with evidence spans, and Opus whole-work judgments from the cards. `emit` writes keyed spec-79 manifests for the 30 core features (accepted unchanged by `narrative_decision_long_form`), a feature table covering 40 adopted StoryScope taxonomy features and 19 new Victorian dimensions, per-feature Sonnet/Opus agreement, and actual cost from token usage (billed USD, plus the list-price equivalent of subscription-carried calls). `headless` runs the same requests through `claude -p` on the operator's subscription, with the step's model, effort and system prompt pinned and tools and local customizations off; it resumes after a usage limit and folds the Claude Code version into the recorded prompt version. `submit` refuses when committed spend plus the step's estimated maximum-output allowance exceeds `--max-usd`, and `plan` refuses works outside the public-domain boundary. It emits no envelope, band or verdict; it is not a capability surface. Adopted feature definitions are read from the operator's copy of the StoryScope authors' released taxonomy and are not redistributed. Selection and new definitions live in `references/storyscope-victorian/atlas-schema-v1.json`.
+
+Review fixes bind plans and results to the built requests, refuse rebuilding started steps, retire stale derived manifests, and require complete chapter cards before work judgments. Batch estimates use the selected model, full output limits and cold-cache writes; input tokens and prices remain estimates, not an absolute billing cap. Constant labels yield undefined kappa. Malformed headless accounting is retryable and relative run paths use an absolute system-prompt file.
+
+Added the first text-primitives R2 cohort: immutable registry entries for the existing native Punkt and regex sentence splitters, synthetic primary/mutant characterization, and pinned isolated Punkt test provisioning. Full-source inventory reports remaining primitive work; the first cohort does not complete the registry project.
+
+**`verbatim_mosaic_audit` — descriptive verbatim mosaic profile.** Report source multiplicity, uncovered runs, and junction style distances against a named pool. Add a deterministic public-domain fixture generator; no verdict or threshold is emitted.
+
+Review fix: map lowercase matcher positions back to original Unicode character offsets before extracting junction windows and sentence token ranges.
+
+### Changed
+
+- Share acquisition-test fixture fetcher construction while retaining each source's fixture bindings and behavioral scenarios.
+
+**`external_mirror_workflow` score takes `--metrics`.** `workflow.py score` now
+passes `--metrics` through to `compute_distances.py`. Before, the distance step
+always tried every metric, so an operator without sentence-transformers could
+not score a run. `--metrics word_jaccard` now scores without it. Leaving the
+flag out keeps the old behavior.
+
+**Capability registry curation (acquisition, setup and corpus hygiene).** Promoted
+the auto-seeded `status: todo` fragments for user-facing tools to curated
+entries, following the owner ruling that user-facing tools become discoverable
+while internal and maintainer tools stay hidden: `acquire_blog`,
+`acquire_blogger_takeout`, `acquire_epub`, `acquire_magazine`,
+`acquire_manuscript`, `pdf_inventory` and `pdf_extract` (`structural_only`
+acquisition), `baseline_discovery` (`structural_only` setup) and `check_corpus`
+(`heuristic` corpus hygiene). `acquisition_core` (an imported library with no
+entry point) and `acquire_corpus_template` (a copy-and-fill scaffold) stay
+`todo` with concrete hide reasons. No script behavior changed.
+
+**Capability registry curation (smoothing diagnosis).** Promoted the auto-seeded
+`status: todo` fragments for user-facing smoothing-diagnosis tools to curated
+`heuristic` entries, following the owner ruling that user-facing tools become
+discoverable while internal and maintainer tools stay hidden: `bigram_diff`,
+`manuscript_bigram_diff`, `chapter_distinctiveness_audit`,
+`manuscript_repetition_audit`, `paragraph_audit`, `agency_abstraction_audit`,
+`kicker_density`, `prestige_metaphor`, `aesthetic_authority_audit` and
+`surprisal_audit`. `length_bootstrap` (an imported helper with no entry point)
+stays `todo` with a concrete hide reason. No script behavior changed.
+
+**Capability registry curation (validation, restoration and calibration).**
+Promoted the auto-seeded `status: todo` fragments for user-facing tools,
+following the owner ruling that user-facing tools become discoverable while
+internal and maintainer tools stay hidden: `semantic_preservation_check` and
+`fairness_dialect_guardrails` (`heuristic`), and `shard_runner`
+(`structural_only`, per an owner ruling of 2026-10-10).
+`binoculars_calibrate` and `voice_validation_harness` stay `todo` with their
+curated content until they meet the long-running-surface rule (sharding,
+progress and resume). `calibration_drift_monitor` stays `todo` until errored
+benchmark measurements stop reading as no drift.
+`before_after_restoration`, `confounder_audit`, `evidentiary_conditions_gate`
+and `adversarial_robustness_card` stay `todo` because they read top-level keys
+that current producer envelopes nest under `results`; `compose_evidence_pack`
+(an external-mirror pipeline step), `calibration_survey` and `train_xgboost`
+(maintainer tools) stay `todo` with concrete reasons. No script behavior
+changed.
+
+**Capability registry curation (voice coherence and draft history).** Promoted
+the auto-seeded `status: todo` fragments for user-facing tools to curated
+`heuristic` entries, following the owner ruling that user-facing tools become
+discoverable while internal and maintainer tools stay hidden:
+`construction_signature_audit`, `phraseological_signature_audit`,
+`stance_modality_audit`, `function_word_grammar_audit`,
+`semantic_trajectory_audit`, `voice_drift_tracker`, `controls_audit`,
+`draft_history_analysis` and `known_editor_profile`. `generate_voice_report`
+stays `todo` with a concrete reason: it reads top-level keys that the current
+voice_profile and voice_drift_tracker envelopes nest under `results`. No script
+behavior changed.
+
+**External-mirror harness is now discoverable.** `external_mirror/workflow.py`,
+the operator entry point for the external-mirror discrimination method
+(`prepare`, `status`, `score`), had no capability fragment, so recommenders
+could not route users to it. It now has a curated `heuristic` entry,
+`external_mirror_workflow`, on the `external_mirror_discrimination` surface,
+and declares that `TASK_SURFACE`. The Phase B emitter `compose_evidence_pack`
+stays an internal step that the harness runs. No script behavior changed.
+
+**The shared acquisition library moved to `setec.core.acquisition_core` (CB-5).**
+Everything in the `acquisition_core` surface except its surface tag and
+`pdf_text_from_bytes` moved verbatim into a core module: 40 names, including the
+fetcher, manifest and write steps, the privacy checks and the baselines lookup.
+`pdf_text_from_bytes` stays because it imports the `pdf_extract` surface. The
+surface re-exports every moved name as the same object, so the legacy
+`acquisition_core` import keeps working. Thirteen `acquire_*` surfaces and
+`pdf_extract` now take the module from core, and their 14 layering exemptions
+are deleted. `acquire_pdf_urls` still uses the surface for `pdf_text_from_bytes`.
+
+**Five importers use the privacy guard from core (CB-5).** `generate_voice_report`,
+`pdf_inventory`, `general_imposters`, `author_corpus_export` and
+`fetch_pan24_voightkampff` imported `acquisition_core` only for
+`check_output_privacy` and `is_private_safe_path`. Both already live in
+`setec.core.acquisition_primitives`, so these modules now import them from there,
+and their five layering exemptions are deleted. Behavior is unchanged.
+
+**`gmail_locator_map` takes its two acquisition helpers from `setec.core` (CB-5).**
+`add_allow_empty_arg` moved verbatim from the `acquisition_core` surface into
+`setec.core.acquisition_primitives`, beside `check_output_privacy`; the surface
+re-exports it as the same object. `gmail_locator_map` used only those two, so
+its module alias now points at core and its layering exemption is deleted.
+
+**`acquire_imessage_sent_atomic` takes `preprocess_text` from `setec.core` (CB-5).**
+Its default preprocessor lazily imported the `acquisition_core` surface alias only
+to call `preprocess_text`, which now lives in `setec.core.acquisition_core`. The
+lazy import points at core, and the layering exemption is deleted.
+
+**Author-corpus record helpers moved to `setec.core.author_record` (CB-5).**
+The record schema constants, canonical hashing, document-map hash, strict JSON
+object loader and the record-population checks (22 names, stdlib only) moved
+verbatim out of the `author_corpus_export` surface into a core module, which the
+surface re-exports as the same objects. `passage_lineage_crosswalk`,
+`passage_source_population_commitment` and `prepare_author_document_adapter` now
+import core, and their three layering exemptions are deleted.
+
+**`voice_distance` and `voice_profile` no longer import `biber_features` (CB-5).**
+Both imported `biber_features._try_load_real_tagger` only to call it, and it
+always returns `None` until the M2 Neurobiber tagger exists. `--include-biber`
+now emits the same `missing_dependency` envelope (rc 3) directly. Output is
+unchanged, and the two layering exemptions are deleted.
+
+**`diveye_signals` no longer imports `surprisal_audit` (CB-5).**
+It lazily imported the surface's mean, SD, skew, excess-kurtosis and ACF
+helpers and kept same-formula stdlib copies as a fallback. It now always uses
+its own copies, so the import, the dispatch and one layering exemption are
+gone. Signal values are unchanged.
+
+**Manifest validation core moved to `setec.core.manifest_core` (CB-5).**
+`validate_manifest`, `resolve_path`, the manifest schema constants and their
+helpers (36 names) moved verbatim out of the `manifest_validator` surface into a
+core module that needs only the stdlib and `setec.core.register_taxonomy`.
+`manifest_validator` re-exports them as the same objects. Ten modules that used
+only these now import from core, and their ten layering exemptions are deleted.
+`register_sweep`, which also needs the H2 projection helpers, still imports the
+surface.
+
+**Spec 75 population helpers moved to `setec.core.probe_population` (CB-5).**
+`validate_population`, the strict JSONL readers, the membership and grouping
+projections, `ProbeSetError`, the portable private-path helpers and their
+closure (28 names, stdlib only) moved verbatim out of
+`reconstructibility_probe_set` into a core module, which
+`reconstructibility_probe_set` re-exports as the same objects. The four passage
+authority modules that used only these now import core, and their four layering
+exemptions are deleted.
+
+**Register-sweep refusal types and shared limits moved to `setec.core.register_sweep_errors` (CB-5).**
+`SweepRefusal`, `BadInput`, `InternalError` and five shared string-domain limits
+moved verbatim out of the `register_sweep` surface, which re-exports them as the
+same objects, so `except register_sweep.BadInput` still catches them.
+`manifest_validator` now imports them from core instead of importing the
+`register_sweep` surface at load time. The layering exemption is deleted, and
+one load-time direction of the two surfaces' mutual dependency is gone.
+
+**Threshold metadata moved to `setec.core.compression_thresholds`.** The
+compression-threshold registry, `ThresholdSpec`, the direction resolvers, the
+status helpers and the POS-bigram distribution math moved out of
+`variance_audit` into a stdlib-only core module. `variance_audit` re-exports
+them as the same objects, so nothing changes for callers. `calibrate_thresholds`,
+`calibration_survey`, `before_after_restoration` and `manuscript_bigram_diff` now
+import from core, and their four layering exemptions are deleted (CB-5).
+
+**Validation metrics moved to `setec.core.validation_metrics` (CB-5).**
+The harness's label mapping (`DEFAULT_POSITIVE_STATUSES`,
+`DEFAULT_NEGATIVE_STATUSES`, `label_for_status`), manifest loader
+(`load_manifest_entries`, `_entry_uses`) and ranking metrics
+(`fallback_roc_auc`, `fallback_average_precision`, `paired_bootstrap_ci`,
+`collect_signal_records`) moved verbatim out of the `validation_harness` surface
+into a stdlib-only core module. `validation_harness` re-exports them as the same
+objects. Seven calibration and surface modules now import from core, and their
+seven layering exemptions are deleted. `calibrate_thresholds`, which still needs
+`score_smoothing_entry`, keeps its exemption.
+
+**Verbatim-cover callers import `setec.core.verbatim_cover` directly (CB-5).**
+`corpus_novelty_audit`, `skeleton_overlap_audit`, `reconstructibility_probe_set`
+and the AITDNA benchmark's originality scorer used only names that the
+`originality_audit` surface re-exports from `setec.core.verbatim_cover`. They now
+import core, and their four layering exemptions are deleted. No code moved.
+
+**Zero-install consumer case for `author_corpus_export` (CB-6).**
+The gate writes one synthetic `gmail_sent` source, an HMAC key with mode 0600 and
+an output path inside a scratch `ai-prose-baselines-private` root, in the shape
+the exporter's own tests use. It then runs a `--dry-run` export and pins the
+no-prose producer receipt. `producer_revision` (a hash of the exporter's own
+source) is normalized. The ID leaves the pending list.
+
+**The zero-install consumer-case coverage check counts only dispatchable IDs (CB-6).**
+`aic_pattern_audit`, `restoration_packet` and `validation_harness` have no
+`json_delivery`, so `setec_run` cannot dispatch them and no case could ever
+cover them. The coverage check now requires a case or pending entry only for
+consumer IDs that `setec_run` can run, and those three leave the pending list.
+
+**Zero-install consumer case for `general_imposters` (CB-6).**
+The gate writes a tiny synthetic corpus. Two of the baseline files are the
+candidate's identity baseline, and the third plus four short texts are five
+impostor writers, the harness's minimum. `general_imposters` then runs its
+seeded 100-iteration bootstrap on the shared input, and the case pins the
+envelope. The ID leaves the pending list.
+
+**Zero-install consumer case for `gmail_author_pipeline` (CB-6).**
+The gate writes a one-message synthetic Sent mbox, an HMAC key and a stage-01
+request inside a scratch `ai-prose-baselines-private` root. It then runs the real
+`01_source_smoke` stage through `setec_run` under the default umask. The stage
+completes only because acquisition now writes owner-only artifacts, so the case
+guards that fix. The config identity and the artifact set are pinned. The
+descriptor timestamp and the manifest's acquisition date vary by run, so those
+identities, and the domain and lineage hashes over them, are normalized;
+`normalize` paths may now index lists. The ID leaves the pending list.
+
+**Zero-install consumer cases for `position_pair_register` and `voice_profile` (CB-6).**
+`position_pair_register` runs with the mock judge on a small marked input, so
+the case pins two real same-question pairs. `voice_profile` builds a profile of
+the synthetic baseline folder with `--no-spacy`, since POS and dependency
+families move with the installed spaCy model. Both IDs leave the pending list.
+
+**Zero-install consumer case for `s5_distance` (CB-6).**
+`s5_distance` runs on the same synthetic six-family request its contract tests
+use and must return the six Burrows-Delta values of 2.0 exactly. The
+`implementation_sha256` field hashes the surface's own source, so the case
+normalizes it. The ID leaves the pending list.
+
+The `variance_audit` case also runs with `--no-tier3` and normalizes
+`results.audit.tier1.fkgl`. With `sentence_transformers` or `textstat`
+installed, both change, and the gate would fail on such a machine without a
+real regression.
+
+**Zero-install consumer cases for `variance_audit` and `agd_move_scan` (CB-6).**
+The zero-install gate now runs `variance_audit` (with `--no-tier2`, since spaCy
+POS output moves with the installed model) and `agd_move_scan` with the mock
+judge in the bare copy. It compares each envelope exactly to its checked-in
+expected file. Both IDs leave the pending list.
+
+CI trim (chore, PATCH-class, owner-approved 2026-10-25, fleet-coordination#1099). The sys.path count ratchet (`tools/check_syspath_ratchet.py`) and the flat-module freeze (`tools/check_no_new_flat_modules.py` with `flat_module_exemptions.yaml`) are removed: they pinned counts for the paused packaging migration, and a new module or bootstrap line is visible in review. The whole-tree spec-anchor lint and the changed-spec dependency check leave hosted CI; both tools stay for local build pre-flight. The layering, zero-install and packaging-migration gates stay. No runtime behavior changes.
+
+- Resolve Linux CI core, acquisition, and test dependencies in one pip install
+  instead of three. Keep the same requirements and test coverage; acquisition
+  requirements already supply pypdf.
+
+**`conformal_gate` — count calibration authors.** Calibration lines may read `score,author`; when several texts share an author, `results.n_calibration_authors` reports the author count and a warning names the author as the exchangeable unit, says the pooled per-text calibration does not carry its guarantee for a new author, and notes when too few authors exist to express the chosen `fpr_bound`. Counting authors warns only; it does not change the calculation. A test pins n = 30, q = 0.05 to the calibration maximum and n below 20 to abstention.
+
+**`conformal_gate` — strict flag rule and a marginal-guarantee statement in `--fpr-bound` mode.** A target is now flagged only when its raw score is strictly beyond the threshold: the new raw-domain pair `raw_score_threshold` / `raw_score_comparator` uses `>` for `higher_is_nonconforming` and `<` for `lower_is_nonconforming`, and the legacy nonconformity-space `threshold` is likewise strict (it was applied with `>=`). A score equal to the threshold is no longer flagged, so a new point tied with the threshold on discretized scores cannot push the flag rate above `fpr_bound`. Because the strict rule keeps the calibration flag count within `floor(q * n)`, the tie-raising step and its "degenerate calibration" abstention are gone: all-tied or over-tied calibration sets now return an available threshold that flags none of the calibration scores; when every calibration score is identical, a warning asks the operator to check that the scores were read correctly. The small-n abstention (`floor(q * n) = 0`) is unchanged. The output now also says the guarantee is marginal: with untied scores at n = 30 and q = 0.05 the realized false-positive rate exceeds 5% for about 21% of calibration draws, and a 95/95 tolerance statement at 0.05 needs at least 59 independent calibration texts.
+
+`setec-voiceprint`: the last-resort baselines root (`acquisition_core.DEFAULT_BASELINES_FALLBACK`, used only when `SETEC_BASELINES_DIR` is unset and no sibling `ai-prose-baselines-private` exists) now points at `Dropbox/80-89 Projects/82 Stylometry/ai-prose-baselines-private`, where the private corpus lives since the old Dropbox workspace folder was retired. The StoryScope pilot runbook's copy-out path moves to the fleet hub's new home the same way.
+
+Test suite cull (chore, PATCH-class). Deleted tests that re-ran the CI consistency gates against the real tree (capability entry/golden presence, docs freshness, calibration readiness, contract-fixture `--check`), the relocation-receipt files (`test_p3_*_relocation.py`, `test_packaging_*_family.py`, `test_contract_relocation.py`) that pinned import identity and pickle protocols, the tests for the flat-module freeze, sys.path ratchet and docs-freshness tools, real-repo inventory pins, dead-seeder output tests, and duplicate, hostile-input or loud-failure cases. `test_check_capabilities_drift.py` no longer rebuilds every contract golden per test (Check 9 keeps its own coverage in `test_contract_fixtures.py`). The format-flowed linearity guard now allows 20 s instead of 2 s, so it catches a quadratic rescan without flaking under load. No runtime behavior changes.
+
+Train ceremony trimmed (owner-approved 2026-10-16): removed `tools/check_pr_merge_binding.py` and its per-job step (GitHub's `pull_request` checkout already is the PR merge), `tools/check_train_ci_receipts.py` and the encoded `run-name` it parsed, plus `test_ci_train_policy.py` and `test_claude_workflow.py` (they pinned workflow text and a release.yml sha256). The five one-minute `windows-*` jobs are folded into one `windows` job running the same tests. AGENTS.md now describes the train as: fresh branch, `--no-ff` merges, local `-n auto` suite, mark ready, merge button when green.
+
+Also removed `tools/check_merge_train.py` (the train inventory checker; trains themselves stay, and `git diff --check origin/main...HEAD` covers stray conflict markers) and `tools/check_register_sweep_h1_gate.py` (a one-time H1 receipt validator that ran in no workflow; the production H1 binding in register_sweep stays), with their tests.
+
+- docs (PATCH): add source-pinned CX5 Mirrulations and deferred-spec inventories,
+  distinguishing delivered code, intentional deferrals and owner-gated next work.
+  Report-only; no capability, calibration, corpus or production behavior change.
+
+**CX5 source-status reconciliation.** Correct the Spec 16 and index status to
+match the shipped v1.111.0 explainer, and record that Spec 78 M1 code exists without
+claiming complete acceptance or real-corpus results. No new capability or
+calibration claim is made. Spec 37 stays byte-frozen because the H1 register
+gate pins its SHA-256; its H2 disposition is already recorded in the spec index
+and ROADMAP.
+
+**AIC flag reference: lexical baselines must be period- and venue-matched.** `references/aic-flags.md` adds *Baselines drift too* under AIC-7 Lexical Convergence, citing the CHI 1982-2026 corpus study (arXiv 2609.23090). It explains why marker-word hits against an undated or cross-venue baseline are not evidence, and how the convergence habit and period register should be read. Documentation only; no scoring change.
+
+- Route `conformal_gate` from the `validation` skill as a score-only, exchangeability-bound abstention aid, including one-/two-class prediction sets and the one-tailed reference-class FPR ceiling rooted in Multiscaled Conformal Prediction ([arXiv:2505.05084](https://arxiv.org/abs/2505.05084)); this does not add a detector, verdict, or automatic gate.
+- Preserve the existing nonconformity-space `threshold` field while adding an explicit raw-score threshold/comparator pair, so operators can safely apply both `higher_is_nonconforming` and `lower_is_nonconforming` results.
+- Refuse non-finite calibration observations at both file ingestion and programmatic conformal entry points so `NaN`/infinities cannot license a threshold or FPR-bound claim.
+
+- Route `dependency_distance_audit` from the `smoothing-diagnosis` skill when an operator needs the full dependency-distance distribution behind MDD variance, while preserving its cross-surface `voice_coherence`, parser-abstention, length-sensitivity, and no-verdict contract.
+- Keep that parser-only follow-up on a shared `setec.core` primitive so importing it does not load the variance audit's embedding, classifier, or corpus tiers.
+
+- Route `productive_roughness_audit` from the `voice-coherence` skill as a strictly writer-baseline-relative diagnostic, preserving its private-data, spaCy, soft length-floor, null-z, and no-verdict boundaries.
+
+- Route `sound_texture_audit` from the `craft-restoration` skill as a separate, descriptive orthographic sound-texture follow-up, preserving its register, length-floor, privacy, and no-verdict/no-prescription boundaries without implying automatic AIC or Craft Atlas integration.
+
+**Draft-first integration trains.** Constituent PRs now remain unarmed drafts;
+one fresh exact-head train receives the complete seven-job hosted clearance.
+Merge-tree, synthetic-merge, live-receipt, fork-admission, and exact-base lease
+checks preserve the reviewed combined tree without paid rulesets or duplicate
+post-merge CI.
+
+- Add opt-in, source-bound Mirrulations comment metadata verification to
+  acquire_mirrulations. Successful future acquisitions record separate
+  source-reported received, posted, postmark and modification evidence with
+  raw text/JSON byte hashes in the private sidecar; date_written remains
+  unknown. Default off mode retains the existing text route.
+- Correct the raw-data description: it includes comment JSON alongside
+  attachments. Standard-mode metadata failures are logged per item and
+  never silently attached to another comment.
+
+- Extend `acquire_pdf_urls` registration to the Tanner
+  `academic_philosophy` lane and normalize bounded Tanner custom-glyph names
+  plus independently-attested letter-spacing artifacts at the shared pypdf
+  extraction seam. Tanner material remains `fair_use_research`, private,
+  stats-only, and excluded from `phil-register`.
+
+- Clarify the actual Gmail extraction-byte and strict NearDup committed-producer bindings for complete acquisition-family packaging. Preserve raw-byte hashes, stale approvals, dirty-producer refusals and immutable evidence; no runtime relocation or acquisition is implemented here (docs; PATCH).
+
+Relocate the complete acquisition family into the package with permanent CLI/module aliases: acquire_courtlistener, acquire_everycrsreport, acquire_gmail_sent, acquire_govinfo_chrg, acquire_imessage_sent, acquire_imessage_sent_atomic, acquire_mirrulations, acquire_openalex_core, acquire_pdf_urls, acquire_stackexchange, build_opengrants_zenodo_source_list, build_tanner_source_list, near_dup_dedup, passage_remediation, shingle_dedup. Preserve extraction and committed-producer byte bindings, stale refusal rules, and native Windows adapter identity. This is a P4 relocation, not new acquisition or empirical qualification.
+
+- Relocate the complete aic-7-discourse-leak family (`aic_pattern_audit`) into `setec.surfaces`, conserving the whole implementation and permanent schema-1.x launcher/module identity. Preserve detectors, baseline self-exclusion, heuristic reports, claim license and existing optional variance dependency. Its launcher adds one counted bootstrap site, since the original had none. Patch-class packaging change.
+
+- Relocate the complete argument-moves family (`argmove_profile`) into `setec.surfaces`, preserving the schema-1.x launcher, shared module/ContractError identity, deterministic reused signals, AGD densities, optional concreteness, corpus floors and research comparison outputs. Only the inline import bootstrap moves; the existing counted ceiling stays unchanged. Patch-class packaging change.
+
+- Relocate the complete attribution-advisory family (`model_family_attribution`) into `setec.surfaces`, preserving implementation bytes except the import bootstrap, ordinary module identity, raw rankings, abstention, self-exclusion and claim license. Retarget the existing Biber-dependency prohibition to the executing implementation. Bootstrap count and ceiling unchanged. Patch-class packaging change.
+
+- Relocate the complete authorship-verification family (`lambdag_audit`) into `setec.surfaces`, preserving implementation bytes except the import bootstrap, ordinary class/error/module identity, grammar likelihood-ratio behavior and corpus isolation. Existing privacy coverage scans follow the implementation through their existing path helper; assertions remain unchanged. Bootstrap count and ceiling unchanged. Patch-class packaging change.
+
+- Relocate the complete binoculars family (`binoculars_audit`) into `setec.surfaces`, keeping all implementation bytes, model-pair calculations, fallbacks, thresholds, caveats, licensing and CLI/report routing unchanged. Preserve the legacy module alias and make the existing held-out selector firewall read the implementation. One required counted launcher raises the bootstrap ceiling by one. Patch-class packaging change.
+
+- Relocate the complete corpus-hygiene family (`nonprose_sweep`) into `setec.surfaces`, preserving all implementation bytes, report/refusal behavior and ordinary launcher identity. Keep the existing guarded-platform-API prohibition on the moved implementation. The necessary counted launcher increases the existing bootstrap ceiling by one. Patch-class packaging change.
+
+- Relocate the complete corpus-validation family (`manifest_validator`) into `setec.surfaces`, preserving the permanent schema-1.x launcher, shared module and exception identity, strict manifest parsing, H2 projections, progress, conflict-copy refusals, output bytes and claim licenses. The existing CLI regression uses the permanent launcher. Patch-class packaging change.
+
+- Relocate the complete cross-surface interpretation family (`setec_run_set` and `surface_disagreement_resolver`) into `setec.surfaces`, preserving permanent schema-1.x launchers, shared module identity, checkpoint/resume, member-envelope pass-through, numeric no-reduction and banned-key guards, mechanical next-action reports, resolver interpretations, and unchanged claim licenses. Patch-class packaging change.
+
+- Relocate the complete `dependency_check` setup family into `setec.surfaces`, preserving the legacy module and CLI alias. Resolve the stay-put scripts/plugin roots through existing accessors; retain tier declarations, dependency detection, install suggestions, reports and exit behavior. Count the one required alias bootstrap and raise the existing ceiling from 192 to 193 without exclusions. Patch-class packaging change.
+
+- Relocate the complete detectllm-rank family (`rank_space_audit`) into `setec.surfaces`, retaining the legacy module and CLI alias. Preserve rank-space calculations, operator-only bands, single-window refusals, scorer construction, envelopes and descriptive claim license. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete discourse-relation-profile family (`discourse_move_signature`) into `setec.surfaces`, preserving implementation bytes except the import bootstrap, ordinary module/main/monkeypatch identity, typed markers and explicit discourse-relation distributions, provisional claim language, anonymized baseline summaries and self-exclusion. Bootstrap count and ceiling unchanged. Patch-class packaging change.
+
+- Relocate the complete discrimination family (`edit_magnitude_audit` and `rewriting_invariance_audit`) into `setec.surfaces`, preserving permanent schema-1.x launchers, shared module identity, lazy optional backends, calibration refusals, rewrite prompt and fingerprint, and unchanged claim licenses. Patch-class packaging change.
+
+- Relocate the complete document-segmentation family (`within_doc_segmentation`) into `setec.surfaces`, preserving implementation bytes except the import bootstrap, ordinary launcher identity, descriptive window/offset behavior, recursive no-authorship firewall and unconditional embedding-lens refusal. Existing bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete embedding-explanation family (`cosine_explanation` and `embedding_attribution`) into `setec.surfaces`, preserving permanent schema-1.x launchers, shared module and named-feature identity, injected decomposition, calibration refusals and lazy model loading. Patch-class packaging change.
+
+- Relocate the complete fast-detect-curvature family (`fast_detect_curvature`) into `setec.surfaces`, retaining the legacy module and CLI alias. Preserve seeded curvature sampling, chunk-safe actual-token probabilities, Gaussian and Student-t normalization, model construction, envelopes and descriptive claim license. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete function-word-network family (`function_word_adjacency_audit`) into `setec.surfaces`, preserving graph implementation bytes except the import bootstrap, ordinary module identity, shared grammar segmentation, provisional bands and claim license. The existing held-out import prohibition follows the implementation. Bootstrap count and ceiling unchanged. Patch-class packaging change.
+
+- Relocate the complete general-imposters family (`general_imposters`) into `setec.surfaces`, preserving GI calculations, seeded sampling, self-exclusion, register isolation, privacy, envelopes and claim licensing. The legacy script remains an ordinary module and CLI alias; existing source-reading guards follow the implementation without changing assertions. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete `idiolect_detector` family into `setec.surfaces`, retaining the permanent legacy module/CLI alias and unchanged implementation bytes. Preserve keyness, reference self-exclusion, privacy and claim-license behavior. Retarget the existing register-isolation source reader. Account for one required launcher bootstrap in the existing counted ceiling (199 to 200). Patch-class packaging change.
+
+- Relocate the complete intrinsic-dimension family (`intrinsic_dimension_audit`) into `setec.surfaces`, retaining the legacy module and CLI alias. Preserve clean-room MST/scaling math, seeded PHD and Short-PHD fits, stability and degenerate caveats, uncalibrated no-band/no-verdict licensing, embedding provenance, envelopes and reports. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the whole `paraphrase_ladder` / `paraphrase_robustness` family into `setec.calibration`, preserving permanent nested CLI aliases, module identity, proxy and injected-score behavior, detector orientation and claim licenses. Extend the existing layering checker for this documented nested layout while retaining its strict dependency ratchet. Patch-class packaging change.
+
+- Relocate the complete pov-voice family (`pov_voice_profile`) into `setec.surfaces`, preserving implementation bytes except the import bootstrap, ordinary module/dataclass identity, per-document POV distance math, output privacy and register isolation. Existing pool/register coverage follows the implementation with classifications and assertions unchanged. Bootstrap count and ceiling unchanged. Patch-class packaging change.
+
+- Move the whole register classifier into `setec.surfaces` behind its permanent no-main launcher, preserving frozen implementation and receipt bytes. Current H1 verification binds the fixed package implementation; all historical lookups stay at their original locations. Count the single required launcher bootstrap without exclusions.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Relocate the complete restoration family (`restoration_packet`) into `setec.surfaces` with an ordinary module/dataclass/CLI alias. Preserve targetability and revision-risk rules, prompts and schemas; resolve the existing lazy private-output root through `setec.paths`. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the whole `sound_texture_audit` implementation into `setec.surfaces` while preserving its permanent schema-1.x launcher, module identity, metrics, CLI and descriptive orthographic-proxy claim license. No calibration or registry change. Patch-class packaging change.
+
+- Relocate the complete `mimicry_cosplay_audit` style-cosplay family into `setec.surfaces`, retaining the permanent legacy module/CLI alias. Preserve lexical and syntactic evidence, occurrence and survival densities, existing classification/thresholds, authorship refusal, state caveats, envelopes and reports. Retarget the existing held-out encoder-separation check to the implementation. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete `style_vectorizer` stylometric-vector family into `setec.surfaces`, preserving the permanent legacy CLI/module alias. Preserve all feature math, defaults, outputs, held-out warnings, refusal rules and claim-license behavior; remove only the retired implementation import bootstrap. The existing counted sys.path ceiling is unchanged. Patch-class packaging change.
+
+- Relocate the complete tocsin family (`tocsin_audit`) into `setec.surfaces`, retaining the legacy module and CLI alias. Preserve seeded token deletion, Jaccard and injected semantic differences, degenerate/saturation disclosures, provisional descriptive bands, envelopes and descriptive claim license. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete validation family (`conformal_gate`, `register_composition_sweep`, `triage_agreement` and `validation_harness`) into `setec.surfaces`, preserving permanent schema-1.x launchers, shared module identity, reports, claim posture and strict H1 receipt/classifier binding through existing stay-put data accessors. Adapt existing relocation-sensitive tests and remove one redundant positive AST-shape assertion; behavioral registration and drift coverage remain. Patch-class packaging change.
+
+- Complete the whole voice-coherence family relocation into `setec.surfaces` with `crosslingual_voice_distance`, `dialogue_voice_audit`, `narratorial_distance_audit` and `productive_roughness_audit` alongside `sound_texture_audit`. Preserve permanent schema-1.x launchers, ordinary module identity, optional-model laziness, baseline refusals, CLI behavior and claim licenses. Patch-class packaging change.
+
+- Relocate the complete voice-coherence-adjacent family (`house_style_decomposition`) into `setec.surfaces`, preserving the permanent schema-1.x launcher, module/exception identity, stdlib Delta, baseline isolation/leakage checks, provisional attribution and unavailable M2 lens. Existing isolation sweeps follow the actual implementation; remove one incidental private-helper spelling assertion while retaining negative guard coverage. Patch-class packaging change.
+
+- Relocate the complete voice-divergence family (`rank_turbulence_audit`) into `setec.surfaces` with an ordinary module and CLI alias. Preserve rank-turbulence calculations, token-stream self-exclusion, envelopes and descriptive claim license. Bootstrap count and ceiling remain unchanged. Patch-class packaging change.
+
+- Relocate the complete watermark family (`watermark_probe`) into `setec.surfaces`, preserving implementation bytes except the import bootstrap, ordinary module/error/dataclass/main identity, keyed custom-partition arithmetic and deduplication, provisional claim language and key secrecy. Bootstrap count and ceiling unchanged. Patch-class packaging change.
+
+- Document the narrow `s5_distance` digest/fixture exception needed for whole-family voice-distance packaging: bind the real S5 and unchanged core implementations, preserve all other normalized values and existing consumer evidence refusals. No relocation or fixture change is implemented by this amendment (docs; PATCH).
+
+- `sliding_window_heatmap` operator discovery now documents its inputs, outputs
+  and heuristic limits (status `heuristic`). It is still not a consumer surface.
+
+Document an exact, externally sorted and checkpointed scale design for
+`homogeneity_audit`, with synthetic feasibility evidence and explicit unresolved
+numerical mechanics. The owner approved positional pair witnesses and a separately
+versioned opt-in method retaining legacy; a precise certificate/degenerate-input
+proposal is documented for independent review. Production behavior is unchanged.
+
+Cut `test_acquire_imessage_sent_atomic.py` from 14,857 to 2,942 lines (659 to 197 tests). The kept tests cover the failures that would pass silently: message selection and content, Apple date and timezone conversion, group-chat policy, HMAC key and locator handling, schema preflight, private-file modes and links, email-in-body adjudication, byte-identical resume, rowid-stable candidate semantics and conserved aggregate counts. The bootstrap, snapshot, universe and promotion state-machine tests are cut to one representative per refusal class. Every test that the workflow names is kept. No production code changes.
+
+Release bump class: PATCH (`chore`).
+
+- Move the complete `acquire_corpus_template` scaffold into `setec.surfaces` behind its permanent compatibility launcher, preserving its CLI, stubs and shared pipeline wiring. The corpus-acquisition skill and pattern guide now point at the relocated implementation as the file to copy, since the flat path is only a launcher. The bootstrap count stays unchanged.
+
+PATCH: Relocate the whole acquisition_core implementation behind its permanent compatibility alias, preserving acquisition behavior, lazy helper imports, baselines lookup and privacy refusals. Existing fragment and discovery status stay unchanged. The layering checker admits the existing no-main surface alias template with its strict ownership and edge checks.
+
+- Move the complete `acquire_blog`, `acquire_blogger_takeout`, `acquire_epub`, `acquire_magazine`, `acquire_manuscript`, `pdf_inventory` and `pdf_extract` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving acquisition records, extraction, inventories, licenses, reports and CLI behavior. `acquisition_core` stays flat for the P5 audit; the bootstrap count stays unchanged.
+
+Move the complete `kicker_density`, `prestige_metaphor` and `aesthetic_authority_audit` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving detection, licenses, reports and CLI behavior. The bootstrap count stays unchanged.
+
+- Relocate whole agency and stance audits into their existing surfaces package home behind permanent launchers. Preserve scripts-root exports, measurements, baseline exclusions, claim licenses, envelopes and reports; the counted bootstrap ceiling is unchanged. Keep both corpus-prohibition closure scans on the executing implementations.
+
+Move the complete `baseline_discovery` setup utility into `setec.surfaces` behind its permanent compatibility launcher. Preserve default repo-sibling lookup through the stay-put script path, environment precedence, bounded discovery, recommendation and CLI behavior. Both corpus-prohibition scanners follow the executing implementation; its new required bootstrap remains counted.
+
+- Relocate the complete bigram_diff and manuscript_bigram_diff implementations into their surfaces package homes behind permanent compatibility launchers. Preserve real POS-bigram math, aggregation, frequency-floor behavior, reports, envelopes, and model-dependency refusals. Required launchers make detached foreign-cwd runpy reach the ordinary CLI; count their two new bootstrap sites (206 to 208). Keep existing incomplete discovery metadata unchanged.
+
+- Relocate the whole `binoculars_calibrate` implementation into `setec.surfaces` behind its permanent schema-1.x compatibility launcher. CLI, threshold derivation, output, progress and compatibility-bound checkpoint/resume behavior are unchanged; capability status remains `structural_only`. Count the required scripts-root launcher bootstrap in the packaging and sys.path gates. Bump class: PATCH. Refs Fleet #73 and #701.
+
+Move the complete `calibration_drift_monitor` into `setec.surfaces` behind its permanent compatibility launcher, preserving snapshots, anonymized benchmark IDs, numerical drift comparisons, noise floors, stack and constant metadata, licenses, reports and CLI behavior. Both corpus-prohibition scanners follow the executing implementation; the bootstrap count stays unchanged.
+
+- Move the complete `check_corpus` and `length_bootstrap` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving corpus checks, bootstrap estimates, licenses, reports and CLI behavior. Neither module had an old bootstrap to replace, so the counted sys.path ceiling rises from 211 to 213 for the two launchers.
+
+- Relocate `compose_evidence_pack` into `setec.external_mirror` behind its permanent nested launcher, preserving its schema envelope, Markdown, claim license and CLI behavior (packaging P4; PATCH).
+
+- Relocate the complete confounder_audit into its existing surfaces package home behind a permanent compatibility launcher. Preserve differential-diagnosis observations, rankings, missing and distinguishing evidence, state-specific claim licenses, envelopes, reports and input-error behavior. Keep its existing incomplete discovery metadata unchanged; the counted bootstrap ceiling remains unchanged.
+
+- Relocate the complete construction_signature_audit into its surfaces package home behind a permanent compatibility launcher. Preserve regex and spaCy detector behavior, overlap handling, quote stripping, density and baseline self-exclusion, anonymization defaults, authorship caveats, reports, envelopes and input errors. Keep its incomplete discovery metadata unchanged; the counted bootstrap ceiling remains 208.
+
+- Relocate `author_corpus_export`, the remaining flat corpus-acquisition member, into `setec.surfaces` behind its permanent launcher. Preserve actual executing-byte receipt bindings and stale-evidence refusals; keep both corpus closure scans on the implementation.
+
+- Move the complete `voice_drift_tracker`, `voice_validation_harness` and `semantic_trajectory_audit` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving measurements, licenses, reports and CLI behavior. The bootstrap count stays unchanged.
+
+**`compression_edit_distance_audit` package relocation.** Move the complete paired-input compression implementation into `setec.surfaces`, retaining its permanent schema-1.x launcher, import identity, numerical behavior, reports and ClaimLicense contract.
+
+Move the complete `evidentiary_conditions_gate` into `setec.surfaces` behind its permanent compatibility launcher, preserving all posture rules, qualitative licenses, audit-input validation, reports and CLI behavior. Both corpus-prohibition scanners follow the executing implementation; the bootstrap count stays unchanged.
+
+- Move the complete `fairness_dialect_guardrails`, `adversarial_robustness_card` and `generate_voice_report` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving measurements, licenses, reports, the default report template and CLI behavior. The bootstrap count stays unchanged.
+
+- Relocate the whole style-embedding family into `setec.surfaces` behind its permanent schema-1.x launcher, preserving injected encoder identity, shared windowing, descriptive cosine outputs and dependency refusals.
+
+- Move the complete `function_word_grammar_audit`, `controls_audit` and `surprisal_audit` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving measurements, licenses, reports and CLI behavior. The bootstrap count stays unchanged.
+
+- Relocated the whole gecscore family into `setec.surfaces`, retaining its permanent schema-1.x launcher and unchanged audit, backend, and refusal behavior.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Relocate the whole variance-localization heatmap renderer into `setec.surfaces` behind its permanent schema-1.x launcher, preserving report output, console encoding, input failures and privacy refusals.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Relocate the whole `pan_replay` family into its existing `setec.calibration` package home behind the permanent per-file launcher. Preserve fixture containment, lexical replay, class slicing, envelopes, reports and the stay-put scripts directory; the counted bootstrap ceiling is unchanged.
+
+Move the complete `phraseological_signature_audit` into `setec.surfaces` behind its permanent compatibility launcher, preserving all phrase extraction, self-target exclusions, fingerprints, qualitative licenses, reports and CLI behavior. Both corpus-prohibition scanners follow the executing implementation; the bootstrap count stays unchanged.
+
+- Move the complete `semantic_preservation_check`, `before_after_restoration`, `known_editor_profile` and `draft_history_analysis` surfaces into `setec.surfaces` behind their permanent compatibility launchers, preserving measurements, licenses, reports and CLI behavior. The bootstrap count stays unchanged.
+
+- Relocate the whole `biber_features` register-panel surface into `setec.surfaces`, retaining its permanent legacy launcher, 96-feature panel, injected consumer seams and deferred real-tagger abstention. PATCH classification; no version bump.
+
+- Relocate the whole shuffle-perplexity family into `setec.surfaces` behind its permanent schema-1.x launcher, preserving seeded perturbations, scorer refusals, feature direction and claim licenses. Existing separation checks follow the implementation after the move.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Relocate the SpecDetect implementation into `setec.surfaces` behind its permanent schema-1.x launcher, preserving spectral math, provisional bands, Lastde's library-only status, claim licenses, and CLI behavior.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Relocate the complete syntactic-shape family into `setec.surfaces`, retaining its schema-1.x launcher, module identity, parser behavior and claim license.
+
+- Relocate the complete `tier1-variance` family into `setec.surfaces` behind permanent launchers. Preserve variance computations, thresholds, comparator routing, reports, manuscript aggregation and existing chapter-text cache bindings. Replace only manuscript location plumbing; the counted bootstrap ceiling is unchanged.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Relocate the whole LLM-as-verifier family into `setec.surfaces` behind its permanent schema-1.x launcher, preserving advisory bands, imported prompt fingerprints, and refusal envelopes. Its required launcher bootstrap remains counted in the reviewed `sys.path` ceiling.
+
+- Keep both corpus prohibition closure scans on the executing implementation; planted unclassified loaders remain rejected after relocation.
+
+- Move the whole `s5_distance`, `voice_distance` and `voice_profile` family into `setec.surfaces` behind permanent legacy launchers (packaging P4; PATCH). Preserve behavior and the existing S5 digest algorithm; refresh only the producer S5 golden implementation binding to the executing package bytes. Consumer fixture updates remain separately coordinated.
+
+- Clarify the SVP packaging contract for a future frozen-tokenizer relocation:
+  preserve tokenizer behavior, canonical table bytes and authority refusals while
+  existing provenance checks bind the executing implementation rather than its
+  legacy alias. This is a contract amendment, not a delivered relocation.
+
+Relocate `output_schema.py`, `claim_license.py`, and `capabilities.py` into
+`scripts/setec/contract/` for packaging P2. Legacy imports share the package
+module objects, and the capabilities launcher preserves CLI dispatch. Existing
+envelope, claim-license, capability-contract, and missing-directory behavior
+is preserved; plugin data remains at its existing paths through `setec.paths`.
+Launchers also bootstrap their scripts directory for foreign-cwd `runpy` calls.
+Release bump class: PATCH (`chore`).
+
+Relocate the P3 baseline family (`argument_register_baselines`, `concreteness`,
+`register_taxonomy`, and `register_typical_baselines`) into `setec.core`, with
+permanent legacy aliases preserving the existing import surface. Scope follows
+Fleet claim #125 (merge `8bfe5ba`); producer base is `7537b9`.
+
+Use the existing `data_dir()` and `register_tiers_d_dir()` resolvers for plugin
+data and remove the three converted anchor exemptions. Retarget the seven
+existing repo-baseline exemptions to the implementations, with honest standing
+repo-YAML dispositions and `parents[5]` resolving the same repository root.
+The existing migration ratchet permits only the four exact alias bootstraps
+and seven exact relocated anchors in addition to its existing P2 exceptions.
+
+Raise the syspath ceiling from 159 to the AST-measured 163 for the four required
+legacy-alias bootstraps; every production call site remains counted.
+
+- Relocate the pure stylometric distance implementation to
+  `setec.core.stylometry_distance` while preserving legacy imports, module
+  identity, direct execution and detached `runpy` behavior. S5 continues to
+  fingerprint its actual implementation rather than the compatibility launcher;
+  computations, input rules and envelope meanings are unchanged.
+
+Relocate the P3 judge family into `scripts/setec/core/`: `judge_backends`,
+`argument_judge`, `narrative_judge`, `agd_move_scan_judge`, `argquality_judge`,
+`argument_certainty_judge`, `cross_doc_consistency_judge`, `fallacy_judge`,
+`position_pair_register_judge`, and `warrant_judge`. Permanent legacy aliases
+share the implementation module objects and preserve silent direct execution
+and `runpy` use; classes retain their historic module names. Existing prompts,
+fingerprints, errors, provider factories, validation, and posture firewalls
+are preserved. Scope follows Fleet claim #127 (merge `abf7a1a`).
+
+Remove the seven implementation-only bootstraps and their old exemptions.
+The existing migration ratchet permits only the ten exact alias `_SCRIPT_DIR`
+anchors in addition to its existing P2 exceptions. Update the syspath ceiling
+from 159 at base `7537b9` to the AST-measured 162: seven removed call sites and
+ten alias call sites, with every production site still counted.
+
+Release bump class: PATCH (`chore`).
+
+Move the whole narrative long-form segmenter and StoryScope polarity contract
+into `setec.core`, retaining ordinary legacy alias launchers and unchanged
+segmentation, projection, refusal and existing digest behavior. Preserve legacy
+record/class/exception serialization globals and package-only annotation lookup.
+Adjust only the two exact launcher anchors in the existing migration check and
+count both necessary detached-runpy bootstraps in the existing sys.path ceiling.
+No caller, capability, fixture, model, training or study change. This is a P3
+constituent under GX-A2/Fleet73, not complete packaging qualification; PATCH class.
+
+- Move paragraph parsing into `setec.core.paragraph_parser` while preserving the
+  legacy import, frozen sentence records, pickle compatibility and zero-install
+  direct execution. Parsing behavior and downstream callers remain unchanged.
+
+Relocate the existing rank-space numerical helper into `setec.core`, preserving
+legacy imports and model-free numerical behavior. No new signal or threshold.
+
+- Relocated four shared argument/narrative schema libraries into `setec.core`
+  while preserving legacy imports, frozen-record and exception pickle globals,
+  package-only annotation lookup, and detached zero-install execution.
+
+Relocate the ten eligible P3 support libraries (`atomic_publish`,
+`embedding_backend`, `embeddings`, `passage_remediation_projection`,
+`pool_guard`, `shingle_dedup_checkpoint`, `shingle_dedup_io`,
+`shingle_dedup_validate`, `surprisal_backend`, and `windows_descriptor_io`)
+into `setec.core`, retaining permanent legacy module aliases and historical
+class module names.
+
+Private APIs, shared monkeypatch state, lazy backend imports, and the native
+Windows/POSIX import contract remain unchanged. Existing publication/privacy
+policies, checkpoint formats, hashes, algorithms, provider behavior, and refusal
+messages are preserved.
+
+Account for only the ten exact legacy-alias bootstrap anchors through the
+existing packaging checks. All production sys.path sites remain counted; the
+measured ceiling changes from 159 to 169 against base `7537b9`. No layer
+exemptions, classifications, workflows, fixtures, or data ownership change.
+The frozen passage tokenizer remains outside this relocation.
+
+Relocate preprocessing, verbatim-cover primitives, and the segmentation feature
+lens into `setec.core` without changing their algorithms or defaults. Permanent
+legacy aliases preserve module identity and shared monkeypatch behavior. Existing
+pool/register checks follow the moved implementations; packaging checks retain
+their existing scope with the three required compatibility bootstraps counted.
+
+- Move the frozen Spec-80 tokenizer to `setec.core` with a permanent legacy
+  module alias and historical exception serialization. Keep the canonical table
+  at its existing path through `setec.paths.scripts_dir()`. Existing
+  `near_dup_dedup` and source-population commitments and both authority reads bind
+  the executing implementation bytes; stale profiles continue to refuse.
+  This is a packaging change (PATCH), without profile ratification or a release.
+
+**PATCH — whole argument-consistency family relocation.** Move
+`cross_doc_argument_consistency` and `position_pair_register` into `setec.surfaces`
+behind permanent legacy aliases. Preserve shared module/monkeypatch identity,
+scripts-root paths, offline judging, licenses, intake/self-exclusion, defenses,
+neutral relation-free questions, ordering, refusals and JSON/text artifacts.
+Cross-doc retains heuristic consumer-disabled registration; position-pair retains
+experimental stdout JSON delivery. Update only existing migration channels,
+copied-plugin checks and safety-test source lookups. Two existing bootstrap sites
+become two launcher sites with no ceiling increase. Mock compatibility evidence
+does not establish live-judge fidelity, consumer clearance or full P3/P4 acceptance.
+
+- Relocate the whole `agd_move_scan`, `enthymeme_gapflag`, `fallacy_scan`, and
+  `warrant_probe` modules into `setec.surfaces` behind permanent schema-1.x
+  legacy aliases. Preserve module/monkeypatch identity, scripts-root paths,
+  APIs, judge provenance, claim licenses, reports, and refusals. Only AGD
+  retains normalized consumer delivery; the other capabilities are not promoted.
+  Add scoped offline copied-plugin launch checks and exact existing-channel
+  metadata; the counted bootstrap ceiling remains unchanged. Packaging-only
+  PATCH change, not full P3/P4 or live-judge qualification.
+
+PATCH — whole argument-quality/calibration relocation.
+
+Move `argquality_dimension_profile` and `argument_certainty_calibration` into
+`setec.surfaces`, retaining permanent legacy module aliases and scripts-root
+resolution in bare copied plugins. Public/private APIs, shared monkeypatches,
+offline judging, licenses, independent bands, evidence defenses, CLI artifacts
+and refusals remain unchanged. The two registered families remain distinct and
+consumer-disabled, without `json_delivery`; normalized dispatch stays refused.
+
+Update only the existing migration metadata and copied-plugin conformance
+checks. Two implementation bootstraps become two launcher bootstraps, with no
+counter exclusions or ceiling increase. This bounded relocation does not claim
+live-judge fidelity, consumer clearance, or full P3/P4 acceptance.
+
+- Relocate the whole `argument_decision_audit` implementation into
+  `setec.surfaces`, retaining its permanent schema-1.x launcher, shared module
+  identity, normalized JSON delivery, and unchanged scoring/license/refusals.
+- Retarget the existing audit-to-argmove_profile layer edge and document the
+  visible alias edge and required detached-runpy bootstrap. The measured
+  bootstrap ceiling rises from 191 to 192 without exclusions or unrelated removals.
+- Add synthetic mock/manifest and copied-plugin compatibility checks. B5 remains
+  excluded from aggregation, empty aggregates remain unavailable, and recorded
+  judge identity stays intact. This bounded relocation does not qualify full
+  P3/P4 acceptance or consumer fixture/lock parity. Release class: PATCH.
+
+- Relocate whole `narrative_decision_audit` and `narrative_decision_long_form`
+  surfaces into `setec.surfaces`, retaining
+  permanent schema-1.x launchers and shared module/monkeypatch identity. Base
+  normalized JSON delivery remains available; long-form remains experimental
+  without normalized delivery or licensed work-level aggregates.
+- Retarget the existing long-form-to-base layer exemption and document the two
+  visible launcher edges and required detached-runpy bootstraps. The honestly
+  counted bootstrap ceiling rises from 189 to 191; no exclusions are added.
+- Add model-free synthetic compatibility and bare-copy checks without changing
+  judge, manifest, cache, license, scoring, or refusal behavior. This bounded P4
+  family does not qualify full P3/P4 acceptance or consumer fixture/lock parity.
+
+- PATCH: Relocate the whole `document_layout_audit`, `formulaicity_audit`, and
+  `reference_ecology_audit` implementations into `setec.surfaces`, retaining permanent schema-1.x launchers
+  and shared module identity. Preserve descriptive measurements, licenses,
+  300-word floors, custom phrases, reports, and existing refusals. All three
+  remain non-consumer heuristic surfaces; no voice, quality, or AI-provenance
+  capability is added. Extend existing bare-copy and migration checks for this
+  family without changing the sys.path ceiling.
+
+- Relocated the whole `paragraph_audit` implementation into `setec.surfaces`
+  behind its permanent schema-1.x legacy launcher. Functions, scoring,
+  claim-license text, JSON envelopes and the capability `script_path` remain
+  unchanged; ordinary imports share the package module and monkeypatches.
+- Bare-copy checks cover paragraph import identity, direct, runpy and module
+  JSON execution, plus its existing exit-2/bad_input normalized-dispatch refusal.
+  The capability remains TODO and is not promoted to a consumer surface.
+- Bootstrap replacement is net zero. The alias uses the existing fully
+  documented layering exemption channel; this bounded family does not declare
+  full P3/P4 completion or live consumer qualification.
+
+Bump class: PATCH (packaging relocation; no public behavior change).
+
+- Relocated the whole `punctuation_cadence_audit` surface into `setec.surfaces`
+  behind its permanent schema-1.x legacy launcher. Public functions, scoring,
+  claim-license text, JSON envelopes and the capability `script_path` are
+  unchanged; ordinary legacy imports share the package module and monkeypatches.
+- Capability seeding, drift and bare-copy reachability now follow static
+  `TASK_SURFACE` imports to implementation metadata, reject broken aliases and
+  avoid double-counting relocated surfaces while retaining stay-put package
+  surfaces. Bare-copy checks exercise punctuation import identity, direct,
+  runpy, module and normalized dispatch routes without installation.
+- This is the first bounded P4 family on the frozen integration foundation;
+  it does not declare full P3 or P4 completion. Bootstrap replacement is net
+  zero, with the existing shrink-only layering boundary retained.
+
+Bump class: PATCH (packaging relocation; no public behavior change).
+
+- Relocated the whole repetition, manuscript-repetition, and chapter-distinctiveness
+  audits into `setec.surfaces`, preserving their permanent schema-1.x launchers,
+  shared module identity, scoring, reports, and baseline handling. Repetition's
+  normalized JSON delivery remains available; the other two entries retain their
+  TODO dispatcher refusals.
+- Retargeted existing dependency exemptions through bounded permanent-launcher
+  identity checks and added copied-plugin compatibility coverage, without changing
+  registry metadata or the bootstrap ceiling.
+
+- PATCH: Relocate the whole `corpus_novelty_audit`, `cross_doc_novelty_profile`,
+  `distinct_diversity_audit`, `homogeneity_audit`, `originality_audit`,
+  `skeleton_overlap_audit`, and `verbatim_mosaic_audit` implementations into
+  `setec.surfaces` behind permanent identity-sharing schema-1.x launchers.
+  Preserve local measurements, nulls, licenses, self-exclusion, pool/register
+  boundaries, output artifacts, and refusals. None gains normalized JSON
+  delivery. Retain the inherited skeleton model-fallback hold (RQ13), without
+  qualifying model paths. Six existing bootstraps become seven required aliases;
+  count all sites normally and adjust the reviewed ceiling from 192 to 193.
+
+Share the marked and clean synthetic manifest constructors used by the corpus_novelty_audit, cross_doc_novelty_profile, distinct_diversity_audit, homogeneity_audit and skeleton_overlap_audit pool-guard tests. Keep each surface's local test cases, fixture bindings and refusal expectations.
+
+Bump class: chore (PATCH).
+
+- `generate_voice_report` and `calibration_drift_monitor` are discoverable again. Both were hidden for defects fixed on 2026-10-10: `generate_voice_report` now unwraps schema-1.0 `voice_profile` / `voice_drift_tracker` envelopes (a current profile reports its real file and word counts), and `calibration_drift_monitor` reports a benchmark that errored at snapshot or check as unmeasured and counts it as drift. Both were re-checked end to end before promotion.
+
+- Move the distinct `variance_audit` and `dialogue_voice_audit` function-word inventories to their final `setec.core.textprims` owner while preserving the established audit exports and behavior.
+
+`register_composition_sweep` test rewrite (chore, PATCH-class, owner-approved 2026-10-16). `test_register_sweep.py` goes from 8,213 lines and 900 tests to about 1,500 lines and 64 tests. The new file drives `main()` and the real entry point over synthetic corpora and checks the failures that would otherwise be silent: the conservation and marginal equations, scope filtering and the source-blind metamorphic invariant, refusals never landing in a family cell, CRLF manifests reporting the same as LF, row-break, duplicate-key and unknown-enum manifests, non-UTF-8 documents and documents changed after planning, document candidate order, documents listed twice, interrupt/resume byte identity, shard-chain holes and corruption, resuming under a changed run, the success and error golden envelopes, privacy of sentinel values, the tampered-H1 refusal, and the receipt's three identity digests against the runtime constants. It drops the digest golden vectors, receipt schema pins, the test that read `tools/check_register_sweep_h1_gate.py` source (that tool is removed in #797), classifier byte-seam cases, claim-posture regex tables, topology and Windows fake-backend seams, hostile-umask cases, and codec mutation tables. No runtime behavior changes.
+
+`setec-voiceprint`: removed dead code found by the text-primitives sweep. Unused helpers in `generate_voice_report`, `length_bootstrap`, `before_after_restoration` and `external_mirror/compute_distances`, an unreachable fallback in `narrative_decision_long_form`, unused imports, and the `ImportError` fallback sentence splitters in `aic_pattern_audit`, `construction_signature_audit`, `semantic_preservation_check` and `semantic_trajectory_audit` (`variance_audit` always imports in the packaged plugin) are gone. `_mirror_gate._initial` moved into its test. The only user-visible change: `kicker_density`'s claim-license caveat no longer recommends a nonexistent `classify_with_pretokenized` function.
+
+- Rewrite `test_schema_envelopes.py` (4,248 → ~940 lines, 376 → 185 tests). The envelope checks repeated per surface (keys, identity, claim license, results payload, target words) now run once each, parametrized over 26 surfaces. Every envelope is now real module output, mostly from the surface's own `--json` CLI, instead of a hand-built result dict. aesthetic_authority_audit, pov_voice_profile and voice_drift_tracker drop out because their real pipelines need spaCy; their own test files cover their envelopes. Driving from real output found that six text audits report `baseline.words == 0` on a real `--baseline-dir` run. Those cases are pinned as strict xfails.
+
+`setec-voiceprint`: `acquire_stackexchange` records now carry `html_extractor` (`"bs4"` or `"stdlib"`), the HTML-to-text path that produced the record's `text`. The acquirer uses BeautifulSoup when it is installed and a stdlib parser otherwise, and the two separate blocks and inline tags differently and treat escaped markup differently (for example, BeautifulSoup's `get_text(separator="\n")` splits at every inline tag: `<p>This is <em>very</em> good.</p>` becomes `This is\nvery\ngood.`, while the stdlib path gives `This is very good.`). Runs on hosts with and without bs4 therefore produce different text and content hashes; the field makes that visible. Tool version 1.1.0, and the extractor is part of the resume contract, so resuming an output written by 1.0.0 or on a host with the other extractor is refused as a contract change. The module docstring no longer claims its hashes are comparable with other acquirers, since its text cleaning differs.
+
+- Share identical UTF-8 file-writing and Python-probe test helpers across their existing callers, retaining all scenarios and each probe variant's isolation and assertions.
+
+- Share the exact lowercase-before-ASCII-regex word counter across SpecDetect, structural shuffle, Binoculars, edit magnitude, fast-detect curvature and intrinsic dimension. Preserve consumer counter and compiled-pattern aliases, keyword calls, Unicode lowercasing and body-level input errors.
+
+- Share stylometry's ASCII word tokenizer through the text-primitives owner (it is imported by seven modules). Preserve public token names and the WORD_RE regex used by idiolect and adversarial transforms, including case-preserving matching and substitution. repetition_audit keeps its own Unicode-letter tokenizer (#648), so it is not a copy.
+
+- Consolidated the enthymeme audit's alphanumeric word counter, sentence splitter and content-token set in the shared text-primitives module, preserving their distinct behavior and legacy surface names. Added primary/mutant characterization for all three and exact string-set comparison.
+
+- Share the exact paragraph-numbering primitive used by argument, argument-quality, fallacy, warrant and AGD-move judge adapters. Preserve zero-based indices, empty paragraphs, formatting, keyword calls and existing prompt construction.
+
+- Share the six argument audits' identical blank-line paragraph splitter through the text-primitives owner, preserving established aliases, whitespace behavior and errors. Characterize its boundary cases without converging it with other paragraph parsers.
+
+Move the existing Punkt and regex-fallback sentence-splitting implementations and unchanged regex into `setec.core.textprims` (GX-A1 / Fleet #74, R1.splitters). `variance_audit.split_sentences` retains its existing backend selection, empty-result fallback and exception fallback, with compatibility re-exports. No registry IDs, output changes or version bump.
+
+- Clarify the text-primitives R2 spec: discovery scans all production source but CI enforces only cumulative registered cohorts (remaining sites go to independent review), the first cohort is the Punkt and regex sentence splitters, and native Punkt characterization uses a pinned, isolated NLTK test dependency. Clarify identity-preserving membership characterization for the existing function-word sets. No runtime change (docs; PATCH).
+
+Register the native frozen passage tokenizer at its canonical packaged owner, binding its unchanged module and committed table bytes. Add identity-bound token/offset characterization and cumulative qualified-import checks; preserve legacy obligations through existing permanent module aliases. Load the exact tokenizer object only when requested so unrelated pure table imports retain scripts-only portability. Tokenizer behavior, table, consumer commitments and call arguments remain unchanged.
+
+Clarify the next R2 frozen passage-tokenizer cohort: bind the unchanged canonical module and committed data bytes, and permit native characterization to read that exact default table. Preserve the existing tokenizer object, consumer module bindings, and Spec-80 commitments; no implementation or data change.
+
+Register the two existing function-word sets at their final owner with identity-preserving native membership characterization. Check cumulative registered table/import obligations, retain compatibility re-exports, and bind CI inventory checks to the actual PR base. Existing table contents, set types, and scoring behavior are unchanged.
+
+Simplify the text-primitives registry (spec v7). `setec.core.textprims.PRIMITIVES` now maps each shared primitive to its one owner module, and every registered name is importable from `setec.core.textprims`; names owned elsewhere load lazily, so importing the registry stays light. Newly registered: the verbatim-cover tokenizer and fingerprint, the `paragraph_parser` splitters, the preflight analysis fingerprint, `_normws` (moved from four judges) and `count_words_alpha` (the ASCII word counter, moved from seven surfaces that now import it under their old names). The characterization oracle (schema 2) pins all twelve primitives with 123 primary and mutant cases. `tools/gen_textprims_inventory.py --check` is now a lint that refuses new copies of a registered primitive. The source-hash row IDs, merge-base byte checks and discovery gate are removed. No audit's output changes.
+
+- distinct-diversity and homogeneity count words with the shared `count_words_alpha`, which behaves identically to their former tokenizer-based counter (same `[A-Za-z']+` tokens). Their public `_word_count` and `word_tokens` names are unchanged.
+
+- Share five audits' identical Unicode word-boundary counter through the text-primitives owner. Preserve counter names, regex aliases and paragraph filtering/fragment behavior separately from existing ASCII and hyphen-aware counters.
+
+- Share seven audits' identical Unicode-and-hyphen word counter through the text-primitives owner, keeping its regex, flags, public counter names and compiled-pattern aliases. Characterize its Unicode and boundary behavior separately from existing ASCII counters.
+
+- Share the exact uppercase-start sentence splitter used by function-word grammar and discourse moves through the text-primitives owner, preserving both public function and pattern aliases and the separate function-word run boundary rule.
+
+### Fixed
+
+`setec-voiceprint`: stopped redistributing the Brysbaert concreteness CSV. The optional AIC-8 paths now report explicit unavailable data status until a user fetches the publisher's supplementary file locally. Affected capabilities: `prestige_metaphor`, `aesthetic_authority_audit`, `variance_audit` (its opt-in `--aic8` block), `argmove_profile`, and `argument_decision_audit`. The `image_conjunction.py` foundation module changes with them; it carries no capability fragment of its own.
+
+Availability is decided by the file's CONTENTS and by its VALUES, not merely by its openability: a 0-byte, header-only, ratings-empty, or truncated CSV is reported unavailable (`data_malformed`) instead of loading and letting the detectors emit a confident `0.0`, and any rating that is non-finite or outside the documented 1-5 scale condemns the file rather than producing a fabricated density against a register baseline. `fetch_brysbaert.py` applies the loader's own row floor AND its own value check (`concreteness.is_valid_rating`) before it installs anything, and refuses a `--min-rows` below the loader floor for the conventional install path, so a successful fetch cannot produce a file the loader then reports as `data_malformed`. The malformed guidance names the specific offending content and tells the operator to delete the file and re-acquire the publisher's XLSX, rather than naming the converter as a blind remedy. A present-but-unreadable path reports `data_unreadable`, and each reason carries its own operator guidance. `prestige_metaphor` and `aesthetic_authority_audit` now emit the R3 refusal at the TOP level of the envelope — `available: false` with an explaining `warnings` entry and `reason_category: missing_dependency` — rather than an `available: true` envelope hiding a nested `results.available: false`. `fetch_brysbaert.py` writes the converted CSV through a same-directory temp file and installs it only after a row-count check, so an interrupted or truncated conversion can no longer leave a partial table at the install path.
+
+`argument_decision_audit` keeps `results.reused_signals.available: true` when the data is absent; only `results.reused_signals.signals["abstraction.mean_concreteness"]` drops out. That key is therefore CONDITIONAL — the committed contract fixture carries it as the superset shape and a consumer must key off its presence. See `references/contract_fixtures/README.md` ("Conditional keys").
+
+This is a `fix` (PATCH-class) change; the release that carries it is the first release intended to exclude the converted dataset, and it supersedes every earlier release for redistribution purposes. Historical tags remain unchanged. Users who choose to enable the optional detectors must run `python3 plugins/setec-voiceprint/scripts/fetch_brysbaert.py` themselves and are responsible for the publisher's source terms. Full contract: `specs/80-brysbaert-redistribution-excision.md`.
+
+**Acquired corpus files are owner-only whatever the umask.**
+The shared acquisition writer (`setec.core.acquisition_core`) now creates piece
+text, sidecars, manifests and redaction maps as 0600, and any directory it
+creates as 0700. Under the usual umask 022 they used to land 0644/0755, readable
+by other users on the machine. The Gmail author pipeline then refused its own
+artifacts (`private artifact policy refused`), and a rerun could not recover.
+Directories that already exist are left as they are.
+
+`setec-voiceprint`: `argmove_profile.argmove_vector` now computes its AGD densities (`agd.discounting_per_1k`, `agd.argument_marker_per_1k`, `agd.abusive_assuring_per_1k`) per 1,000 of the same words it publishes as `_n_words` (which `argument_decision_audit` reports as `n_words`). They used the module's own `[A-Za-z][A-Za-z'\-]*` count while `_n_words` came from the stance audit, so dividing a published density by the published count gave the wrong number. AGD density values change for text where the two counts differ (hyphens, digits, apostrophes, underscores and non-ASCII letters). `profile_corpus`'s `band_p10_p90` now uses `statistics.quantiles(..., method="inclusive")`, so the band stays inside the observed values instead of extrapolating past them on small corpora.
+
+**Calibration-readiness matrix input labels.** `tools/gen_calibration_readiness.py`
+no longer strips the leading flag from an input description, so rows such
+as `pan_replay` now read `--signals to restrict reported signals` instead of
+losing the flag the reader has to pass. An input is labelled a
+register-matched personal baseline corpus only when it names a baseline
+directory or corpus (`--baseline-dir`, or "baseline directory",
+"baseline directories" or "baseline corpus"); a value flag such as `kicker_density`'s `--baseline` rate keeps its
+own wording. `references/calibration-readiness.md` is regenerated.
+
+Confine `baseline_discovery` tests to realistic synthetic repo paths, homes and environment. Preserve actual sibling discovery while preventing ambient developer folders from changing fixture recommendations or counts.
+
+Release impact: PATCH.
+
+**`baseline.words` is no longer always 0 on `--baseline-dir` runs.** `agency_abstraction_audit`, `discourse_move_signature`, `function_word_grammar_audit`, `paragraph_audit`, `punctuation_cadence_audit` and `stance_modality_audit` read `n_words` from a baseline block their own builder never filled, and `manuscript_audit` hard-coded the value to 0. Each now reports the summed word count of the baseline files it scored.
+
+Close the Brysbaert converter's read-only workbook and owned XLSX input on success, validation failure and interruption. `fetch_brysbaert.py --keep-xlsx` can preserve the successful source on Windows, and failed conversions can discard it without relying on garbage collection. Existing workbook-format refusals, CSV validation and atomic replacement remain unchanged. PATCH.
+
+- `calibration_drift_monitor` now refuses non-finite, boolean and nonnumeric
+  signal values, invalid tolerance settings and overflowed comparison arithmetic
+  instead of publishing a misleading stable or non-finite report. CLI checks
+  reject invalid recorded numbers and relative tolerances before measurement,
+  and return bad-input code 2 without writing a report on comparison failure.
+  Valid comparison decisions and provisional threshold values are unchanged.
+  This does not qualify model outputs or change empty/all-error evidence handling.
+  Bump class: PATCH.
+
+- Defer paraphrase-ladder scoring and proxy imports until execution so `--help` does not initialize optional NLP resources. Preserve scoring and proxy call behavior.
+
+- `calibration_drift_monitor` now requires at least one successful benchmark
+  record with a finite signal before publishing a snapshot or drift report.
+  Error-only, empty and None-only evidence returns bad-input code 2 without
+  publishing or overwriting an artifact; invalid recorded evidence is refused
+  before current measurement. Finite zero and negative values remain valid,
+  and usable mixed successful/error snapshots retain their existing behavior.
+  Partial coverage is not complete fixed-set qualification. Thresholds and
+  admitted report shapes are unchanged. Bump class: PATCH.
+
+`calibration_drift_monitor` rejects malformed snapshot object containers before measurement or report publication, including benchmark records, signals, compression, stack and framework heuristic containers. Missing optional objects and existing None heuristic-record sentinels retain their previous behavior. This validates container types; scalar metadata/compression qualification and complete mixed coverage remain separate. Bump class: PATCH.
+
+**`voice_distance` clusters and `idiolect_detector` rankings no longer depend on the Python hash seed (CB-6).**
+`stylometry_distance.compute_clusters` walked each cluster's member set in set
+order. That order follows `PYTHONHASHSEED`, so tied features in a cluster's
+`top_features` (and the float sums behind its means) could come out differently
+from run to run of `voice_distance`. It now walks the members in sorted order. A
+zero-install consumer case for `voice_distance` (`--no-spacy`) pins the
+envelope, and the ID leaves the pending list.
+
+`idiolect_detector` had the same flaw in its keyness rankings and preservation
+list: rows with equal scores kept their hash-seeded n-gram set order. Each
+score sort now runs after a stable sort by phrase. Its zero-install case
+(`--target-dir` holding the shared input, `--reference-dir` the baseline
+folder) joins the table, and the ID leaves the pending list.
+
+`tools/spec_anchor_lint.py` checks a bare-basename `name.py:N` citation against every file with that name, so a short compatibility launcher no longer hides the relocated module it forwards to. Specs now resolve every gating anchor: shorthand paths are repo-relative, stale line citations are corrected, and stale status lines match what landed. CI runs the anchor lint over every spec instead of only the specs a PR changes. `tools/check_changed_spec_anchors.py` still runs as its own step, because the whole-tree lint checks sibling-spec references by number only and would miss a surviving spec that cites a deleted or renamed spec by path.
+
+Release impact: PATCH.
+
+`setec-voiceprint`: `check_corpus` no longer silently drops bytes that aren't valid UTF-8. It used to read with `errors="ignore"`, so a cp1252 file or a stray binary chunk was scored as if those bytes weren't there. Bad bytes now decode to U+FFFD and stay in the text that is scored (universal-newline handling is unchanged, so CRLF and CR input keep the prior behavior). Each file record carries `decode_replacements`, the number of replacement characters made (genuine U+FFFD characters are not counted), and any file with replacements is at least a `warning`. The summary totals `decode_replacements` and the report names it. Strip-ratio thresholds are unchanged. The records-cache version moves to 1.3, so existing caches are rescored rather than reused.
+
+**`conformal_gate` — preserve both classes in two-class reports.** Identical reference and positive labels are refused instead of overwriting class counts and p-values.
+
+**`conformal_gate` — reject invalid probability parameters for direct callers.** Class gates and the FPR threshold helper require a finite probability strictly between zero and one.
+
+- Keep the existing default-profile refusal ordering test host-independent by
+  pinning both platform prerequisites only in its consumer module. The actual
+  host OS, production platform policy, exact profile refusal and forbidden
+  private-root assertion remain unchanged. PATCH.
+
+**`restoration_packet`, `confounder_audit` and `evidentiary_conditions_gate` now read the producers' schema 1.0 `--json` envelopes.** Producers nest their payload under `results`, but these consumers read it at the top level, so handing them a producer's envelope silently dropped the evidence: `restoration_packet --bigram-json` found no `diffs`, `confounder_audit --agency-json` found no `densities_per_1k`, and `evidentiary_conditions_gate` counted no usable surfaces and no confounder diagnosis. A new `output_schema.unwrap_envelope` lifts `results` to the top level (payload keys win, and an envelope `available: false` stays false) and the three consumers apply it to every input; `evidentiary_conditions_gate` also reads the envelope's `target.words`, `target.preprocessing` and `baseline.n_files` for its target-length, strip-ratio and baseline-size indicators. An audit that reports `available: false` is never used as evidence: `restoration_packet` builds no packets from it on any input path, and the gate no longer takes a target word count or impostor-pool size from it. Legacy bare payloads are read exactly as before.
+
+- The pool-guard and register-isolation coverage sweeps now read every relocated implementation in `setec/surfaces` or `setec/core` instead of a hand-kept list, so about 100 modules moved behind launchers are scanned as their real code rather than their launcher stub.
+
+**Release instructions.** Reconciled chat-brief and release-runbook guidance with the existing draft-first integration train and exact-base landing policy.
+
+**`calibration_drift_monitor` no longer reports an errored benchmark as stable.** `take_snapshot` records `{"error": ...}` for a benchmark whose measurement raised, and `detect_drift` used to compare the missing signal dicts as if they were empty, so a benchmark that errored on both sides produced zero drifted signals and a no-drift verdict. A benchmark that errored on either side is now reported as unmeasured: it is listed in `unmeasured_benchmarks` (with `n_benchmarks_unmeasured`), its `per_benchmark` entry carries `unmeasured: true`, `errored_in` and the error text, the Markdown report gains an "Unmeasured benchmarks" section, and `infrastructure_drift_detected` fails closed to `true` so `--exit-nonzero-on-drift` exits 3. Measured benchmarks compare exactly as before.
+
+- Emit canonical UTF-8 LF JSON from the standalone consumer reference fake,
+  including on Windows pipes with a non-UTF-8 default encoding. Preserve
+  logical output for text captures and verify raw bytes for every golden.
+
+- Default ordinary `acquire_everycrsreport` and `acquire_mirrulations` draft manifest entries to `language_status: unknown`, with an explicit five-value `--language-status` option for evidence-backed batch assertions. This applies to both Mirrulations metadata modes; EveryCRS historical candidates remain unannotated. Bump their scraper versions to 1.1 and 1.2 respectively. The shared manifest composer default is unchanged.
+
+- Let `calibrate_thresholds.py --help` reach argparse before initializing optional scoring dependencies, while preserving direct calibration aliases and scoring behavior.
+
+- `acquire_govinfo_chrg` now stops candidate written blocks at detected oral or procedural boundaries, preserves supported written brackets, and records ambiguous or overlong refusals and extraction provenance for source review.
+
+`setec-voiceprint`: `discourse_move_signature`'s explicit-relation layer now matches multi-word connectives across any run of whitespace, not just a single space. `strip_non_prose` keeps hard line breaks and double spaces, so in hard-wrapped or loosely spaced prose a phrase like `as a` / `result` split by a newline was missed, or counted as the bare temporal `as`. Only `relation_distribution` changes, along with the baseline `aggregate_relation_density_by_bucket` and `relation_density_z_scores` derived from it. On the repo's own Markdown, 8 files shift, the largest fraction moving by 0.024. The layer is uncalibrated and has no band, so no band or golden moves (fleet-coordination#460). The move-category patterns have the same literal-space form and are left for a separate issue.
+
+- `gen_contract_fixtures.py --check` no longer reports a **passing** tree as a failure on a non-UTF-8 console. Its success line carries `✔`, so on Windows `cp1252` with `PYTHONUTF8` unset the `print()` raised `UnicodeEncodeError` after the check had already passed and the gate exited 1 — indistinguishable from real drift. `main()` now forces UTF-8 stdio first; both it and the shared `tools/_console.py` helper preserve the streams' existing error policies and tolerate unsupported reconfiguration.
+
+- Preserve known `consent_status`, `era`, and `acquired_via` metadata when
+  `acquire_manuscript` or `acquire_epub` emits identity-baseline entries,
+  without changing deliberately unroled validation manifests.
+
+- Multi-word discourse and argument markers now recognize hard wraps and repeated whitespace across seven surfaces, including explicit warrant bridges that previously produced false enthymeme flags.
+
+- Make `paraphrase_ladder.py --help` printable on cp1252 consoles by using ASCII `|delta|` labels for its two threshold flags; runtime and report output are unchanged.
+
+- Keep Unicode `--help` output intact under cp1252 consoles for `pan_replay`, `adversarial_robustness_card`, `bigram_diff`, and `cosine_explanation` using a plugin-local UTF-8 stdout/stderr helper. This partially addresses #428; runtime writer cases remain separate.
+
+- Keep UTF-8 console output for the sliding-window heatmap, within-document segmentation, long-form agreement, narrative polarity audit, and external-mirror distance plugin CLIs on cp1252 Windows consoles. Their Unicode help and completion summaries now finish without changing output artifacts or refusal behavior.
+
+- Make the S5 implementation identity stable across LF and CRLF checkouts by canonicalizing source newlines before hashing.
+
+- Preserve the raw release bytes of `consumer_client.py` and `contract_fixtures/` that consumers vendor and hash, including on Windows checkouts with `core.autocrlf=true`. Existing checkouts need a fresh producer release checkout or verified-clean rematerialization of the protected paths to replace previously converted bytes. Voicewright #344 still requires a new producer release, consumer repin, and live CHECK 2 verification.
+
+`setec-voiceprint`: `setec.calibration.storyscope_atlas` `headless` no longer loses the cost of an answer it reruns, and no longer re-sends an unusable answer forever. When a rerun replaces a row that had already been answered (for example a chapter card missing fields), the replaced answer's model, token usage and list price now stay in the new row under `superseded`, and `actual_cost` (and so `out/cost.json` and the committed-spend check) counts them, with a per-step `superseded_answers` count. Each request is re-sent until it has returned at most `--max-attempts` answers (default 3); after that an unusable row is logged by id and left unusable instead of re-sent. Errors that returned no answer, such as a usage limit or a timeout, do not count toward the cap, so resuming after a limit works as before. `headless` also logs each answer that came back unusable and why, and its final line reports usable rows rather than "succeeded".
+
+- Restrict the Tanner acquire_pdf_urls fi-glyph correction to one reviewed
+  PDF byte hash and two verified font/CMap signatures, retaining ordinary page
+  text if inspection or visitor reconstruction fails. Record the fetched PDF
+  hash and artifact profile in preprocessing provenance.
+- Default direct PDF acquisition to language_status unknown; operators can
+  provide a validated --language-status with affirmative evidence for native.
+
+- `shard_runner`: use a read-only process-handle wait for native Windows PID
+  liveness instead of signal zero, which can interrupt or terminate processes.
+  Unknown API and handle-cleanup failures retain claims conservatively. Existing
+  process-start-time identity checks still govern intentional worker signals.
+
+- `sliding_window_heatmap` now accepts current `variance_audit` JSON envelopes
+  containing `results.windows`, alongside raw windows and legacy top-level
+  windows.
+
+- `sliding_window_heatmap` checks both output paths against the private-output
+  rule before writing anything, so a refused JSON path no longer leaves a
+  Markdown report behind.
+
+- Guard the HTML whitespace output test with its required lxml dependency, retaining pure-normalizer and historical html.parser coverage when lxml is absent. Production extraction and parser-refusal behavior are unchanged. PATCH.
+
+- Document the existing pinned native Punkt bootstrap for local developer
+  characterization tests, with Bash and PowerShell commands, isolated resource
+  roots, offline archive provisioning and the Windows symlink prerequisite.
+  Runtime tokenizer behavior and missing-resource failures remain unchanged.
+
+**`acquire_manuscript` — preserve manuscript paragraphs and literal underscores.**
+Fixed word windows retain blank-line paragraph boundaries while keeping their
+existing word membership, count and order. DOCX windows retain semantic paragraph
+boundaries; work and real chapter modes keep their existing output. Markdown
+emphasis stripping preserves underscores inside identifiers such as
+`file_name_here`, including identifiers wrapped in balanced underscore emphasis.
+
+Corrected paragraph separators and underscores intentionally change affected
+cleaned text and content hashes. Existing identity baselines need explicit
+re-acquisition and refreshed manifests to obtain this correction; existing text,
+sidecars and manifest rows are not automatically migrated, removed or rewritten.
+
+`setec-voiceprint`: `mimicry_cosplay_audit` now counts idiolect preservation phrases only as whole phrases, bounded by the `[A-Za-z']` word class that `idiolect_detector` builds them from. It used plain substring counting, so a phrase also matched inside longer words (`"the"` counted 3 times in `"The other mother."`), which inflated `n_matched`, `n_total_occurrences`, the survival rate and both phrase densities. The envelope's claim-license caveat now says so and notes that `confounder_audit`'s survival check still uses substring matching, so the two can differ; the contract fixture is regenerated with that caveat and its counts are unchanged.
+
+**`paragraph_audit --json` now reports the target word count.** The audit dict carried no `n_words`, so `build_audit_payload` wrote `target.words: 0` into every schema 1.0 envelope, and consumers that read the word count from the envelope (for example `evidentiary_conditions_gate`'s target-length indicator) saw 0. `audit_paragraphs` now returns `n_words`, counted over the whole text so paragraphs below the split floor still count, and the envelope's `target.words` carries it. This applies to unavailable audits too. `results` is unchanged.
+
+- Preserve the frozen passage-tokenizer data's committed bytes on Windows Git
+  checkout, preventing `core.autocrlf` from converting canonical LF JSON to CRLF
+  and triggering the strict loader's noncanonical-data refusal. The data,
+  tokenizer, commitments and authority bindings are unchanged. PATCH.
+
+- Keep the existing passage-tokenizer commitment-mutation test fixture in
+  canonical LF JSON on Windows, so it exercises the intended commitment refusal
+  instead of stopping at newline serialization refusal. All mutation inputs and
+  assertions, frozen data and production behavior are unchanged. PATCH.
+
+- Preserve Unicode in seven pool-guard invariant assertions so the literal guard message is detectable. Five clean-input regression checks now reject mistaken passage-dedup refusals; both exempt-comparison controls retain their existing successful-availability requirements. No production behavior changes. PATCH.
+
+- The ingestion preflight manifest loader now applies the text rules and builds
+  the analysis view once per distinct candidate file, so many rows sharing one
+  large candidate load in about the time of one analysis instead of one per row.
+- Deeply nested JSON in a manifest row, policy, or split map now refuses with
+  that input's contract code instead of `internal_refusal`.
+- The manifest loader and the overlap command now report the first refusal in
+  the shared master order when an input fails several checks: path confinement
+  (including the output location) before aliasing, aliasing before size limits,
+  and size limits before the manifest, policy, and split-map contracts.
+- U+007F (DEL) is no longer refused as a control character in candidate text or
+  manifest labels. Manifest rows with a trailing CR or surrounding whitespace now
+  refuse `input_contract`. An empty `--split-map` refuses `split_contract`
+  instead of meaning "not supplied".
+- A symlink above the manifest directory (for example macOS `/tmp`) no longer
+  refuses `path_confinement`; a symlink at or below the manifest directory still
+  does. Output-location containment compares file identities instead of path
+  strings, and a missing output parent inside the manifest directory now refuses
+  `path_confinement` rather than `output_unavailable`.
+- The overlap command exits 0 when writing the receipt to stdout fails after the
+  bundle is already published.
+
+- The span proof command now binds and size-checks every source before it
+  validates the policy, so a source that changed, escaped, or exceeds a ceiling
+  reports `input_changed`, `path_confinement`, or `size_limit` ahead of
+  `policy_contract`, as the shared refusal order requires. The boundary-visit
+  ceiling is still counted after the policy check.
+- `multiplicity --admission-map ""` now refuses `admission_contract` instead of
+  running as if no admission map had been supplied.
+- The strict span and multiplicity reloaders now refuse documents whose fields
+  contradict each other. The span detail checks that each proof code agrees with
+  the row's hashes, size, and offsets, that self-spans prove, that rows on the
+  same source bytes agree, and that all dispositions could come from one policy.
+  The span receipt checks class-count nesting. The multiplicity receipt bounds
+  its violation and cluster counts.
+
+- The ingestion-preflight holdout firewall now fits its 1 GiB memory bound.
+  The gram-membership ceiling drops from 4,000,000 to 500,000. The firewall
+  indexes only the sealed side, keeps one gram set alive at a time, and stores
+  each pair's classes as a bit mask. The conflicts-file cap rises from 2 MiB to
+  8 MiB, enough for the largest valid file (5,000 flagged ids of 128 escaped
+  characters), so valid input is no longer refused with `size_limit`.
+- Holdout firewall and artifact census refusals now follow the series' master
+  refusal order. Path confinement ranks above label checks, and every input
+  check ranks above output collision. A missing manifest directory in the
+  artifact census now refuses `path_confinement` with exit 2 instead of
+  `output_unavailable` with exit 4. Calibrate compares the operator's expected
+  hashes last.
+- The artifact census now writes the committed receipt to stdout and one
+  `name status` line per stage to stderr, matching the stream contract it
+  inherits. Before this fix it wrote nothing to stdout.
+- The artifact detectors no longer lowercase and scan each line several times,
+  so a 4 MiB prose record takes about 0.23 s instead of 2.1 s. Results and
+  `detector_sha256` are unchanged.
+
+`setec-voiceprint`: the ingestion preflight final recheck (`setec.preflight.final`) and P7 report (`setec.preflight.p7_report`) internal commands now follow the series refusal order when an input breaks more than one check. The final recheck reads the split map before the intake bundle, so a bad split map reports `split_contract` rather than an intake `receipt_contract`. The P7 report loads the manifest before it checks the purpose or the receipt pairing, so a bad manifest reports `input_contract`, and it validates the sealed register before any binding rule, so a malformed register reports `receipt_contract` rather than `receipt_binding`. The report's `clusters_at_intake` row now takes its status from the bound intake overlap receipt's `split_integrity` stage instead of always saying `passed`; this only changes a report built from a hand-made final receipt, since the final recheck refuses an intake whose split integrity did not pass. The sealed-register binding compares the receipt's sealed manifest hashes and the register as sets, as the spec words it.
+
+- Every ingestion-preflight command now checks its inputs in the series' master
+  refusal order. It first confines every input and the output location, then
+  checks every size ceiling, then parses contracts. Before this fix, several
+  commands checked some of these late. An artifact census or calibrate output
+  inside the manifest directory now refuses `path_confinement` even when the
+  policy is also malformed. It also ranks first in span, multiplicity, final
+  and the P7 report. An oversized policy, labels file, admission map, split map
+  or span source now refuses `size_limit` even when the manifest is malformed.
+  In the holdout firewall, a manifest row naming a path outside its root
+  refuses `path_confinement` ahead of an oversized policy.
+- The holdout firewall confines its roots and outputs by file identity, not by
+  resolved path strings, so a case-folded or symlinked spelling of a manifest
+  root cannot slip past. Two output names that differ only in case now refuse
+  `path_confinement`. A symlink loop in an output parent now refuses
+  `output_unavailable`, after every input check, instead of `path_confinement`.
+- A failing stdout or stderr after a bundle is published no longer turns the
+  run into exit 2 `internal_refusal`. Artifacts, span, multiplicity, final, the
+  holdout firewall and the P7 report now exit as overlap does. The bundle is
+  committed, so the exit code is 0, or 3 for a P7 report with pending stages.
+- The holdout detail and receipt reloaders now refuse `detail_contract` and
+  `receipt_contract` when two sealed entries share a manifest hash. A genuine
+  run refuses such input, so a P7 report can no longer accept one.
+
+The holdout manifest-planning phase compares refusals across all input manifests, so an earlier alias or manifest-size failure cannot mask later path confinement.
+
+`setec-voiceprint`: `repetition_audit` now counts precomposed letters beyond ASCII (accented Latin, Greek, Cyrillic and similar) and keeps curly apostrophes. It tokenized with `[A-Za-z']+`, so an anchor such as `José`, `O’Brien` or `café` could never match, and the name you asked to exclude was still flagged (as `jos`, `o`/`brien`, `caf`). Text and anchors are read after NFC normalization, U+2019 folds to `'` (so `don’t` and `don't` are one word), apostrophes at the ends of a token (closing quotes) are dropped, and an anchor or function word also covers its possessive (`Mark` covers `Mark’s`). The same changes reach `chapter_distinctiveness_audit` and `manuscript_repetition_audit`, which share the tokenizer and anchor loader. Word counts and repetition ratios change for text with accented letters, other alphabets or curly apostrophes. Hyphens, digits and nonletter numbers, including superscripts, fractions and Roman numerals, split words; scripts written with combining vowel signs (such as Devanagari, Tamil or Thai) still split inside words, and unspaced scripts are not segmented.
+
+`before_after_restoration`, `adversarial_robustness_card`, and `generate_voice_report` now consume normalized producer envelopes as well as legacy payloads, keeping explicitly unavailable evidence out of reports. Before/after reports retain real voice-distance weighted deltas and zero values; an absent or unavailable after-bigram audit cannot imply improvement. Unavailable required voice profiles refuse report generation. Existing interpretation, metric-gaming and output-privacy boundaries remain in force (PATCH).
+
+`setec-voiceprint`: The shared HTML extraction path and the magazine and blog acquirers now use the lxml parser only. `acquisition_core.html_to_text`, `acquisition_core._prestrip_html`, `acquire_magazine` (story list, story page and issue archive) and `acquire_blog` used to fall back silently to Python's `html.parser` when lxml could not be imported. The two parsers read malformed markup differently (`<p>a</div>b</p>` gives `ab` with lxml and `a\nb` with `html.parser`), so the stored text and content hash of a magazine, blog or other HTML piece depended on whether lxml happened to be installed. A re-acquisition on a host without lxml could then miss dedupe with no report. lxml was already pinned in `requirements-acquisition.txt` and installed in CI, so output on hosts that have it is unchanged for decoded text (a `str` holding a lone surrogate, which no production source produces, now raises instead of being re-parsed by `html.parser`); a host without lxml now fails with `bs4.FeatureNotFound` instead of producing different text. `_prestrip_html` stays best-effort for selector errors but no longer hides a missing parser. `acquire_stackexchange` and the CRS historical extractor still choose `html.parser` deliberately and are not changed here.
+
+The six HTML acquirers declare lxml as required in their capability contracts, so normalized command preflight reports a missing parser before acquisition. Blogger Takeout also declares its existing BeautifulSoup requirement.
+
+Acquisition-only tests check both BeautifulSoup and lxml before running, so partial acquisition installs do not fail unrelated core test runs.
+
+`setec-voiceprint`: `structural_shuffle_audit.split_sentences` no longer prefers a spaCy sentencizer when spaCy happens to be importable. The spaCy branch (`spacy.blank("en")` plus the rule-based sentencizer) and the stdlib regex disagreed on about 40% of test strings, and CI ran the regex, so the audit's sentence units and shuffle results depended on the host. The function now always uses the regex that CI already exercised. Hosts without spaCy see no change; hosts with spaCy now match CI.
+
+The capability contract and dependency golden no longer require spaCy or its English model. The specification and generated readiness row agree with the regex-only implementation.
+
+**`triage_agreement` — refuse self-column comparisons.** The framework and human label columns must differ; comparing a column with itself no longer reports perfect agreement.
+
+**`reconstructibility_probe_set` anchor search no longer rescans the document or every mask per candidate anchor.** `valid_anchors` ran the full-document tokenization inside its per-candidate loop, so that work grew quadratically with document length (on a 400-word synthetic document it tokenized about 400 times the document's length). The same loop also tested every loss-mask interval against every candidate, so cost grew with document length times mask count. Both ran against a 250,000-token document cap that `preflight_resources` does not budget for. The tokenization now runs once per call, and mask overlap is a binary search over the sorted mask starts with a running maximum end. Anchor output is unchanged. Bump class: `fix` (PATCH). Part of the `originality_audit` capability.
+
+- `variance_audit` retains the `kicker_density` detector's existing
+  `proper_noun_detection` diagnostic at
+  `aic_8_9.kicker_density.proper_noun_detection`. Reports now identify the
+  `spacy` or `regex` path that produced the optional AIC-9 value; detector
+  selection, density values, thresholds and unavailable behavior are unchanged.
+
+**`variance_audit.py` no longer downloads NLTK Punkt data at import.** Importing
+`variance_audit` (and so `stylometry_core`) on a host without the data used to
+call `nltk.download("punkt")`, a silent network request. On NLTK 3.9 that
+fetched the legacy `punkt` resource, which `sent_tokenize` no longer reads, so
+splitting never depended on it. Punkt is now explicit setup
+(`python -m nltk.downloader punkt_tab` on NLTK 3.9+, `punkt` on older 3.8.x;
+noted in `requirements.txt`). `split_sentences` is unchanged: it uses Punkt
+when the data is installed and the regex splitter when it is missing. The one
+behavior change is on an NLTK 3.8.x host that relied on the first-run fetch:
+it now uses the regex splitter until `punkt` is installed.
+
+- Preserve nullable register-classifier refusal reasons and warnings in the
+  voice-distance target-classification projection and display them independently
+  in Markdown, including unknown classifications. Label classification refusal
+  separately from distance computation. Top-level warnings, scoring, taxonomy,
+  match strength and claim-license behavior remain unchanged.
+
+- Give the adapter's four nonbaseline-declaration refusal cases portable temporary directory names and require the actual refusal to relabel material as `identity_baseline`. Truncated JSON names contained Windows-invalid quotes, a native defect recorded in PR #340. Local synthetic module and guard-bypass checks cover the correction; fresh Windows before/after and full-suite parity remain owed. Production authority checks and the existing Windows CI deselection are unchanged.
+
+**Windows private-directory chain pinning:** form ordinary UNC roots with the native `\\?\UNC\` prefix and preserve already extended drive/UNC roots, matching the existing directory-pinning helper. Retained ancestor handles, no-follow checks and final-directory access stay unchanged.
+
 ## [1.132.0] - 2026-08-26
 
 ### Added
