@@ -48,9 +48,11 @@ https://github.com/Historical-AI-Lab/Chronologic-EN) onto SETEC's envelope:
      on a feature between the 10th and 90th percentile; the set reports its
      in-band share, a SIGNED displacement (over or under, never "more is
      better"), W1 of all percentiles from uniform, per-feature readings, and a
-     stdlib degradation veto (a word 4-gram repeated 3+ times, or a
-     distinct-token ratio outside the real 5th-95th band) whose windows count
-     as failures. Same pseudo-model noise floor. Parser: spaCy en_core_web_sm,
+     stdlib degradation veto (a repeated word 4-gram, or a distinct-token
+     ratio below the real low tail; a rich vocabulary is not degradation),
+     calibrated so real windows from an unseen author are vetoed about 5% of
+     the time. Vetoed windows are reported as a veto rate beside the in-band
+     share, not inside it. Same pseudo-model noise floor. Parser: spaCy en_core_web_sm,
      or ``architecture_features`` precomputed on each row.
 
 Descriptive instrument. It validates a training run; it must never be its
@@ -437,6 +439,9 @@ ENERGY_ARM_DRAWS = 20
 ENERGY_NULL_DRAWS = 200
 BAND_LO, BAND_HI = 0.10, 0.90
 VETO_NGRAM, VETO_REPEATS = 4, 3
+# Leave-one-author-out veto rate allowed on real reference windows, split
+# evenly between the repeated-4-gram and the distinct-token-ratio tests.
+VETO_REAL_RATE = 0.05
 SUBORD_DEPS = frozenset({"advcl", "ccomp", "xcomp", "acl", "relcl"})
 PARA_DEPS = frozenset({"conj", "parataxis"})
 _INTERRUPTERS = frozenset({";", ":", "(", ")", "-", "--"})
@@ -725,10 +730,40 @@ def _qs_without(win, blocks) -> dict[str, float | None]:
     return qs
 
 
-def _vetoed(win, veto_band) -> bool:
-    lo, hi = veto_band.get(win["length_bin"], (0.0, 1.0))
-    return (win["max_4gram_repeats"] >= VETO_REPEATS
-            or not lo <= win["distinct_token_ratio"] <= hi)
+def _calibrate_veto(ref_w, pool_by_bin):
+    """Veto thresholds set from real windows with their own author left out:
+    the smallest 4-gram repeat count (at least ``VETO_REPEATS``) and the
+    highest low-tail cut on the distinct-token ratio each veto at most half of
+    ``VETO_REAL_RATE``. The ratio veto is one-sided: degradation (loops,
+    repetition) lowers the ratio. Returns (repeats, tail, band for candidates,
+    band per (bin, block))."""
+    half = VETO_REAL_RATE / 2
+    repeats = VETO_REPEATS
+    while sum(w["max_4gram_repeats"] >= repeats for w in ref_w) > half * len(ref_w):
+        repeats += 1
+    others: dict[tuple, list[float]] = {}
+    for b, ws in pool_by_bin.items():
+        for block in {w["block"] for w in ws}:
+            others[(b, block)] = sorted(w["distinct_token_ratio"] for w in ws if w["block"] != block)
+
+    def bands(tail):
+        full = {b: (_percentile(sorted(w["distinct_token_ratio"] for w in ws), tail), math.inf)
+                for b, ws in pool_by_bin.items()}
+        loao = {k: ((_percentile(v, tail), math.inf) if v else full[k[0]]) for k, v in others.items()}
+        return full, loao
+
+    for step in range(21):
+        tail = 0.05 - step * 0.0025
+        full, loao = bands(tail)
+        out = sum(w["distinct_token_ratio"] < loao[(w["length_bin"], w["block"])][0] for w in ref_w)
+        if out <= half * len(ref_w):
+            break
+    return repeats, tail, full, loao
+
+
+def _vetoed(win, band, repeats) -> bool:
+    lo, hi = band
+    return win["max_4gram_repeats"] >= repeats or not lo <= win["distinct_token_ratio"] <= hi
 
 
 def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -738,13 +773,12 @@ def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
     for w in wins:
         qs = [q for q in w["qs"].values() if q is not None]
         if w["vetoed"] or not qs:
-            shares.append(0.0)
             continue
         shares.append(sum(BAND_LO <= q <= BAND_HI for q in qs) / len(qs))
         disp.append(_mean([100 * (q - 0.5) for q in qs]))
         pooled.extend(qs)
     return {
-        "in_band_share": _mean(shares),
+        "in_band_share": _mean(shares) if shares else None,
         "signed_displacement": _mean(disp) if disp else None,
         "w1_from_uniform": wasserstein1_uniform(pooled) if pooled else None,
         "veto_rate": sum(w["vetoed"] for w in wins) / len(wins),
@@ -828,21 +862,18 @@ def run_architecture_band(
     for w in ref_w:
         lens = w["features"].get("_sentence_lengths")
         w["len_w1"] = _w1_samples(lens, len_points[w["length_bin"]]) if lens and w["length_bin"] in len_points else None
-    veto_band = {}
-    for b, ws in pool_by_bin.items():
-        ratios = sorted(w["distinct_token_ratio"] for w in ws)
-        veto_band[b] = (_percentile(ratios, 0.05), _percentile(ratios, 0.95))
+    veto_repeats, veto_tail, veto_band, loao_veto_band = _calibrate_veto(ref_w, pool_by_bin)
     for w in ref_w:
         pool, _ = _matched_pool(w, pools, exclude_group=w["block"])
         w["qs"] = _arch_percentiles(w, pool, names, len_points)
         w["q_counts"] = _block_rank_counts(w, pools, names, len_points)
-        w["vetoed"] = _vetoed(w, veto_band)
+        w["vetoed"] = _vetoed(w, loao_veto_band[(w["length_bin"], w["block"])], veto_repeats)
     match_levels: Counter = Counter()
     for w in cand_w:
         pool, level = _matched_pool(w, pools)
         match_levels[level] += 1
         w["qs"] = _arch_percentiles(w, pool, names, len_points)
-        w["vetoed"] = _vetoed(w, veto_band)
+        w["vetoed"] = _vetoed(w, veto_band.get(w["length_bin"], (0.0, 1.0)), veto_repeats)
     if match_levels[1] or match_levels[2]:
         warnings.append(f"{match_levels[1] + match_levels[2]} candidate window(s) were matched on length "
                         "(and dialogue) only, because their full length/dialogue/mode cell was thin")
@@ -914,8 +945,12 @@ def run_architecture_band(
         return [_percentile(vals, 0.025), _percentile(vals, 0.975)] if vals else None
 
     share_iv, disp_iv, w1_iv = interval("in_band_share"), interval("signed_displacement"), interval("w1_from_uniform")
-    beyond = observed["in_band_share"] < share_iv[0] or (
-        observed["w1_from_uniform"] is not None and w1_iv and observed["w1_from_uniform"] > w1_iv[1])
+    veto_iv = interval("veto_rate")
+    # An arm with every window vetoed has no in-band reading and is beyond.
+    beyond = bool(
+        observed["in_band_share"] is None
+        or (share_iv and observed["in_band_share"] < share_iv[0])
+        or (observed["w1_from_uniform"] is not None and w1_iv and observed["w1_from_uniform"] > w1_iv[1]))
     direction = "inside"
     if observed["signed_displacement"] is not None and disp_iv:
         if observed["signed_displacement"] > disp_iv[1]:
@@ -943,6 +978,7 @@ def run_architecture_band(
         "null_in_band_share_interval_95": share_iv,
         "null_signed_displacement_interval_95": disp_iv,
         "null_w1_interval_95": w1_iv,
+        "null_veto_rate_interval_95": veto_iv,
         "band": "beyond_reference_noise" if beyond else "within_reference_noise",
         "displacement_direction": direction,
         "per_feature": per_feature,
@@ -957,8 +993,12 @@ def run_architecture_band(
                                    "length_dialogue": match_levels[1], "length_only": match_levels[2]},
         "band_percentiles": [BAND_LO, BAND_HI],
         "length_bin_edges_log_words": edges,
-        "veto": {"repeated_4gram_at": VETO_REPEATS,
-                 "distinct_token_ratio": "outside the reference 5th to 95th percentile for the length bin"},
+        "veto": {"repeated_4gram_at": veto_repeats,
+                 "distinct_token_ratio_tail": veto_tail,
+                 "distinct_token_ratio": f"below the reference {100 * veto_tail:g}th percentile for the "
+                                         "length bin (each author left out of its own)",
+                 "calibrated_real_veto_rate": VETO_REAL_RATE,
+                 "vetoed_windows": "reported as veto_rate, left out of in_band_share and displacement"},
     }
     if include_per_candidate:
         block["per_window"] = [{"id": w["id"], "length_bin": w["length_bin"], "dialogue_share": w["dialogue_share"],

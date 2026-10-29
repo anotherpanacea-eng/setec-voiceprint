@@ -299,10 +299,10 @@ class TestArchitectureBand:
         assert block["displacement_direction"] == "under"
         assert block["signed_displacement"] < -30
 
-    def test_looping_windows_are_vetoed_and_count_as_failures(self):
+    def test_looping_windows_are_vetoed_and_read_beyond_noise(self):
         block = _arch(_arch_rows(2, 30, kind="c", loop=True), _arch_rows(1, 600))
         assert block["veto_rate"] == 1.0
-        assert block["in_band_share"] == 0.0
+        assert block["in_band_share"] is None
         assert block["band"] == "beyond_reference_noise"
 
     def test_per_feature_reading_names_the_axis_that_moved(self):
@@ -367,6 +367,30 @@ class TestAuthorBlocking:
         unnamed = [{k: v for k, v in r.items() if k != "block"} for r in cands]
         pooled = _arch(unnamed, ref, null_blocks=16)
         assert pooled["band"] == "beyond_reference_noise"
+
+    def test_unseen_authors_keep_their_windows_through_the_veto(self):
+        """Authors differ in vocabulary richness; a veto band fit on the reference
+        itself dropped 16-23% of unseen real authors' windows and counted them as
+        out of band (VP-RS1 qualification v2). Calibrated with each author left
+        out, unseen authors lose few windows and vetoes never count as out of band."""
+        rng = random.Random(11)
+        vocab = [f"w{i}" for i in range(3000)]
+        rows = []
+        for a in range(25):
+            rich = rng.randint(250, 1400)
+            off = rng.gauss(0, 0.5)
+            for w in range(3):
+                for k in range(8):
+                    text = " ".join(" ".join(rng.choice(vocab[:rich]) for _ in range(20)) + "." for _ in range(30))
+                    feats = {f: 10 + j + off + rng.gauss(0, 0.3) for j, f in enumerate(_ARCH)}
+                    rows.append({"id": f"a{a}w{w}k{k}", "year": 1860, "text": text, "n_words": 600,
+                                 "architecture_features": feats, "group": f"a{a}w{w}",
+                                 "author": f"a{a}", "block": f"a{a}"})
+        held = {f"a{i}" for i in rng.sample(range(25), 6)}
+        block = _arch([r for r in rows if r["author"] in held], [r for r in rows if r["author"] not in held])
+        assert block["veto_rate"] <= 0.15
+        assert block["band"] == "within_reference_noise"
+        assert block["veto"]["distinct_token_ratio_tail"] < 0.05
 
     def test_an_arm_with_no_named_authors_is_read_as_one_voice(self):
         ref = [{**r, "block": r["author"]} for r in _authored_rows(5, 16)]

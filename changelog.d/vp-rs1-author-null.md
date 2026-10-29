@@ -12,3 +12,12 @@ one voice). The block reports `null_blocked_by`, `null_sources_per_pseudo_model`
 of the pseudo-model's chosen sources, the way the arm's windows are ranked. On synthetic authors
 whose offsets are five times the within-author spread, unseen 3- and 6-author arms read beyond
 noise in 0 of 20 seeds each (3 of 20 for 6 authors without the re-ranking).
+
+**`period_ruler`: the degradation veto is calibrated on unseen authors and reported beside the
+in-band share (VP-RS1).** The second qualification read found the veto dropping 16-23% of real
+held-out windows and counting them as out of band. The 4-gram repeat count and a now one-sided
+distinct-token-ratio cut (a rich vocabulary is not degradation) are set so reference windows,
+each with its author left out, are vetoed about 5% of the time. Vetoed windows leave the
+in-band share and displacement and are reported as `veto_rate`; an arm with every window vetoed
+has no in-band share and reads beyond noise. The block adds `null_veto_rate_interval_95` and the
+calibrated thresholds under `veto`.
