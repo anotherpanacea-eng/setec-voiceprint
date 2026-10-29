@@ -44,6 +44,7 @@ def _args(**overrides) -> argparse.Namespace:
         "out": None,
         "json_out": None,
         "allow_public_output": True,
+        "no_spacy": False,
     }
     base.update(overrides)
     return argparse.Namespace(**base)
@@ -123,6 +124,16 @@ def test_run_produces_two_povs_with_distance() -> None:
     assert pair["burrows_delta"] > 0.5
     assert pair["cosine_distance"] is not None
     assert pair["cosine_distance"] > 0
+
+
+def test_no_spacy_drops_pos_and_dependency_families() -> None:
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist POV manifest not available")
+        return
+    families = set(pvp.run(_args(no_spacy=True))["family_distances"])
+    assert families
+    assert not families & {"pos_trigrams", "dependency_ngrams"}
 
 
 def test_distinguishing_features_per_pov() -> None:

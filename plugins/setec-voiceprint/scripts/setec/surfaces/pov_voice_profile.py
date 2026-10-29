@@ -191,6 +191,8 @@ class POVProfile:
 
 def build_pov_profiles(
     grouped: dict[str, list[POVEntry]],
+    *,
+    include_spacy: bool = True,
 ) -> tuple[dict[str, POVProfile], dict[str, list[str]]]:
     """For each POV, run extract_features on every doc and compute
     the POV's centroid (per-family per-doc mean across docs).
@@ -216,7 +218,7 @@ def build_pov_profiles(
         n_words = 0
         for e in entries:
             text = e.path.read_text(encoding="utf-8", errors="ignore")
-            feats = extract_features(text)
+            feats = extract_features(text, include_spacy=include_spacy)
             items.append({"id": e.id, "features": feats["features"]})
             n_words += int(feats.get("summary", {}).get("n_words", 0))
         items_by_pov[pov] = items
@@ -918,7 +920,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             f"or add more documents per POV."
         )
 
-    profiles, selected_features = build_pov_profiles(grouped)
+    profiles, selected_features = build_pov_profiles(
+        grouped, include_spacy=not args.no_spacy,
+    )
     family_distances = cross_pov_distances(profiles, selected_features)
     weighted = weighted_cross_pov_distances(family_distances)
     pov_vs_mean = pov_vs_corpus_mean_distances(profiles, selected_features)
@@ -975,6 +979,10 @@ def main(argv: list[str] | None = None) -> int:
             "as potentially voice-collapsed. Heuristic; calibration "
             "roadmap."
         ),
+    )
+    parser.add_argument(
+        "--no-spacy", action="store_true",
+        help="Skip POS and dependency feature families.",
     )
     parser.add_argument("--out", help="Markdown output path.")
     parser.add_argument("--json-out", help="JSON output path.")
