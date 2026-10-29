@@ -972,7 +972,9 @@ CONSUMER_PAIRS_INPUT = (
 CONSUMER_CASES = [
     {"case": "punctuation", "id": "punctuation_cadence_audit",
      "args": ["consumer-input.txt"], "exit": 0},
-    {"case": "manuscript", "id": "manuscript_audit", "args": ["consumer-input.txt"], "exit": 0},
+    # mdd_sd is listed only when spaCy is installed, so the list is not pinned.
+    {"case": "manuscript", "id": "manuscript_audit", "args": ["consumer-input.txt"], "exit": 0,
+     "normalize": ["results.chapters.0.compression.skipped_signals"]},
     {"case": "narrative_mock", "id": "narrative_decision_audit",
      "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0,
      "normalize": ["results.run_timestamp_utc"]},
@@ -1027,7 +1029,7 @@ CONSUMER_CASES = [
      "exit": 0},
     {"case": "voice_distance", "id": "voice_distance",
      "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline", "--no-spacy"],
-     "exit": 0},
+     "exit": 0, "normalize": ["target.spacy_available"]},
     {"case": "voice_profile", "id": "voice_profile",
      "args": ["--baseline-dir", "consumer-baseline", "--no-spacy", "--char-top", "20"],
      "exit": 0},
