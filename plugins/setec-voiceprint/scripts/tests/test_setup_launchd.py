@@ -39,6 +39,14 @@ import setup_launchd as sl  # type: ignore
 # --------------- Helpers ----------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _stand_in_uid(monkeypatch: pytest.MonkeyPatch):
+    """launchd is macOS-only, but the command builders should still be
+    testable on hosts without ``os.getuid`` (native Windows)."""
+    if not hasattr(os, "getuid"):
+        monkeypatch.setattr(os, "getuid", lambda: 501, raising=False)
+
+
 def _good_config(tmp_path: Path) -> sl.RenderConfig:
     """Build a syntactically valid RenderConfig anchored at tmp_path
     so tests don't depend on any system path being present."""
@@ -46,8 +54,8 @@ def _good_config(tmp_path: Path) -> sl.RenderConfig:
     staging_dir = tmp_path / "staging"
     return sl.RenderConfig(
         label="com.example.test.shard-worker",
-        python_bin=Path("/opt/homebrew/bin/python3"),
-        shard_runner=Path("/path/to/shard_runner.py"),
+        python_bin=tmp_path / "bin" / "python3",
+        shard_runner=tmp_path / "shard_runner.py",
         base_dir=tmp_path / "baselines",
         run_id="test_run_2026-05-13",
         time_window="23:00-06:00",
@@ -243,7 +251,8 @@ def test_write_files_chmods_wrapper_executable(tmp_path: Path):
     cfg = _good_config(tmp_path)
     _, wrapper_path = sl.write_files(cfg, tmp_path / "staging")
     mode = wrapper_path.stat().st_mode
-    assert mode & stat.S_IXUSR  # owner execute
+    if os.name == "posix":  # Windows has no execute bit
+        assert mode & stat.S_IXUSR  # owner execute
     assert mode & stat.S_IRUSR  # owner read
 
 
@@ -527,7 +536,7 @@ def test_setup_launchd_cli_dry_run(
         "--workers", "2",
         "--staging-dir", str(staging),
         "--log-dir", str(log_dir),
-        "--python", "/opt/homebrew/bin/python3",
+        "--python", str(tmp_path / "bin" / "python3"),
         "--shard-runner", str(tmp_path / "shard_runner.py"),
     ])
     assert rc == 0
@@ -536,8 +545,9 @@ def test_setup_launchd_cli_dry_run(
     wrapper_file = staging / "run_shard_worker.sh"
     assert plist_file.exists()
     assert wrapper_file.exists()
-    # Wrapper is executable.
-    assert wrapper_file.stat().st_mode & stat.S_IXUSR
+    # Wrapper is executable (Windows has no execute bit).
+    if os.name == "posix":
+        assert wrapper_file.stat().st_mode & stat.S_IXUSR
     # Plist is valid.
     parsed = plistlib.loads(plist_file.read_bytes())
     assert parsed["StartCalendarInterval"]["Hour"] == 23
@@ -809,4 +819,5 @@ class TestWrapperShellEscaping:
             )
         except FileNotFoundError:
             pytest.skip("bash not available")
-        assert f"BASE_DIR_VALUE={weird_base}" in result.stdout
+        # str(Path(...)) so native Windows expects its own separators.
+        assert f"BASE_DIR_VALUE={Path(weird_base)}" in result.stdout
