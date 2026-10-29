@@ -19,4 +19,6 @@ and narrative mode: in-band share (10th to 90th percentile), signed displacement
 reads as over rather than better, per-feature readings, an energy distance against a
 work-disjoint human-vs-human band, and a stdlib degradation veto whose windows count as failures.
 Date and authenticity are reported as secondary diagnostics. It parses with spaCy
-`en_core_web_sm`, or reads `architecture_features` precomputed on each row.
+`en_core_web_sm`, or reads `architecture_features` precomputed on each row. Scene windows never
+exceed the maximum (a run that cannot meet both bounds is dropped and reported), and the
+architecture null draws follow the candidates' full length, dialogue and mode profile.

@@ -445,8 +445,11 @@ _SENTENCE_END = re.compile(r"(?<=[.!?][\"')\]])\s+|(?<=[.!?])\s+")
 def split_scene_windows(text: str, min_words: int, max_words: int) -> list[str]:
     """Complete windows of ``min_words`` to ``max_words`` words, never cut inside a
     sentence. Paragraph ends are preferred cut points; a scene break (a row of
-    asterisks, a chapter heading) always closes the window. A remainder under
-    ``min_words`` is dropped, unless the text has no other window."""
+    asterisks, a chapter heading) always closes the window. A run that cannot meet
+    both bounds (a sentence that would carry it past ``max_words`` before it reaches
+    ``min_words``, or one sentence longer than ``max_words``) is dropped, so no
+    window exceeds ``max_words``. A remainder under ``min_words`` is dropped, unless
+    the text has no other window."""
     windows: list[str] = []
     buf: list[str] = []
     n_buf = 0
@@ -463,8 +466,15 @@ def split_scene_windows(text: str, min_words: int, max_words: int) -> list[str]:
             continue
         for sent in (x for x in _SENTENCE_END.split(" ".join(para.split())) if x):
             n = len(sent.split())
-            if buf and n_buf + n > max_words and n_buf >= min_words:
+            if n > max_words:
                 flush()
+                buf, n_buf = [], 0
+                continue
+            if buf and n_buf + n > max_words:
+                if n_buf >= min_words:
+                    flush()
+                else:
+                    buf, n_buf = [], 0
             buf.append(sent)
             n_buf += n
         if n_buf >= min_words:
@@ -622,6 +632,16 @@ def build_windows(rows, *, scene_words: tuple[int, int], feature_fn: FeatureFn |
     return out
 
 
+def _match_key(win, pools):
+    """The (length, dialogue, mode) cell ``_matched_pool`` settles on for ``win``."""
+    keys = [(win["length_bin"], win["dialogue_bin"], win["narrative_mode"]),
+            (win["length_bin"], win["dialogue_bin"]), (win["length_bin"],)]
+    for key in keys:
+        if len(pools.get(key, [])) >= THIN_CELL:
+            return key
+    return keys[-1]
+
+
 def _matched_pool(win, pools, exclude_group=None):
     """Reference windows matched on (length bin, dialogue bin, narrative mode),
     falling back to (length, dialogue) and then length alone when a cell holds
@@ -723,6 +743,11 @@ def run_architecture_band(
     cand_w = build_windows(candidates, scene_words=scene_words, feature_fn=feature_fn, kind="candidate")
     if not ref_w or not cand_w:
         raise PeriodRulerError("architecture band needs at least one reference and one candidate window")
+    covered = {w["id"].rsplit("#", 1)[0] for w in cand_w}
+    uncut = sum(1 for r in candidates if r["id"] not in covered)
+    if uncut:
+        warnings.append(f"{uncut} candidate passage(s) yielded no {scene_words[0]}-{scene_words[1]}-word "
+                        "scene window and were left out of the architecture band")
     edges = fit_length_edges((w["n_words"] for w in ref_w), n_length_bins)
     shares = sorted(w["dialogue_share"] for w in ref_w)
     d_edges = sorted({_percentile(shares, i / DIALOGUE_BINS) for i in range(1, DIALOGUE_BINS)})
@@ -788,15 +813,19 @@ def run_architecture_band(
             energy_band = [_percentile(null_e, 0.5), _percentile(null_e, 0.95)]
 
     observed = _arm_stats(cand_w)
-    profile = Counter(w["length_bin"] for w in cand_w)
-    cells = {b: {} for b in pool_by_bin}
-    for w in ref_w:
-        cells[w["length_bin"]].setdefault(w["group"], []).append(w)
+    # Pseudo-model draws follow the candidates' full matching profile (length,
+    # dialogue, mode, with the same thin-cell fallback), so the noise band does
+    # not move with the reference's mixture of cells.
+    profile = Counter(_match_key(w, pools) for w in cand_w)
+    cells: dict[tuple, dict[str, list[dict[str, Any]]]] = {}
+    for key in profile:
+        for w in pools.get(key, []):
+            cells.setdefault(key, {}).setdefault(w["group"], []).append(w)
     null = []
     for _ in range(n_null):
         drawn = []
-        for b, n in sorted(profile.items()):
-            drawn.extend(_volume_blocked(cells.get(b, {}), n, rng))
+        for key, n in sorted(profile.items()):
+            drawn.extend(_volume_blocked(cells.get(key, {}), n, rng))
         stats = _arm_stats(drawn)
         if stats:
             null.append(stats)

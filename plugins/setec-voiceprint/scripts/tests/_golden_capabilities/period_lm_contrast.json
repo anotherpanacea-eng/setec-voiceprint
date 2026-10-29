@@ -32,6 +32,7 @@
   },
   "compute": {
     "tier": "surprisal",
+    "hardware": "GPU with ~30 GB or more (two 13B models in bf16, ~26 GB of weights each on disk); model-free with precomputed bpb",
     "cost_note": "Two causal-LM forward passes per passage (13B twins by default, GPU with ~30 GB or more in bf16); model-free when every row carries precomputed bpb.",
     "length_floor_words": 15
   },

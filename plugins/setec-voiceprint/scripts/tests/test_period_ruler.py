@@ -341,6 +341,13 @@ class TestSceneWindows:
         wins = pr.split_scene_windows(text, 500, 800)
         assert [len(w.split()) for w in wins] == [520, 560]  # 300 words before the break are too short
 
+    def test_an_overflowing_sentence_never_makes_a_window_past_the_maximum(self):
+        """490 words then a 400-word sentence must not become an 890-word window (Codex review)."""
+        text = _words(490) + ". " + _words(400) + ". " + _words(600) + "."
+        wins = pr.split_scene_windows(text, 500, 800)
+        assert wins and all(500 <= len(w.split()) <= 800 for w in wins)
+        assert pr.split_scene_windows(_words(500) + ". " + _words(900) + ".", 500, 800) == [_words(500) + "."]
+
     def test_a_lone_short_text_is_one_window(self):
         assert len(pr.split_scene_windows(_words(300) + ".", 500, 800)) == 1
 

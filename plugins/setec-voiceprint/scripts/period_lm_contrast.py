@@ -97,8 +97,16 @@ def _summary(contrasts: list[float], n_boot: int, rng: random.Random) -> dict[st
     }
 
 
-def _sha(model_id: str, text: str) -> str:
-    return hashlib.sha256(f"{model_id}\x00{text}".encode("utf-8")).hexdigest()
+SCORING_POLICY = "bos-chunked-bpb-v1"
+
+
+def scoring_context(max_tokens: int) -> str:
+    """Identity of the scoring policy a cached bpb depends on (chunk size resets the context)."""
+    return f"{SCORING_POLICY}:max_tokens={max_tokens}"
+
+
+def _sha(model_id: str, context: str, text: str) -> str:
+    return hashlib.sha256(f"{model_id}\x00{context}\x00{text}".encode("utf-8")).hexdigest()
 
 
 def _load_cache(path: Path | None) -> dict[str, float]:
@@ -112,11 +120,16 @@ def _load_cache(path: Path | None) -> dict[str, float]:
     return cache
 
 
-def _score_column(rows, field, model_id, scorer, cache, cache_path, batch_size, progress):
-    todo = [r for r in rows if r.get(field) is None and _sha(model_id, r["text"]) not in cache]
+def cache_misses(rows, field, model_id, context, cache) -> int:
+    """Rows that still need ``field`` from ``model_id`` after precomputed values and the cache."""
+    return sum(1 for r in rows if r.get(field) is None and _sha(model_id, context, r["text"]) not in cache)
+
+
+def _score_column(rows, field, model_id, context, scorer, cache, cache_path, batch_size, progress):
+    todo = [r for r in rows if r.get(field) is None and _sha(model_id, context, r["text"]) not in cache]
     for r in rows:
-        if r.get(field) is None and _sha(model_id, r["text"]) in cache:
-            r[field] = cache[_sha(model_id, r["text"])]
+        if r.get(field) is None and _sha(model_id, context, r["text"]) in cache:
+            r[field] = cache[_sha(model_id, context, r["text"])]
     if todo and scorer is None:
         raise LookupError(f"{len(todo)} passage(s) lack {field} and {model_id} could not be loaded")
     for start in range(0, len(todo), batch_size):
@@ -125,9 +138,9 @@ def _score_column(rows, field, model_id, scorer, cache, cache_path, batch_size, 
         lines = []
         for r, v in zip(batch, values):
             r[field] = float(v)
-            key = _sha(model_id, r["text"])
+            key = _sha(model_id, context, r["text"])
             cache[key] = r[field]
-            lines.append(json.dumps({"key": key, "model": model_id, "bpb": r[field]}) + "\n")
+            lines.append(json.dumps({"key": key, "model": model_id, "context": context, "bpb": r[field]}) + "\n")
         if cache_path:
             with cache_path.open("a", encoding="utf-8") as fh:
                 fh.writelines(lines)
@@ -144,6 +157,7 @@ def run_contrast(
     period_scorer: BpbScorer | None = None,
     modern_scorer: BpbScorer | None = None,
     cache_path: Path | None = None,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     batch_size: int = 4,
     n_boot: int = DEFAULT_N_BOOT,
     seed: int = DEFAULT_SEED,
@@ -153,14 +167,16 @@ def run_contrast(
     if not passages:
         raise ContrastError("no passages to score")
     cache = _load_cache(cache_path)
+    context = scoring_context(max_tokens)
     sets = [passages] + ([reference] if reference else [])
     for rows in sets:
-        _score_column(rows, "period_bpb", period_model, period_scorer, cache, cache_path, batch_size, progress)
-        _score_column(rows, "modern_bpb", modern_model, modern_scorer, cache, cache_path, batch_size, progress)
+        for field, model_id, scorer in (("period_bpb", period_model, period_scorer),
+                                        ("modern_bpb", modern_model, modern_scorer)):
+            _score_column(rows, field, model_id, context, scorer, cache, cache_path, batch_size, progress)
     rng = random.Random(seed)
     cand = [r["period_bpb"] - r["modern_bpb"] for r in passages]
     out: dict[str, Any] = {
-        "period_model": period_model, "modern_model": modern_model,
+        "period_model": period_model, "modern_model": modern_model, "scoring_context": context,
         "candidates": {**_summary(cand, n_boot, rng),
                        "mean_period_bpb": statistics.fmean(r["period_bpb"] for r in passages),
                        "mean_modern_bpb": statistics.fmean(r["modern_bpb"] for r in passages)},
@@ -288,15 +304,18 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     rows = passages + (reference or [])
     warnings = [w for w in map(license_warning, (period_model, modern_model)) if w]
     try:
+        cache_path = Path(args.score_cache) if args.score_cache else None
+        cache = _load_cache(cache_path)
+        context = scoring_context(args.max_tokens)
         scorers = {}
         for field, model_id in (("period_bpb", period_model), ("modern_bpb", modern_model)):
-            needs = any(r.get(field) is None for r in rows)
+            needs = cache_misses(rows, field, model_id, context, cache) > 0
             scorers[field] = _load_scorer(model_id, device=args.device, max_tokens=args.max_tokens,
                                           trust_remote_code=args.trust_remote_code) if needs else None
         results = run_contrast(
             passages, reference, period_model=period_model, modern_model=modern_model,
             period_scorer=scorers["period_bpb"], modern_scorer=scorers["modern_bpb"],
-            cache_path=Path(args.score_cache) if args.score_cache else None,
+            cache_path=cache_path, max_tokens=args.max_tokens,
             batch_size=args.batch_size, n_boot=args.n_boot, seed=args.seed,
             include_per_passage=args.per_passage, progress=True)
     except PolicyRefusal as exc:

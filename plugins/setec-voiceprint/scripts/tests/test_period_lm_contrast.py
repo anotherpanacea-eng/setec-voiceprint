@@ -92,6 +92,17 @@ class TestContrast:
         _run(_rows(6, 1), ps=counting, cache_path=cache)
         assert calls["n"] == 6
 
+    def test_cache_is_bound_to_the_context_length(self, tmp_path):
+        """A score cached under one chunk size is not reused under another (review 4411700188)."""
+        def by_window(max_tokens):
+            return lambda texts: [float(max_tokens)] * len(texts)
+
+        cache = tmp_path / "c.jsonl"
+        first = _run(_rows(4, 1), ps=by_window(1024), cache_path=cache, max_tokens=1024)
+        second = _run(_rows(4, 1), ps=by_window(512), cache_path=cache, max_tokens=512)
+        assert first["period_lm_contrast"]["candidates"]["mean_period_bpb"] == 1024.0
+        assert second["period_lm_contrast"]["candidates"]["mean_period_bpb"] == 512.0
+
     def test_results_carry_no_verdict_or_selection_keys(self):
         out = _run(_rows(5, 1), _rows(5, 3), include_per_passage=True)
         assert not (set(_walk_keys(out)) & _FORBIDDEN_KEYS)
@@ -128,6 +139,19 @@ class TestCli:
                               "--n-boot", "100", "--json"])
         assert rc == 0
         assert any("declares no license" in w for w in env["warnings"])
+
+    def test_full_cache_loads_no_model(self, tmp_path, monkeypatch):
+        """A fully populated --score-cache never constructs a scorer (review 4411700171)."""
+        monkeypatch.setattr(plc, "_load_scorer", lambda model_id, **_: _period if "1930" in model_id else _modern)
+        passages = self._write(tmp_path / "p.jsonl", _rows(5, 1))
+        cache = str(tmp_path / "c.jsonl")
+        rc, first = self._main(["--passages", passages, "--score-cache", cache, "--n-boot", "100", "--json"])
+        assert rc == 0
+        loaded = []
+        monkeypatch.setattr(plc, "_load_scorer", lambda model_id, **_: loaded.append(model_id))
+        rc, again = self._main(["--passages", passages, "--score-cache", cache, "--n-boot", "100", "--json"])
+        assert rc == 0 and loaded == []
+        assert again["results"] == first["results"]
 
     def test_typewriter_needs_a_modern_twin(self, tmp_path):
         rc, env = self._main(["--passages", self._write(tmp_path / "p.jsonl", _rows(3, 1)),
