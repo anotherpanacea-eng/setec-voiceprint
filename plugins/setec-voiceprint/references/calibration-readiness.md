@@ -145,6 +145,7 @@ _Generated from `capabilities.d/` (schema 0.4.0) by `tools/gen_calibration_readi
 | `narratorial_distance_audit` | Heuristic (uncalibrated) | Yes | --verb-lexicon to override the perception/cognition verb set (optional) | req: spacy | CPU + spaCy model | 1500 |
 | `originality_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `paragraph_audit` | Heuristic (uncalibrated) | Yes | input (required); register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
+| `period_ruler` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: torch, transformers | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 15 |
 | `phraseological_signature_audit` | Heuristic (uncalibrated) | No | target (required); register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `position_pair_register` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 300 |
 | `pov_voice_profile` | Heuristic (uncalibrated) | No | --manifest labeled corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 3000 |

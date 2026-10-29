@@ -1,0 +1,69 @@
+entries:
+- id: period_ruler
+  script_path: plugins/setec-voiceprint/scripts/period_ruler.py
+  surface: period_register
+  status: heuristic
+  handoff: none
+  # consumers: no code importer yet; built as the validator for register-shift runs (VP-RS1).
+  consumers: []
+  family: period-register
+  purpose: 'Model-level period-register ruler ported from Chronologic-EN (arXiv:2609.23178, code
+    MIT). Two frozen instruments score every passage: a decade-distribution date model (signed
+    residual of its mean year from the target year) and an authentic-vs-LLM-imitation classifier
+    (P(synthetic)). Each candidate becomes a percentile against REAL reference passages in the
+    same log-word-count length bin and within +/-10 years of its target year (ties go against
+    the candidate). A set of candidates is summarised by the W1 distance of its date percentiles
+    from uniform and by its mean authenticity percentile, each read against a noise floor of
+    pseudo-models drawn leave-one-group-out from the reference itself (default 2,000); the
+    pseudo-model means set the 100 point of 0-100 period_fidelity and authenticity_fidelity
+    scores and their 95% interval is reported beside them. Real instruments are the released
+    chronologic/chronologic-date-deberta (T=1.0551) and chronologic-authenticity-deberta
+    checkpoints behind a lazy torch/transformers import; rows that already carry scores (or a
+    --score-cache) run model-free. Descriptive validator only: not a reward, not a passage-level
+    detector, does not date a document.
+
+    '
+  use_when:
+  - You have a set of generated passages, each written for a target year, and want to know how far the set sits from real prose of those years
+  - You need a register ruler with length matching, a date window and a measured noise floor (the failures of the earlier wikitext-referenced ruler)
+  - You can supply real dated reference passages with a source group (author or volume) per passage
+  - You want to validate a register-shift training run against held-out authors
+  do_not_use_when:
+  - You want to date or classify a single document (the instruments are model-level)
+  - You want a training reward or a selection objective (validator only; the authenticity half is easy to inflate)
+  - The reference has fewer than two source groups, or no passages near the candidates' target years
+  - You want scores comparable to published Chronologic numbers (those need the Chronologic reference corpus)
+  inputs:
+    candidates: 'JSONL {id, text, target_year[, date_estimate_year, p_synthetic]}'
+    reference: 'JSONL {id, text, year, group[, date_estimate_year, p_synthetic]}'
+    score_cache: optional JSONL cache of instrument scores (appended per batch; resumes)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+    - 'results.period_ruler.channels.date: period_fidelity, w1_from_uniform, null interval, drift years'
+    - 'results.period_ruler.channels.authenticity: authenticity_fidelity, mean_q, null interval'
+  compute:
+    tier: surprisal
+    cost_note: Two DeBERTa-v3-large forward passes per passage (GPU recommended); model-free when
+      every row carries precomputed scores. The pseudo-model null is pure Python.
+    length_floor_words: 15
+  registers:
+  - literary_fiction
+  dependencies:
+    python: []
+    python_optional:
+    - torch
+    - transformers
+  examples:
+  - description: Score a set of generations against a dated reference pool (loads both instruments)
+    cmd: python3 plugins/setec-voiceprint/scripts/period_ruler.py --candidates gens.jsonl
+      --reference victorian_ref.jsonl --score-cache scores.jsonl --json
+  - description: Date channel only, with per-candidate percentiles for diagnosis
+    cmd: python3 plugins/setec-voiceprint/scripts/period_ruler.py --candidates gens.jsonl
+      --reference victorian_ref.jsonl --channels date --per-candidate --json
+  references:
+  - 'Chronologic: Measuring Language Models'' Ability to Represent the Past (arXiv:2609.23178): https://arxiv.org/abs/2609.23178'
+  - 'Chronologic-EN code (MIT): https://github.com/Historical-AI-Lab/Chronologic-EN'
+  - 'chronologic-date-deberta (MIT): https://huggingface.co/chronologic/chronologic-date-deberta'
+  - 'chronologic-authenticity-deberta (MIT): https://huggingface.co/chronologic/chronologic-authenticity-deberta'
