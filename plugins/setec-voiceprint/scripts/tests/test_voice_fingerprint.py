@@ -378,3 +378,61 @@ def test_window_strategy_parity(tmp_path: Path):
 # --------------- 8. Capabilities entry present ------------------
 
 
+
+
+# --------------- STAR encoder (VP-RS3) ---------------------------
+
+
+def _fake_transformers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make `import transformers` succeed without the real package, so the
+    real loader reaches its license gate. No weights load: encoders are lazy."""
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
+
+
+def test_star_alias_refused_without_license_acknowledgement(monkeypatch):
+    monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
+    _fake_transformers(monkeypatch)
+    with pytest.raises(vf.VoiceFingerprintError, match="declares no license"):
+        vf._load_encoder("star")
+    with pytest.raises(vf.VoiceFingerprintError, match="declares no license"):
+        vf._load_encoder("AIDA-UPM/star")
+
+
+def test_star_loads_lazily_once_acknowledged(monkeypatch):
+    monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
+    _fake_transformers(monkeypatch)
+    enc = vf._load_encoder("star", allow_undeclared_license=True)
+    assert enc.model_id == "AIDA-UPM/star"
+    assert type(enc).__name__ == "_STAREncoder"
+
+
+def test_star_cli_exits_cleanly_without_acknowledgement(tmp_path, monkeypatch):
+    monkeypatch.setattr(vf, "_load_encoder", _REAL_LOAD_ENCODER)
+    _fake_transformers(monkeypatch)
+    src = _write(tmp_path, "draft.txt", _multi_para_text())
+    assert vf.main([str(src), "--model", "star", "--json"]) == 3
+
+
+def test_star_run_records_its_model_and_caveat(tmp_path, monkeypatch, capsys):
+    seen = {}
+
+    def _loader(model, device=None, **kwargs):
+        seen.update(kwargs)
+        return _StubEncoder(model_id=vf.MODEL_ALIASES.get(model, model))
+
+    monkeypatch.setattr(vf, "_load_encoder", _loader)
+    src = _write(tmp_path, "draft.txt", _multi_para_text())
+    rc = vf.main([str(src), "--model", "star", "--allow-undeclared-license", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert seen == {"allow_undeclared_license": True}
+    assert payload["results"]["model_id"] == "AIDA-UPM/star"
+    caveats = " ".join(payload["claim_license"]["additional_caveats"])
+    assert "STAR" in caveats and "no license" in caveats
+    # STAR earns no verdict: its refusal text is the same as LUAR's.
+    luar = vf._claim_license(model_id=vf.MODEL_ALIASES["luar"], mode="single")
+    star = vf._claim_license(model_id=vf.MODEL_ALIASES["star"], mode="single")
+    assert luar.does_not_license == star.does_not_license
