@@ -88,9 +88,11 @@ boundary.
   `author_corpus_export` and `gmail_author_pipeline` cases landed after unit 10
   on synthetic inputs. The last three landed 2026-10-29. `pov_voice_profile` gained
   `--no-spacy`, like `voice_profile`, and runs on a synthetic two-POV manifest. Under the
-  mode, `setec_run` now treats the model modules `torch`, `transformers` and
-  `sentence_transformers` as disabled, so `binoculars_audit` and `voice_fingerprint` refuse
-  with the same `missing_dependency` envelope whether or not those are installed.
+  mode, `setec_run` refuses a surface whose *required* dependencies include `torch`,
+  `transformers` or `sentence_transformers`, so `binoculars_audit` and `voice_fingerprint`
+  refuse with the same `missing_dependency` envelope whether or not those are installed.
+  Optional model paths (`variance_audit`, `manuscript_audit`) remain §2 sites, and
+  `voice_fingerprint` launched directly, not through `setec_run`, is still uncovered.
   `PENDING_CONSUMERS` is empty.
 
 Out of scope: routing the §2 sites, capability promotion, schema changes, and

@@ -1034,7 +1034,8 @@ CONSUMER_CASES = [
      "args": ["--baseline-dir", "consumer-baseline", "--no-spacy", "--char-top", "20"],
      "exit": 0},
     {"case": "pov_profile", "id": "pov_voice_profile",
-     "args": ["--manifest", "consumer-pov.jsonl", "--no-spacy"], "exit": 0},
+     "args": ["--manifest", "consumer-pov.jsonl", "--no-spacy",
+              "--top-distinguishing", "3"], "exit": 0},
     # The model surfaces: the mode disables their required model modules, so
     # each refuses with the same envelope whether or not they are installed.
     {"case": "binoculars_refused", "id": "binoculars_audit",

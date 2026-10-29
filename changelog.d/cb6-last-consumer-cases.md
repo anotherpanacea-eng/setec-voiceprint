@@ -1,13 +1,8 @@
-### Added
-
-**`pov_voice_profile --no-spacy`.** Skips the POS and dependency feature families, as
-`voice_profile --no-spacy` already does, so the surface runs without spaCy or its model.
-
 ### Changed
 
-**Hermetic mode covers the model surfaces at the dispatcher (CB-6).** With
-`setec_hermetic_backend=stub`, `setec_run` refuses a surface that requires `torch`,
-`transformers` or `sentence_transformers` with a `missing_dependency` envelope naming the mode,
-whether or not those modules are installed. The zero-install gate now cases
-`pov_voice_profile`, `binoculars_audit` and `voice_fingerprint`, so every apodictic and
-voicewright consumer surface the dispatcher can run has a pinned envelope.
+**Hermetic stub mode refuses model-backed surfaces at the dispatcher (CB-6).** With
+`setec_hermetic_backend=stub`, `setec_run` refuses a surface whose *required* dependencies include
+`torch`, `transformers` or `sentence_transformers`. It answers with a `missing_dependency` envelope
+that names the mode, whether or not those modules are installed. Surfaces that use them only as
+optional dependencies are not covered (spec §2). The zero-install gate now has cases for
+`pov_voice_profile`, `binoculars_audit` and `voice_fingerprint`, so `PENDING_CONSUMERS` is empty.
