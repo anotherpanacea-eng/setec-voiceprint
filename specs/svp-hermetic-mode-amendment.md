@@ -1,6 +1,6 @@
 # SVP hermetic backend mode
 
-- **Status:** in build; units 1–10 landed 2026-10-13/14, three cases pending (below) · **Card:** CB-6 (Fleet #709) · **Repo:** `setec-voiceprint`
+- **Status:** built; units 1–10 landed 2026-10-13/14, the last three cases 2026-10-29 (below) · **Card:** CB-6 (Fleet #709) · **Repo:** `setec-voiceprint`
 - **History:** the August design is on `origin/spec/hermetic-amendment`
   (`43b46325`). Its blocker, the claim-license guard, was removed on 2026-08-07
   (`specs/svp-packaging-conversion.md` §3). Nothing here recreates it.
@@ -86,9 +86,14 @@ boundary.
   `idiolect_detector` (after making their tie ordering independent of the hash
   seed) and `general_imposters` (a synthetic five-impostor corpus). The
   `author_corpus_export` and `gmail_author_pipeline` cases landed after unit 10
-  on synthetic inputs. Three are pending: `binoculars_audit`'s refusal text depends on whether torch is
-  installed, `pov_voice_profile` always uses spaCy dependency features, and
-  `voice_fingerprint` needs transformers.
+  on synthetic inputs. The last three landed 2026-10-29. `pov_voice_profile` gained
+  `--no-spacy`, like `voice_profile`, and runs on a synthetic two-POV manifest. Under the
+  mode, `setec_run` refuses a surface whose *required* dependencies include `torch`,
+  `transformers` or `sentence_transformers`, so `binoculars_audit` and `voice_fingerprint`
+  refuse with the same `missing_dependency` envelope whether or not those are installed.
+  Optional model paths (`variance_audit`, `manuscript_audit`) remain §2 sites, and
+  `voice_fingerprint` launched directly, not through `setec_run`, is still uncovered.
+  `PENDING_CONSUMERS` is empty.
 
 Out of scope: routing the §2 sites, capability promotion, schema changes, and
 model or provider execution.

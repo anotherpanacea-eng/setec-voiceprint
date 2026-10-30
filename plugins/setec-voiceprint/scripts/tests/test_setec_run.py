@@ -189,6 +189,20 @@ def test_missing_dependency_exit_3(manifest, monkeypatch):
     assert env["missing_dependency"] == {"python": ["scipy"]}
 
 
+def test_hermetic_stub_refuses_model_deps_even_when_installed(manifest, monkeypatch):
+    # The refusal must not depend on the machine: transformers looks installed.
+    monkeypatch.setattr(capabilities, "is_installed", lambda mod: True)
+    monkeypatch.setenv("setec_hermetic_backend", "stub")
+    rc, env = _dispatch_capture(
+        "voice_fingerprint", ["--help"],
+        manifest=manifest, observed_version=capabilities.setec_version(),
+    )
+    assert rc == setec_run.EXIT_CONTRACT == 3
+    assert env["reason_category"] == "missing_dependency"
+    assert env["missing_dependency"] == {"python": ["transformers"]}
+    assert "setec_hermetic_backend=stub" in env["reason"]
+
+
 # ---- R2/R3: script failure wrapping ------------------------------------
 
 def test_script_nonzero_exit_wrapped_as_internal_error(manifest, monkeypatch):

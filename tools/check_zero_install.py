@@ -972,7 +972,9 @@ CONSUMER_PAIRS_INPUT = (
 CONSUMER_CASES = [
     {"case": "punctuation", "id": "punctuation_cadence_audit",
      "args": ["consumer-input.txt"], "exit": 0},
-    {"case": "manuscript", "id": "manuscript_audit", "args": ["consumer-input.txt"], "exit": 0},
+    # mdd_sd is listed only when spaCy is installed, so the list is not pinned.
+    {"case": "manuscript", "id": "manuscript_audit", "args": ["consumer-input.txt"], "exit": 0,
+     "normalize": ["results.chapters.0.compression.skipped_signals"]},
     {"case": "narrative_mock", "id": "narrative_decision_audit",
      "args": ["consumer-input.txt", "--judge", "mock"], "exit": 0,
      "normalize": ["results.run_timestamp_utc"]},
@@ -1027,15 +1029,22 @@ CONSUMER_CASES = [
      "exit": 0},
     {"case": "voice_distance", "id": "voice_distance",
      "args": ["consumer-input.txt", "--baseline-dir", "consumer-baseline", "--no-spacy"],
-     "exit": 0},
+     "exit": 0, "normalize": ["target.spacy_available"]},
     {"case": "voice_profile", "id": "voice_profile",
      "args": ["--baseline-dir", "consumer-baseline", "--no-spacy", "--char-top", "20"],
      "exit": 0},
+    {"case": "pov_profile", "id": "pov_voice_profile",
+     "args": ["--manifest", "consumer-pov.jsonl", "--no-spacy",
+              "--top-distinguishing", "3"], "exit": 0},
+    # The model surfaces: the mode disables their required model modules, so
+    # each refuses with the same envelope whether or not they are installed.
+    {"case": "binoculars_refused", "id": "binoculars_audit",
+     "args": ["consumer-input.txt"], "exit": 3},
+    {"case": "voice_fingerprint_refused", "id": "voice_fingerprint",
+     "args": ["consumer-input.txt"], "exit": 3},
 ]
 # Consumer IDs with no case yet. Adding a case means deleting its ID here.
-PENDING_CONSUMERS = frozenset({
-    "binoculars_audit", "pov_voice_profile", "voice_fingerprint",
-})
+PENDING_CONSUMERS: frozenset[str] = frozenset()
 
 
 def _blank(envelope: dict, dotted: str) -> None:
@@ -1179,6 +1188,15 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
                         "corpus_role": "impostor", "impostor_for": ["cand"]})
     (outside_cwd / "consumer-gi.jsonl").write_text(
         "".join(json.dumps(row) + "\n" for row in gi_rows), encoding="utf-8")
+    # Two POVs of two documents each, from the baseline and impostor texts.
+    pov_rows = [{"id": f"pov-{pov}-{i}", "path": path, "pov": pov, "use": ["voice_profile"],
+                 "ai_status": "pre_ai_human", "register": "literary_fiction",
+                 "privacy": "private", "era": "pre_chatgpt"}
+                for pov, paths in (("a", ["consumer-baseline/b0.txt", "consumer-baseline/b1.txt"]),
+                                   ("b", ["consumer-imp-1.txt", "consumer-imp-2.txt"]))
+                for i, path in enumerate(paths)]
+    (outside_cwd / "consumer-pov.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in pov_rows), encoding="utf-8")
     for name, payload in CONSUMER_JSON_INPUTS.items():
         (outside_cwd / name).write_text(json.dumps(payload), encoding="utf-8")
     baseline = outside_cwd / "consumer-baseline"
@@ -1212,7 +1230,8 @@ def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> 
 
 def run(keep_scratch: bool = False) -> tuple[bool, Report]:
     report = Report()
-    tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_"))
+    # resolve(): on macOS the temp dir is a /var symlink to /private/var.
+    tmp_root = Path(tempfile.mkdtemp(prefix="setec_zero_install_")).resolve()
     try:
         bare_root = make_bare_copy(tmp_root)
         outside_cwd = tmp_root

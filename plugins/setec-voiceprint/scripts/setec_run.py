@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -139,6 +140,19 @@ def missing_required_deps(entry: dict[str, Any]) -> list[str]:
     side effects)."""
     deps = (entry.get("dependencies") or {}).get("python") or []
     return [d for d in deps if not capabilities.is_installed(d)]
+
+
+# Model libraries that setec_hermetic_backend=stub treats as absent, so a
+# surface that requires one refuses the same way on every machine.
+HERMETIC_MODEL_MODULES = frozenset({"torch", "transformers", "sentence_transformers"})
+
+
+def hermetic_disabled_deps(entry: dict[str, Any]) -> list[str]:
+    """Required modules the stub mode disables; empty with the mode off."""
+    if os.environ.get("setec_hermetic_backend") != "stub":
+        return []
+    deps = (entry.get("dependencies") or {}).get("python") or []
+    return [d for d in deps if d in HERMETIC_MODEL_MODULES]
 
 
 # ---------- script execution + envelope extraction -----------------
@@ -621,6 +635,18 @@ def dispatch(
 
     # (3) Required-dependency check, else R3 missing_dependency (contract
     # exit 3).
+    disabled = hermetic_disabled_deps(entry)
+    if disabled:
+        return _error(
+            surface=surface,
+            reason=(
+                f"setec_hermetic_backend=stub: {surface} requires model "
+                f"module(s) the mode disables: {', '.join(disabled)}."
+            ),
+            reason_category="missing_dependency",
+            exit_code=EXIT_CONTRACT,
+            extra={"missing_dependency": {"python": disabled}},
+        )
     missing = missing_required_deps(entry)
     if missing:
         return _error(
