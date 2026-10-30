@@ -781,12 +781,13 @@ def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not wins:
         return None
     shares, disp, pooled = [], [], []
-    vetoed = ranked_or_vetoed = 0
+    vetoed = ranked_or_vetoed = vetoed_ranks = 0
     for w in wins:
         qs = [q for q in w["qs"].values() if q is not None]
         if w["vetoed"]:
             vetoed += 1
             ranked_or_vetoed += 1
+            vetoed_ranks += len(qs) or len(w["qs"])
             continue
         if not qs:
             continue
@@ -801,8 +802,20 @@ def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
         "in_band_share_with_vetoes": sum(shares) / ranked_or_vetoed if ranked_or_vetoed else None,
         "signed_displacement": _mean(disp) if disp else None,
         "w1_from_uniform": wasserstein1_uniform(pooled) if pooled else None,
+        "w1_from_uniform_with_vetoes": _w1_with_vetoes(pooled, vetoed_ranks),
         "veto_rate": sum(w["vetoed"] for w in wins) / len(wins),
     }
+
+
+def _w1_with_vetoes(pooled: list[float], vetoed_ranks: int) -> float | None:
+    """W1 from uniform with each vetoed rank placed at the worst end. W1 is
+    convex in how much of that mass sits at 0 versus 1, so the larger of the
+    all-0 and all-1 fills bounds every rank the vetoed windows could have had:
+    turning an outlying window into a vetoed one cannot lower this."""
+    if not vetoed_ranks:
+        return wasserstein1_uniform(pooled) if pooled else None
+    return max(wasserstein1_uniform(pooled + [0.0] * vetoed_ranks),
+               wasserstein1_uniform(pooled + [1.0] * vetoed_ranks))
 
 
 def _standardizer(ref_w, names):
@@ -978,16 +991,18 @@ def run_architecture_band(
 
     share_iv, disp_iv, w1_iv = interval("in_band_share"), interval("signed_displacement"), interval("w1_from_uniform")
     veto_iv = interval("veto_rate")
-    # Vetoed windows leave the reported in-band share, so noise is judged on
-    # the share with vetoes counted as out of band, against the null's clean
-    # share: degraded output can never improve the reading by being vetoed,
-    # whatever the null's own veto ceiling.
+    # Vetoed windows leave the reported statistics, so noise is judged on
+    # veto-inclusive ones (a vetoed window is out of band, and its ranks sit at
+    # the worst end for W1) against the null's clean floors: degraded output can
+    # never improve the reading by being vetoed, whatever the null's own veto
+    # ceiling.
     with_vetoes = observed["in_band_share_with_vetoes"]
+    w1_vetoes = observed["w1_from_uniform_with_vetoes"]
     beyond = bool(
         with_vetoes is None
         or observed["veto_rate"] > veto_iv[1]
         or (share_iv and with_vetoes < share_iv[0])
-        or (observed["w1_from_uniform"] is not None and w1_iv and observed["w1_from_uniform"] > w1_iv[1]))
+        or (w1_vetoes is not None and w1_iv and w1_vetoes > w1_iv[1]))
     direction = "inside"
     if observed["signed_displacement"] is not None and disp_iv:
         if observed["signed_displacement"] > disp_iv[1]:

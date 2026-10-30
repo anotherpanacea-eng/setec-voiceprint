@@ -36,3 +36,8 @@ null with no source-disjoint reference fails closed (VP-RS1, Codex re-review).**
 vetoing an outlying window can never improve the reading even when a looping reference source
 lifts the null veto ceiling. When excluding a pseudo-model's sources leaves a window nothing to
 rank against, that rank is unavailable, and more than 5% of such draws stops the read.
+
+**`period_ruler`: W1 is judged veto-inclusively too (VP-RS1, Codex re-review round 3).** The block
+adds `w1_from_uniform_with_vetoes`, which places each vetoed window's ranks at whichever end of
+[0, 1] is worse; by convexity this bounds any ranks those windows could have had. Both noise
+statistics are now veto-inclusive, so a veto can never make a reading better.

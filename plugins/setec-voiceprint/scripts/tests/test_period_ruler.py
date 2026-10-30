@@ -331,6 +331,22 @@ class TestArchitectureBand:
         assert shifted["band"] == looped["band"] == "beyond_reference_noise"
         assert looped["in_band_share_with_vetoes"] <= shifted["in_band_share_with_vetoes"] + 0.05
 
+    def test_a_few_looping_windows_cannot_hide_a_w1_failure(self):
+        """Ten shifted windows among 290 near-real ones push W1 past its ceiling;
+        swapping them for looping windows once dropped them from W1 and read within
+        noise (Codex re-review round 3 of PR 818)."""
+        ref = _arch_rows(1, 600)
+        for k in range(10):
+            row = _arch_rows(50 + k, 1)[0]
+            row["text"] += " the old grey house the old grey house. the old grey house."
+            row.update(id=f"refrain{k}", group="refrain")
+            ref.append(row)
+        base = _arch_rows(2, 290, shift=0.25, kind="c")
+        shifted = _arch(base + _arch_rows(3, 10, shift=4.0, kind="s"), ref)
+        looped = _arch(base + _arch_rows(3, 10, kind="l", loop=True), ref)
+        assert shifted["band"] == looped["band"] == "beyond_reference_noise"
+        assert looped["w1_from_uniform_with_vetoes"] >= shifted["w1_from_uniform_with_vetoes"] - 1e-9
+
     def test_a_null_with_no_source_disjoint_reference_fails_closed(self):
         """Two sources in separate dialogue strata: every pseudo-model widens to the
         other source, so excluding all its sources leaves nothing to rank against.
