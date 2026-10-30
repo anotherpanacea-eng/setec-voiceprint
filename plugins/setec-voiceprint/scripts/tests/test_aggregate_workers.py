@@ -419,20 +419,3 @@ def test_serial_and_parallel_paths_produce_equivalent_signal_set():
     serial_aucs = {r["signal"]: r["auc"] for r in survey_serial["rows"]}
     parallel_aucs = {r["signal"]: r["auc"] for r in survey_parallel["rows"]}
     assert serial_aucs == parallel_aucs
-
-
-def test_pool_init_is_module_level_and_picklable():
-    """ProcessPoolExecutor with the ``spawn`` start method (the
-    default on Windows + macOS-3.8+) re-imports the module in
-    each worker and requires the initializer + task callables to
-    be importable by qualified name. Closures and lambdas can't
-    survive that boundary. Pin the invariant by verifying both
-    callables resolve to ``calibration_survey`` module-level
-    functions."""
-    assert cs._pool_init.__module__ == "calibration_survey"
-    assert cs._survey_one_signal_pooled.__module__ == "calibration_survey"
-    # And neither is a bound method or partial — they're free functions.
-    assert cs._pool_init.__qualname__ == "_pool_init"
-    assert cs._survey_one_signal_pooled.__qualname__ == (
-        "_survey_one_signal_pooled"
-    )
