@@ -347,6 +347,21 @@ class TestArchitectureBand:
         assert shifted["band"] == looped["band"] == "beyond_reference_noise"
         assert looped["w1_from_uniform_with_vetoes"] >= shifted["w1_from_uniform_with_vetoes"] - 1e-9
 
+    def test_vetoing_any_windows_never_lowers_the_w1_reading(self):
+        """Endpoint fills did not bound interior rank placements: vetoing one
+        q=0.91 window lowered the reading and flipped a band (Codex review at
+        44c7071). The bound must hold for any windows and any veto subset."""
+        rng = random.Random(1)
+        for _ in range(3000):
+            k = rng.randint(1, 4)
+            wins = [[rng.random() for _ in range(k)] for _ in range(rng.randint(2, 12))]
+            full = pr.wasserstein1_uniform([q for w in wins for q in w])
+            for subset in ([rng.randrange(len(wins))], [i for i in range(len(wins)) if rng.random() < 0.3]):
+                keep = [w for i, w in enumerate(wins) if i not in subset]
+                bound = pr._w1_with_vetoes([q for w in keep for q in w], k * (len(wins) - len(keep)))
+                if bound is not None:
+                    assert bound >= full - 1e-12
+
     def test_a_null_with_no_source_disjoint_reference_fails_closed(self):
         """Two sources in separate dialogue strata: every pseudo-model widens to the
         other source, so excluding all its sources leaves nothing to rank against.

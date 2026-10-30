@@ -41,3 +41,8 @@ rank against, that rank is unavailable, and more than 5% of such draws stops the
 adds `w1_from_uniform_with_vetoes`, which places each vetoed window's ranks at whichever end of
 [0, 1] is worse; by convexity this bounds any ranks those windows could have had. Both noise
 statistics are now veto-inclusive, so a veto can never make a reading better.
+
+**`period_ruler`: the veto-inclusive W1 is a true worst-case bound.** Endpoint fills did not bound
+interior rank placements (Codex review at 44c7071). `w1_from_uniform_with_vetoes` is now
+(1 - a) * W1(unvetoed) + a * 0.5 for a vetoed share `a` of ranks, which by convexity of W1 in the
+measure is at least the W1 the arm would have had with any ranks for those windows.

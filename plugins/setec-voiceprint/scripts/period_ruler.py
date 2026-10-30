@@ -808,14 +808,17 @@ def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 
 def _w1_with_vetoes(pooled: list[float], vetoed_ranks: int) -> float | None:
-    """W1 from uniform with each vetoed rank placed at the worst end. W1 is
-    convex in how much of that mass sits at 0 versus 1, so the larger of the
-    all-0 and all-1 fills bounds every rank the vetoed windows could have had:
-    turning an outlying window into a vetoed one cannot lower this."""
+    """Upper bound on W1 from uniform over every placement of the vetoed ranks.
+    W1 to a fixed distribution is convex in the measure, so a share ``a`` of
+    unknown ranks moves it at most to (1 - a) * W1(rest) + a * 0.5 (0.5 is the
+    largest W1 any mass can have). Turning any window into a vetoed one can
+    therefore never lower this below the W1 it had before."""
     if not vetoed_ranks:
         return wasserstein1_uniform(pooled) if pooled else None
-    return max(wasserstein1_uniform(pooled + [0.0] * vetoed_ranks),
-               wasserstein1_uniform(pooled + [1.0] * vetoed_ranks))
+    if not pooled:
+        return 0.5
+    a = vetoed_ranks / (len(pooled) + vetoed_ranks)
+    return (1 - a) * wasserstein1_uniform(pooled) + a * 0.5
 
 
 def _standardizer(ref_w, names):
@@ -992,8 +995,8 @@ def run_architecture_band(
     share_iv, disp_iv, w1_iv = interval("in_band_share"), interval("signed_displacement"), interval("w1_from_uniform")
     veto_iv = interval("veto_rate")
     # Vetoed windows leave the reported statistics, so noise is judged on
-    # veto-inclusive ones (a vetoed window is out of band, and its ranks sit at
-    # the worst end for W1) against the null's clean floors: degraded output can
+    # veto-inclusive ones (a vetoed window is out of band, and W1 takes the
+    # worst case over wherever its ranks could have been) against the null's clean floors: degraded output can
     # never improve the reading by being vetoed, whatever the null's own veto
     # ceiling.
     with_vetoes = observed["in_band_share_with_vetoes"]
