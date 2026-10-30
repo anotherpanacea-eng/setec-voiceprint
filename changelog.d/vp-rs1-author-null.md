@@ -29,3 +29,10 @@ improve an arm's reading. When no distinct-token-ratio cut meets its budget the 
 switched off with a warning, and the block reports `target_real_veto_rate` beside
 `achieved_real_veto_rate`. A pseudo-model whose thin cell widened to other sources re-ranks
 without those sources too. Reference rows passed in memory block by `author` when they name one.
+
+**`period_ruler`: noise is judged on the in-band share with vetoes counted as out of band, and a
+null with no source-disjoint reference fails closed (VP-RS1, Codex re-review).** The block adds
+`in_band_share_with_vetoes`; it, not the clean share, is compared with the pseudo-model floor, so
+vetoing an outlying window can never improve the reading even when a looping reference source
+lifts the null veto ceiling. When excluding a pseudo-model's sources leaves a window nothing to
+rank against, that rank is unavailable, and more than 5% of such draws stops the read.

@@ -313,6 +313,34 @@ class TestArchitectureBand:
         assert block["veto_rate"] > 0.85
         assert block["band"] == "beyond_reference_noise"
 
+    def test_a_looping_reference_source_cannot_make_vetoes_read_clean(self):
+        """One reference source of refrain-laden windows lifted the null veto ceiling
+        to 1.0, so 270 looping windows beside 30 clean ones read within noise while
+        270 shifted windows read beyond (Codex re-review of PR 818). Vetoing an
+        outlying window must never improve the reading."""
+        rng = random.Random(9)
+        ref = _arch_rows(1, 600)
+        for k in range(10):
+            row = _arch_rows(50 + k, 1)[0]
+            row["text"] = (row["text"] + " the old grey house") * 1 + " the old grey house. the old grey house."
+            row.update(id=f"refrain{k}", group="refrain")
+            ref.append(row)
+        clean = _arch_rows(2, 30, kind="c")
+        shifted = _arch(clean + _arch_rows(3, 270, shift=4.0, kind="s"), ref)
+        looped = _arch(clean + _arch_rows(3, 270, kind="l", loop=True), ref)
+        assert shifted["band"] == looped["band"] == "beyond_reference_noise"
+        assert looped["in_band_share_with_vetoes"] <= shifted["in_band_share_with_vetoes"] + 0.05
+
+    def test_a_null_with_no_source_disjoint_reference_fails_closed(self):
+        """Two sources in separate dialogue strata: every pseudo-model widens to the
+        other source, so excluding all its sources leaves nothing to rank against.
+        That once fell back to own-source ranks and read within noise."""
+        ref = [{**r, "group": "A"} for r in _arch_rows(1, 60, dialogue=True)] + \
+              [{**r, "id": f"b{i}", "group": "B"} for i, r in enumerate(_arch_rows(2, 60))]
+        cands = _arch_rows(3, 20, kind="c", dialogue=True) + _arch_rows(4, 20, kind="d")
+        with pytest.raises(pr.PeriodRulerError, match="source-disjoint"):
+            _arch(cands, ref)
+
     def test_ratio_veto_switches_off_when_no_cut_meets_its_budget(self):
         """One author's vocabulary below every other author's cannot be cut at any
         tail; the ratio veto turns off and the achieved rate is reported."""
@@ -380,16 +408,18 @@ class TestAuthorBlocking:
     def test_unseen_authors_read_inside_when_the_null_matches_their_sources(self):
         """Real held-out authors must read as noise: each pseudo-model is drawn from as
         many reference authors as the arm has, so between-author spread is in the floor.
-        Drawing every pseudo-model from all authors at once hides it (VP-RS1 qualification)."""
+        Drawing every pseudo-model from all authors at once hid it (VP-RS1 qualification)."""
         ref = [{**r, "block": r["author"]} for r in _authored_rows(5, 16)]
         cands = [{**r, "block": f"new{r['id'][3]}"} for r in _authored_rows(6, 3, prefix="new", kind="cand")]
         matched = _arch(cands, ref)
         assert matched["null_sources_per_pseudo_model"] == 3
         assert matched["null_sources_from"] == "candidate_authors"
         assert matched["band"] == "within_reference_noise"
+        # A pseudo-model drawn from every reference author at once has nothing
+        # source-disjoint left to rank against, so it fails closed.
         unnamed = [{k: v for k, v in r.items() if k != "block"} for r in cands]
-        pooled = _arch(unnamed, ref, null_blocks=16)
-        assert pooled["band"] == "beyond_reference_noise"
+        with pytest.raises(pr.PeriodRulerError, match="source-disjoint"):
+            _arch(unnamed, ref, null_blocks=16)
 
     def test_unseen_authors_keep_their_windows_through_the_veto(self):
         """Authors differ in vocabulary richness; a veto band fit on the reference

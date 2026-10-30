@@ -726,7 +726,8 @@ def _qs_without(win, blocks) -> dict[str, float | None]:
         for b, (lo, eq, k) in per.items():
             if b not in blocks:
                 below, equal, n = below + lo, equal + eq, n + k
-        qs[name] = (below + 0.5 * equal) / n if n else win["qs"][name]
+        # No reference window left once the sources are excluded: no rank.
+        qs[name] = (below + 0.5 * equal) / n if n else None
     return qs
 
 
@@ -780,15 +781,24 @@ def _arm_stats(wins: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not wins:
         return None
     shares, disp, pooled = [], [], []
+    vetoed = ranked_or_vetoed = 0
     for w in wins:
         qs = [q for q in w["qs"].values() if q is not None]
-        if w["vetoed"] or not qs:
+        if w["vetoed"]:
+            vetoed += 1
+            ranked_or_vetoed += 1
             continue
+        if not qs:
+            continue
+        ranked_or_vetoed += 1
         shares.append(sum(BAND_LO <= q <= BAND_HI for q in qs) / len(qs))
         disp.append(_mean([100 * (q - 0.5) for q in qs]))
         pooled.extend(qs)
     return {
         "in_band_share": _mean(shares) if shares else None,
+        # Vetoed windows counted as out of band: turning an outlying window into
+        # a vetoed one can only lower this, never raise it.
+        "in_band_share_with_vetoes": sum(shares) / ranked_or_vetoed if ranked_or_vetoed else None,
         "signed_displacement": _mean(disp) if disp else None,
         "w1_from_uniform": wasserstein1_uniform(pooled) if pooled else None,
         "veto_rate": sum(w["vetoed"] for w in wins) / len(wins),
@@ -932,7 +942,7 @@ def run_architecture_band(
     k_blocks = len(cand_sources) if from_candidates else null_blocks
     k_blocks = max(1, min(k_blocks, len(all_blocks)))
     null = []
-    widened = 0
+    widened = starved = 0
     for _ in range(n_null):
         chosen = set(rng.sample(all_blocks, k_blocks))
         drawn = []
@@ -946,11 +956,18 @@ def run_architecture_band(
         # against the reference without any source it actually drew from
         # (the chosen ones, plus any a thin cell widened to).
         sources = chosen | {w["block"] for w in drawn}
-        stats = _arm_stats([{**w, "qs": _qs_without(w, sources)} for w in drawn])
+        reranked = [{**w, "qs": _qs_without(w, sources)} for w in drawn]
+        if any(all(q is None for q in w["qs"].values()) for w in reranked):
+            starved += 1
+        stats = _arm_stats(reranked)
         if stats:
             null.append(stats)
     if not null:
         raise PeriodRulerError("pseudo-model null is empty for the architecture band")
+    if starved > 0.05 * n_null:
+        raise PeriodRulerError(
+            f"{starved} of {n_null} pseudo-model draws left some window with no reference window from "
+            "another source; the reference has too few sources per matching cell for a source-disjoint null")
     if widened:
         warnings.append(f"{widened} pseudo-model cell draw(s) had no window from the chosen "
                         f"{k_blocks} source(s) and drew from every source instead")
@@ -961,13 +978,15 @@ def run_architecture_band(
 
     share_iv, disp_iv, w1_iv = interval("in_band_share"), interval("signed_displacement"), interval("w1_from_uniform")
     veto_iv = interval("veto_rate")
-    # Vetoed windows leave the in-band reading, so a veto rate above the
-    # pseudo-model null is itself beyond noise: degraded output can never
-    # improve the reading by being dropped.
+    # Vetoed windows leave the reported in-band share, so noise is judged on
+    # the share with vetoes counted as out of band, against the null's clean
+    # share: degraded output can never improve the reading by being vetoed,
+    # whatever the null's own veto ceiling.
+    with_vetoes = observed["in_band_share_with_vetoes"]
     beyond = bool(
-        observed["in_band_share"] is None
+        with_vetoes is None
         or observed["veto_rate"] > veto_iv[1]
-        or (share_iv and observed["in_band_share"] < share_iv[0])
+        or (share_iv and with_vetoes < share_iv[0])
         or (observed["w1_from_uniform"] is not None and w1_iv and observed["w1_from_uniform"] > w1_iv[1]))
     direction = "inside"
     if observed["signed_displacement"] is not None and disp_iv:
