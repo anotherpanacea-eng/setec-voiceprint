@@ -900,7 +900,7 @@ exemptions:
   reason: Permanent schema-1.x nested launcher bootstrap; foreign-cwd runpy needs
     the stay-put scripts directory before importing setec and siblings.
   owner: packaging
-  introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py
   symbol: CALIB
