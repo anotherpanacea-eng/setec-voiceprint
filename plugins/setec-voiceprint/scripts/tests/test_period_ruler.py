@@ -305,6 +305,29 @@ class TestArchitectureBand:
         assert block["in_band_share"] is None
         assert block["band"] == "beyond_reference_noise"
 
+    def test_mostly_degraded_arm_cannot_read_clean_by_being_vetoed(self):
+        """Vetoed windows leave the in-band share, so 30 clean windows hiding 270
+        looping ones once read within noise at 0.80 (Codex review of PR 818)."""
+        cands = _arch_rows(2, 30, kind="c") + _arch_rows(3, 270, kind="l", loop=True)
+        block = _arch(cands, _arch_rows(1, 600))
+        assert block["veto_rate"] > 0.85
+        assert block["band"] == "beyond_reference_noise"
+
+    def test_ratio_veto_switches_off_when_no_cut_meets_its_budget(self):
+        """One author's vocabulary below every other author's cannot be cut at any
+        tail; the ratio veto turns off and the achieved rate is reported."""
+        rng = random.Random(4)
+        rows = []
+        for a, rich in enumerate((60, 400, 800, 1600)):
+            for k in range(40):
+                text = " ".join(" ".join(f"w{rng.randrange(rich)}" for _ in range(20)) + "." for _ in range(30))
+                feats = {f: 10 + j + rng.gauss(0, 1.0) for j, f in enumerate(_ARCH)}
+                rows.append({"id": f"a{a}k{k}", "year": 1860, "text": text, "n_words": 600,
+                             "architecture_features": feats, "group": f"a{a}w{k % 2}", "author": f"a{a}"})
+        block = _arch(_arch_rows(2, 30, kind="c"), rows)
+        assert block["veto"]["distinct_token_ratio_tail"] is None
+        assert block["veto"]["achieved_real_veto_rate"]["distinct_token_ratio"] == 0.0
+
     def test_per_feature_reading_names_the_axis_that_moved(self):
         cands = _arch_rows(2, 60, kind="c")
         for c in cands:

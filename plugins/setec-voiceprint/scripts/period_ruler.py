@@ -735,8 +735,10 @@ def _calibrate_veto(ref_w, pool_by_bin):
     the smallest 4-gram repeat count (at least ``VETO_REPEATS``) and the
     highest low-tail cut on the distinct-token ratio each veto at most half of
     ``VETO_REAL_RATE``. The ratio veto is one-sided: degradation (loops,
-    repetition) lowers the ratio. Returns (repeats, tail, band for candidates,
-    band per (bin, block))."""
+    repetition) lowers the ratio. When no cut meets its budget (one author's
+    ratios sit below every other author's), the ratio veto is switched off
+    (tail ``None``) rather than left vetoing that author. Returns (repeats,
+    tail, band for candidates, band per (bin, block), achieved real rates)."""
     half = VETO_REAL_RATE / 2
     repeats = VETO_REPEATS
     while sum(w["max_4gram_repeats"] >= repeats for w in ref_w) > half * len(ref_w):
@@ -758,7 +760,15 @@ def _calibrate_veto(ref_w, pool_by_bin):
         out = sum(w["distinct_token_ratio"] < loao[(w["length_bin"], w["block"])][0] for w in ref_w)
         if out <= half * len(ref_w):
             break
-    return repeats, tail, full, loao
+    else:
+        tail = None
+        full = {b: (-math.inf, math.inf) for b in pool_by_bin}
+        loao = {k: (-math.inf, math.inf) for k in others}
+        out = 0
+    n = len(ref_w) or 1
+    achieved = {"repeats": sum(w["max_4gram_repeats"] >= repeats for w in ref_w) / n,
+                "distinct_token_ratio": out / n}
+    return repeats, tail, full, loao, achieved
 
 
 def _vetoed(win, band, repeats) -> bool:
@@ -862,7 +872,10 @@ def run_architecture_band(
     for w in ref_w:
         lens = w["features"].get("_sentence_lengths")
         w["len_w1"] = _w1_samples(lens, len_points[w["length_bin"]]) if lens and w["length_bin"] in len_points else None
-    veto_repeats, veto_tail, veto_band, loao_veto_band = _calibrate_veto(ref_w, pool_by_bin)
+    veto_repeats, veto_tail, veto_band, loao_veto_band, veto_achieved = _calibrate_veto(ref_w, pool_by_bin)
+    if veto_tail is None:
+        warnings.append("the distinct-token-ratio veto was switched off: no cut kept real windows from "
+                        f"unseen authors under a {100 * VETO_REAL_RATE / 2:g}% veto rate")
     for w in ref_w:
         pool, _ = _matched_pool(w, pools, exclude_group=w["block"])
         w["qs"] = _arch_percentiles(w, pool, names, len_points)
@@ -930,8 +943,10 @@ def run_architecture_band(
                 widened += 1
             drawn.extend(_volume_blocked(cell, n, rng))
         # A pseudo-model is held out the way the arm is: every window is ranked
-        # against the reference without any of the chosen sources.
-        stats = _arm_stats([{**w, "qs": _qs_without(w, chosen)} for w in drawn])
+        # against the reference without any source it actually drew from
+        # (the chosen ones, plus any a thin cell widened to).
+        sources = chosen | {w["block"] for w in drawn}
+        stats = _arm_stats([{**w, "qs": _qs_without(w, sources)} for w in drawn])
         if stats:
             null.append(stats)
     if not null:
@@ -946,9 +961,12 @@ def run_architecture_band(
 
     share_iv, disp_iv, w1_iv = interval("in_band_share"), interval("signed_displacement"), interval("w1_from_uniform")
     veto_iv = interval("veto_rate")
-    # An arm with every window vetoed has no in-band reading and is beyond.
+    # Vetoed windows leave the in-band reading, so a veto rate above the
+    # pseudo-model null is itself beyond noise: degraded output can never
+    # improve the reading by being dropped.
     beyond = bool(
         observed["in_band_share"] is None
+        or observed["veto_rate"] > veto_iv[1]
         or (share_iv and observed["in_band_share"] < share_iv[0])
         or (observed["w1_from_uniform"] is not None and w1_iv and observed["w1_from_uniform"] > w1_iv[1]))
     direction = "inside"
@@ -995,9 +1013,11 @@ def run_architecture_band(
         "length_bin_edges_log_words": edges,
         "veto": {"repeated_4gram_at": veto_repeats,
                  "distinct_token_ratio_tail": veto_tail,
-                 "distinct_token_ratio": f"below the reference {100 * veto_tail:g}th percentile for the "
-                                         "length bin (each author left out of its own)",
-                 "calibrated_real_veto_rate": VETO_REAL_RATE,
+                 "distinct_token_ratio": ("switched off (no cut met its budget)" if veto_tail is None else
+                                          f"below the reference {100 * veto_tail:g}th percentile for the "
+                                          "length bin (each author left out of its own)"),
+                 "target_real_veto_rate": VETO_REAL_RATE,
+                 "achieved_real_veto_rate": veto_achieved,
                  "vetoed_windows": "reported as veto_rate, left out of in_band_share and displacement"},
     }
     if include_per_candidate:
@@ -1033,7 +1053,7 @@ def run_period_ruler(
     if not candidates:
         raise PeriodRulerError("no candidate passages")
     for r in reference:
-        r.setdefault("block", r["group"])
+        r.setdefault("block", str(r["author"]) if r.get("author") else r["group"])
     if len({r["block"] for r in reference}) < 2:
         raise PeriodRulerError("reference needs passages from at least two groups (or authors) for a "
                                "leave-one-out null")

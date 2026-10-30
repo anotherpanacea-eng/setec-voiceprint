@@ -21,3 +21,11 @@ each with its author left out, are vetoed about 5% of the time. Vetoed windows l
 in-band share and displacement and are reported as `veto_rate`; an arm with every window vetoed
 has no in-band share and reads beyond noise. The block adds `null_veto_rate_interval_95` and the
 calibrated thresholds under `veto`.
+
+**`period_ruler`: excess vetoing reads beyond noise; uncalibratable ratio veto switches off;
+widened null draws exclude every source they drew from (VP-RS1, Codex review).** A veto rate above
+the pseudo-model null now reads beyond reference noise, so dropping degraded windows can never
+improve an arm's reading. When no distinct-token-ratio cut meets its budget the ratio veto is
+switched off with a warning, and the block reports `target_real_veto_rate` beside
+`achieved_real_veto_rate`. A pseudo-model whose thin cell widened to other sources re-ranks
+without those sources too. Reference rows passed in memory block by `author` when they name one.
