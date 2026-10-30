@@ -6,9 +6,10 @@ The architectural narrative and the path from MVP to validated framework. Intern
 
 - **GX-A2 / B15 nested packaging:** `train_xgboost` now lives in
   `setec.replication`, behind its permanent historical launcher. Replication
-  helpers retain their locations and import names. The separately reviewed
-  `calibration_survey` and `shard_runner` moves remain next; no training or
-  calibration behavior changes in this slice.
+  helpers retain their locations and import names. `calibration_survey` now
+  lives in `setec.calibration`, preserving its helper imports and spawnable
+  survey pool. The separate `shard_runner` move remains next; no training or
+  calibration behavior changes in these slices.
 
 ## Status reconciliation (2026-09-23)
 
