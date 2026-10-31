@@ -482,20 +482,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
-  symbol: PARENT_SCRIPTS
-  reason: pending relocation (P4); anchor `PARENT_SCRIPTS` at line 86 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 78 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/calibration/cross_polarity_audit.py
   symbol: ROOT
   reason: pending relocation (P4); anchor `ROOT` at line 115 not yet converted to
@@ -895,6 +881,27 @@ exemptions:
   owner: packaging
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested launcher bootstrap; foreign-cwd runpy needs
+    the stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested launcher bootstrap; foreign-cwd runpy needs
+    the stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested launcher bootstrap; foreign-cwd runpy needs
+    the stay-put scripts directory before importing setec and siblings.
+  owner: packaging
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/calibration/pan_voight_kampff_benchmark.py
   symbol: CALIB
   reason: pending relocation (P4); anchor `CALIB` at line 75 not yet converted to
@@ -962,13 +969,6 @@ exemptions:
   symbol: private_dir_check
   reason: pending relocation (P4); anchor `private_dir_check` at line 390 not yet
     converted to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 82 not yet converted
-    to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
@@ -1801,20 +1801,6 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/replication/stages/stub_template.py
   symbol: SCRIPT_DIR
   reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 36 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
-  symbol: PARENT_DIR
-  reason: pending relocation (P4); anchor `PARENT_DIR` at line 102 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
-  symbol: SCRIPT_DIR
-  reason: pending relocation (P4); anchor `SCRIPT_DIR` at line 101 not yet converted
     to setec.paths (P1 lands no production moves)
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
@@ -2894,7 +2880,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/calibration_survey.py
   to_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -2992,7 +2978,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
+- from_path: plugins/setec-voiceprint/scripts/setec/calibration/shard_runner.py
   to_path: plugins/setec-voiceprint/scripts/calibration/calibrate_thresholds.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -4809,4 +4795,25 @@ layer_exemptions:
     (specs/svp-packaging-conversion.md section 2).
   owner: packaging
   introduced_sha: 606583a62a1fec7f6e0c2730d91f51325939818e
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
+  to_path: plugins/setec-voiceprint/scripts/setec/replication/train_xgboost.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+  to_path: plugins/setec-voiceprint/scripts/setec/calibration/calibration_survey.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
+  to_path: plugins/setec-voiceprint/scripts/setec/calibration/shard_runner.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
   removal_phase: not-applicable

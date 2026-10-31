@@ -93,6 +93,31 @@ The capability-bearing subdirectory launchers are currently:
 
 Their existing “add `scripts/` to `sys.path`” bootstraps are load-bearing under direct file execution and are exact-path lint exemptions. When their implementations move, the old files become **per-file** launchers using one generated upward-marker bootstrap before importing `setec`; no directory-level alias is accepted. The exemption set is derived by selecting non-top-level `capabilities.d` script paths, so a new nested surface cannot evade the rule.
 
+### Remaining nested moves (GX-A2 / B15, 2026-10-30)
+
+The owner approved the bounded relocation of `calibration_survey`,
+`shard_runner`, and `train_xgboost`. Keep the existing `scripts/calibration/`
+and `scripts/replication/` helper modules and their bare import identities.
+Only those three entry-point implementations move, one draft PR per entry
+point. `compose_evidence_pack` already moved; it is not part of this slice.
+
+Resolve each old helper directory with `setec.paths.scripts_dir()` and retain
+its explicit path setup and import order. Keep each historical executable
+path as a permanent per-file alias, following `calibration/pan_replay.py`.
+The goal is preserved behavior and zero-install compatibility, not removal
+of every path insertion. No loader, framework, helper extraction, namespace
+migration, algorithm change, or restored claim-license freeze is authorized.
+
+In particular, `task_surfaces` keeps its single mutable registry under its
+existing name. Its lazy `import shard_runner` must reach the same module as
+`setec.calibration.shard_runner`. Copied-plugin checks cover both import
+orders, registry/scorer visibility, legacy CLI execution without PYTHONPATH,
+and explicit spawn execution for the survey pool and shard worker. Reuse the
+existing synthetic behavior, checkpoint/resume and optional-dependency tests.
+The current migration and layering gates remain in force; translate only the
+necessary launcher anchors and dependency edges. The sys.path and flat-module
+ratchets were removed on 2026-10-25 and are not reinstated by this amendment.
+
 ## 3. Claim-license Deficit Lock
 
 **REMOVED by owner decision (Joshua, 2026-08-07):** `tools/check_claim_license_guard.py` and its whole-module AST freeze are deleted. Rationale: this is a set of tools, not a cryptography suite — each edit needs to be justified, but not frozen, guarded, or sealed. At removal the guard froze 110 of 252 production modules (93,039 of 203,133 LOC, 46% of non-test code) against ANY AST change, and P2's promised "narrowly scoped relocation support" never landed to relax it. The rest of this section is retained as a historical record of the gate's design; it no longer runs in CI and `packaging_move_map.json` no longer exists.

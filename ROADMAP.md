@@ -2,6 +2,17 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-10-30)
+
+- **GX-A2 / B15 nested packaging:** `train_xgboost` now lives in
+  `setec.replication`, behind its permanent historical launcher. Replication
+  helpers retain their locations and import names. `calibration_survey` now
+  lives in `setec.calibration`, preserving its helper imports and spawnable
+  survey pool. `shard_runner` also lives in `setec.calibration`, with the
+  historical alias and single `task_surfaces` registry intact. These finish
+  B15's three nested moves; the broader GX-A2 integration audit remains. No
+  training or calibration behavior changes in these slices.
+
 ## Status reconciliation (2026-09-23)
 
 - **Spec 82 M1 verbatim mosaic profile built.** `verbatim_mosaic_audit` adds an
