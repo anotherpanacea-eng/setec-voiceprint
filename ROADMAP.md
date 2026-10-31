@@ -8,8 +8,10 @@ The architectural narrative and the path from MVP to validated framework. Intern
   `setec.replication`, behind its permanent historical launcher. Replication
   helpers retain their locations and import names. `calibration_survey` now
   lives in `setec.calibration`, preserving its helper imports and spawnable
-  survey pool. The separate `shard_runner` move remains next; no training or
-  calibration behavior changes in these slices.
+  survey pool. `shard_runner` also lives in `setec.calibration`, with the
+  historical alias and single `task_surfaces` registry intact. These finish
+  B15's three nested moves; the broader GX-A2 integration audit remains. No
+  training or calibration behavior changes in these slices.
 
 ## Status reconciliation (2026-09-23)
 
