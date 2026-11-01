@@ -299,11 +299,93 @@ class TestArchitectureBand:
         assert block["displacement_direction"] == "under"
         assert block["signed_displacement"] < -30
 
-    def test_looping_windows_are_vetoed_and_count_as_failures(self):
+    def test_looping_windows_are_vetoed_and_read_beyond_noise(self):
         block = _arch(_arch_rows(2, 30, kind="c", loop=True), _arch_rows(1, 600))
         assert block["veto_rate"] == 1.0
-        assert block["in_band_share"] == 0.0
+        assert block["in_band_share"] is None
         assert block["band"] == "beyond_reference_noise"
+
+    def test_mostly_degraded_arm_cannot_read_clean_by_being_vetoed(self):
+        """Vetoed windows leave the in-band share, so 30 clean windows hiding 270
+        looping ones once read within noise at 0.80 (Codex review of PR 818)."""
+        cands = _arch_rows(2, 30, kind="c") + _arch_rows(3, 270, kind="l", loop=True)
+        block = _arch(cands, _arch_rows(1, 600))
+        assert block["veto_rate"] > 0.85
+        assert block["band"] == "beyond_reference_noise"
+
+    def test_a_looping_reference_source_cannot_make_vetoes_read_clean(self):
+        """One reference source of refrain-laden windows lifted the null veto ceiling
+        to 1.0, so 270 looping windows beside 30 clean ones read within noise while
+        270 shifted windows read beyond (Codex re-review of PR 818). Vetoing an
+        outlying window must never improve the reading."""
+        rng = random.Random(9)
+        ref = _arch_rows(1, 600)
+        for k in range(10):
+            row = _arch_rows(50 + k, 1)[0]
+            row["text"] = (row["text"] + " the old grey house") * 1 + " the old grey house. the old grey house."
+            row.update(id=f"refrain{k}", group="refrain")
+            ref.append(row)
+        clean = _arch_rows(2, 30, kind="c")
+        shifted = _arch(clean + _arch_rows(3, 270, shift=4.0, kind="s"), ref)
+        looped = _arch(clean + _arch_rows(3, 270, kind="l", loop=True), ref)
+        assert shifted["band"] == looped["band"] == "beyond_reference_noise"
+        assert looped["in_band_share_with_vetoes"] <= shifted["in_band_share_with_vetoes"] + 0.05
+
+    def test_a_few_looping_windows_cannot_hide_a_w1_failure(self):
+        """Ten shifted windows among 290 near-real ones push W1 past its ceiling;
+        swapping them for looping windows once dropped them from W1 and read within
+        noise (Codex re-review round 3 of PR 818)."""
+        ref = _arch_rows(1, 600)
+        for k in range(10):
+            row = _arch_rows(50 + k, 1)[0]
+            row["text"] += " the old grey house the old grey house. the old grey house."
+            row.update(id=f"refrain{k}", group="refrain")
+            ref.append(row)
+        base = _arch_rows(2, 290, shift=0.25, kind="c")
+        shifted = _arch(base + _arch_rows(3, 10, shift=4.0, kind="s"), ref)
+        looped = _arch(base + _arch_rows(3, 10, kind="l", loop=True), ref)
+        assert shifted["band"] == looped["band"] == "beyond_reference_noise"
+        assert looped["w1_from_uniform_with_vetoes"] >= shifted["w1_from_uniform_with_vetoes"] - 1e-9
+
+    def test_vetoing_any_windows_never_lowers_the_w1_reading(self):
+        """Endpoint fills did not bound interior rank placements: vetoing one
+        q=0.91 window lowered the reading and flipped a band (Codex review at
+        44c7071). The bound must hold for any windows and any veto subset."""
+        rng = random.Random(1)
+        for _ in range(3000):
+            k = rng.randint(1, 4)
+            wins = [[rng.random() for _ in range(k)] for _ in range(rng.randint(2, 12))]
+            full = pr.wasserstein1_uniform([q for w in wins for q in w])
+            for subset in ([rng.randrange(len(wins))], [i for i in range(len(wins)) if rng.random() < 0.3]):
+                keep = [w for i, w in enumerate(wins) if i not in subset]
+                bound = pr._w1_with_vetoes([q for w in keep for q in w], k * (len(wins) - len(keep)))
+                if bound is not None:
+                    assert bound >= full - 1e-12
+
+    def test_a_null_with_no_source_disjoint_reference_fails_closed(self):
+        """Two sources in separate dialogue strata: every pseudo-model widens to the
+        other source, so excluding all its sources leaves nothing to rank against.
+        That once fell back to own-source ranks and read within noise."""
+        ref = [{**r, "group": "A"} for r in _arch_rows(1, 60, dialogue=True)] + \
+              [{**r, "id": f"b{i}", "group": "B"} for i, r in enumerate(_arch_rows(2, 60))]
+        cands = _arch_rows(3, 20, kind="c", dialogue=True) + _arch_rows(4, 20, kind="d")
+        with pytest.raises(pr.PeriodRulerError, match="source-disjoint"):
+            _arch(cands, ref)
+
+    def test_ratio_veto_switches_off_when_no_cut_meets_its_budget(self):
+        """One author's vocabulary below every other author's cannot be cut at any
+        tail; the ratio veto turns off and the achieved rate is reported."""
+        rng = random.Random(4)
+        rows = []
+        for a, rich in enumerate((60, 400, 800, 1600)):
+            for k in range(40):
+                text = " ".join(" ".join(f"w{rng.randrange(rich)}" for _ in range(20)) + "." for _ in range(30))
+                feats = {f: 10 + j + rng.gauss(0, 1.0) for j, f in enumerate(_ARCH)}
+                rows.append({"id": f"a{a}k{k}", "year": 1860, "text": text, "n_words": 600,
+                             "architecture_features": feats, "group": f"a{a}w{k % 2}", "author": f"a{a}"})
+        block = _arch(_arch_rows(2, 30, kind="c"), rows)
+        assert block["veto"]["distinct_token_ratio_tail"] is None
+        assert block["veto"]["achieved_real_veto_rate"]["distinct_token_ratio"] == 0.0
 
     def test_per_feature_reading_names_the_axis_that_moved(self):
         cands = _arch_rows(2, 60, kind="c")
@@ -326,6 +408,79 @@ class TestArchitectureBand:
         block = _arch(cands, ref, feature_fn=feature_fn)
         assert block["n_candidate_windows"] == 30  # 3 x 800 words each; the 100-word tail is dropped
         assert "sentence_length_w1_to_pool" in block["per_feature"]
+
+
+def _authored_rows(seed, n_authors, *, offsets=None, works=3, per_work=10, prefix="a", kind="ref"):
+    """Windows whose features vary mostly between authors, a little between works."""
+    rng = random.Random(seed)
+    rows = []
+    for a in range(n_authors):
+        off = offsets[a] if offsets else rng.gauss(0, 1.5)
+        for w in range(works):
+            for k in range(per_work):
+                feats = {f: 10 + j + off + rng.gauss(0, 0.3) for j, f in enumerate(_ARCH)}
+                row = {"id": f"{prefix}{a}w{w}k{k}", "year": 1860, "text": _arch_text(rng),
+                       "architecture_features": feats}
+                row["n_words"] = pr.count_words(row["text"])
+                if kind == "ref":
+                    row.update(group=f"{prefix}{a}w{w}", author=f"{prefix}{a}")
+                rows.append(row)
+    return rows
+
+
+class TestAuthorBlocking:
+    def test_loader_blocks_by_author_when_rows_name_one(self, tmp_path):
+        path = tmp_path / "r.jsonl"
+        path.write_text(json.dumps({"text": "x y z.", "year": 1860, "group": "w1", "author": "A"}) + "\n"
+                        + json.dumps({"text": "x y z.", "year": 1860, "group": "w2"}) + "\n", encoding="utf-8")
+        rows = pr.load_jsonl(path, year_field="year", kind="reference")
+        assert [(r["group"], r["block"]) for r in rows] == [("w1", "A"), ("w2", "w2")]
+
+    def test_unseen_authors_read_inside_when_the_null_matches_their_sources(self):
+        """Real held-out authors must read as noise: each pseudo-model is drawn from as
+        many reference authors as the arm has, so between-author spread is in the floor.
+        Drawing every pseudo-model from all authors at once hid it (VP-RS1 qualification)."""
+        ref = [{**r, "block": r["author"]} for r in _authored_rows(5, 16)]
+        cands = [{**r, "block": f"new{r['id'][3]}"} for r in _authored_rows(6, 3, prefix="new", kind="cand")]
+        matched = _arch(cands, ref)
+        assert matched["null_sources_per_pseudo_model"] == 3
+        assert matched["null_sources_from"] == "candidate_authors"
+        assert matched["band"] == "within_reference_noise"
+        # A pseudo-model drawn from every reference author at once has nothing
+        # source-disjoint left to rank against, so it fails closed.
+        unnamed = [{k: v for k, v in r.items() if k != "block"} for r in cands]
+        with pytest.raises(pr.PeriodRulerError, match="source-disjoint"):
+            _arch(unnamed, ref, null_blocks=16)
+
+    def test_unseen_authors_keep_their_windows_through_the_veto(self):
+        """Authors differ in vocabulary richness; a veto band fit on the reference
+        itself dropped 16-23% of unseen real authors' windows and counted them as
+        out of band (VP-RS1 qualification v2). Calibrated with each author left
+        out, unseen authors lose few windows and vetoes never count as out of band."""
+        rng = random.Random(11)
+        vocab = [f"w{i}" for i in range(3000)]
+        rows = []
+        for a in range(25):
+            rich = rng.randint(250, 1400)
+            off = rng.gauss(0, 0.5)
+            for w in range(3):
+                for k in range(8):
+                    text = " ".join(" ".join(rng.choice(vocab[:rich]) for _ in range(20)) + "." for _ in range(30))
+                    feats = {f: 10 + j + off + rng.gauss(0, 0.3) for j, f in enumerate(_ARCH)}
+                    rows.append({"id": f"a{a}w{w}k{k}", "year": 1860, "text": text, "n_words": 600,
+                                 "architecture_features": feats, "group": f"a{a}w{w}",
+                                 "author": f"a{a}", "block": f"a{a}"})
+        held = {f"a{i}" for i in rng.sample(range(25), 6)}
+        block = _arch([r for r in rows if r["author"] in held], [r for r in rows if r["author"] not in held])
+        assert block["veto_rate"] <= 0.15
+        assert block["band"] == "within_reference_noise"
+        assert block["veto"]["distinct_token_ratio_tail"] < 0.05
+
+    def test_an_arm_with_no_named_authors_is_read_as_one_voice(self):
+        ref = [{**r, "block": r["author"]} for r in _authored_rows(5, 16)]
+        block = _arch(_authored_rows(6, 1, offsets=[0.0], prefix="m", kind="cand"), ref)
+        assert block["null_sources_per_pseudo_model"] == 1
+        assert block["null_blocked_by"] == "author"
 
 
 class TestSceneWindows:
