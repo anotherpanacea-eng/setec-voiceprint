@@ -84,6 +84,9 @@ _P2_BOOTSTRAP_ANCHORS = {
     for name in _L0_MODULES
 }
 _P3_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/diveye_signals.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_source_population_commitment.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_lineage_crosswalk.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/passage_tokenizer_v1.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/rank_space_signals.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/stylometry_distance.py", "_SCRIPT_DIR"),
@@ -136,6 +139,31 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/external_mirror/workflow.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/phrase_overuse_profile.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/meaning_preservation.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/period_lm_contrast.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/image_conjunction.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/apply_owner_corrections.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/normalize_author_registry.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/prepare_author_document_adapter.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/gmail_locator_map.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_consumer_authority.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fetch_brysbaert.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/_mirror_gate.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/adversarial_fixtures.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/gen_contract_fixtures.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/test_data/acquisition_gmail_fixture/build_fixture.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/test_data/acquisition_imessage_fixture/build_fixture.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/oracle/compare.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/surprisal_audit.py", "_SCRIPT_DIR"),
@@ -278,8 +306,16 @@ _P4_BOOTSTRAP_ANCHORS = {
     ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
     ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
 }
-# Exact intrinsic producer-byte anchors authorized by the acquisition and S5 amendments.
+# Exact intrinsic producer-byte anchors authorized by reviewed relocation scopes.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "source"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "relative"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "authority"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"),
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "resolved_tool_path"),
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "manifest"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
@@ -594,6 +630,42 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'): {"removal_phase": "not-applicable", "reason": 'Actual executing package bytes are the Gmail extraction identity; stale approval bindings remain refused.'},
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'repository'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "source"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual executing package source is hashed for committed-builder identity; hashing the historical launcher would bind the wrong bytes.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "relative"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual package source path is checked against the Git index for strict producer identity; untracked, dirty or changed source remains refused.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual executing package builder bytes are profile-bound; the historical launcher must not substitute its identity. Checked reads retain missing, symlink, size and stability refusals.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "authority"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "resolved_tool_path"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual prompt-builder source path or explicit caller override supplies its provenance digest; the historical launcher must not replace default identity.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "manifest"): {
+        "removal_phase": "not-applicable",
+        "reason": "Derived prompt manifest records the actual builder path and digest or explicit override; this is intrinsic provenance, not a data-root lookup.",
+    },
+
 }
 
 

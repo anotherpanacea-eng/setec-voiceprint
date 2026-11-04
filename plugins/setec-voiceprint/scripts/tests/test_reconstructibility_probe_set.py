@@ -150,7 +150,7 @@ def _anchor() -> dict[str, object]:
 
 
 def test_module_is_model_network_and_trainer_import_free() -> None:
-    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+    tree = ast.parse(Path(probe.__file__).read_text(encoding="utf-8"))
     imported = {
         alias.name.split(".", 1)[0]
         for node in ast.walk(tree)

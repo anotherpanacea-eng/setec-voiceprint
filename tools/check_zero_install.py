@@ -1100,7 +1100,20 @@ def _write_author_export_inputs(outside_cwd: Path) -> None:
     (source / "draft_manifest.jsonl").write_bytes((json.dumps(entry) + "\n").encode("utf-8"))
     key = root / "export.key"
     key.write_bytes(b"k" * 32)
-    if os.name != "nt":
+    if os.name == "nt":
+        try:
+            user = subprocess.check_output(
+                ["whoami"], text=True, stderr=subprocess.PIPE,
+            ).strip()
+            if not user:
+                raise GateError("could not identify the synthetic export key owner")
+            subprocess.run(
+                ["icacls", str(key), "/inheritance:r", "/grant:r", f"{user}:(F)"],
+                check=True, capture_output=True, text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise GateError("could not make the synthetic export key owner-only") from exc
+    else:
         key.chmod(0o600)
 
 

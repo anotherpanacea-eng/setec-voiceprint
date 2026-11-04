@@ -7,7 +7,7 @@ only the applier's deliberately generic diagnostic, never a fixture value.
 from __future__ import annotations
 
 import hashlib
-import importlib.util
+import importlib
 import json
 import os
 import subprocess
@@ -19,7 +19,6 @@ import pytest
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 APPLIER = SCRIPTS / "apply_owner_corrections.py"
-REGISTRY = SCRIPTS / "normalize_author_registry.py"
 EXPORT = SCRIPTS / "author_corpus_export.py"
 
 
@@ -133,14 +132,6 @@ def _canonical_rows(path: Path) -> list[dict[str, object]]:
     raw = path.read_bytes()
     assert raw.endswith(b"\n") and b"\r" not in raw
     return [json.loads(line) for line in raw.splitlines()]
-
-
-def _applier_module():
-    spec = importlib.util.spec_from_file_location("b4_owner_corrections", APPLIER)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 def test_exact_rewrite_is_canonical_source_preserving_and_audit_bound(tmp_path: Path) -> None:
@@ -423,7 +414,7 @@ def test_create_new_race_and_publication_failures_preserve_destinations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Exercise the link-create-new and failure cleanup path without prose data."""
-    module = _applier_module()
+    module = importlib.import_module("setec.surfaces.apply_owner_corrections")
     root = tmp_path / "publish"
     root.mkdir()
     destination = root / "target.jsonl"
@@ -460,7 +451,7 @@ def test_create_new_race_and_publication_failures_preserve_destinations(
 def test_write_and_flush_failures_preserve_destination_and_remove_temp(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_point: str,
 ) -> None:
-    module = _applier_module()
+    module = importlib.import_module("setec.surfaces.apply_owner_corrections")
     root = tmp_path / "publish"
     root.mkdir()
     destination = root / "target.jsonl"
@@ -514,10 +505,7 @@ def test_registry_and_nondocument_export_consume_corrected_manifest(tmp_path: Pa
     corrected = root / "corrected.jsonl"
     _summary(_run(source, _sidecar(root, [_correction()]), "--out", str(corrected)))
 
-    spec = importlib.util.spec_from_file_location("b4_registry", REGISTRY)
-    assert spec and spec.loader
-    registry = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(registry)
+    from setec.surfaces import normalize_author_registry as registry
     records, _ = registry.build_registry(
         sources={"synthetic": corrected},
         register_map={("synthetic", "blog_essay"): "essay.blog"},

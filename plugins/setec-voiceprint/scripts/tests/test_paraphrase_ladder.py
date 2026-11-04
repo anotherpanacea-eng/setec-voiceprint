@@ -460,7 +460,7 @@ _FORBIDDEN_SYMBOLS = {"SetecFitness", "calibrate_thresholds", "conformal_gate"}
 def _guarded_sources() -> list[Path]:
     return [
         SCRIPTS_ROOT / "setec/calibration/paraphrase_ladder.py",
-        SCRIPTS_ROOT / "adversarial_fixtures.py",
+        Path(af.__file__),
     ]
 
 

@@ -65,7 +65,9 @@ def _init_git_repo(root: Path) -> str:
     "wrong_bootstrap", "unsupported_directory",
 ])
 @pytest.mark.parametrize("layout", ["flat", "calibration", "external_mirror"])
-def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout, template="main"):
+def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout, template="main", has_task=True):
+    if case == "unsupported_directory" and layout.startswith("test_data/"):
+        layout = "test_data/unlisted_fixture"
     scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
@@ -77,9 +79,11 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     legacy_dir = "" if layout == "flat" else layout + "/"
     package_dir = "setec/surfaces" if layout == "flat" else "setec/" + layout
     package_name = package_dir.replace("/", ".")
-    scripts_anchor = "parent" if layout == "flat" else "parents[1]"
+    scripts_anchor = "parent" if layout == "flat" else f"parents[{len(Path(layout).parts)}]"
     for package in ("setec", package_dir):
         _write(scripts, package + "/__init__.py", "")
+    if layout.startswith("test_data/"):
+        _write(scripts, "setec/test_data/__init__.py", "")
     implementation = (
         'TASK_SURFACE = "voice_coherence"\n'
         "def main():\n    return 0\n"
@@ -87,6 +91,14 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     )
     if template == "no_main":
         implementation = 'TASK_SURFACE = "voice_coherence"\n'
+    if not has_task:
+        implementation = implementation.replace('TASK_SURFACE = "voice_coherence"\n', '')
+    if case == "unsupported_task":
+        implementation += "TASK_SURFACE = make_surface()\n"
+    elif case == "non_string_task":
+        implementation += "TASK_SURFACE = None\n"
+    elif case == "imported_task":
+        implementation += "from elsewhere import TASK_SURFACE\n"
     _write(scripts, package_dir + "/audit.py", implementation)
     _write(scripts, package_dir + "/other.py", implementation)
     launcher = (
@@ -105,6 +117,8 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
         launcher = launcher[:launcher.index("if __name__ ==")] + (
             "if __name__ != '__main__':\n    sys.modules[__name__] = _mod\n"
         )
+    if not has_task:
+        launcher = launcher.replace(f"from {package_name}.audit import TASK_SURFACE\n", "")
     prefix = "plugins/setec-voiceprint/scripts/"
     source = legacy_dir + "audit.py"
     target = package_dir + "/audit.py"
@@ -118,7 +132,10 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
         else:
             launcher = launcher.replace("sys.exit(_mod.main())", "sys.modules['__main__'] = _mod")
     elif case == "renamed_surface":
-        launcher = launcher.replace("import TASK_SURFACE", "import TASK_SURFACE as OTHER")
+        if has_task:
+            launcher = launcher.replace("import TASK_SURFACE", "import TASK_SURFACE as OTHER")
+        else:
+            launcher += f"from {package_name}.audit import TASK_SURFACE\n"
     elif case == "wrong_target":
         launcher = launcher.replace("import audit as _mod", "import other as _mod")
         launcher = launcher.replace(f"{package_name}.audit import", f"{package_name}.other import")
@@ -134,10 +151,10 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     elif case == "wrong_bootstrap":
         wrong_anchor = "parents[1]" if layout == "flat" else "parent"
         launcher = launcher.replace(f"resolve().{scripts_anchor}\n", f"resolve().{wrong_anchor}\n")
-    elif case == "unsupported_directory":
+    elif case == "unsupported_directory" and not layout.startswith("test_data/"):
         source = "unlisted/audit.py"
     _write(scripts, source, launcher)
-    monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source})
+    monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source} if has_task else set())
     row = {
         "from_path": prefix + source, "to_path": prefix + target,
         "edge_kind": "l2_to_l2", "reason": "Permanent ordinary launcher to its own implementation",
@@ -464,6 +481,60 @@ def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monk
     assert cl.check_ghost_rows([new], [])
 
 
+@pytest.mark.parametrize("case", [
+    "legacy", "canonical", "malformed_alias", "wrong_target", "unrelated_source", "wrong_kind",
+])
+def test_generator_exception_follows_only_its_verified_launcher(tmp_path, monkeypatch, case):
+    """The existing golden-generator exception survives a move, never a new source/kind."""
+    prefix = "plugins/setec-voiceprint/scripts/"
+    scripts = tmp_path / prefix
+    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
+    for package in ("setec", "setec/surfaces"):
+        _write(scripts, package + "/__init__.py", "")
+    implementation = "def main():\n    return 0\nif __name__ == '__main__':\n    main()\n"
+    for stem in ("gen_contract_fixtures", "unrelated"):
+        _write(scripts, "setec/surfaces/" + stem + ".py", implementation)
+    for stem in ("existing", "new_target"):
+        _write(scripts, stem + ".py", implementation)
+    launcher = (
+        "import sys\nfrom pathlib import Path\n"
+        "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
+        "if str(_SCRIPT_DIR) not in sys.path:\n    sys.path.insert(0, str(_SCRIPT_DIR))\n"
+        "from setec.surfaces import gen_contract_fixtures as _mod\n"
+        "if __name__ == '__main__':\n    sys.exit(_mod.main())\n"
+        "else:\n    sys.modules[__name__] = _mod\n"
+    )
+    if case == "malformed_alias":
+        launcher = launcher.replace("sys.modules[__name__] = _mod", "globals().update(vars(_mod))")
+    elif case == "wrong_target":
+        launcher = launcher.replace("import gen_contract_fixtures as", "import unrelated as")
+    _write(scripts, "gen_contract_fixtures.py", launcher)
+    old = dict(from_path=prefix + "gen_contract_fixtures.py", to_path=prefix + "existing.py",
+               edge_kind="l2_to_l2", reason="existing", owner="packaging",
+               introduced_sha="base", removal_phase="not-applicable")
+    current = dict(old)
+    if case != "legacy":
+        current["from_path"] = prefix + "setec/surfaces/gen_contract_fixtures.py"
+    rows = [current]
+    monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: [old])
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: rows)
+    if case in {"legacy", "canonical"}:
+        assert cl.check_ratchet("base") == []  # existing edge still translates
+    added = dict(current, to_path=prefix + "new_target.py")
+    if case == "unrelated_source":
+        added["from_path"] = prefix + "setec/surfaces/unrelated.py"
+    elif case == "wrong_kind":
+        added["edge_kind"] = "l1_to_l2"
+    rows.append(added)
+    problems = cl.check_ratchet("base")
+    if case in {"legacy", "canonical"}:
+        assert problems == []
+    else:
+        assert any(problem.startswith(f"{added['from_path']} -> {added['to_path']} ({added['edge_kind']})")
+                   and "NEW layer_exemptions row" in problem for problem in problems)
+
+
 def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():
     contract = "plugins/setec-voiceprint/scripts/setec/contract/claim_license.py"
     paths = "plugins/setec-voiceprint/scripts/setec/paths.py"
@@ -553,3 +624,26 @@ def test_no_main_relocation_ratchet(tmp_path, monkeypatch, case, layout):
     test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case, layout, "no_main")
 
 
+
+@pytest.mark.parametrize("case", [
+    "proper_row", "missing_row", "missing_owner", "ghost_row",
+    "arbitrary_import", "dynamic_alias", "wrong_main", "renamed_surface",
+    "wrong_target", "unrelated_source", "extra_dependency", "side_effect",
+    "wrong_bootstrap", "unsupported_directory", "unsupported_task",
+    "non_string_task", "imported_task",
+])
+@pytest.mark.parametrize("layout", [
+    "flat", "external_mirror", "oracle", "test_data/pdf_inventory_fixture",
+    "test_data/acquisition_gmail_fixture", "test_data/acquisition_imessage_fixture",
+])
+def test_no_task_permanent_launcher_admission(tmp_path, monkeypatch, capsys, case, layout):
+    """Unregistered CLIs need no tag, but retain exact alias and edge admission."""
+    test_permanent_launcher_row_admission(
+        tmp_path, monkeypatch, capsys, case, layout, has_task=False,
+    )
+
+
+@pytest.mark.parametrize("case", ["unsupported_task", "non_string_task", "imported_task"])
+def test_task_rebinding_is_not_a_supported_launcher(tmp_path, monkeypatch, capsys, case):
+    """A valid initial tag cannot hide an unsupported later declaration."""
+    test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, "flat")
