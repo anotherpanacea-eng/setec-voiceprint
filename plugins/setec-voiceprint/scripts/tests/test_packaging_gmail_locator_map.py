@@ -97,7 +97,7 @@ runpy.run_path(p, run_name='__main__')
     assert target.read_bytes() == expected
     assert json.loads(result.stdout) == {
         "rows_written": 2, "output": str(target),
-        "output_sha256": "sha256:" + hashlib.sha256(expected).hexdigest(),
+        "output_sha256": hashlib.sha256(expected).hexdigest(),
     }
     assert result.stderr == "" and len(result.stdout.splitlines()) == 1
     (private / "orphan.meta.json").write_text('{"author_corpus_entry_locator":"invented"}', encoding="utf-8")
