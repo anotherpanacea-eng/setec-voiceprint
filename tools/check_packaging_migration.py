@@ -151,6 +151,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/passage_consumer_authority.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/fetch_brysbaert.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),

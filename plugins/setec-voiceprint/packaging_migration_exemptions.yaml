@@ -1189,12 +1189,12 @@ exemptions:
   introduced_sha: 080ae001fc90508d5fc7a09ed9515026d1430592
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/fetch_brysbaert.py
-  symbol: default_output
-  reason: pending relocation (P4); anchor `default_output` at line 206 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/formulaicity_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; adds scripts/ so direct execution
@@ -4995,6 +4995,13 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/passage_consumer_authority.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/fetch_brysbaert.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/fetch_brysbaert.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
   owner: packaging
