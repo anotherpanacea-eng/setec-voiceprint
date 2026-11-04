@@ -65,7 +65,7 @@ def _init_git_repo(root: Path) -> str:
     "wrong_bootstrap", "unsupported_directory",
 ])
 @pytest.mark.parametrize("layout", ["flat", "calibration", "external_mirror"])
-def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout, template="main"):
+def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout, template="main", has_task=True):
     scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
@@ -87,6 +87,14 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     )
     if template == "no_main":
         implementation = 'TASK_SURFACE = "voice_coherence"\n'
+    if not has_task:
+        implementation = implementation.replace('TASK_SURFACE = "voice_coherence"\n', '')
+    if case == "unsupported_task":
+        implementation += "TASK_SURFACE = make_surface()\n"
+    elif case == "non_string_task":
+        implementation += "TASK_SURFACE = None\n"
+    elif case == "imported_task":
+        implementation += "from elsewhere import TASK_SURFACE\n"
     _write(scripts, package_dir + "/audit.py", implementation)
     _write(scripts, package_dir + "/other.py", implementation)
     launcher = (
@@ -105,6 +113,8 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
         launcher = launcher[:launcher.index("if __name__ ==")] + (
             "if __name__ != '__main__':\n    sys.modules[__name__] = _mod\n"
         )
+    if not has_task:
+        launcher = launcher.replace(f"from {package_name}.audit import TASK_SURFACE\n", "")
     prefix = "plugins/setec-voiceprint/scripts/"
     source = legacy_dir + "audit.py"
     target = package_dir + "/audit.py"
@@ -118,7 +128,10 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
         else:
             launcher = launcher.replace("sys.exit(_mod.main())", "sys.modules['__main__'] = _mod")
     elif case == "renamed_surface":
-        launcher = launcher.replace("import TASK_SURFACE", "import TASK_SURFACE as OTHER")
+        if has_task:
+            launcher = launcher.replace("import TASK_SURFACE", "import TASK_SURFACE as OTHER")
+        else:
+            launcher += f"from {package_name}.audit import TASK_SURFACE\n"
     elif case == "wrong_target":
         launcher = launcher.replace("import audit as _mod", "import other as _mod")
         launcher = launcher.replace(f"{package_name}.audit import", f"{package_name}.other import")
@@ -137,7 +150,7 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     elif case == "unsupported_directory":
         source = "unlisted/audit.py"
     _write(scripts, source, launcher)
-    monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source})
+    monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source} if has_task else set())
     row = {
         "from_path": prefix + source, "to_path": prefix + target,
         "edge_kind": "l2_to_l2", "reason": "Permanent ordinary launcher to its own implementation",
@@ -553,3 +566,23 @@ def test_no_main_relocation_ratchet(tmp_path, monkeypatch, case, layout):
     test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monkeypatch, case, layout, "no_main")
 
 
+
+@pytest.mark.parametrize("case", [
+    "proper_row", "missing_row", "missing_owner", "ghost_row",
+    "arbitrary_import", "dynamic_alias", "wrong_main", "renamed_surface",
+    "wrong_target", "unrelated_source", "extra_dependency", "side_effect",
+    "wrong_bootstrap", "unsupported_directory", "unsupported_task",
+    "non_string_task", "imported_task",
+])
+@pytest.mark.parametrize("layout", ["flat", "external_mirror"])
+def test_no_task_permanent_launcher_admission(tmp_path, monkeypatch, capsys, case, layout):
+    """Unregistered CLIs need no tag, but retain exact alias and edge admission."""
+    test_permanent_launcher_row_admission(
+        tmp_path, monkeypatch, capsys, case, layout, has_task=False,
+    )
+
+
+@pytest.mark.parametrize("case", ["unsupported_task", "non_string_task", "imported_task"])
+def test_task_rebinding_is_not_a_supported_launcher(tmp_path, monkeypatch, capsys, case):
+    """A valid initial tag cannot hide an unsupported later declaration."""
+    test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, "flat")

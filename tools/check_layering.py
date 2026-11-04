@@ -787,7 +787,7 @@ def _surface_implementation_path(legacy: str) -> str | None:
 
 
 def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
-    """Recognize the existing main/no-main surface ordinary launcher contracts.
+    """Recognize the four main/TASK ordinary launcher contracts.
 
     This bounded AST check licenses a new exemption row, not other imports
     or arbitrary Python behavior. No implementation is executed here.
@@ -822,6 +822,27 @@ def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
             or any(isinstance(n, ast.AsyncFunctionDef) and n.name == "main"
                    for n in implementation.tree.body)):
         return False
+    # Absence licenses the no-TASK template; an unsupported binding must
+    # not be mistaken for absence (including imports or a later reassignment).
+    task_bindings = [
+        n for n in ast.walk(implementation.tree)
+        if (isinstance(n, ast.Name) and n.id == "TASK_SURFACE"
+            and isinstance(n.ctx, (ast.Store, ast.Del)))
+        or (isinstance(n, (ast.Import, ast.ImportFrom))
+            and any((a.asname or a.name.split(".")[0]) == "TASK_SURFACE"
+                    for a in n.names))
+        or (isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+            and n.name == "TASK_SURFACE")
+    ]
+    has_task = len(task_bindings) == 1 and any(
+        isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
+        and isinstance(n.value.value, str)
+        and any(t is task_bindings[0] for t in n.targets)
+        for n in implementation.tree.body
+    )
+    if task_bindings and not has_task:
+        return False
+    task_export = f"from {package}.{stem} import TASK_SURFACE\n" if has_task else ""
     final_branch = (
         'if __name__ == "__main__":\n    sys.exit(_mod.main())\n'
         'else:\n    sys.modules[__name__] = _mod\n'
@@ -835,16 +856,8 @@ _SCRIPT_DIR = Path(__file__).resolve().{scripts_anchor}
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 from {package} import {stem} as _mod
-from {package}.{stem} import TASK_SURFACE
-""" + final_branch)
+""" + task_export + final_branch)
     if ast.dump(ast.Module(body=body, type_ignores=[])) != ast.dump(expected):
-        return False
-    # Both templates require the same static surface export. The selected
-    # branch also preserves whether the implementation supplies a CLI main.
-    if not any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
-               and isinstance(n.value.value, str)
-               and any(isinstance(t, ast.Name) and t.id == "TASK_SURFACE" for t in n.targets)
-               for n in implementation.tree.body):
         return False
     return (from_path, to_path) in build_internal_graph([launcher, implementation])
 
