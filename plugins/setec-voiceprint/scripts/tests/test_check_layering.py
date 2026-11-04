@@ -66,6 +66,8 @@ def _init_git_repo(root: Path) -> str:
 ])
 @pytest.mark.parametrize("layout", ["flat", "calibration", "external_mirror"])
 def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout, template="main", has_task=True):
+    if case == "unsupported_directory" and layout == "test_data/pdf_inventory_fixture":
+        layout = "test_data/unlisted_fixture"
     scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
@@ -77,9 +79,11 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     legacy_dir = "" if layout == "flat" else layout + "/"
     package_dir = "setec/surfaces" if layout == "flat" else "setec/" + layout
     package_name = package_dir.replace("/", ".")
-    scripts_anchor = "parent" if layout == "flat" else "parents[1]"
+    scripts_anchor = "parent" if layout == "flat" else f"parents[{len(Path(layout).parts)}]"
     for package in ("setec", package_dir):
         _write(scripts, package + "/__init__.py", "")
+    if layout.startswith("test_data/"):
+        _write(scripts, "setec/test_data/__init__.py", "")
     implementation = (
         'TASK_SURFACE = "voice_coherence"\n'
         "def main():\n    return 0\n"
@@ -147,7 +151,7 @@ def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, l
     elif case == "wrong_bootstrap":
         wrong_anchor = "parents[1]" if layout == "flat" else "parent"
         launcher = launcher.replace(f"resolve().{scripts_anchor}\n", f"resolve().{wrong_anchor}\n")
-    elif case == "unsupported_directory":
+    elif case == "unsupported_directory" and not layout.startswith("test_data/"):
         source = "unlisted/audit.py"
     _write(scripts, source, launcher)
     monkeypatch.setattr(cl, "_load_capability_script_paths", lambda: {prefix + source} if has_task else set())
@@ -574,7 +578,7 @@ def test_no_main_relocation_ratchet(tmp_path, monkeypatch, case, layout):
     "wrong_bootstrap", "unsupported_directory", "unsupported_task",
     "non_string_task", "imported_task",
 ])
-@pytest.mark.parametrize("layout", ["flat", "external_mirror", "oracle"])
+@pytest.mark.parametrize("layout", ["flat", "external_mirror", "oracle", "test_data/pdf_inventory_fixture"])
 def test_no_task_permanent_launcher_admission(tmp_path, monkeypatch, capsys, case, layout):
     """Unregistered CLIs need no tag, but retain exact alias and edge admission."""
     test_permanent_launcher_row_admission(

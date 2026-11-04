@@ -781,6 +781,9 @@ def _surface_implementation_path(legacy: str) -> str | None:
         target = SCRIPTS_ROOT / "setec/surfaces" / old_rel.name
     elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources", "external_mirror", "replication", "oracle"}:
         target = SCRIPTS_ROOT / "setec" / old_rel
+    elif (len(old_rel.parts) == 3
+          and old_rel.parts[:2] == ("test_data", "pdf_inventory_fixture")):
+        target = SCRIPTS_ROOT / "setec" / old_rel
     else:
         return None
     return target.relative_to(REPO_ROOT).as_posix()
@@ -814,7 +817,7 @@ def _is_permanent_surface_launcher(from_path: str, to_path: str) -> bool:
         body = body[1:]  # documentation is not executable launcher plumbing
     stem = old_rel.stem
     package = ".".join(new_rel.parent.parts)
-    scripts_anchor = "parent" if len(old_rel.parts) == 1 else "parents[1]"
+    scripts_anchor = "parent" if len(old_rel.parts) == 1 else f"parents[{len(old_rel.parts) - 1}]"
     has_main = any(isinstance(n, ast.FunctionDef) and n.name == "main"
                    for n in implementation.tree.body)
     if not has_main and (
