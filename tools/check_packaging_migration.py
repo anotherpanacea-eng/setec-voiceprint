@@ -136,6 +136,7 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/oracle/compare.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
