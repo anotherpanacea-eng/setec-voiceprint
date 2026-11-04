@@ -477,6 +477,60 @@ def test_surface_relocation_ratchet_preserves_only_existing_edges(tmp_path, monk
     assert cl.check_ghost_rows([new], [])
 
 
+@pytest.mark.parametrize("case", [
+    "legacy", "canonical", "malformed_alias", "wrong_target", "unrelated_source", "wrong_kind",
+])
+def test_generator_exception_follows_only_its_verified_launcher(tmp_path, monkeypatch, case):
+    """The existing golden-generator exception survives a move, never a new source/kind."""
+    prefix = "plugins/setec-voiceprint/scripts/"
+    scripts = tmp_path / prefix
+    monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(cl, "SCRIPTS_ROOT", scripts)
+    for package in ("setec", "setec/surfaces"):
+        _write(scripts, package + "/__init__.py", "")
+    implementation = "def main():\n    return 0\nif __name__ == '__main__':\n    main()\n"
+    for stem in ("gen_contract_fixtures", "unrelated"):
+        _write(scripts, "setec/surfaces/" + stem + ".py", implementation)
+    for stem in ("existing", "new_target"):
+        _write(scripts, stem + ".py", implementation)
+    launcher = (
+        "import sys\nfrom pathlib import Path\n"
+        "_SCRIPT_DIR = Path(__file__).resolve().parent\n"
+        "if str(_SCRIPT_DIR) not in sys.path:\n    sys.path.insert(0, str(_SCRIPT_DIR))\n"
+        "from setec.surfaces import gen_contract_fixtures as _mod\n"
+        "if __name__ == '__main__':\n    sys.exit(_mod.main())\n"
+        "else:\n    sys.modules[__name__] = _mod\n"
+    )
+    if case == "malformed_alias":
+        launcher = launcher.replace("sys.modules[__name__] = _mod", "globals().update(vars(_mod))")
+    elif case == "wrong_target":
+        launcher = launcher.replace("import gen_contract_fixtures as", "import unrelated as")
+    _write(scripts, "gen_contract_fixtures.py", launcher)
+    old = dict(from_path=prefix + "gen_contract_fixtures.py", to_path=prefix + "existing.py",
+               edge_kind="l2_to_l2", reason="existing", owner="packaging",
+               introduced_sha="base", removal_phase="not-applicable")
+    current = dict(old)
+    if case != "legacy":
+        current["from_path"] = prefix + "setec/surfaces/gen_contract_fixtures.py"
+    rows = [current]
+    monkeypatch.setattr(cl, "_layer_exemptions_at", lambda sha: [old])
+    monkeypatch.setattr(cl, "load_layer_exemptions", lambda: rows)
+    if case in {"legacy", "canonical"}:
+        assert cl.check_ratchet("base") == []  # existing edge still translates
+    added = dict(current, to_path=prefix + "new_target.py")
+    if case == "unrelated_source":
+        added["from_path"] = prefix + "setec/surfaces/unrelated.py"
+    elif case == "wrong_kind":
+        added["edge_kind"] = "l1_to_l2"
+    rows.append(added)
+    problems = cl.check_ratchet("base")
+    if case in {"legacy", "canonical"}:
+        assert problems == []
+    else:
+        assert any(problem.startswith(f"{added['from_path']} -> {added['to_path']} ({added['edge_kind']})")
+                   and "NEW layer_exemptions row" in problem for problem in problems)
+
+
 def test_l0_path_plumbing_does_not_allow_other_internal_dependencies():
     contract = "plugins/setec-voiceprint/scripts/setec/contract/claim_license.py"
     paths = "plugins/setec-voiceprint/scripts/setec/paths.py"

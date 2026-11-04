@@ -1207,41 +1207,6 @@ exemptions:
   owner: packaging
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: FIXTURES_DIR
-  reason: pending relocation (P4); anchor `FIXTURES_DIR` at line 62 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: PLUGIN_ROOT
-  reason: pending relocation (P4); anchor `PLUGIN_ROOT` at line 61 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `SCRIPTS_DIR` at line 60 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: envelope
-  reason: pending relocation (P4); anchor `envelope` at line 1036 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
-  symbol: request_path
-  reason: pending relocation (P4); anchor `request_path` at line 1035 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/generate_voice_report.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -2518,6 +2483,13 @@ exemptions:
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
@@ -3233,7 +3205,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: 547af18e6d5583339bc222b575169b4069cae575
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/agd_move_scan.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3246,7 +3218,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/argument_decision_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3259,7 +3231,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3272,7 +3244,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3285,7 +3257,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/general_imposters.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3298,7 +3270,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3311,7 +3283,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3324,7 +3296,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3337,7 +3309,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3350,7 +3322,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/position_pair_register.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3363,7 +3335,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3376,7 +3348,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3389,7 +3361,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/register_classifier.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3402,7 +3374,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/repetition_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3415,7 +3387,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/s5_distance.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3428,7 +3400,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/gmail_author_pipeline.py
   edge_kind: l2_to_l2
   reason: "R5 golden-generator hub edge (the sanctioned addition class in\
@@ -3439,7 +3411,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: acae4405198297c68ecd42d21bfad45afd202862
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/variance_audit.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3452,7 +3424,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/voice_distance.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3465,7 +3437,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -3478,7 +3450,7 @@ layer_exemptions:
   owner: packaging
   introduced_sha: ebd7a2eba9136e5831dd6a82878e7458d31fc520
   removal_phase: not-applicable
-- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+- from_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/voice_profile.py
   edge_kind: l2_to_l2
   reason: "Pre-existing L2\u2192L2 dependency frozen into the P5 SHRINK-ONLY baseline\
@@ -5049,6 +5021,13 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/adversarial_fixtures.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/adversarial_fixtures.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/gen_contract_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
   owner: packaging
