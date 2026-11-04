@@ -1343,118 +1343,6 @@ exemptions:
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: FIXTURE_DIR
-  reason: pending relocation (P4); anchor `FIXTURE_DIR` at line 100 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: HERE
-  reason: pending relocation (P4); anchor `HERE` at line 70 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: OUTPUT_DIR
-  reason: pending relocation (P4); anchor `OUTPUT_DIR` at line 101 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: REPO_ROOT
-  reason: pending relocation (P4); anchor `REPO_ROOT` at line 71 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: SCRIPTS
-  reason: pending relocation (P4); anchor `SCRIPTS` at line 72 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: char_dist_csv
-  reason: pending relocation (P4); anchor `char_dist_csv` at line 529 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: char_freq_csv
-  reason: pending relocation (P4); anchor `char_freq_csv` at line 528 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: dep_dist_csv
-  reason: pending relocation (P4); anchor `dep_dist_csv` at line 577 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: dep_freq_csv
-  reason: pending relocation (P4); anchor `dep_freq_csv` at line 576 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: dist_csv
-  reason: pending relocation (P4); anchor `dist_csv` at line 500 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: freq_csv
-  reason: pending relocation (P4); anchor `freq_csv` at line 499 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: parse_dir
-  reason: pending relocation (P4); anchor `parse_dir` at line 552 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: paths
-  reason: pending relocation (P4); anchor `paths` at line 107 not yet converted to
-    setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: pos_dist_csv
-  reason: pending relocation (P4); anchor `pos_dist_csv` at line 561 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: pos_freq_csv
-  reason: pending relocation (P4); anchor `pos_freq_csv` at line 560 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
-  symbol: rel
-  reason: pending relocation (P4); anchor `rel` at line 554 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/originality_audit.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
@@ -2447,6 +2335,13 @@ exemptions:
     runpy needs scripts/ before importing the package.
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
+    runpy needs scripts/ before importing the package.
+  owner: packaging
+  introduced_sha: 43e78f105781e87c350793be68cd6cb14b584d18
   removal_phase: not-applicable
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
@@ -4997,4 +4892,11 @@ layer_exemptions:
   reason: Permanent historical per-file launcher to its whole implementation.
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
+  to_path: plugins/setec-voiceprint/scripts/setec/oracle/setec_to_stylo.py
+  edge_kind: l2_to_l2
+  reason: Permanent historical per-file launcher to its whole implementation.
+  owner: packaging
+  introduced_sha: 43e78f105781e87c350793be68cd6cb14b584d18
   removal_phase: not-applicable
