@@ -155,6 +155,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/_mirror_gate.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/adversarial_fixtures.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
