@@ -1730,20 +1730,6 @@ exemptions:
   owner: packaging
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py
-  symbol: HERE
-  reason: pending relocation (P4); anchor `HERE` at line 60 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py
-  symbol: targets
-  reason: pending relocation (P4); anchor `targets` at line 199 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -2340,6 +2326,13 @@ exemptions:
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
     runpy needs scripts/ before importing the package.
+  owner: packaging
+  introduced_sha: 43e78f105781e87c350793be68cd6cb14b584d18
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested fixture-builder launcher bootstrap;
+    detached execution needs scripts/ before importing the package.
   owner: packaging
   introduced_sha: 43e78f105781e87c350793be68cd6cb14b584d18
   removal_phase: not-applicable
@@ -4895,6 +4888,13 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
   to_path: plugins/setec-voiceprint/scripts/setec/oracle/setec_to_stylo.py
+  edge_kind: l2_to_l2
+  reason: Permanent historical per-file launcher to its whole implementation.
+  owner: packaging
+  introduced_sha: 43e78f105781e87c350793be68cd6cb14b584d18
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py
+  to_path: plugins/setec-voiceprint/scripts/setec/test_data/pdf_inventory_fixture/_make_fixtures.py
   edge_kind: l2_to_l2
   reason: Permanent historical per-file launcher to its whole implementation.
   owner: packaging

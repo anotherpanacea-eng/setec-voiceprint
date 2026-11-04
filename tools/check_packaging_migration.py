@@ -158,6 +158,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/adversarial_fixtures.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/gen_contract_fixtures.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/oracle/compare.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
