@@ -628,7 +628,7 @@ def test_no_main_relocation_ratchet(tmp_path, monkeypatch, case, layout):
     "wrong_bootstrap", "unsupported_directory", "unsupported_task",
     "non_string_task", "imported_task",
 ])
-@pytest.mark.parametrize("layout", ["flat", "external_mirror"])
+@pytest.mark.parametrize("layout", ["flat", "external_mirror", "oracle"])
 def test_no_task_permanent_launcher_admission(tmp_path, monkeypatch, capsys, case, layout):
     """Unregistered CLIs need no tag, but retain exact alias and edge admission."""
     test_permanent_launcher_row_admission(

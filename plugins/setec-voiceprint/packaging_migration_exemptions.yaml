@@ -1343,55 +1343,6 @@ exemptions:
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: HERE
-  reason: pending relocation (P4); anchor `HERE` at line 44 not yet converted to setec.paths
-    (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: OUTPUT_DIR
-  reason: pending relocation (P4); anchor `OUTPUT_DIR` at line 45 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: out_path
-  reason: pending relocation (P4); anchor `out_path` at line 430 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: sections
-  reason: pending relocation (P4); anchor `sections` at line 294 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: setec_csv
-  reason: pending relocation (P4); anchor `setec_csv` at line 282 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: stylo_a_csv
-  reason: pending relocation (P4); anchor `stylo_a_csv` at line 283 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/oracle/compare.py
-  symbol: stylo_b_csv
-  reason: pending relocation (P4); anchor `stylo_b_csv` at line 284 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/oracle/setec_to_stylo.py
   symbol: FIXTURE_DIR
   reason: pending relocation (P4); anchor `FIXTURE_DIR` at line 100 not yet converted
@@ -2487,6 +2438,13 @@ exemptions:
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
     does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/oracle/compare.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
+    runpy needs scripts/ before importing the package.
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
@@ -5030,6 +4988,13 @@ layer_exemptions:
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/gen_contract_fixtures.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/oracle/compare.py
+  to_path: plugins/setec-voiceprint/scripts/setec/oracle/compare.py
+  edge_kind: l2_to_l2
+  reason: Permanent historical per-file launcher to its whole implementation.
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
