@@ -143,6 +143,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/phrase_overuse_profile.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/meaning_preservation.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/period_lm_contrast.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/image_conjunction.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),

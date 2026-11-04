@@ -1273,12 +1273,12 @@ exemptions:
   introduced_sha: 15f2d7ee0aee812febecadf8f058d4645a1fbf85
   removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/image_conjunction.py
-  symbol: _SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 66 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/kicker_density.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -4907,4 +4907,11 @@ layer_exemptions:
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
   owner: packaging
   introduced_sha: 3b2849dd6577cfaca346e5bbcf9c3cca5acd0315
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/image_conjunction.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/image_conjunction.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
