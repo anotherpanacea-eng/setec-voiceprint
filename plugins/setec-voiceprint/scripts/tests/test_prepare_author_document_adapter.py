@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import stat
@@ -8,13 +7,7 @@ import sys
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-SCRIPT = ROOT / "prepare_author_document_adapter.py"
-SPEC = importlib.util.spec_from_file_location("prepare_author_document_adapter", SCRIPT)
-assert SPEC and SPEC.loader
-adapter = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(adapter)
+from setec.surfaces import prepare_author_document_adapter as adapter
 
 
 def _run_adapter(argv: list[str]):

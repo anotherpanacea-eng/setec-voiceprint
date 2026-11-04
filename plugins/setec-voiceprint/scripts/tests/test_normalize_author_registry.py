@@ -1,4 +1,3 @@
-import importlib.util
 import json
 import os
 import stat
@@ -7,11 +6,7 @@ from pathlib import Path
 import pytest
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "normalize_author_registry.py"
-SPEC = importlib.util.spec_from_file_location("normalize_author_registry", SCRIPT)
-assert SPEC and SPEC.loader
-registry = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(registry)
+from setec.surfaces import normalize_author_registry as registry
 
 
 def _manifest(path: Path, rows: list[dict]) -> None:
