@@ -779,7 +779,7 @@ def _surface_implementation_path(legacy: str) -> str | None:
         return None
     if len(old_rel.parts) == 1:
         target = SCRIPTS_ROOT / "setec/surfaces" / old_rel.name
-    elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources", "external_mirror", "replication"}:
+    elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources", "external_mirror", "replication", "oracle"}:
         target = SCRIPTS_ROOT / "setec" / old_rel
     else:
         return None
