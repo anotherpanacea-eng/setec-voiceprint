@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
 import subprocess
 import sys
@@ -14,11 +13,7 @@ import pytest
 
 HERE = Path(__file__).resolve().parents[1]
 SCRIPT = HERE / "_mirror_gate.py"
-SPEC = importlib.util.spec_from_file_location("mirror_gate", SCRIPT)
-assert SPEC and SPEC.loader
-gate = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = gate
-SPEC.loader.exec_module(gate)
+from setec.surfaces import _mirror_gate as gate
 
 
 def run(*args: str) -> subprocess.CompletedProcess[bytes]:
