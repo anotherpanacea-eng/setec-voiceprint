@@ -899,7 +899,7 @@ def check_ratchet(base_sha: str) -> list[str]:
     added = [
         (fp, tp, kind) for fp, tp, kind in added
         if not (kind == "l2_to_l2" and (
-            fp == _GENERATOR_FROM_PATH or _is_permanent_surface_launcher(fp, tp)
+            surface_moves.get(fp, fp) == _GENERATOR_FROM_PATH or _is_permanent_surface_launcher(fp, tp)
         ))
     ]
     if not added:
