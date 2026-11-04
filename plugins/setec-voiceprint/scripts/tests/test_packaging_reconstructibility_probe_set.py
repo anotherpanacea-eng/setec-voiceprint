@@ -1,5 +1,7 @@
 """Detached probe aliases retain provenance and unsupported-host refusal."""
 
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
@@ -46,7 +48,9 @@ for name in ('TokenCoordinate', 'ProbeSetError', 'WindowsPrivateNodeProof'):
 identity = ('b' * 40, 'd' * 64)
 a._git_identity = lambda: identity
 assert b._git_identity() == identity
-assert b._publish_after_identity_gate(identity, lambda: 'invented result') == 'invented result'
+published = []
+b._publish_after_identity_gate(identity, lambda: published.append('invented result'))
+assert published == ['invented result']
 assert not any(name in sys.modules for name in ('spacy', 'torch', 'transformers', 'requests'))
 """, plugin / "scripts", package_first)
     assert result.returncode == 0, result.stderr
@@ -92,3 +96,52 @@ else:
     raise AssertionError('uncommitted copied producer acquired identity')
 """, plugin / "scripts")
     assert result.returncode == 0, result.stderr
+
+
+def test_real_git_identity_binds_committed_implementation_and_refuses_dirt(tmp_path):
+    outside = tmp_path.resolve()
+    plugin = outside / "plugin"
+    shutil.copytree(Path(__file__).resolve().parents[2], plugin,
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    # Git initialization and staging are confined to this newly copied fixture.
+    assert plugin.resolve().parent == outside and plugin != Path.cwd()
+    git = shutil.which("git")
+    assert git is not None
+    hooks = outside / "empty-hooks"
+    hooks.mkdir()
+
+    def command(*args):
+        return subprocess.run(
+            [git, "-C", str(plugin), "-c", "core.autocrlf=false", "-c", f"core.hooksPath={hooks}",
+             "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "-c", "commit.gpgsign=false", *args],
+            capture_output=True, text=True, check=True, timeout=30,
+        ).stdout.strip()
+
+    command("init", "--quiet", "--initial-branch=main")
+    (plugin / ".gitignore").write_text("*\n", encoding="utf-8")
+    implementation = plugin / "scripts/setec/surfaces/reconstructibility_probe_set.py"
+    alias = plugin / "scripts/reconstructibility_probe_set.py"
+    command("add", "-f", "--", ".gitignore", str(implementation), str(alias))
+    command("commit", "--quiet", "-m", "Synthetic committed producer")
+    head = command("rev-parse", "HEAD")
+    code = """
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from setec.surfaces import reconstructibility_probe_set as probe
+print(json.dumps(probe._git_identity()))
+"""
+    result = _run((outside, plugin), "-c", code, plugin / "scripts")
+    assert result.returncode == 0, result.stderr
+    expected = "sha256:" + hashlib.sha256(implementation.read_bytes()).hexdigest()
+    assert json.loads(result.stdout) == [head, expected]
+    assert expected != "sha256:" + hashlib.sha256(alias.read_bytes()).hexdigest()
+    original = implementation.read_bytes()
+    try:
+        implementation.write_bytes(original + b"\n")
+        dirty = _run((outside, plugin), "-c", code, plugin / "scripts")
+        assert dirty.returncode != 0 and "producer_identity_refused" in dirty.stderr
+    finally:
+        implementation.write_bytes(original)
+    restored = _run((outside, plugin), "-c", code, plugin / "scripts")
+    assert restored.returncode == 0 and restored.stdout == result.stdout

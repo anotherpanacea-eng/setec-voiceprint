@@ -647,7 +647,7 @@ def _git_identity() -> tuple[str, str]:
     if run("rev-parse", "--show-object-format") != "sha1":
         raise ProbeSetError("producer_identity_refused")
     relative = source.relative_to(root).as_posix()
-    if not run("ls-files", "--error-unmatch", "--", relative):
+    if not run("ls-files", "--error-unmatch", "--", f":(top){relative}"):
         raise ProbeSetError("producer_identity_refused")
     head1 = run("rev-parse", "--verify", "HEAD^{commit}")
     status = subprocess.run(

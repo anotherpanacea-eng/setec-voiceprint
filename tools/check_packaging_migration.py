@@ -281,7 +281,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
     ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
 }
-# Exact intrinsic producer-byte anchors authorized by the acquisition and S5 amendments.
+# Exact intrinsic producer-byte anchors authorized by reviewed relocation scopes.
 _P4_RELOCATION_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "source"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "relative"),
