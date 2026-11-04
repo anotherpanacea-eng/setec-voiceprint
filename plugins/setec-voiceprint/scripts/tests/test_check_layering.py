@@ -66,7 +66,7 @@ def _init_git_repo(root: Path) -> str:
 ])
 @pytest.mark.parametrize("layout", ["flat", "calibration", "external_mirror"])
 def test_permanent_launcher_row_admission(tmp_path, monkeypatch, capsys, case, layout, template="main", has_task=True):
-    if case == "unsupported_directory" and layout == "test_data/pdf_inventory_fixture":
+    if case == "unsupported_directory" and layout.startswith("test_data/"):
         layout = "test_data/unlisted_fixture"
     scripts = tmp_path / "plugins" / "setec-voiceprint" / "scripts"
     monkeypatch.setattr(cl, "REPO_ROOT", tmp_path)
@@ -578,7 +578,10 @@ def test_no_main_relocation_ratchet(tmp_path, monkeypatch, case, layout):
     "wrong_bootstrap", "unsupported_directory", "unsupported_task",
     "non_string_task", "imported_task",
 ])
-@pytest.mark.parametrize("layout", ["flat", "external_mirror", "oracle", "test_data/pdf_inventory_fixture"])
+@pytest.mark.parametrize("layout", [
+    "flat", "external_mirror", "oracle", "test_data/pdf_inventory_fixture",
+    "test_data/acquisition_gmail_fixture", "test_data/acquisition_imessage_fixture",
+])
 def test_no_task_permanent_launcher_admission(tmp_path, monkeypatch, capsys, case, layout):
     """Unregistered CLIs need no tag, but retain exact alias and edge admission."""
     test_permanent_launcher_row_admission(

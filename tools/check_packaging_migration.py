@@ -136,6 +136,8 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/test_data/acquisition_gmail_fixture/build_fixture.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/test_data/acquisition_imessage_fixture/build_fixture.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/test_data/pdf_inventory_fixture/_make_fixtures.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/oracle/compare.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
