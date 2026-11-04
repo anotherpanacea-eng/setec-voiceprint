@@ -152,6 +152,8 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/passage_consumer_authority.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/fetch_brysbaert.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
@@ -304,6 +306,8 @@ _P4_RELOCATION_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"),
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "resolved_tool_path"),
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "manifest"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
@@ -643,6 +647,15 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
     ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"): {
         "removal_phase": "not-applicable",
         "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "resolved_tool_path"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual prompt-builder source path or explicit caller override supplies its provenance digest; the historical launcher must not replace default identity.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "manifest"): {
+        "removal_phase": "not-applicable",
+        "reason": "Derived prompt manifest records the actual builder path and digest or explicit override; this is intrinsic provenance, not a data-root lookup.",
     },
 
 }

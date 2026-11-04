@@ -1132,20 +1132,18 @@ exemptions:
   owner: packaging
   introduced_sha: 41c7f1940fedd5319f91e8dcdcec00b5756dc92f
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py
+- path: plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py
   symbol: manifest
-  reason: pending relocation (P4); anchor `manifest` at line 433 not yet converted
-    to setec.paths (P1 lands no production moves)
+  reason: Derived prompt manifest records the actual builder path and digest or explicit override; this is intrinsic provenance, not a data-root lookup.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
-- path: plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py
   symbol: resolved_tool_path
-  reason: pending relocation (P4); anchor `resolved_tool_path` at line 432 not yet
-    converted to setec.paths (P1 lands no production moves)
+  reason: Actual prompt-builder source path or explicit caller override supplies its provenance digest; the historical launcher must not replace default identity.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x nested compatibility-launcher bootstrap; direct
@@ -1153,13 +1151,6 @@ exemptions:
   owner: packaging
   introduced_sha: 25cbf4114ee6c318d6eae50a2e9c9df7de537736
   removal_phase: not-applicable
-- path: plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py
-  symbol: _SCRIPTS_DIR
-  reason: pending relocation (P4); anchor `_SCRIPTS_DIR` at line 32 not yet converted
-    to setec.paths (P1 lands no production moves)
-  owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/external_mirror/workflow.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
@@ -2496,6 +2487,20 @@ exemptions:
 - path: plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py
   symbol: checkpoint_binding_sha256
   reason: Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
+    runpy does not put scripts/ on sys.path before importing setec.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
+    runpy does not put scripts/ on sys.path before importing setec.
   owner: packaging
   introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
   removal_phase: not-applicable
@@ -5002,6 +5007,20 @@ layer_exemptions:
   removal_phase: not-applicable
 - from_path: plugins/setec-voiceprint/scripts/fetch_brysbaert.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/fetch_brysbaert.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py
+  to_path: plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 319decdaa9ae90452d0ea3ea85f23f7db3f78bae
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py
+  to_path: plugins/setec-voiceprint/scripts/setec/external_mirror/compute_distances.py
   edge_kind: l2_to_l2
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
   owner: packaging
