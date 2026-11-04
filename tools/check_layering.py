@@ -782,7 +782,9 @@ def _surface_implementation_path(legacy: str) -> str | None:
     elif len(old_rel.parts) == 2 and old_rel.parts[0] in {"calibration", "acquisition_sources", "external_mirror", "replication", "oracle"}:
         target = SCRIPTS_ROOT / "setec" / old_rel
     elif (len(old_rel.parts) == 3
-          and old_rel.parts[:2] == ("test_data", "pdf_inventory_fixture")):
+          and old_rel.parts[0] == "test_data"
+          and old_rel.parts[1] in {"pdf_inventory_fixture", "acquisition_gmail_fixture",
+                                   "acquisition_imessage_fixture"}):
         target = SCRIPTS_ROOT / "setec" / old_rel
     else:
         return None
