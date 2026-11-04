@@ -149,6 +149,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/prepare_author_document_adapter.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/gmail_locator_map.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
