@@ -136,6 +136,8 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/external_mirror/compute_distances.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
@@ -280,8 +282,10 @@ _P4_BOOTSTRAP_ANCHORS = {
     ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
     ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
 }
-# Exact intrinsic producer-byte anchors authorized by the acquisition and S5 amendments.
+# Exact intrinsic producer-byte anchors authorized by reviewed relocation scopes.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "resolved_tool_path"),
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "manifest"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
@@ -596,6 +600,15 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'): {"removal_phase": "not-applicable", "reason": 'Actual executing package bytes are the Gmail extraction identity; stale approval bindings remain refused.'},
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'repository'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "resolved_tool_path"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual prompt-builder source path or explicit caller override supplies its provenance digest; the historical launcher must not replace default identity.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/external_mirror/build_prompts.py", "manifest"): {
+        "removal_phase": "not-applicable",
+        "reason": "Derived prompt manifest records the actual builder path and digest or explicit override; this is intrinsic provenance, not a data-root lookup.",
+    },
+
 }
 
 
