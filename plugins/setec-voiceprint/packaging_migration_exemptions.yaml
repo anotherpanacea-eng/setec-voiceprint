@@ -2414,6 +2414,13 @@ exemptions:
   owner: packaging
   introduced_sha: 606583a62a1fec7f6e0c2730d91f51325939818e
   removal_phase: not-applicable
+- path: plugins/setec-voiceprint/scripts/period_lm_contrast.py
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x compatibility-launcher bootstrap; detached runpy
+    does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
+  owner: packaging
+  introduced_sha: 3b2849dd6577cfaca346e5bbcf9c3cca5acd0315
+  removal_phase: not-applicable
 layer_exemptions:
 - from_path: plugins/setec-voiceprint/scripts/corpus_novelty_audit.py
   to_path: plugins/setec-voiceprint/scripts/setec/surfaces/corpus_novelty_audit.py
@@ -4816,4 +4823,11 @@ layer_exemptions:
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
   owner: packaging
   introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/period_lm_contrast.py
+  to_path: plugins/setec-voiceprint/scripts/setec/surfaces/period_lm_contrast.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 3b2849dd6577cfaca346e5bbcf9c3cca5acd0315
   removal_phase: not-applicable
