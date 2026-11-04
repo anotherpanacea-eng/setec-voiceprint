@@ -1168,12 +1168,12 @@ exemptions:
   introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
   removal_phase: P4
 - path: plugins/setec-voiceprint/scripts/external_mirror/workflow.py
-  symbol: <inline>
-  reason: pending relocation (P4); anchor `<inline>` at line 48 not yet converted
-    to setec.paths (P1 lands no production moves)
+  symbol: _SCRIPT_DIR
+  reason: Permanent schema-1.x nested compatibility-launcher bootstrap; detached
+    runpy does not put scripts/ on sys.path, and setec.paths cannot be imported before setec.
   owner: packaging
-  introduced_sha: 222dfb1b7f19fa88e6ed6b31ab1c922a84f16d17
-  removal_phase: P4
+  introduced_sha: 3b2849dd6577cfaca346e5bbcf9c3cca5acd0315
+  removal_phase: not-applicable
 - path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
   symbol: _SCRIPT_DIR
   reason: Permanent schema-1.x launcher bootstrap; foreign-cwd runpy needs the
@@ -4816,4 +4816,11 @@ layer_exemptions:
   reason: Permanent schema-1.x per-file launcher to its relocated implementation.
   owner: packaging
   introduced_sha: 3d570cc1709a347c64648564da85ceba298895a0
+  removal_phase: not-applicable
+- from_path: plugins/setec-voiceprint/scripts/external_mirror/workflow.py
+  to_path: plugins/setec-voiceprint/scripts/setec/external_mirror/workflow.py
+  edge_kind: l2_to_l2
+  reason: Permanent schema-1.x per-file launcher to its relocated implementation.
+  owner: packaging
+  introduced_sha: 3b2849dd6577cfaca346e5bbcf9c3cca5acd0315
   removal_phase: not-applicable
