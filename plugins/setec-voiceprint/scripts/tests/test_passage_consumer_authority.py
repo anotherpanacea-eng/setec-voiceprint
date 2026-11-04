@@ -36,10 +36,11 @@ def _args(root: Path, **changes: object) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
-def _adjacent(tmp_path: Path) -> tuple[Path, consumer.CompileTimeBindings]:
+def _adjacent(
+    tmp_path: Path, *, builder_raw: bytes = b"# synthetic builder fixture\n",
+) -> tuple[Path, consumer.CompileTimeBindings]:
     adjacent = tmp_path / "adjacent"
     adjacent.mkdir()
-    builder_raw = b"# synthetic builder fixture\n"
     verifier_raw = b"# synthetic verifier fixture\n"
     tokenizer_source = Path(consumer.passage_tokenizer_v1.__file__)
     tokenizer_data_source = SCRIPT_DIR / consumer.TOKENIZER_DATA_NAME
@@ -679,3 +680,111 @@ def test_closed_cli_usage_and_error_object(capsys: pytest.CaptureFixture[str]):
         "status": "error",
         "code": "policy_unresolved_refused",
     }
+
+
+@pytest.mark.parametrize("bind_alias", [False, True])
+def test_default_resources_bind_executing_builder_before_private_access(tmp_path, monkeypatch, bind_alias):
+    canonical = Path(consumer.__file__)
+    alias = SCRIPT_DIR / consumer.BUILDER_NAME
+    adjacent, bindings = _adjacent(
+        tmp_path, builder_raw=(alias if bind_alias else canonical).read_bytes(),
+    )
+    # A legacy resource directory still contains the launcher. Its bytes must
+    # never replace the executing implementation's profile-bound identity.
+    (adjacent / consumer.BUILDER_NAME).write_bytes(alias.read_bytes())
+    monkeypatch.setattr(consumer, "scripts_dir", lambda: adjacent)
+    monkeypatch.setattr(consumer, "os", SimpleNamespace(name="posix"))
+
+    class PrivateBoundaryReached(Exception):
+        pass
+
+    def private_boundary(*args):
+        if bind_alias:
+            raise AssertionError("alias-bound profile reached private inputs")
+        raise PrivateBoundaryReached
+
+    monkeypatch.setattr(consumer, "PinnedPrivateRoot", private_boundary)
+    error = consumer.AuthorityError if bind_alias else PrivateBoundaryReached
+    with pytest.raises(error) as raised:
+        consumer.admit_validate_inputs(
+            _args(tmp_path / "never-opened"), adjacent_dir=None,
+            bindings=bindings, platform="darwin",
+        )
+    if bind_alias:
+        assert raised.value.code == "authority_profile_refused"
+    assert not (tmp_path / "never-opened").exists()
+
+
+def test_explicit_adjacency_keeps_synthetic_builder_and_drift_refusal(tmp_path):
+    adjacent, bindings = _adjacent(tmp_path)
+    admitted = consumer.admit_adjacent_authority(adjacent, bindings)
+    assert admitted.profile_artifact_sha256 == bindings.profile_artifact_sha256
+    (adjacent / consumer.BUILDER_NAME).write_bytes(b"# changed synthetic builder\n")
+    with pytest.raises(consumer.AuthorityError, match="^authority_profile_refused$"):
+        consumer.admit_adjacent_authority(adjacent, bindings)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "link", "oversize", "unstable"])
+def test_selected_builder_retains_checked_read_refusals(tmp_path, monkeypatch, mutation):
+    raw = Path(consumer.__file__).read_bytes()
+    adjacent, bindings = _adjacent(tmp_path, builder_raw=raw)
+    builder = adjacent / consumer.BUILDER_NAME
+    expected = "authority_profile_refused"
+    if mutation == "missing":
+        builder.unlink()
+    elif mutation == "link":
+        builder.unlink()
+        try:
+            builder.symlink_to(Path(consumer.__file__))
+        except OSError as exc:
+            pytest.skip(f"host cannot create a fixture symlink: {exc}")
+    elif mutation == "oversize":
+        # Report an oversize stat without allocating a multi-gigabyte file.
+        original_stat = Path.stat
+
+        def oversize(path, *args, **kwargs):
+            info = original_stat(path, *args, **kwargs)
+            if path == builder:
+                return SimpleNamespace(st_size=consumer.MAX_NON_TEXT_INPUT_BYTES + 1)
+            return info
+
+        monkeypatch.setattr(Path, "stat", oversize)
+        expected = "resource_limit_refused"
+    else:
+        original_read = Path.read_bytes
+
+        def unstable(path):
+            value = original_read(path)
+            if path == builder:
+                path.write_bytes(value + b"# concurrent change\n")
+            return value
+
+        monkeypatch.setattr(Path, "read_bytes", unstable)
+    with pytest.raises(consumer.AuthorityError, match=f"^{expected}$"):
+        consumer.admit_adjacent_authority(adjacent, bindings, builder_path=builder)
+
+
+def test_default_platform_refusal_precedes_resource_resolution(tmp_path, monkeypatch):
+    def forbidden():
+        raise AssertionError("resources resolved before platform admission")
+
+    monkeypatch.setattr(consumer, "scripts_dir", forbidden)
+    with pytest.raises(consumer.AuthorityError, match="^platform_refused$"):
+        consumer.admit_validate_inputs(
+            _args(tmp_path / "never-opened"), adjacent_dir=None,
+            bindings=consumer.COMPILED_BINDINGS, platform="linux",
+        )
+
+
+@pytest.mark.parametrize("custom_adjacency", [False, True])
+def test_run_forwards_adjacency_and_keeps_terminal_refusal(tmp_path, monkeypatch, custom_adjacency):
+    adjacent = tmp_path / "fixture-adjacency" if custom_adjacency else None
+    observed = []
+
+    def prefix(args, **kwargs):
+        observed.append(kwargs["adjacent_dir"])
+
+    monkeypatch.setattr(consumer, "admit_validate_inputs", prefix)
+    with pytest.raises(consumer.AuthorityError, match="^source_commitment_refused$"):
+        consumer.run(_args(tmp_path / "never-opened"), adjacent_dir=adjacent)
+    assert observed == [adjacent]

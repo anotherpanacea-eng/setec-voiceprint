@@ -136,6 +136,7 @@ _P3_RELOCATION_ANCHORS = {
 }
 _L1_MODULES = {"stylometry_distance.py"}
 _P4_BOOTSTRAP_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/passage_consumer_authority.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
@@ -280,8 +281,12 @@ _P4_BOOTSTRAP_ANCHORS = {
     ('plugins/setec-voiceprint/scripts/passage_remediation.py', "_SCRIPT_DIR"),
     ('plugins/setec-voiceprint/scripts/shingle_dedup.py', "_SCRIPT_DIR"),
 }
-# Exact intrinsic producer-byte anchors authorized by the acquisition and S5 amendments.
+# Exact intrinsic producer-byte anchors authorized by reviewed relocation scopes.
 _P4_RELOCATION_ANCHORS = {
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "authority"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
@@ -596,6 +601,24 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'): {"removal_phase": "not-applicable", "reason": 'Actual executing package bytes are the Gmail extraction identity; stale approval bindings remain refused.'},
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'SCRIPT_DIR'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
     ('plugins/setec-voiceprint/scripts/setec/surfaces/near_dup_dedup.py', 'repository'): {"removal_phase": "not-applicable", "reason": 'Actual package directory discovers the Git repository for strict committed-producer identity; dirty or uncommitted package bytes remain refused.'},
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual executing package builder bytes are profile-bound; the historical launcher must not substitute its identity. Checked reads retain missing, symlink, size and stability refusals.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "authority"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+
 }
 
 
