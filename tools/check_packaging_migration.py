@@ -150,6 +150,7 @@ _P4_BOOTSTRAP_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/gmail_locator_map.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/reconstructibility_probe_set.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/compose_imessage_review_bursts.py", "_SCRIPT_DIR"),
+    ("plugins/setec-voiceprint/scripts/passage_consumer_authority.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/evidence_pack.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/explain.py", "_SCRIPT_DIR"),
     ("plugins/setec-voiceprint/scripts/acquisition_core.py", "_SCRIPT_DIR"),
@@ -298,6 +299,10 @@ _P4_BOOTSTRAP_ANCHORS = {
 _P4_RELOCATION_ANCHORS = {
     ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "source"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "relative"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "authority"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"),
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/s5_distance.py", "<inline>"),
     ("plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py", "<inline>"),
     ('plugins/setec-voiceprint/scripts/setec/surfaces/acquire_gmail_sent.py', '<inline>'),
@@ -619,6 +624,24 @@ _MANUAL_DISPOSITIONS: dict[tuple[str, str], dict[str, str]] = {
     ("plugins/setec-voiceprint/scripts/setec/surfaces/reconstructibility_probe_set.py", "relative"): {
         "removal_phase": "not-applicable",
         "reason": "Actual package source path is checked against the Git index for strict producer identity; untracked, dirty or changed source remains refused.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "builder_path"): {
+        "removal_phase": "not-applicable",
+        "reason": "Actual executing package builder bytes are profile-bound; the historical launcher must not substitute its identity. Checked reads retain missing, symlink, size and stability refusals.",
+    },
+
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "authority"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "total"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
+    },
+    ("plugins/setec-voiceprint/scripts/setec/surfaces/passage_consumer_authority.py", "checkpoint_binding_sha256"): {
+        "removal_phase": "not-applicable",
+        "reason": "Scanner-derived value from the checked executing-builder/profile binding; no additional resource lookup or scripts-root substitution is permitted.",
     },
 
 }
