@@ -112,3 +112,30 @@ def write_clean_pool_manifest(tmp_path, texts, name):
     ]
     p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
     return p
+
+
+def own_by_current_user(path: Path) -> None:
+    """Make a plainly created Windows test node owned by the token user.
+
+    An elevated Windows process (the hosted runner, an admin shell) gives new
+    files and directories the Administrators group as owner, so state a test
+    means to be "the user's own" would be refused as foreign-owned. Real
+    ownership is set; nothing in production code changes. No-op off Windows.
+    """
+    if os.name != "nt":
+        return
+    import ctypes
+    from ctypes import wintypes
+    from setec.core import windows_descriptor_io as native
+
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    set_named = api.SetNamedSecurityInfoW
+    set_named.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
+                          ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                          ctypes.c_void_p]
+    set_named.restype = wintypes.DWORD
+    sid = native.current_user_sid()
+    sid_buffer = ctypes.create_string_buffer(sid, len(sid))
+    # SE_FILE_OBJECT = 1, OWNER_SECURITY_INFORMATION = 1
+    status = set_named(str(path), 1, 1, sid_buffer, None, None, None)
+    assert status == 0, f"SetNamedSecurityInfoW owner failed: {status}"

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import own_by_current_user
 
 
 import atomic_publish as publish  # noqa: E402
@@ -83,6 +84,8 @@ def test_atomic_write_preserves_exact_bytes_replaces_and_hardens(
     parent.mkdir(mode=0o777)
     target = parent / "payload.txt"
     target.write_bytes(b"old")
+    own_by_current_user(parent)
+    own_by_current_user(target)
     if os.name == "posix":
         os.chmod(parent, 0o777)
         os.chmod(target, 0o666)
@@ -159,6 +162,8 @@ def test_atomic_write_cleans_its_temp_after_replace_failure(
     target = tmp_path / "private" / "payload.bin"
     target.parent.mkdir()
     target.write_bytes(b"winner")
+    own_by_current_user(target.parent)
+    own_by_current_user(target)
 
     def refuse_replace(_source: Path, _destination: Path) -> None:
         raise OSError(errno.EIO, "synthetic replace failure")
@@ -465,6 +470,7 @@ def test_native_private_writer_hardens_owned_file_and_preserves_open_modes(tmp_p
     # Private directory ACEs intentionally do not propagate: the constructor
     # must harden this existing owned file before opening it for payload I/O.
     target.write_bytes(b"old")
+    own_by_current_user(target)
     with os.fdopen(publish.open_private_descriptor(
         target, os.O_WRONLY | os.O_CREAT | os.O_APPEND), "ab") as stream:
         stream.write(b" appended")
