@@ -4,6 +4,7 @@ import copy
 from dataclasses import replace
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from passage_remediation import PinnedPrivateRoot  # noqa: E402
 from passage_remediation_projection import RemediationProjection  # noqa: E402
 import reconstructibility_probe_set as spec75  # noqa: E402
 from conftest import _digest  # noqa: E402
+from setec.core import atomic_publish as private_io  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -296,8 +298,7 @@ def _package() -> transaction.AuthorityPackage:
 
 
 def _private_root(path: Path) -> Path:
-    path.mkdir()
-    path.chmod(0o700)
+    private_io.create_private_directory(path)
     return path
 
 
@@ -716,8 +717,7 @@ def test_receipt_without_exact_prefix_refuses_without_creating_files(
     private = _private_root(tmp_path / "receipt-only")
     package = _package()
     names = _names()
-    (private / names.receipt).write_bytes(package.receipt_bytes)
-    (private / names.receipt).chmod(0o600)
+    private_io.atomic_write_private(private / names.receipt, package.receipt_bytes)
 
     with PinnedPrivateRoot(str(private)) as root:
         with pytest.raises(
@@ -737,8 +737,12 @@ def test_unsafe_exact_prefix_and_colliding_output_names_refuse(tmp_path: Path):
     package = _package()
     names = _names()
     manifest = private / names.projected_manifest
-    manifest.write_bytes(package.projected_manifest_bytes)
-    manifest.chmod(0o644)
+    private_io.atomic_write_private(manifest, package.projected_manifest_bytes)
+    if os.name == "nt":
+        from test_windows_descriptor_backend import _set_test_dacl
+        _set_test_dacl(manifest)
+    else:
+        manifest.chmod(0o644)
 
     with PinnedPrivateRoot(str(private)) as root:
         with pytest.raises(
@@ -765,11 +769,123 @@ def test_unsafe_exact_prefix_and_colliding_output_names_refuse(tmp_path: Path):
             )
 
     assert manifest.read_bytes() == package.projected_manifest_bytes
-    assert stat_mode(manifest) == 0o644
+    if os.name == "nt":
+        with pytest.raises(OSError):
+            private_io.require_private_node(manifest, "file")
+    else:
+        assert stat_mode(manifest) == 0o644
 
 
 def stat_mode(path: Path) -> int:
     return path.stat().st_mode & 0o777
+
+
+@pytest.mark.parametrize("operation", ["overwrite", "replace", "unlink"])
+def test_existing_prefix_prevents_or_refuses_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,
+):
+    private = _private_root(tmp_path / "private")
+    target = private / "prefix.json"
+    moved = private / "moved.json"
+    payload = b"original prefix\n"
+    private_io.atomic_write_private(target, payload)
+
+    def mutate():
+        if operation == "overwrite":
+            target.write_bytes(b"changed\n")
+        elif operation == "replace":
+            target.rename(moved)
+        else:
+            target.unlink()
+
+    with PinnedPrivateRoot(str(private)) as root:
+        read = root.read_private_member
+        calls = 0
+
+        def read_with_mutation(parts, maximum):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                if os.name == "nt":
+                    with pytest.raises(PermissionError):
+                        mutate()
+                    assert target.read_bytes() == payload
+                else:
+                    mutate()
+            return read(parts, maximum)
+
+        monkeypatch.setattr(root, "read_private_member", read_with_mutation)
+        if os.name == "nt":
+            assert transaction._read_existing(root, target.name, 100) == payload
+            # The file handle is closed before returning to publication hooks.
+            mutate()
+        else:
+            with pytest.raises(transaction.PackageTransactionError, match="output_recovery_required"):
+                transaction._read_existing(root, target.name, 100)
+        assert calls == 2
+    assert sorted(path.name for path in private.iterdir()) == (
+        [moved.name] if operation == "replace" else
+        [target.name] if operation == "overwrite" else []
+    )
+
+
+def test_existing_prefix_permission_change_refuses_without_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    private = _private_root(tmp_path / "private")
+    target = private / "prefix.json"
+    payload = b"original prefix\n"
+    private_io.atomic_write_private(target, payload)
+    with PinnedPrivateRoot(str(private)) as root:
+        read = root.read_private_member
+        calls = 0
+
+        def read_with_permission_change(parts, maximum):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                if os.name == "nt":
+                    from test_windows_descriptor_backend import _set_test_dacl
+                    _set_test_dacl(target)
+                else:
+                    target.chmod(0o644)
+            return read(parts, maximum)
+
+        monkeypatch.setattr(root, "read_private_member", read_with_permission_change)
+        with pytest.raises(transaction.PackageTransactionError, match="output_recovery_required"):
+            transaction._read_existing(root, target.name, 100)
+        assert calls == 2
+    assert target.read_bytes() == payload
+    if os.name == "nt":
+        with pytest.raises(OSError):
+            private_io.require_private_node(target, "file")
+    else:
+        assert stat_mode(target) == 0o644
+    # Refusal must also release the retained file handle.
+    target.unlink()
+    assert list(private.iterdir()) == []
+
+
+@pytest.mark.parametrize("unsafe", ["hardlink", "oversize"])
+def test_unsafe_existing_prefix_is_preserved_without_publication(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unsafe: str,
+):
+    private = _private_root(tmp_path / "private")
+    package = _package()
+    names = _names()
+    target = private / names.projected_manifest
+    private_io.atomic_write_private(target, package.projected_manifest_bytes)
+    if unsafe == "hardlink":
+        os.link(target, private / "alias.jsonl")
+    else:
+        monkeypatch.setattr(transaction, "MAX_PROJECTED_MANIFEST_BYTES", len(package.projected_manifest_bytes) - 1)
+    before = {path.name: path.read_bytes() for path in private.iterdir()}
+    with PinnedPrivateRoot(str(private)) as root:
+        with pytest.raises(transaction.PackageTransactionError, match="output_recovery_required"):
+            transaction.publish_authority_package(
+                root=root, package=package, names=names, synthetic_capability=_capability(),
+            )
+    assert {path.name: path.read_bytes() for path in private.iterdir()} == before
 
 
 @pytest.mark.parametrize("conflict_index", [0, 1, 2])
@@ -786,12 +902,10 @@ def test_unequal_conflicts_are_preserved_without_overwrite_or_delete(
         (names.receipt, package.receipt_bytes),
     ]
     for name, payload in ordered[:conflict_index]:
-        (private / name).write_bytes(payload)
-        (private / name).chmod(0o600)
+        private_io.atomic_write_private(private / name, payload)
     conflict_name = ordered[conflict_index][0]
     conflict_payload = b"foreign\n"
-    (private / conflict_name).write_bytes(conflict_payload)
-    (private / conflict_name).chmod(0o600)
+    private_io.atomic_write_private(private / conflict_name, conflict_payload)
     before = {
         path.name: path.read_bytes() for path in private.iterdir()
     }
