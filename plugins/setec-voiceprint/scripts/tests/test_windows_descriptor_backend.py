@@ -428,6 +428,61 @@ def _set_test_dacl(path: Path, *, inheritable: bool = False, access_mask: str | 
     return sid
 
 
+def test_completed_reader_refuses_row_acl_change_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import windows_portable_tree as backend
+    from test_acquire_imessage_sent_atomic import _completed_private_smoke_run
+
+    _private, run_dir, _ = _completed_private_smoke_run(tmp_path)
+    target = next((run_dir / A.ROWS_DIRNAME).glob("*/*.meta.json"))
+    original = target.read_bytes()
+    read = backend.W.read
+    changed = False
+
+    def change_permissions(handle, maximum):
+        nonlocal changed
+        if not changed:
+            changed = True
+            _set_test_dacl(target.parent)
+        return read(handle, maximum)
+
+    reader = A._PrivateReadOnlyRowIo(run_dir)
+    try:
+        monkeypatch.setattr(backend.W, "read", change_permissions)
+        with pytest.raises(A.AtomicAcquisitionError):
+            reader.read_bytes(target.relative_to(run_dir).as_posix(), "sidecar")
+        assert changed
+        assert target.read_bytes() == original
+        with pytest.raises(OSError):
+            private_io.require_private_node(target.parent, "directory")
+        target.unlink()  # post-read refusal released the retained file
+    finally:
+        reader.close()
+
+
+def test_copy_refuses_nonprivate_partial_before_mutation(tmp_path: Path) -> None:
+    root, row_io = _private_tree(tmp_path)
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"approved bytes")
+    partial = root / "snapshot.copying"
+    private_io.atomic_write_private(partial, b"app")
+    _set_test_dacl(partial)
+    try:
+        with pytest.raises(A.BootstrapStateError, match="cannot copy"):
+            row_io.copy_file_resumable(
+                source, partial.name, "snapshot.bin",
+                expected_digest=A._sha256_tag(source.read_bytes()),
+                expected_size=source.stat().st_size, label="snapshot",
+            )
+    finally:
+        row_io.close()
+    assert partial.read_bytes() == b"app"
+    assert sorted(path.name for path in root.iterdir()) == [partial.name]
+    with pytest.raises(OSError):
+        private_io.require_private_node(partial, "file")
+
+
 @pytest.mark.parametrize("kind", ["file", "directory"])
 def test_native_hardening_preserves_owner_and_contents_without_reading_payload(
     tmp_path, monkeypatch, kind,

@@ -2839,7 +2839,7 @@ def test_private_reader_prevents_or_refuses_mutation_during_read(
         nonlocal calls
         calls += 1
         if calls == 1:
-            if os.name == "nt" and operation != "permission":
+            if os.name == "nt" and operation in {"overwrite", "rename", "unlink"}:
                 with pytest.raises(PermissionError):
                     mutate()
             else:
@@ -2850,13 +2850,13 @@ def test_private_reader_prevents_or_refuses_mutation_during_read(
     try:
         with monkeypatch.context() as patch:
             patch.setattr(io_module, "read", read_with_mutation)
-            if os.name == "nt" and operation != "permission":
+            if os.name == "nt" and operation in {"overwrite", "rename", "unlink"}:
                 assert reader.read_bytes(target.relative_to(run_dir).as_posix(), "sidecar") == original
             else:
                 with pytest.raises(A.AtomicAcquisitionError):
                     reader.read_bytes(target.relative_to(run_dir).as_posix(), "sidecar")
         assert calls > 0
-        if os.name == "nt" and operation != "permission":
+        if os.name == "nt" and operation in {"overwrite", "rename", "unlink"}:
             mutate()  # file handle is released before the reader itself closes
         if operation == "permission":
             assert target.read_bytes() == original

@@ -862,17 +862,21 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                     renamed = True
                     break
                 except OSError as exc:
-                    try:
-                        destination_named = W.open_node(
-                            destination_parent, destination_parts[-1]
-                        )
-                    except FileNotFoundError:
-                        destination_named = None
-                    try:
-                        source_named = _open_private_directory(source_parent, source_parts[-1])
-                    except FileNotFoundError:
-                        source_named = None
-                    try:
+                    with ExitStack() as probes:
+                        try:
+                            destination_named = W.open_node(
+                                destination_parent, destination_parts[-1]
+                            )
+                        except FileNotFoundError:
+                            destination_named = None
+                        if destination_named is not None:
+                            probes.callback(W.close, destination_named)
+                        try:
+                            source_named = _open_private_directory(source_parent, source_parts[-1])
+                        except FileNotFoundError:
+                            source_named = None
+                        if source_named is not None:
+                            probes.callback(W.close, source_named)
                         if destination_named is not None or source_named is None:
                             raise A.BootstrapRecoveryRequired(
                                 "atomic row rename outcome is ambiguous"
@@ -881,11 +885,6 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                             raise A.BootstrapRecoveryRequired(
                                 "staged atomic row changed during retry"
                             ) from exc
-                    finally:
-                        if destination_named is not None:
-                            W.close(destination_named)
-                        if source_named is not None:
-                            W.close(source_named)
                     if getattr(exc, "winerror", None) not in _TRANSIENT_RENAME_ERRORS:
                         raise
                     try:
@@ -1015,6 +1014,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                 partial = W.open_file(
                     parent, temporary_name, writable=True, delete_access=True
                 )
+                W.require_owner_private(partial, "file")
             except FileNotFoundError:
                 partial = W.create_owner_private_file(parent, temporary_name)
                 mutated = True
@@ -1127,12 +1127,20 @@ class WindowsPrivateReadOnlyRowIo:
             with ExitStack() as opened:
                 current = W.duplicate(self.final_fd)
                 opened.callback(W.close, current)
+                directories: list[tuple[int, str, int]] = []
                 for part in parts:
-                    current = _open_private_directory(current, part)
+                    parent = current
+                    current = _open_private_directory(parent, part)
                     opened.callback(W.close, current)
-                    W.require_owner_private(current, "directory")
+                    directories.append((parent, part, current))
                 yield current
-            self._verify_root()
+                for parent, part, retained in directories:
+                    before = W.require_owner_private(retained, "directory")
+                    named = _open_private_directory(parent, part)
+                    opened.callback(W.close, named)
+                    if not _same_node(before, W.require_owner_private(named, "directory")):
+                        raise A.BootstrapStateError("completed atomic run directory binding drifted")
+                self._verify_root()
         except OSError as exc:
             raise A.BootstrapStateError("cannot read completed Windows atomic run") from exc
 
