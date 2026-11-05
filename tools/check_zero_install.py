@@ -1124,9 +1124,28 @@ def _write_gmail_pipeline_inputs(outside_cwd: Path) -> None:
     private = outside_cwd / "ai-prose-baselines-private"
     root = private / "pipeline"
     run = root / "runs" / "one"
-    run.mkdir(parents=True, exist_ok=True)
-    for path in (private, root, root / "runs", run):
-        path.chmod(0o700)
+    publisher = None
+    if os.name == "nt":
+        # Use the existing historical launcher to provision the source package
+        # for fixture creation. The detached child still gets a clean process
+        # with no PYTHONPATH and can reach only its own bare plugin copy.
+        import importlib.util
+        name = "_setec_gmail_fixture_contract"
+        spec = importlib.util.spec_from_file_location(name, PLUGIN_ROOT / "scripts" / "claim_license.py")
+        if spec is None or spec.loader is None:
+            raise GateError("could not load the native private fixture writer")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+            from setec.core import atomic_publish as publisher
+            publisher.secure_private_directory(run)
+        except (OSError, ValueError, ImportError, AttributeError) as exc:
+            raise GateError("could not create the native private Gmail fixture") from exc
+    else:
+        run.mkdir(parents=True, exist_ok=True)
+        for path in (private, root, root / "runs", run):
+            path.chmod(0o700)
     mbox = ("From owner@example.test Mon Jan 04 12:00:00 2021\n"
             "From: Synthetic Owner <owner@example.test>\nTo: friend@example.test\n"
             "Subject: Synthetic note\nDate: Mon, 04 Jan 2021 12:00:00 +0000\n"
@@ -1162,8 +1181,14 @@ def _write_gmail_pipeline_inputs(outside_cwd: Path) -> None:
                        (root / "hmac.key", b"k" * 32),
                        (run / "request.json",
                         json.dumps(request, sort_keys=True, separators=(",", ":")).encode("utf-8"))):
-        path.write_bytes(data)
-        path.chmod(0o600)
+        if publisher is not None:
+            try:
+                publisher.atomic_write_private(path, data)
+            except (OSError, ValueError) as exc:
+                raise GateError("could not write the native private Gmail fixture") from exc
+        else:
+            path.write_bytes(data)
+            path.chmod(0o600)
 
 
 def check_consumer_cases(bare_root: Path, outside_cwd: Path, report: Report) -> None:

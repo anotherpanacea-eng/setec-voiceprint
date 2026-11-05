@@ -8,6 +8,8 @@ import os
 import stat
 import sys
 import tempfile
+import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -41,6 +43,19 @@ def _unsupported_publication() -> OSError:
 def secure_private_directory(path: Path) -> None:
     """Create or harden one private directory without relying on the umask."""
     path = Path(path)
+    if os.name == "nt":
+        missing: list[Path] = []
+        current = path
+        while not current.exists():
+            missing.append(current)
+            current = current.parent
+        for directory in reversed(missing):
+            try:
+                create_private_directory(directory)
+            except FileExistsError:
+                _harden_windows_node(directory, "directory")
+        _harden_windows_node(path, "directory")
+        return
     if path.is_symlink():
         raise ValueError("private output directories must not be symlinks")
     if path.exists():
@@ -62,6 +77,184 @@ def secure_private_directory(path: Path) -> None:
                 os.chmod(directory, PRIVATE_DIRECTORY_MODE)
     if os.name == "posix":
         os.chmod(path, PRIVATE_DIRECTORY_MODE)
+
+
+def _windows_io():
+    try:
+        from setec.core import windows_descriptor_io
+    except (ImportError, OSError, AttributeError) as exc:
+        raise OSError("native private-file I/O is unavailable") from exc
+    return windows_descriptor_io
+
+
+@contextmanager
+def _windows_parent(path: Path, *, writable: bool = True):
+    native = _windows_io()
+    ancestor, parent, _name = native.pin_directory(
+        Path(path).parent, writable_final=writable, allow_root=True,
+    )
+    try:
+        yield native, parent
+    finally:
+        try:
+            native.close(parent)
+        finally:
+            native.close(ancestor)
+
+
+def require_private_node(path: Path, kind: str) -> None:
+    """Validate a native Windows node; never repair caller-provided state."""
+    native = _windows_io()
+    if kind == "directory":
+        ancestor, handle, _name = native.pin_directory(path, writable_final=False)
+        try:
+            native.require_owner_private(handle, kind)
+        finally:
+            try:
+                native.close(handle)
+            finally:
+                native.close(ancestor)
+    elif kind == "file":
+        with _windows_parent(path, writable=False) as (native, parent):
+            handle = native.open_file(parent, Path(path).name)
+            try:
+                native.require_owner_private(handle, kind)
+            finally:
+                native.close(handle)
+    else:
+        raise ValueError("private node must be a file or directory")
+
+
+def _harden_windows_node(path: Path, kind: str) -> None:
+    native = _windows_io()
+    if kind == "directory":
+        ancestor, handle, _name = native.pin_directory(
+            path, writable_final=False, write_dac=True, security_only=True,
+        )
+        try:
+            try:
+                native.require_owner_private(handle, kind)
+            except OSError:
+                native.make_owner_private(handle, kind)
+        finally:
+            try:
+                native.close(handle)
+            finally:
+                native.close(ancestor)
+    else:
+        with _windows_parent(path, writable=False) as (native, parent):
+            handle = native.open_file(
+                parent, Path(path).name, write_dac=True, security_only=True,
+            )
+            try:
+                try:
+                    native.require_owner_private(handle, kind)
+                except OSError:
+                    native.make_owner_private(handle, kind)
+            finally:
+                native.close(handle)
+
+
+def create_private_directory(path: Path) -> None:
+    """Create one new private directory; do not harden existing ancestors."""
+    path = Path(path)
+    if os.name != "nt":
+        os.mkdir(path, PRIVATE_DIRECTORY_MODE)
+        os.chmod(path, PRIVATE_DIRECTORY_MODE)
+        return
+    with _windows_parent(path) as (native, parent):
+        handle = native.create_owner_private_directory(parent, path.name)
+        native.close(handle)
+
+
+def open_private_descriptor(
+    path: Path, flags: int, *, require_private_existing: bool = False,
+) -> int:
+    """Open a native private writer with protected creation or owned hardening.
+
+    Validation-sensitive callers can require an existing private file, rather
+    than repairing its ACL. The returned CRT descriptor owns its native handle.
+    """
+    import msvcrt
+    path = Path(path)
+    descriptor = -1
+    try:
+        with _windows_parent(path) as (native, parent):
+            handle = 0
+            try:
+                if flags & os.O_EXCL:
+                    handle = native.create_owner_private_file(parent, path.name)
+                else:
+                    if not require_private_existing:
+                        try:
+                            _harden_windows_node(path, "file")
+                        except FileNotFoundError:
+                            pass
+                    try:
+                        handle = native.open_file(parent, path.name, writable=True)
+                    except FileNotFoundError:
+                        try:
+                            handle = native.create_owner_private_file(parent, path.name)
+                        except FileExistsError:
+                            handle = native.open_file(parent, path.name, writable=True)
+                    native.require_owner_private(handle, "file")
+                descriptor = msvcrt.open_osfhandle(
+                    handle, os.O_BINARY | (os.O_APPEND if flags & os.O_APPEND else 0),
+                )
+                handle = 0  # ownership passed to the CRT descriptor
+                os.set_inheritable(descriptor, False)
+                if flags & os.O_TRUNC:
+                    os.ftruncate(descriptor, 0)
+            finally:
+                if handle:
+                    native.close(handle)
+        return descriptor
+    except BaseException:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise
+
+
+def _atomic_write_private_windows(target: Path, payload: bytes) -> None:
+    secure_private_directory(target.parent)
+    with _windows_parent(target) as (native, parent):
+        temporary = f".{target.name}.{uuid.uuid4().hex}.tmp"
+        handle = native.create_owner_private_file(parent, temporary)
+        owned = None
+        published = False
+        try:
+            try:
+                owned = native.info(handle)
+            except BaseException:
+                # No write or rename has been attempted. The creation handle
+                # alone proves ownership even when metadata cannot be read.
+                try:
+                    native.delete(handle)
+                except OSError:
+                    pass
+                raise
+            if native.write(handle, payload) != len(payload):
+                raise OSError(errno.EIO, "short private atomic write")
+            native.flush(handle)
+            native.rename(handle, parent, target.name, replace=True)
+            published = True
+        finally:
+            try:
+                if not published and owned is not None:
+                    # A failed/ambiguous rename must not delete a published
+                    # destination or another actor's replacement at the name.
+                    try:
+                        candidate = native.open_file(parent, temporary, delete_access=True)
+                        try:
+                            named = native.info(candidate)
+                            if (named.volume_serial, named.file_id) == (owned.volume_serial, owned.file_id):
+                                native.delete(candidate)
+                        finally:
+                            native.close(candidate)
+                    except OSError:
+                        pass
+            finally:
+                native.close(handle)
 
 
 def _identity(info: os.stat_result) -> tuple[int, int]:
@@ -97,6 +290,9 @@ def atomic_write_private(path: Path, data: str | bytes) -> None:
     if type(data) not in (str, bytes):
         raise TypeError("private atomic-write data must be str or bytes")
     payload = data.encode("utf-8") if isinstance(data, str) else data
+    if os.name == "nt":
+        _atomic_write_private_windows(target, payload)
+        return
     secure_private_directory(target.parent)
     descriptor, raw_temporary = tempfile.mkstemp(
         dir=target.parent,

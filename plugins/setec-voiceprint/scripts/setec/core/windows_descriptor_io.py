@@ -195,6 +195,10 @@ ntdll.NtQuerySecurityObject.argtypes = [
     ctypes.POINTER(wintypes.ULONG),
 ]
 ntdll.NtQuerySecurityObject.restype = ctypes.c_long
+ntdll.NtSetSecurityObject.argtypes = [
+    wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p,
+]
+ntdll.NtSetSecurityObject.restype = ctypes.c_long
 advapi32.OpenProcessToken.argtypes = [
     wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)
 ]
@@ -435,16 +439,7 @@ def _owner_private_descriptor() -> tuple[ctypes.Array, ctypes.Array, ctypes.Arra
     return descriptor, acl_buffer, sid_buffer
 
 
-def require_owner_private(handle: int, kind: str) -> NodeInfo:
-    """Require the retained handle's owner and DACL to be owner-private.
-
-    Exactly one non-inherited allow ACE granting the current token user full
-    access, a protected (non-inheriting) DACL, the current token user as owner,
-    the expected direct node kind, no reparse point, and a single link.
-    """
-    value = require_direct(handle, kind)
-    expected = current_user_sid()
-    expected_buffer = ctypes.create_string_buffer(expected, len(expected))
+def _query_security(handle: int) -> ctypes.Array:
     information = OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION
     needed = wintypes.ULONG(0)
     ntdll.NtQuerySecurityObject(handle, information, None, 0, ctypes.byref(needed))
@@ -456,6 +451,54 @@ def require_owner_private(handle: int, kind: str) -> NodeInfo:
     ))
     if status < 0:
         raise _nt_error(status)
+    return buffer
+
+
+def _require_current_owner(buffer: ctypes.Array, expected_buffer: ctypes.Array) -> None:
+    owner = ctypes.c_void_p()
+    defaulted = wintypes.BOOL(0)
+    if not advapi32.GetSecurityDescriptorOwner(
+        buffer, ctypes.byref(owner), ctypes.byref(defaulted)
+    ):
+        raise _win_error()
+    if not owner.value or defaulted.value or not advapi32.EqualSid(owner, expected_buffer):
+        raise OSError("private-tree node is not owned by the current user")
+
+
+def make_owner_private(handle: int, kind: str) -> NodeInfo:
+    """Harden an observed current-user-owned direct node, without changing owner.
+
+    The caller deliberately requests WRITE_DAC. Ownership inspection and DACL
+    setting are separate kernel operations, not an ownership compare-and-swap.
+    Admission checks must use require_owner_private instead of this constructor.
+    """
+    require_direct(handle, kind)
+    expected = current_user_sid()
+    expected_buffer = ctypes.create_string_buffer(expected, len(expected))
+    _require_current_owner(_query_security(handle), expected_buffer)
+    descriptor, acl_buffer, sid_buffer = _owner_private_descriptor()
+    # PROTECTED_DACL_SECURITY_INFORMATION: prevent inherited permissions. Do
+    # not include OWNER/GROUP_SECURITY_INFORMATION or request WRITE_OWNER.
+    status = int(ntdll.NtSetSecurityObject(
+        handle, DACL_SECURITY_INFORMATION | 0x80000000, descriptor,
+    ))
+    del descriptor, acl_buffer, sid_buffer
+    if status < 0:
+        raise _nt_error(status)
+    return require_owner_private(handle, kind)
+
+
+def require_owner_private(handle: int, kind: str) -> NodeInfo:
+    """Require the retained handle's owner and DACL to be owner-private.
+
+    Exactly one non-inherited allow ACE granting the current token user full
+    access, a protected (non-inheriting) DACL, the current token user as owner,
+    the expected direct node kind, no reparse point, and a single link.
+    """
+    value = require_direct(handle, kind)
+    expected = current_user_sid()
+    expected_buffer = ctypes.create_string_buffer(expected, len(expected))
+    buffer = _query_security(handle)
     control = wintypes.WORD(0)
     revision = wintypes.DWORD(0)
     if not advapi32.GetSecurityDescriptorControl(
@@ -466,14 +509,7 @@ def require_owner_private(handle: int, kind: str) -> NodeInfo:
         raise OSError("private-tree node DACL is absent or not protected")
     if control.value & (SE_DACL_DEFAULTED | SE_DACL_AUTO_INHERITED):
         raise OSError("private-tree node DACL is defaulted or auto-inherited")
-    owner = ctypes.c_void_p()
-    defaulted = wintypes.BOOL(0)
-    if not advapi32.GetSecurityDescriptorOwner(
-        buffer, ctypes.byref(owner), ctypes.byref(defaulted)
-    ):
-        raise _win_error()
-    if not owner.value or defaulted.value or not advapi32.EqualSid(owner, expected_buffer):
-        raise OSError("private-tree node is not owned by the current user")
+    _require_current_owner(buffer, expected_buffer)
     present = wintypes.BOOL(0)
     acl = ctypes.c_void_p()
     acl_defaulted = wintypes.BOOL(0)
@@ -548,9 +584,13 @@ def _nt_open(
     allow_multiple_links: bool = False,
     owner_private: bool = False,
     allow_indirect: bool = False,
+    write_dac: bool = False,
+    security_only: bool = False,
 ) -> int:
     if allow_indirect and (kind is not None or create):
         raise ValueError("an indirection-tolerant open is a kindless probe only")
+    if security_only and (create or not write_dac):
+        raise ValueError("a security-only open requires an existing node and WRITE_DAC")
     component = _valid_component(name)
     buffer = ctypes.create_unicode_buffer(component)
     encoded_length = len(component.encode("utf-16-le"))
@@ -569,16 +609,20 @@ def _nt_open(
     iosb = IO_STATUS_BLOCK()
     result = wintypes.HANDLE()
     desired = FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE
+    if write_dac:
+        desired |= WRITE_DAC
     if create or delete_access:
         desired |= DELETE
     options = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT
     if kind == "directory":
-        desired |= FILE_READ_DATA | FILE_EXECUTE
-        if writable or create: desired |= FILE_WRITE_DATA | FILE_APPEND_DATA
+        if not security_only:
+            desired |= FILE_READ_DATA | FILE_EXECUTE
+            if writable or create: desired |= FILE_WRITE_DATA | FILE_APPEND_DATA
         options |= FILE_DIRECTORY_FILE
     elif kind == "file":
-        desired |= FILE_READ_DATA
-        if writable or create:
+        if not security_only:
+            desired |= FILE_READ_DATA
+        if (writable or create) and not security_only:
             desired |= FILE_WRITE_DATA | FILE_APPEND_DATA | FILE_WRITE_ATTRIBUTES
         options |= FILE_NON_DIRECTORY_FILE
     else:
@@ -621,10 +665,12 @@ def _nt_open(
 
 
 def open_directory(
-    parent: int, name: str, *, writable: bool = False, delete_access: bool = False
+    parent: int, name: str, *, writable: bool = False, delete_access: bool = False,
+    write_dac: bool = False, security_only: bool = False,
 ) -> int:
     return _nt_open(
-        parent, name, kind="directory", create=False, writable=writable, delete_access=delete_access
+        parent, name, kind="directory", create=False, writable=writable,
+        delete_access=delete_access, write_dac=write_dac, security_only=security_only,
     )
 
 
@@ -658,6 +704,8 @@ def open_file(
     share_delete: bool = True,
     share_write: bool = True,
     allow_multiple_links: bool = False,
+    write_dac: bool = False,
+    security_only: bool = False,
 ) -> int:
     return _nt_open(
         parent, name, kind="file", create=False,
@@ -666,6 +714,7 @@ def open_file(
         share_delete=share_delete,
         share_write=share_write,
         allow_multiple_links=allow_multiple_links,
+        write_dac=write_dac, security_only=security_only,
     )
 
 
@@ -743,9 +792,14 @@ def open_absolute_file(path: Path, *, writable: bool = False) -> int:
         raise
 
 
-def pin_directory(path: Path, *, writable_final: bool = True) -> tuple[int, int, str]:
+def pin_directory(
+    path: Path, *, writable_final: bool = True,
+    write_dac: bool = False, security_only: bool = False,
+    allow_root: bool = False,
+) -> tuple[int, int, str]:
     absolute = Path(path).absolute()
-    if ".." in absolute.parts or not absolute.drive or not absolute.name:
+    if (".." in absolute.parts or not absolute.drive
+            or (not absolute.name and (not allow_root or write_dac or security_only))):
         raise OSError("private root path is not an absolute drive path")
     anchor = absolute.anchor
     if anchor.startswith("\\\\?\\"):
@@ -756,7 +810,8 @@ def pin_directory(path: Path, *, writable_final: bool = True) -> tuple[int, int,
         drive_root = "\\\\?\\" + anchor.rstrip("\\/") + "\\"
     root = kernel32.CreateFileW(
         drive_root,
-        0x80000000,
+        0x80000000 | (FILE_WRITE_DATA | FILE_APPEND_DATA
+                      if not absolute.name and writable_final else 0),
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         None, OPEN_EXISTING,
         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -768,11 +823,19 @@ def pin_directory(path: Path, *, writable_final: bool = True) -> tuple[int, int,
     parent = 0
     try:
         require_direct(current, "directory")
+        if not absolute.name:
+            # Parent-only use for first-level creation. Never grant WRITE_DAC
+            # or harden a drive/share root, and retain all default refusals.
+            return 0, current, ""
         components = absolute.parts[1:]
         for index, component in enumerate(components):
-            following = open_directory(
-                current, component, writable=writable_final and index == len(components) - 1
-            )
+            options = {"writable": writable_final and index == len(components) - 1}
+            if index == len(components) - 1:
+                if write_dac:
+                    options["write_dac"] = True
+                if security_only:
+                    options["security_only"] = True
+            following = open_directory(current, component, **options)
             if index == len(components) - 1:
                 parent = current
                 current = following
