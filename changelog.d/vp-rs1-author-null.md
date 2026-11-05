@@ -37,12 +37,12 @@ vetoing an outlying window can never improve the reading even when a looping ref
 lifts the null veto ceiling. When excluding a pseudo-model's sources leaves a window nothing to
 rank against, that rank is unavailable, and more than 5% of such draws stops the read.
 
-**`period_ruler`: W1 is judged veto-inclusively too (VP-RS1, Codex re-review round 3).** The block
-adds `w1_from_uniform_with_vetoes`, which places each vetoed window's ranks at whichever end of
-[0, 1] is worse; by convexity this bounds any ranks those windows could have had. Both noise
-statistics are now veto-inclusive, so a veto can never make a reading better.
+**`period_ruler`: W1 is judged veto-inclusively too (VP-RS1, Codex re-review rounds 3 and 4).**
+The block adds `w1_from_uniform_with_vetoes`, (1 - a) * W1(unvetoed) + a * 0.5 for a vetoed share
+`a` of ranks, which by convexity of W1 in the measure is at least the W1 the arm would have had
+with any ranks for those windows. Both noise statistics are now veto-inclusive, so a veto can
+never make a reading better.
 
-**`period_ruler`: the veto-inclusive W1 is a true worst-case bound.** Endpoint fills did not bound
-interior rank placements (Codex review at 44c7071). `w1_from_uniform_with_vetoes` is now
-(1 - a) * W1(unvetoed) + a * 0.5 for a vetoed share `a` of ranks, which by convexity of W1 in the
-measure is at least the W1 the arm would have had with any ranks for those windows.
+These are correctness fixes to a `heuristic` instrument. The architecture band is not qualified:
+the fifth qualification read (49 reference authors, 8 fresh held-out authors) failed the
+held-out and null-halves checks, so the band stays report-only.
