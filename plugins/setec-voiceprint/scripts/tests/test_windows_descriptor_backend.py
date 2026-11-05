@@ -399,6 +399,9 @@ def _set_test_dacl(path: Path, *, inheritable: bool = False, access_mask: str | 
     free = native.kernel32.LocalFree
     free.argtypes = [ctypes.c_void_p]
     free.restype = ctypes.c_void_p
+    from conftest import own_by_current_user
+
+    own_by_current_user(path)
     sid = native.current_user_sid()
     sid_buffer = ctypes.create_string_buffer(sid, len(sid))
     text = wintypes.LPWSTR()
