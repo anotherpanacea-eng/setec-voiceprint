@@ -421,6 +421,43 @@ def test_read_claim_file_returns_none_when_malformed(tmp_path: Path):
     assert ss.read_claim_file(claim_path) is None
 
 
+def _race_claim_worker(claim_path, idx, start, results):
+    start.wait(timeout=20)
+    won = ss.try_claim_shard_atomically(
+        claim_path, host=f"host-{idx}", pid=10000 + idx,
+    )
+    results.put((idx, won))
+
+
+def _locked_update_worker(state_path, shard_id, start):
+    import time
+
+    start.wait(timeout=20)
+    with ss.state_update_lock(state_path):
+        state = ss.read_state(state_path)
+        state = ss.claim_shard(state, shard_id, host=f"host-{shard_id}", pid=1)
+        time.sleep(0.05)
+        ss.write_state(state_path, state)
+
+
+def _lock_contender(state_path, attempting, entered):
+    attempting.set()
+    with ss.state_update_lock(state_path):
+        entered.set()
+
+
+def _stop_test_children(processes):
+    for process in processes:
+        if process.pid is not None:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=5)
+            if process.is_alive():
+                process.kill()
+                process.join(timeout=5)
+            process.close()
+
+
 def test_try_claim_shard_atomically_multiprocess_race(tmp_path: Path):
     """Spawn N subprocesses that race to claim the same shard.
     Exactly one should win; the rest see FileExistsError and
@@ -432,23 +469,24 @@ def test_try_claim_shard_atomically_multiprocess_race(tmp_path: Path):
 
     claim_path = tmp_path / ".claim"
 
-    def _race_worker(idx, q):  # pragma: no cover — runs in subprocess
-        won = ss.try_claim_shard_atomically(
-            claim_path, host=f"host-{idx}", pid=10000 + idx,
-        )
-        q.put((idx, won))
-
-    ctx = mp.get_context("fork")
+    ctx = mp.get_context("spawn")
     q = ctx.Queue()
     n = 8
-    procs = [ctx.Process(target=_race_worker, args=(i, q)) for i in range(n)]
-    for p in procs:
-        p.start()
-    for p in procs:
-        p.join(timeout=10)
-    results = []
-    while not q.empty():
-        results.append(q.get())
+    start = ctx.Barrier(n)
+    procs = [ctx.Process(target=_race_claim_worker,
+                         args=(claim_path, i, start, q)) for i in range(n)]
+    try:
+        for p in procs:
+            p.start()
+        results = [q.get(timeout=25) for _ in range(n)]
+        for p in procs:
+            p.join(timeout=5)
+            assert p.exitcode == 0
+    finally:
+        _stop_test_children(procs)
+        q.close()
+        q.join_thread()
+    assert sorted(idx for idx, _won in results) == list(range(n))
     won = [idx for idx, w in results if w]
     lost = [idx for idx, w in results if not w]
     assert len(won) == 1, (
@@ -493,34 +531,131 @@ def test_state_update_lock_serializes_concurrent_writers(tmp_path: Path):
     sp = tmp_path / "state.json"
     ss.write_state(sp, state)
 
-    def _lock_worker(shard_id):  # pragma: no cover — subprocess
-        # Hold the lock, read, modify, write. Sleep briefly inside
-        # the lock to make the race-without-lock scenario reliably
-        # surface — without serialization, both workers would race
-        # in the read-modify-write window and one's update would
-        # be lost.
-        with ss.state_update_lock(sp):
-            local_state = ss.read_state(sp)
-            local_state = ss.claim_shard(
-                local_state, shard_id, host=f"host-{shard_id}", pid=1,
-            )
-            import time
-            time.sleep(0.05)
-            ss.write_state(sp, local_state)
-
-    ctx = mp.get_context("fork")
-    p_a = ctx.Process(target=_lock_worker, args=("000",))
-    p_b = ctx.Process(target=_lock_worker, args=("001",))
-    p_a.start()
-    p_b.start()
-    p_a.join(timeout=10)
-    p_b.join(timeout=10)
+    ctx = mp.get_context("spawn")
+    start = ctx.Barrier(2)
+    procs = [ctx.Process(target=_locked_update_worker, args=(sp, shard, start))
+             for shard in ("000", "001")]
+    try:
+        for process in procs:
+            process.start()
+        for process in procs:
+            process.join(timeout=25)
+            assert process.exitcode == 0
+    finally:
+        _stop_test_children(procs)
     # Both workers' claims must be visible in the final state.
     final = ss.read_state(sp)
     assert final["shards"]["000"]["state"] == "claimed"
     assert final["shards"]["001"]["state"] == "claimed"
     assert final["shards"]["000"]["claimed_by_host"] == "host-000"
     assert final["shards"]["001"]["claimed_by_host"] == "host-001"
+
+
+def test_state_update_lock_excludes_contender_until_release(tmp_path: Path):
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    attempting, entered = ctx.Event(), ctx.Event()
+    state_path = tmp_path / "state.json"
+    contender = ctx.Process(target=_lock_contender,
+                            args=(state_path, attempting, entered))
+    try:
+        with ss.state_update_lock(state_path):
+            contender.start()
+            assert attempting.wait(timeout=20)
+            assert not entered.wait(timeout=0.5)
+        assert entered.wait(timeout=10)
+        contender.join(timeout=5)
+        assert contender.exitcode == 0
+    finally:
+        _stop_test_children([contender])
+
+
+@pytest.mark.parametrize("contention", [False, True])
+def test_windows_state_lock_failure_and_cleanup(tmp_path, monkeypatch, contention):
+    import errno
+    from types import SimpleNamespace
+
+    native = SimpleNamespace(
+        LK_NBLCK=1, LK_UNLCK=0,
+        locking=mock.Mock(side_effect=(
+            [OSError(errno.EACCES, "held"), None, None] if contention
+            else OSError(errno.EIO, "unavailable")
+        )),
+    )
+    close = mock.Mock(wraps=os.close)
+    native_os = SimpleNamespace(**{**vars(os), "name": "nt", "close": close})
+    monkeypatch.setattr(ss, "os", native_os)
+    monkeypatch.setitem(sys.modules, "msvcrt", native)
+    if contention:
+        with ss.state_update_lock(tmp_path / "state.json"):
+            pass
+        assert [call.args[1:] for call in native.locking.call_args_list] == [
+            (1, 1), (1, 1), (0, 1),
+        ]
+    else:
+        with pytest.raises(OSError, match="unavailable"):
+            with ss.state_update_lock(tmp_path / "state.json"):
+                pytest.fail("failed lock must not admit the update")
+        assert native.locking.call_count == 1
+    close.assert_called_once()
+
+
+@pytest.mark.parametrize("open_ok,query_ok,close_ok", [
+    (True, True, True), (False, True, True),
+    (True, False, True), (True, True, False),
+])
+def test_windows_creation_time_query_and_cleanup(monkeypatch, open_ok, query_ok, close_ok):
+    import ctypes
+    from types import SimpleNamespace
+
+    expected = 1_700_000_000.25
+    ticks = int((expected + 11_644_473_600) * 10_000_000)
+
+    def query(_handle, created, *_remaining):
+        created._obj.dwHighDateTime = ticks >> 32
+        created._obj.dwLowDateTime = ticks & 0xFFFFFFFF
+        return query_ok
+
+    kernel = SimpleNamespace(
+        OpenProcess=mock.Mock(return_value=123 if open_ok else None),
+        GetProcessTimes=mock.Mock(side_effect=query),
+        CloseHandle=mock.Mock(return_value=close_ok),
+    )
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    assert ss._windows_process_start_time_epoch(12345) == (
+        expected if open_ok and query_ok and close_ok else None
+    )
+    kernel.OpenProcess.assert_called_once_with(0x1000, False, 12345)
+    assert kernel.GetProcessTimes.call_count == int(open_ok)
+    assert kernel.CloseHandle.call_count == int(open_ok)
+
+
+@pytest.mark.parametrize("failing_api", ["OpenProcess", "GetProcessTimes", "CloseHandle"])
+@pytest.mark.parametrize("error_type", [OSError, AttributeError])
+def test_windows_creation_time_api_errors_refuse(monkeypatch, failing_api, error_type):
+    import ctypes
+    from types import SimpleNamespace
+
+    kernel = SimpleNamespace(
+        OpenProcess=mock.Mock(return_value=123),
+        GetProcessTimes=mock.Mock(return_value=False),
+        CloseHandle=mock.Mock(return_value=True),
+    )
+    getattr(kernel, failing_api).side_effect = error_type("synthetic failure")
+    monkeypatch.setattr(ctypes, "WinDLL", mock.Mock(return_value=kernel), raising=False)
+    assert ss._windows_process_start_time_epoch(12345) is None
+    assert kernel.CloseHandle.call_count == (0 if failing_api == "OpenProcess" else 1)
+
+
+@pytest.mark.parametrize("pid", [0, -1, 0x1_0000_0000])
+def test_windows_creation_time_invalid_pid_never_opens(monkeypatch, pid):
+    import ctypes
+
+    loader = mock.Mock(side_effect=AssertionError("invalid PID reached native API"))
+    monkeypatch.setattr(ctypes, "WinDLL", loader, raising=False)
+    assert ss._windows_process_start_time_epoch(pid) is None
+    loader.assert_not_called()
 
 
 # --------------- Atomicity simulation ---------------------------
