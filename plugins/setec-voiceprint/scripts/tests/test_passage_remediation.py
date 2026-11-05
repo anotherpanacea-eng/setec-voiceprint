@@ -18,6 +18,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1]
 SCRIPT = SCRIPTS / "passage_remediation.py"
 import passage_remediation as pr  # noqa: E402
+from setec.core import atomic_publish as private  # noqa: E402
 
 
 INVENTORY_BYTES = (
@@ -155,20 +156,18 @@ def _prepare(
 ) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     root = tmp_path / "private"
-    root.mkdir(mode=0o700)
+    private.secure_private_directory(root)
     root = root.resolve()
     fixtures = root / "fixtures"
-    fixtures.mkdir(mode=0o700)
-    (fixtures / "inventory.json").write_bytes(inventory_bytes)
-    (fixtures / "projection.json").write_bytes(projection_bytes)
-    (root / "descriptor.json").write_bytes(
+    private.secure_private_directory(fixtures)
+    private.atomic_write_private(fixtures / "inventory.json", inventory_bytes)
+    private.atomic_write_private(fixtures / "projection.json", projection_bytes)
+    private.atomic_write_private(
+        root / "descriptor.json",
         descriptor_bytes
         if descriptor_bytes is not None
         else _descriptor(inventory_bytes, projection_bytes)
     )
-    for path in root.rglob("*"):
-        if path.is_file():
-            path.chmod(0o600)
     return root
 
 
@@ -555,8 +554,7 @@ def test_case_colliding_descriptor_members_refuse(tmp_path: Path) -> None:
 def test_symlink_and_hardlink_members_refuse(tmp_path: Path) -> None:
     symlink_root = _prepare(tmp_path / "symlink")
     target = symlink_root / "fixtures" / "target.json"
-    target.write_bytes(INVENTORY_BYTES)
-    target.chmod(0o600)
+    private.atomic_write_private(target, INVENTORY_BYTES)
     inventory = symlink_root / "fixtures" / "inventory.json"
     inventory.unlink()
     inventory.symlink_to(target.name)
@@ -573,7 +571,11 @@ def test_private_root_mode_and_post_open_replacement_refuse(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = _prepare(tmp_path / "mode")
-    root.chmod(0o755)
+    if os.name == "nt":
+        from test_windows_descriptor_backend import _set_test_dacl
+        _set_test_dacl(root)
+    else:
+        root.chmod(0o755)
     assert _error_code(_run(root)) == "private_root_refused"
 
     root = _prepare(tmp_path / "swap")
@@ -582,7 +584,7 @@ def test_private_root_mode_and_post_open_replacement_refuse(
         if label != "after_root_open":
             return
         root.rename(root.with_name("private-old"))
-        root.mkdir(mode=0o700)
+        private.secure_private_directory(root)
 
     monkeypatch.setattr(pr, "_FAULT_HOOK", swap)
     with pytest.raises(pr.RemediationError, match="^private_root_refused$"):
@@ -597,8 +599,7 @@ def test_output_alias_existing_and_race_refuse(
         pr.run(_args(root, output="descriptor.json"))
 
     root = _prepare(tmp_path / "exists")
-    (root / "decisions.json").write_bytes(b"winner\n")
-    (root / "decisions.json").chmod(0o600)
+    private.atomic_write_private(root / "decisions.json", b"winner\n")
     assert _error_code(_run(root)) == "output_exists_refused"
     assert (root / "decisions.json").read_bytes() == b"winner\n"
 
@@ -621,8 +622,27 @@ def test_output_alias_existing_and_race_refuse(
         return real_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(pr.os, "open", race_open)
+    raced = []
+    if os.name == "nt":
+        import windows_descriptor_io as native
+        real_rename = native.rename
+
+        def race_rename(handle, parent, name, *, replace):
+            # Create the independent winner directly: atomic_write_private
+            # would itself rename and recurse into this injected boundary.
+            descriptor = private.open_private_descriptor(
+                root / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            )
+            with os.fdopen(descriptor, "wb") as winner:
+                winner.write(b"winner\n")
+            raced.append(name)
+            return real_rename(handle, parent, name, replace=replace)
+
+        monkeypatch.setattr(native, "rename", race_rename)
     with pytest.raises(pr.RemediationError, match="^output_exists_refused$"):
         pr.run(_args(root))
+    if os.name == "nt":
+        assert raced == ["decisions.json"]
     assert (root / "decisions.json").read_bytes() == b"winner\n"
 
 
@@ -640,9 +660,21 @@ def test_precreate_publication_fault_publishes_nothing(
         return real_open(path, flags, mode, dir_fd=dir_fd)
 
     monkeypatch.setattr(pr.os, "open", fail_open)
+    attempted = []
+    if os.name == "nt":
+        import windows_descriptor_io as native
+
+        def fail_create(_parent, name, **_kwargs):
+            attempted.append(name)
+            raise OSError("private detail")
+
+        monkeypatch.setattr(native, "create_owner_private_file", fail_create)
     with pytest.raises(pr.RemediationError, match="^output_publication_refused$"):
         pr.run(_args(root))
     assert not (root / "decisions.json").exists()
+    if os.name == "nt":
+        assert len(attempted) == 1
+        assert not list(root.glob(".passage-remediation-*"))
 
 
 def test_ambiguous_create_success_then_raise_requires_recovery(
@@ -661,9 +693,28 @@ def test_ambiguous_create_success_then_raise_requires_recovery(
         return descriptor
 
     monkeypatch.setattr(pr.os, "open", create_then_raise)
+    committed, rollback = [], []
+    if os.name == "nt":
+        import windows_descriptor_io as native
+        real_rename = native.rename
+
+        def rename_then_raise(handle, parent, name, *, replace):
+            real_rename(handle, parent, name, replace=replace)
+            committed.append(name)
+            raise OSError("ambiguous committed rename")
+
+        def fail_rollback(handle):
+            rollback.append(handle)
+            raise OSError("rollback unavailable")
+
+        monkeypatch.setattr(native, "rename", rename_then_raise)
+        monkeypatch.setattr(native, "delete", fail_rollback)
     with pytest.raises(pr.RemediationError, match="^output_recovery_required$"):
         pr.run(_args(root))
     assert (root / "decisions.json").exists()
+    if os.name == "nt":
+        assert committed == ["decisions.json"] and len(rollback) == 1
+        assert (root / "decisions.json").read_bytes() == ARTIFACT_BYTES
 
 
 @pytest.mark.parametrize(
@@ -679,66 +730,135 @@ def test_postcreate_fault_requires_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, label: str
 ) -> None:
     root = _prepare(tmp_path)
+    # Windows flushes its staging file before rename; it has no parent fsync.
+    actual_label = (
+        "after_staging_write" if os.name == "nt" and label == "after_parent_fsync"
+        else label
+    )
+    injected = []
 
     def fail(point: str) -> None:
-        if point == label:
+        if point == actual_label:
+            injected.append(point)
             raise OSError("private detail")
 
     monkeypatch.setattr(pr, "_FAULT_HOOK", fail)
-    with pytest.raises(pr.RemediationError, match="^output_recovery_required$"):
+    expected = (
+        "output_publication_refused" if os.name == "nt" and actual_label == "after_staging_write"
+        else "output_recovery_required"
+    )
+    with pytest.raises(pr.RemediationError, match=f"^{expected}$"):
         pr.run(_args(root))
-    assert (root / "decisions.json").exists()
+    assert injected == [actual_label]
+    # Native deletion completes when the held handle closes. A committed
+    # output therefore retains conservative recovery status even though its
+    # cleanup has removed the name by the time the caller catches the error.
+    # POSIX cannot safely unlink a final name that may now identify a winner.
+    assert (root / "decisions.json").exists() is (os.name != "nt")
+    assert not list(root.glob(".passage-remediation-*"))
 
 
 def test_final_byte_mismatch_requires_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = _prepare(tmp_path)
+    injected, blocked = [], []
 
     def tamper(point: str) -> None:
         if point == "before_reopen_verify":
-            (root / "decisions.json").write_bytes(b"tamper\n")
+            injected.append(point)
+            try:
+                (root / "decisions.json").write_bytes(b"tamper\n")
+            except OSError as exc:
+                # CRT write opens may report access denied rather than the
+                # sharing-violation code returned by a delete attempt.
+                import errno
+                assert os.name == "nt" and exc.errno == errno.EACCES
+                blocked.append(point)
+                raise
 
     monkeypatch.setattr(pr, "_FAULT_HOOK", tamper)
     with pytest.raises(pr.RemediationError, match="^output_recovery_required$"):
         pr.run(_args(root))
-    assert (root / "decisions.json").read_bytes() == b"tamper\n"
+    assert injected == ["before_reopen_verify"]
+    if os.name == "nt":
+        assert blocked == injected
+        assert not (root / "decisions.json").exists()
+    else:
+        assert (root / "decisions.json").read_bytes() == b"tamper\n"
 
 
 def test_final_identity_mismatch_requires_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = _prepare(tmp_path)
+    injected, blocked = [], []
 
     def replace(point: str) -> None:
         if point == "before_reopen_verify":
+            injected.append(point)
             final = root / "decisions.json"
-            final.unlink()
+            try:
+                final.unlink()
+            except OSError as exc:
+                assert os.name == "nt" and exc.winerror == 32
+                blocked.append(point)
+                raise
             final.write_bytes(b"winner\n")
             final.chmod(0o600)
 
     monkeypatch.setattr(pr, "_FAULT_HOOK", replace)
     with pytest.raises(pr.RemediationError, match="^output_recovery_required$"):
         pr.run(_args(root))
-    assert (root / "decisions.json").read_bytes() == b"winner\n"
+    assert injected == ["before_reopen_verify"]
+    if os.name == "nt":
+        assert blocked == injected
+        assert not (root / "decisions.json").exists()
+    else:
+        assert (root / "decisions.json").read_bytes() == b"winner\n"
 
 
 def test_postcleanup_name_replacement_cannot_yield_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = _prepare(tmp_path)
+    injected, blocked = [], []
 
     def replace(point: str) -> None:
         if point == "after_postcleanup_read":
+            injected.append(point)
             final = root / "decisions.json"
-            final.unlink()
+            try:
+                final.unlink()
+            except OSError as exc:
+                assert os.name == "nt" and exc.winerror == 32
+                blocked.append(point)
+                raise
             final.write_bytes(b"winner\n")
             final.chmod(0o600)
 
     monkeypatch.setattr(pr, "_FAULT_HOOK", replace)
+    if os.name == "nt":
+        import windows_descriptor_io as native
+        real_probe = native.probe_leaf_node
+
+        def probe_then_replace(parent, name):
+            observed = real_probe(parent, name)
+            if name == "decisions.json" and observed is not None:
+                # Windows retains its write/delete-denying handle through
+                # the final named-identity probe; no postcleanup hook exists.
+                replace("after_postcleanup_read")
+            return observed
+
+        monkeypatch.setattr(native, "probe_leaf_node", probe_then_replace)
     with pytest.raises(pr.RemediationError, match="^output_recovery_required$"):
         pr.run(_args(root))
-    assert (root / "decisions.json").read_bytes() == b"winner\n"
+    assert injected == ["after_postcleanup_read"]
+    if os.name == "nt":
+        assert blocked == injected
+        assert not (root / "decisions.json").exists()
+    else:
+        assert (root / "decisions.json").read_bytes() == b"winner\n"
 
 
 @pytest.mark.parametrize("raise_after_rename", [False, True])
@@ -941,8 +1061,7 @@ def test_refusals_do_not_leak_private_argument_or_fixture_details(
     tmp_path: Path,
 ) -> None:
     root = _prepare(tmp_path)
-    (root / "private-secret.json").write_bytes(b'{"private-secret":')
-    (root / "private-secret.json").chmod(0o600)
+    private.atomic_write_private(root / "private-secret.json", b'{"private-secret":')
     result = subprocess.run(
         [
             sys.executable,
@@ -975,7 +1094,7 @@ def test_import_has_no_observable_io_side_effect(tmp_path: Path) -> None:
                 f"sys.path.insert(0,{str(SCRIPTS)!r});"
                 f"os.chdir({str(tmp_path)!r});"
                 f"runpy.run_path({str(SCRIPT)!r},run_name='import_probe');"
-                "print(sorted(os.listdir('.')))"
+                "assert os.listdir('.') == []"
             ),
         ],
         capture_output=True,
@@ -983,5 +1102,5 @@ def test_import_has_no_observable_io_side_effect(tmp_path: Path) -> None:
         timeout=30,
     )
     assert result.returncode == 0
-    assert result.stdout == b"[]\n"
+    assert result.stdout == b""
     assert result.stderr == b""
