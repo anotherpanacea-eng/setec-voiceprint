@@ -1155,6 +1155,10 @@ def test_long_valid_report_component_does_not_constrain_temporary_name(
     manifest = tmp_path / "manifest.jsonl"
     _write_manifest(manifest, [{"id": "a", "path": "a.txt"}])
     report = tmp_path / ("r" * 225)
+    if os.name == "nt" and not str(report).startswith("\\\\?\\"):
+        # Native publication is handle-relative and can create this valid
+        # leaf even when its full path exceeds the legacy Win32 path limit.
+        report = Path("\\\\?\\" + str(report))
     assert _run_main(manifest, report)[0] == 0
     assert report.exists()
     assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
