@@ -115,12 +115,14 @@ def write_clean_pool_manifest(tmp_path, texts, name):
 
 
 def own_by_current_user(path: Path) -> None:
-    """Make a plainly created Windows test node owned by the token user.
+    """Give a plainly created Windows test node the token user as owner.
 
     An elevated Windows process (the hosted runner, an admin shell) gives new
-    files and directories the Administrators group as owner, so state a test
-    means to be "the user's own" would be refused as foreign-owned. Real
-    ownership is set; nothing in production code changes. No-op off Windows.
+    files and directories the Administrators group as owner, and inherited
+    ACLs may not grant the user access, so state a test means to be "the
+    user's own" would be refused before reaching the behavior under test.
+    Grant the token user full access, then make it the owner, through test-side
+    security APIs. Production code is unchanged. No-op off Windows.
     """
     if os.name != "nt":
         return
@@ -129,13 +131,35 @@ def own_by_current_user(path: Path) -> None:
     from setec.core import windows_descriptor_io as native
 
     api = ctypes.WinDLL("advapi32", use_last_error=True)
-    set_named = api.SetNamedSecurityInfoW
-    set_named.argtypes = [wintypes.LPWSTR, ctypes.c_int, wintypes.DWORD,
-                          ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
-                          ctypes.c_void_p]
-    set_named.restype = wintypes.DWORD
+    to_text = api.ConvertSidToStringSidW
+    to_text.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    to_text.restype = wintypes.BOOL
+    to_sd = api.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    to_sd.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
+                      ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
+    to_sd.restype = wintypes.BOOL
+    set_security = api.SetFileSecurityW
+    set_security.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
+    set_security.restype = wintypes.BOOL
+    free = native.kernel32.LocalFree
+    free.argtypes = [ctypes.c_void_p]
+    free.restype = ctypes.c_void_p
+
     sid = native.current_user_sid()
     sid_buffer = ctypes.create_string_buffer(sid, len(sid))
-    # SE_FILE_OBJECT = 1, OWNER_SECURITY_INFORMATION = 1
-    status = set_named(str(path), 1, 1, sid_buffer, None, None, None)
-    assert status == 0, f"SetNamedSecurityInfoW owner failed: {status}"
+    text = wintypes.LPWSTR()
+    assert to_text(sid_buffer, ctypes.byref(text))
+    try:
+        user = text.value
+    finally:
+        free(ctypes.cast(text, ctypes.c_void_p))
+    descriptor = ctypes.c_void_p()
+    assert to_sd(f"O:{user}D:(A;;FA;;;{user})", 1, ctypes.byref(descriptor), None)
+    try:
+        # DACL first: the full-access ACE supplies WRITE_OWNER for the owner set.
+        for information in (0x4, 0x1):  # DACL_, then OWNER_SECURITY_INFORMATION
+            assert set_security(str(path), information, descriptor), (
+                f"SetFileSecurityW({information:#x}) failed: {ctypes.get_last_error()}"
+            )
+    finally:
+        free(descriptor)
