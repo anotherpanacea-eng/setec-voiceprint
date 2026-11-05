@@ -4,6 +4,7 @@ import argparse
 import copy
 import hashlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -17,6 +18,24 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1]
 
 import passage_consumer_authority as consumer  # noqa: E402
 from passage_tokenizer_v1 import load_data  # noqa: E402
+
+
+requires_posix = pytest.mark.skipif(
+    os.name != "posix",
+    reason="Consumer checkpoint/private-file admission requires real POSIX I/O",
+)
+
+
+@pytest.fixture
+def profile_admission_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ForbiddenRoot:
+        def __init__(self, *_args: object, **_kwargs: object):
+            raise AssertionError("private root must remain unopened")
+
+    monkeypatch.setattr(
+        consumer, "os", SimpleNamespace(**{**vars(consumer.os), "name": "posix"}),
+    )
+    monkeypatch.setattr(consumer, "PinnedPrivateRoot", ForbiddenRoot)
 
 
 def _args(root: Path, **changes: object) -> argparse.Namespace:
@@ -145,6 +164,7 @@ def test_mint_unresolved_refuses_before_any_private_or_adjacent_read(
         consumer.run(_args(tmp_path / "absent", mode="mint"))
 
 
+@requires_posix
 def test_validate_admits_exact_profile_descriptor_paths_and_member_hashes(
     tmp_path: Path,
 ):
@@ -191,6 +211,7 @@ def test_validate_admits_exact_profile_descriptor_paths_and_member_hashes(
     assert not (root / "receipt.json").exists()
 
 
+@requires_posix
 def test_validate_resume_adopts_exact_checkpoint_binding(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, _descriptor = _private_inputs(tmp_path)
@@ -221,6 +242,7 @@ def test_validate_resume_adopts_exact_checkpoint_binding(tmp_path: Path):
     } == before
 
 
+@requires_posix
 def test_validate_without_resume_refuses_foreign_checkpoint_file(
     tmp_path: Path,
 ):
@@ -241,6 +263,7 @@ def test_validate_without_resume_refuses_foreign_checkpoint_file(
     assert foreign.read_bytes() == b"foreign\n"
 
 
+@requires_posix
 def test_validate_resume_refuses_missing_checkpoint(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, _descriptor = _private_inputs(tmp_path)
@@ -254,6 +277,7 @@ def test_validate_resume_refuses_missing_checkpoint(tmp_path: Path):
         )
 
 
+@requires_posix
 def test_validate_resume_refuses_unknown_checkpoint_member(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, _descriptor = _private_inputs(tmp_path)
@@ -276,6 +300,7 @@ def test_validate_resume_refuses_unknown_checkpoint_member(tmp_path: Path):
         )
 
 
+@requires_posix
 def test_validate_resume_marker_without_payload_requires_recovery(
     tmp_path: Path,
 ):
@@ -301,6 +326,7 @@ def test_validate_resume_marker_without_payload_requires_recovery(
         )
 
 
+@requires_posix
 def test_validate_resume_completes_exact_uncommitted_binding(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, _descriptor = _private_inputs(tmp_path)
@@ -324,6 +350,7 @@ def test_validate_resume_completes_exact_uncommitted_binding(tmp_path: Path):
     assert not (root / "checkpoint" / "BINDING.a1.payload.json").exists()
 
 
+@requires_posix
 def test_validate_resume_advances_partial_binding_attempt(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, _descriptor = _private_inputs(tmp_path)
@@ -353,6 +380,7 @@ def test_validate_resume_advances_partial_binding_attempt(tmp_path: Path):
 
 
 @pytest.mark.parametrize("name", ["original_manifest", "snapshot_manifest"])
+@requires_posix
 def test_validate_refuses_oversize_jsonl_line_before_member_hash(
     tmp_path: Path,
     name: str,
@@ -375,6 +403,7 @@ def test_validate_refuses_oversize_jsonl_line_before_member_hash(
     assert not (root / "checkpoint").exists()
 
 
+@requires_posix
 def test_validate_accepts_jsonl_line_at_resource_limit(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, descriptor = _private_inputs(tmp_path)
@@ -391,6 +420,7 @@ def test_validate_accepts_jsonl_line_at_resource_limit(tmp_path: Path):
     assert admitted.member_bytes["original_manifest"] == boundary
 
 
+@requires_posix
 def test_validate_embedded_bare_cr_does_not_split_oversize_jsonl_line(
     tmp_path: Path,
 ):
@@ -414,6 +444,7 @@ def test_validate_embedded_bare_cr_does_not_split_oversize_jsonl_line(
     assert not (root / "checkpoint").exists()
 
 
+@requires_posix
 def test_validate_accepts_boundary_jsonl_line_with_embedded_bare_cr(
     tmp_path: Path,
 ):
@@ -445,18 +476,27 @@ def test_validate_platform_refusal_precedes_adjacent_read(tmp_path: Path):
         )
 
 
+@pytest.mark.skipif(os.name == "posix", reason="Actual non-POSIX host refusal")
+def test_validate_non_posix_host_refuses_before_any_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    def forbidden(*_args: object, **_kwargs: object):
+        raise AssertionError("resource and private admission must remain unopened")
+
+    monkeypatch.setattr(consumer, "scripts_dir", forbidden)
+    monkeypatch.setattr(consumer, "admit_adjacent_authority", forbidden)
+    monkeypatch.setattr(consumer, "PinnedPrivateRoot", forbidden)
+    with pytest.raises(consumer.AuthorityError, match="^platform_refused$"):
+        consumer.admit_validate_inputs(
+            _args(tmp_path / "absent"), adjacent_dir=None,
+            bindings=consumer.COMPILED_BINDINGS, platform="darwin",
+        )
+
+
 def test_default_validate_refuses_missing_reviewed_profile_before_private_root(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    profile_admission_only: None,
 ):
-    class ForbiddenRoot:
-        def __init__(self, *_args: object, **_kwargs: object):
-            raise AssertionError("private root must remain unopened")
-
-    monkeypatch.setattr(
-        consumer, "os", SimpleNamespace(**{**vars(consumer.os), "name": "posix"}),
-    )
-    monkeypatch.setattr(consumer, "PinnedPrivateRoot", ForbiddenRoot)
     with pytest.raises(
         consumer.AuthorityError,
         match="^authority_profile_refused$",
@@ -468,7 +508,9 @@ def test_default_validate_refuses_missing_reviewed_profile_before_private_root(
         consumer.run(_args(tmp_path / "absent"), platform="darwin")
 
 
-def test_profile_byte_drift_refuses_before_private_root(tmp_path: Path):
+def test_profile_byte_drift_refuses_before_private_root(
+    tmp_path: Path, profile_admission_only: None,
+):
     adjacent, bindings = _adjacent(tmp_path)
     profile = adjacent / consumer.PROFILE_NAME
     profile.write_bytes(profile.read_bytes() + b" ")
@@ -568,7 +610,9 @@ def test_secondary_executing_tokenizer_read_keeps_resource_limit(tmp_path, monke
         )
 
 
-def test_profile_bound_builder_byte_drift_refuses(tmp_path: Path):
+def test_profile_bound_builder_byte_drift_refuses(
+    tmp_path: Path, profile_admission_only: None,
+):
     adjacent, bindings = _adjacent(tmp_path)
     builder = adjacent / consumer.BUILDER_NAME
     builder.write_bytes(builder.read_bytes() + b"# drift\n")
@@ -585,6 +629,7 @@ def test_profile_bound_builder_byte_drift_refuses(tmp_path: Path):
 
 
 @pytest.mark.parametrize("mutation", ["extra", "duplicate", "noncanonical"])
+@requires_posix
 def test_descriptor_closed_canonical_schema_refuses(
     tmp_path: Path,
     mutation: str,
@@ -618,6 +663,7 @@ def test_descriptor_closed_canonical_schema_refuses(
         )
 
 
+@requires_posix
 def test_descriptor_member_hash_drift_refuses(tmp_path: Path):
     adjacent, bindings = _adjacent(tmp_path)
     root, _members, _descriptor = _private_inputs(tmp_path)
@@ -640,6 +686,7 @@ def test_descriptor_member_hash_drift_refuses(tmp_path: Path):
         ("receipt", "descriptor.json"),
     ],
 )
+@requires_posix
 def test_cli_and_descriptor_path_collisions_refuse(
     tmp_path: Path,
     changed_name: str,
