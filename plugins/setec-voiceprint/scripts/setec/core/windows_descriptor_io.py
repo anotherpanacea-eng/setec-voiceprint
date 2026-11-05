@@ -589,8 +589,8 @@ def _nt_open(
 ) -> int:
     if allow_indirect and (kind is not None or create):
         raise ValueError("an indirection-tolerant open is a kindless probe only")
-    if security_only and (create or not write_dac):
-        raise ValueError("a security-only open requires an existing node and WRITE_DAC")
+    if security_only and (create or writable):
+        raise ValueError("a security-only open requires an existing node without payload writes")
     component = _valid_component(name)
     buffer = ctypes.create_unicode_buffer(component)
     encoded_length = len(component.encode("utf-16-le"))
@@ -799,7 +799,7 @@ def pin_directory(
 ) -> tuple[int, int, str]:
     absolute = Path(path).absolute()
     if (".." in absolute.parts or not absolute.drive
-            or (not absolute.name and (not allow_root or write_dac or security_only))):
+            or (not absolute.name and (not allow_root or write_dac))):
         raise OSError("private root path is not an absolute drive path")
     anchor = absolute.anchor
     if anchor.startswith("\\\\?\\"):
@@ -810,8 +810,7 @@ def pin_directory(
         drive_root = "\\\\?\\" + anchor.rstrip("\\/") + "\\"
     root = kernel32.CreateFileW(
         drive_root,
-        0x80000000 | (FILE_WRITE_DATA | FILE_APPEND_DATA
-                      if not absolute.name and writable_final else 0),
+        (FILE_READ_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE) if security_only else 0x80000000,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         None, OPEN_EXISTING,
         FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
@@ -830,11 +829,11 @@ def pin_directory(
         components = absolute.parts[1:]
         for index, component in enumerate(components):
             options = {"writable": writable_final and index == len(components) - 1}
+            if security_only:
+                options["security_only"] = True
             if index == len(components) - 1:
                 if write_dac:
                     options["write_dac"] = True
-                if security_only:
-                    options["security_only"] = True
             following = open_directory(current, component, **options)
             if index == len(components) - 1:
                 parent = current

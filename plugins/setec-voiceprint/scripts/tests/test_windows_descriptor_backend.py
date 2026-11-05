@@ -383,7 +383,7 @@ def test_windows_cas_preserves_concurrent_winner(
     assert target.read_bytes() == b"two"
 
 
-def _set_test_dacl(path: Path, *, inheritable: bool = False) -> bytes:
+def _set_test_dacl(path: Path, *, inheritable: bool = False, access_mask: str | None = None) -> bytes:
     """Put a genuinely non-private ACL on synthetic current-user-owned state."""
     from ctypes import wintypes
     from setec.core import windows_descriptor_io as native
@@ -407,8 +407,9 @@ def _set_test_dacl(path: Path, *, inheritable: bool = False) -> bytes:
         owner = text.value
     finally:
         free(ctypes.cast(text, ctypes.c_void_p))
-    acl = (f"D:P(A;OICI;FA;;;{owner})" if inheritable
-           else f"D:P(A;;FA;;;{owner})(A;;GR;;;WD)")
+    acl = (f"D:P(A;;{access_mask};;;{owner})" if access_mask is not None else
+           f"D:P(A;OICI;FA;;;{owner})" if inheritable else
+           f"D:P(A;;FA;;;{owner})(A;;GR;;;WD)")
     descriptor = ctypes.c_void_p()
     assert convert_sd(acl, 1, ctypes.byref(descriptor), None)
     ancestor, parent, _ = native.pin_directory(path.parent, writable_final=False)
@@ -524,12 +525,56 @@ def test_native_writer_can_pin_drive_root_parent_without_hardening_it(tmp_path):
     root = Path(tmp_path.anchor)
     with pytest.raises(OSError, match="absolute drive path"):
         native.pin_directory(root, writable_final=False)
-    with publish._windows_parent(root / "unused-synthetic-name", writable=False) as (io, handle):
+    ancestor, original, _ = native.pin_directory(root, writable_final=False, allow_root=True)
+    try:
+        before = bytes(native._query_security(original))
+    finally:
+        native.close(original)
+        native.close(ancestor)
+    with publish._windows_parent(root / "unused-synthetic-name") as (io, handle):
         assert io.require_direct(handle, "directory")
-        before = bytes(io._query_security(handle))
         assert bytes(io._query_security(handle)) == before
     with pytest.raises(OSError):
         native.info(handle)
     # Root permissions can never be requested through the parent-only option.
     with pytest.raises(OSError):
         native.pin_directory(root, allow_root=True, write_dac=True, security_only=True)
+
+
+@pytest.mark.parametrize("kind, access_mask", [
+    ("directory", "0x1200ad"), ("file", "0x1200ab"),
+    ("directory", "0x1200ac"), ("file", "0x1200aa"),
+])
+def test_native_creation_needs_only_the_parent_right_for_its_child_kind(
+    tmp_path, kind, access_mask,
+):
+    from setec.core import atomic_publish as publish, windows_descriptor_io as native
+
+    parent = tmp_path / "limited-parent"
+    publish.secure_private_directory(parent)
+    # List/traverse/read control/attributes plus ADD_SUBDIRECTORY or ADD_FILE,
+    # never both. Opening the parent with both write bits would fail before
+    # the kernel could authorize creation of the requested child kind.
+    _set_test_dacl(parent, access_mask=access_mask)
+    try:
+        ordinary = parent / "ordinary-child"
+        if kind == "directory":
+            os.mkdir(ordinary)
+        else:
+            with open(ordinary, "wb") as stream:
+                stream.write(b"ordinary")
+        assert ordinary.exists()
+        with pytest.raises(OSError):
+            native.pin_directory(parent, writable_final=True)
+        child = parent / "child"
+        if kind == "directory":
+            publish.create_private_directory(child)
+        else:
+            descriptor = publish.open_private_descriptor(
+                child, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(b"exact")
+            assert child.read_bytes() == b"exact"
+        publish.require_private_node(child, kind)
+    finally:
+        publish._harden_windows_node(parent, "directory")

@@ -88,10 +88,11 @@ def _windows_io():
 
 
 @contextmanager
-def _windows_parent(path: Path, *, writable: bool = True):
+def _windows_parent(path: Path, *, writable: bool = False):
     native = _windows_io()
     ancestor, parent, _name = native.pin_directory(
         Path(path).parent, writable_final=writable, allow_root=True,
+        security_only=not writable,
     )
     try:
         yield native, parent
@@ -106,7 +107,9 @@ def require_private_node(path: Path, kind: str) -> None:
     """Validate a native Windows node; never repair caller-provided state."""
     native = _windows_io()
     if kind == "directory":
-        ancestor, handle, _name = native.pin_directory(path, writable_final=False)
+        ancestor, handle, _name = native.pin_directory(
+            path, writable_final=False, security_only=True,
+        )
         try:
             native.require_owner_private(handle, kind)
         finally:
