@@ -519,9 +519,9 @@ def try_claim_shard_atomically(
     process they're about to signal is the same process that
     claimed (defending against PID reuse — the reviewer P2 fix
     from 2026-05-14). Cross-platform: works on POSIX (the
-    calibration host) and on Windows-native (fallback environments;
-    start_time_epoch will be None there but the host/pid fields
-    still pin the claim's owner).
+    calibration host) and on Windows-native. An unavailable native
+    query or POSIX ps leaves start_time_epoch as None; such claims
+    remain valid work reservations but cannot authorize a signal.
 
     Parent directory must exist; the caller is responsible for
     creating ``shards/<id>/`` before calling this. We don't create

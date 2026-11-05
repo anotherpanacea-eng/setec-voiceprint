@@ -1818,11 +1818,14 @@ def cmd_terminate_all(args: argparse.Namespace) -> int:
     """SIGTERM every active worker on this host that holds a claim
     on this run.
 
-    SIGTERM goes through the worker's signal handler, which:
+    On POSIX, SIGTERM goes through the worker's signal handler, which:
       * Sets the between-shard exit flag (so the worker stops after
         finishing its current shard), OR
       * If the scorer opted into the SigtermInterrupt contract,
         triggers a mid-shard checkpoint that flushes partial state.
+
+    On Windows, Python maps os.kill(SIGTERM) to TerminateProcess:
+    the stop is abrupt and partial state is not flushed.
 
     Returns 0 if at least one worker was signaled, 1 if no workers
     were found to signal (informational — empty queues are not
@@ -1836,6 +1839,8 @@ def cmd_terminate_all(args: argparse.Namespace) -> int:
     sys.stderr.write(
         f"Sending SIGTERM to active workers on {_host()!r}...\n"
     )
+    if os.name == "nt":
+        sys.stderr.write("Windows stop is abrupt; partial state will NOT be flushed.\n")
     n_sig, n_remote, n_dead, n_identity = _signal_active_workers(
         base, args.run_id, signal.SIGTERM, label="terminate-all",
     )
@@ -2601,7 +2606,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "terminate-all",
         help=(
             "SIGTERM every active worker on this host that holds a "
-            "claim on this run"
+            "claim on this run (abrupt on Windows; partial state is not flushed)"
         ),
     )
     p_term.add_argument("--run-id", required=True, type=str)
@@ -2611,7 +2616,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_kill = sub.add_parser(
         "kill-all",
         help=(
-            "SIGKILL every active worker on this host (last resort; "
+            "Abruptly stop every active worker on this host (last resort; "
             "partial state will NOT be flushed)"
         ),
     )
