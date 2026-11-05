@@ -10,6 +10,7 @@ import pytest
 
 
 import acquire_imessage_sent_atomic as A  # noqa: E402
+from setec.core import atomic_publish as private_io  # noqa: E402
 
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows descriptor backend")
@@ -62,7 +63,8 @@ def test_directory_chain_pins_and_revalidates_local_handles(
 
 def _private_tree(tmp_path: Path) -> tuple[Path, A.PortableDurableRowIo]:
     root = tmp_path / A.PRIVATE_ROOT_COMPONENT / "output"
-    root.mkdir(parents=True)
+    private_io.create_private_directory(root.parent)
+    private_io.create_private_directory(root)
     return root, A.PortableDurableRowIo(root)
 
 
@@ -257,7 +259,7 @@ def test_windows_reopens_and_recovers_proven_journal_rewrite_residues(
     io.close()
     prepared = _journal_raw("prepared")
     temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'a' * 32}.tmp"
-    temporary.write_bytes(prepared)
+    private_io.atomic_write_private(temporary, prepared)
 
     io = A.PortableDurableRowIo(root)
     try:
@@ -272,9 +274,9 @@ def test_windows_reopens_and_recovers_proven_journal_rewrite_residues(
     checkpoint_closed = _journal_raw("checkpoint_closed", ledger_closed)
     backup = root / f".{A.ROW_JOURNAL_FILENAME}.{'b' * 32}.replaced"
     target.replace(backup)
-    target.write_bytes(ledger_closed)
+    private_io.atomic_write_private(target, ledger_closed)
     temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'c' * 32}.tmp"
-    temporary.write_bytes(checkpoint_closed)
+    private_io.atomic_write_private(temporary, checkpoint_closed)
 
     io = A.PortableDurableRowIo(root)
     try:
@@ -294,7 +296,7 @@ def test_windows_refuses_invalid_lone_journal_temporary_without_mutation(
     prepared = _journal_raw("prepared")
     invalid = _journal_raw("ledger_closed", prepared)
     temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'d' * 32}.tmp"
-    temporary.write_bytes(invalid)
+    private_io.atomic_write_private(temporary, invalid)
 
     io = A.PortableDurableRowIo(root)
     try:
@@ -424,6 +426,61 @@ def _set_test_dacl(path: Path, *, inheritable: bool = False, access_mask: str | 
         native.close(ancestor)
         free(descriptor)
     return sid
+
+
+def test_completed_reader_refuses_row_acl_change_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import windows_portable_tree as backend
+    from test_acquire_imessage_sent_atomic import _completed_private_smoke_run
+
+    _private, run_dir, _ = _completed_private_smoke_run(tmp_path)
+    target = next((run_dir / A.ROWS_DIRNAME).glob("*/*.meta.json"))
+    original = target.read_bytes()
+    read = backend.W.read
+    changed = False
+
+    def change_permissions(handle, maximum):
+        nonlocal changed
+        if not changed:
+            changed = True
+            _set_test_dacl(target.parent)
+        return read(handle, maximum)
+
+    reader = A._PrivateReadOnlyRowIo(run_dir)
+    try:
+        monkeypatch.setattr(backend.W, "read", change_permissions)
+        with pytest.raises(A.AtomicAcquisitionError):
+            reader.read_bytes(target.relative_to(run_dir).as_posix(), "sidecar")
+        assert changed
+        assert target.read_bytes() == original
+        with pytest.raises(OSError):
+            private_io.require_private_node(target.parent, "directory")
+        target.unlink()  # post-read refusal released the retained file
+    finally:
+        reader.close()
+
+
+def test_copy_refuses_nonprivate_partial_before_mutation(tmp_path: Path) -> None:
+    root, row_io = _private_tree(tmp_path)
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"approved bytes")
+    partial = root / "snapshot.copying"
+    private_io.atomic_write_private(partial, b"app")
+    _set_test_dacl(partial)
+    try:
+        with pytest.raises(A.BootstrapStateError, match="cannot copy"):
+            row_io.copy_file_resumable(
+                source, partial.name, "snapshot.bin",
+                expected_digest=A._sha256_tag(source.read_bytes()),
+                expected_size=source.stat().st_size, label="snapshot",
+            )
+    finally:
+        row_io.close()
+    assert partial.read_bytes() == b"app"
+    assert sorted(path.name for path in root.iterdir()) == [partial.name]
+    with pytest.raises(OSError):
+        private_io.require_private_node(partial, "file")
 
 
 @pytest.mark.parametrize("kind", ["file", "directory"])
