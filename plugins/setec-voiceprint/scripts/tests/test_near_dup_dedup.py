@@ -1262,6 +1262,11 @@ def test_recovery_store_does_not_chmod_user_owned_parent(tmp_path):
     user_parent.chmod(0o755)
     if os.name == "nt":
         from setec.core import windows_descriptor_io as native, atomic_publish
+        from test_windows_descriptor_backend import _set_test_dacl
+
+        # A fresh SQLite journal must not inherit even this owner-only ACL;
+        # a real user parent may also propagate other users' permissions.
+        _set_test_dacl(user_parent, inheritable=True)
 
         def parent_security():
             ancestor, handle, _ = native.pin_directory(user_parent, writable_final=False, security_only=True)
@@ -1272,11 +1277,14 @@ def test_recovery_store_does_not_chmod_user_owned_parent(tmp_path):
                 native.close(ancestor)
 
         before = parent_security()
-    with ndd._RecoveryStore(user_parent / "state.sqlite3"):
-        pass
+    with ndd._RecoveryStore(user_parent / "state.sqlite3") as store:
+        store.put("synthetic", "key", "private shard payload")
+        if os.name == "nt":
+            atomic_publish.require_private_node(user_parent / "state.sqlite3-journal", "file")
     if os.name == "nt":
         assert parent_security() == before
         atomic_publish.require_private_node(user_parent / "state.sqlite3", "file")
+        atomic_publish.require_private_node(user_parent / "state.sqlite3-journal", "file")
     else:
         assert stat.S_IMODE(user_parent.stat().st_mode) == 0o755
         assert stat.S_IMODE((user_parent / "state.sqlite3").stat().st_mode) == 0o600
