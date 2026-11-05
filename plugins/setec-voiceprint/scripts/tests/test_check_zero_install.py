@@ -72,6 +72,35 @@ def test_make_bare_copy_has_no_plugins_wrapper(tmp_path):
     assert report.passed, [(r.name, r.detail) for r in report.results if not r.passed]
 
 
+def test_gmail_fixture_is_private_with_unchanged_synthetic_inputs(tmp_path):
+    zi._write_gmail_pipeline_inputs(tmp_path)
+    root = tmp_path / "ai-prose-baselines-private" / "pipeline"
+    request = json.loads((root / "runs/one/request.json").read_bytes())
+    assert request["stage_id"] == "01_source_smoke"
+    assert request["config"]["source"]["own_addresses"] == ["owner@example.test"]
+    assert (root / "hmac.key").read_bytes() == b"k" * 32
+    for node in (root, *root.rglob("*")):
+        if os.name == "nt":
+            from setec.core import atomic_publish
+            atomic_publish.require_private_node(node, "directory" if node.is_dir() else "file")
+        else:
+            assert node.stat().st_mode & 0o077 == 0
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native private fixture setup")
+def test_gmail_fixture_fails_closed_when_native_private_writer_is_unavailable(tmp_path, monkeypatch):
+    import claim_license  # provision the existing package namespace
+    from setec.core import atomic_publish
+
+    def unavailable(*_args, **_kwargs):
+        raise OSError("synthetic native failure")
+
+    monkeypatch.setattr(atomic_publish, "_windows_io", unavailable)
+    with pytest.raises(zi.GateError, match="native private Gmail fixture"):
+        zi._write_gmail_pipeline_inputs(tmp_path)
+    assert not list(tmp_path.rglob("*.mbox"))
+
+
 def test_make_bare_copy_refuses_source_symlinks(tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()

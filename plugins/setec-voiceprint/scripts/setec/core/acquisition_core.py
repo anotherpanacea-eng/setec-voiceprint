@@ -49,6 +49,7 @@ import urllib.robotparser
 import uuid
 from dataclasses import dataclass, field, asdict
 from setec.core import acquisition_primitives as _acq_primitives
+from setec.core import atomic_publish as _private_publish
 from setec.core.atomic_publish import PRIVATE_DIRECTORY_MODE, PRIVATE_FILE_MODE
 from setec.paths import scripts_dir
 from pathlib import Path
@@ -358,8 +359,8 @@ class StableRedactionMap:
 def _private_mkdir(directory: Path) -> None:
     """Create any missing directories owner-only (0700) whatever the umask.
 
-    Existing directories are left exactly as they are: this never tightens a
-    folder the caller already owns, and never resolves or refuses symlinks.
+    Existing directories are never hardened. POSIX retains its pathname
+    behavior; native Windows creation refuses indirect ancestor nodes.
     """
     missing = []
     current = Path(directory)
@@ -368,7 +369,10 @@ def _private_mkdir(directory: Path) -> None:
         current = current.parent
     for path in reversed(missing):
         try:
-            os.mkdir(path, PRIVATE_DIRECTORY_MODE)
+            if os.name == "nt":
+                _private_publish.create_private_directory(path)
+            else:
+                os.mkdir(path, PRIVATE_DIRECTORY_MODE)
         except FileExistsError:
             continue
         if os.name == "posix":
@@ -382,7 +386,10 @@ def _open_private(path, flag: int, *, binary: bool = False, **text_kwargs):
     material; with the usual umask 022 a plain open would leave them
     world-readable, and the Gmail pipeline then refuses its own artifacts.
     """
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | flag, PRIVATE_FILE_MODE)
+    if os.name == "nt":
+        fd = _private_publish.open_private_descriptor(path, os.O_WRONLY | os.O_CREAT | flag)
+    else:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | flag, PRIVATE_FILE_MODE)
     if os.name == "posix":
         try:
             os.fchmod(fd, PRIVATE_FILE_MODE)

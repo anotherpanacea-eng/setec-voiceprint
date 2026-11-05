@@ -381,3 +381,200 @@ def test_windows_cas_preserves_concurrent_winner(
         io.close()
     assert blocked
     assert target.read_bytes() == b"two"
+
+
+def _set_test_dacl(path: Path, *, inheritable: bool = False, access_mask: str | None = None) -> bytes:
+    """Put a genuinely non-private ACL on synthetic current-user-owned state."""
+    from ctypes import wintypes
+    from setec.core import windows_descriptor_io as native
+
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    convert_sid = api.ConvertSidToStringSidW
+    convert_sid.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    convert_sid.restype = wintypes.BOOL
+    convert_sd = api.ConvertStringSecurityDescriptorToSecurityDescriptorW
+    convert_sd.argtypes = [wintypes.LPCWSTR, wintypes.DWORD,
+                          ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p]
+    convert_sd.restype = wintypes.BOOL
+    free = native.kernel32.LocalFree
+    free.argtypes = [ctypes.c_void_p]
+    free.restype = ctypes.c_void_p
+    sid = native.current_user_sid()
+    sid_buffer = ctypes.create_string_buffer(sid, len(sid))
+    text = wintypes.LPWSTR()
+    assert convert_sid(sid_buffer, ctypes.byref(text))
+    try:
+        owner = text.value
+    finally:
+        free(ctypes.cast(text, ctypes.c_void_p))
+    acl = (f"D:P(A;;{access_mask};;;{owner})" if access_mask is not None else
+           f"D:P(A;OICI;FA;;;{owner})" if inheritable else
+           f"D:P(A;;FA;;;{owner})(A;;GR;;;WD)")
+    descriptor = ctypes.c_void_p()
+    assert convert_sd(acl, 1, ctypes.byref(descriptor), None)
+    ancestor, parent, _ = native.pin_directory(path.parent, writable_final=False)
+    handle = 0
+    try:
+        opener = native.open_directory if path.is_dir() else native.open_file
+        handle = opener(parent, path.name, write_dac=True, security_only=True)
+        assert native.ntdll.NtSetSecurityObject(handle, 0x80000004, descriptor) >= 0
+    finally:
+        native.close(handle)
+        native.close(parent)
+        native.close(ancestor)
+        free(descriptor)
+    return sid
+
+
+@pytest.mark.parametrize("kind", ["file", "directory"])
+def test_native_hardening_preserves_owner_and_contents_without_reading_payload(
+    tmp_path, monkeypatch, kind,
+):
+    from setec.core import atomic_publish as publish, windows_descriptor_io as native
+
+    node = tmp_path / "owned"
+    node.mkdir() if kind == "directory" else node.write_bytes(b"unchanged")
+    sid = _set_test_dacl(node)
+    with pytest.raises(OSError):
+        publish.require_private_node(node, kind)
+    real_open = native.ntdll.NtCreateFile
+    accesses = []
+
+    def observe(result, desired, *args):
+        if desired & native.WRITE_DAC:
+            accesses.append(desired)
+            assert not desired & (native.FILE_READ_DATA | native.FILE_WRITE_DATA
+                                  | native.FILE_APPEND_DATA)
+        return real_open(result, desired, *args)
+
+    monkeypatch.setattr(native.ntdll, "NtCreateFile", observe)
+    publish._harden_windows_node(node, kind)
+    publish.require_private_node(node, kind)
+    assert accesses
+    ancestor, parent, _ = native.pin_directory(node.parent, writable_final=False)
+    handle = (native.open_directory if kind == "directory" else native.open_file)(parent, node.name)
+    try:
+        buffer = ctypes.create_string_buffer(sid, len(sid))
+        native._require_current_owner(native._query_security(handle), buffer)
+    finally:
+        native.close(handle)
+        native.close(parent)
+        native.close(ancestor)
+    if kind == "file":
+        assert node.read_bytes() == b"unchanged"
+
+
+@pytest.mark.parametrize("failure", ["foreign_owner", "setter", "hardlink"])
+def test_native_hardener_refuses_without_mutating_acl_or_payload(
+    tmp_path, monkeypatch, failure,
+):
+    from setec.core import atomic_publish as publish, windows_descriptor_io as native
+
+    node = tmp_path / "owned"
+    node.write_bytes(b"unchanged")
+    _set_test_dacl(node)
+    if failure == "hardlink":
+        os.link(node, tmp_path / "second-link")
+    ancestor, parent, _ = native.pin_directory(node.parent, writable_final=False)
+    handle = native.open_file(parent, node.name, write_dac=True, security_only=True,
+                              allow_multiple_links=True)
+    before = bytes(native._query_security(handle))
+    called = []
+
+    def setter(*args):
+        called.append(args)
+        return -1073741790  # STATUS_ACCESS_DENIED
+
+    monkeypatch.setattr(native.ntdll, "NtSetSecurityObject", setter)
+    if failure == "foreign_owner":
+        # A real node with a simulated different process user: the observed
+        # owner mismatch must be refused before any DACL-setting call.
+        monkeypatch.setattr(native, "current_user_sid", lambda: bytes.fromhex("010100000000000100000000"))
+    try:
+        with pytest.raises(OSError):
+            native.make_owner_private(handle, "file")
+        assert bytes(native._query_security(handle)) == before
+        assert len(called) == (1 if failure == "setter" else 0)
+    finally:
+        native.close(handle)
+        native.close(parent)
+        native.close(ancestor)
+    assert node.read_bytes() == b"unchanged"
+
+
+def test_default_native_open_does_not_gain_dacl_write_access(tmp_path):
+    from setec.core import windows_descriptor_io as native
+
+    node = tmp_path / "owned"
+    node.write_bytes(b"unchanged")
+    _set_test_dacl(node)
+    ancestor, parent, _ = native.pin_directory(node.parent, writable_final=False)
+    handle = native.open_file(parent, node.name)
+    try:
+        with pytest.raises(OSError):
+            native.make_owner_private(handle, "file")
+    finally:
+        native.close(handle)
+        native.close(parent)
+        native.close(ancestor)
+
+
+def test_native_writer_can_pin_drive_root_parent_without_hardening_it(tmp_path):
+    from setec.core import atomic_publish as publish, windows_descriptor_io as native
+
+    root = Path(tmp_path.anchor)
+    with pytest.raises(OSError, match="absolute drive path"):
+        native.pin_directory(root, writable_final=False)
+    ancestor, original, _ = native.pin_directory(root, writable_final=False, allow_root=True)
+    try:
+        before = bytes(native._query_security(original))
+    finally:
+        native.close(original)
+        native.close(ancestor)
+    with publish._windows_parent(root / "unused-synthetic-name") as (io, handle):
+        assert io.require_direct(handle, "directory")
+        assert bytes(io._query_security(handle)) == before
+    with pytest.raises(OSError):
+        native.info(handle)
+    # Root permissions can never be requested through the parent-only option.
+    with pytest.raises(OSError):
+        native.pin_directory(root, allow_root=True, write_dac=True, security_only=True)
+
+
+@pytest.mark.parametrize("kind, access_mask", [
+    ("directory", "0x1200ad"), ("file", "0x1200ab"),
+    ("directory", "0x1200ac"), ("file", "0x1200aa"),
+])
+def test_native_creation_needs_only_the_parent_right_for_its_child_kind(
+    tmp_path, kind, access_mask,
+):
+    from setec.core import atomic_publish as publish, windows_descriptor_io as native
+
+    parent = tmp_path / "limited-parent"
+    publish.secure_private_directory(parent)
+    # List/traverse/read control/attributes plus ADD_SUBDIRECTORY or ADD_FILE,
+    # never both. Opening the parent with both write bits would fail before
+    # the kernel could authorize creation of the requested child kind.
+    _set_test_dacl(parent, access_mask=access_mask)
+    try:
+        ordinary = parent / "ordinary-child"
+        if kind == "directory":
+            os.mkdir(ordinary)
+        else:
+            with open(ordinary, "wb") as stream:
+                stream.write(b"ordinary")
+        assert ordinary.exists()
+        with pytest.raises(OSError):
+            native.pin_directory(parent, writable_final=True)
+        child = parent / "child"
+        if kind == "directory":
+            publish.create_private_directory(child)
+        else:
+            descriptor = publish.open_private_descriptor(
+                child, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(b"exact")
+            assert child.read_bytes() == b"exact"
+        publish.require_private_node(child, kind)
+    finally:
+        publish._harden_windows_node(parent, "directory")

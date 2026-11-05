@@ -12,6 +12,70 @@ import pytest
 import atomic_publish as publish  # noqa: E402
 
 
+def _replace_hook(monkeypatch, target, callback):
+    """Inject a publication failure at the platform's real rename boundary."""
+    if os.name == "nt":
+        native = publish._windows_io()
+
+        def rename(_handle, _parent, _name, *, replace):
+            assert replace
+            temporary, = target.parent.glob(f".{target.name}.*.tmp")
+            callback(temporary, target)
+
+        monkeypatch.setattr(native, "rename", rename)
+    else:
+        monkeypatch.setattr(publish.os, "replace", callback)
+
+
+def _windows_metadata_or_write_failure(tmp_path, monkeypatch, failure):
+    native = publish._windows_io()
+    target = tmp_path / "private" / "payload.bin"
+    created = []
+    real_create, real_info = native.create_owner_private_file, native.info
+    rename_failed = False
+
+    def create(*args, **kwargs):
+        handle = real_create(*args, **kwargs)
+        created.append(handle)
+        return handle
+
+    def metadata(handle):
+        if created and (failure == "identity" or rename_failed):
+            raise OSError(errno.EIO, "synthetic identity failure")
+        return real_info(handle)
+
+    def write(*_args):
+        raise OSError(errno.EIO, "synthetic write failure")
+
+    def rename(*_args, **_kwargs):
+        nonlocal rename_failed
+        rename_failed = True
+        raise OSError(errno.EIO, "synthetic rename failure")
+
+    monkeypatch.setattr(native, "create_owner_private_file", create)
+    if failure == "write":
+        monkeypatch.setattr(native, "write", write)
+    else:
+        monkeypatch.setattr(native, "info", metadata)
+    if failure == "cleanup_identity":
+        monkeypatch.setattr(native, "rename", rename)
+    with pytest.raises(OSError, match="synthetic"):
+        publish.atomic_write_private(target, b"payload")
+    assert not target.exists()
+    assert len(created) == 1
+    with pytest.raises(OSError):
+        real_info(created[0])
+    monkeypatch.undo()
+    leftovers = list(target.parent.glob(".payload.bin.*.tmp"))
+    if failure == "cleanup_identity":
+        # Without identity evidence, leaving a private residue is safer than
+        # deleting a name which could belong to a concurrent writer.
+        assert len(leftovers) == 1
+        publish.require_private_node(leftovers[0], "file")
+    else:
+        assert not leftovers
+
+
 def test_atomic_write_preserves_exact_bytes_replaces_and_hardens(
     tmp_path: Path,
 ) -> None:
@@ -29,6 +93,9 @@ def test_atomic_write_preserves_exact_bytes_replaces_and_hardens(
     if os.name == "posix":
         assert stat.S_IMODE(parent.stat().st_mode) == 0o700
         assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    else:
+        publish.require_private_node(parent, "directory")
+        publish.require_private_node(target, "file")
 
 
 def test_atomic_write_uses_random_same_directory_temps_and_fsyncs(
@@ -36,6 +103,24 @@ def test_atomic_write_uses_random_same_directory_temps_and_fsyncs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     target = tmp_path / "private" / "payload.bin"
+    if os.name == "nt":
+        native = publish._windows_io()
+        created = []
+        real_flush = native.flush
+
+        def flush(handle):
+            temporary, = target.parent.glob(".payload.bin.*.tmp")
+            publish.require_private_node(temporary, "file")
+            created.append(temporary)
+            real_flush(handle)
+
+        monkeypatch.setattr(native, "flush", flush)
+        publish.atomic_write_private(target, b"first")
+        publish.atomic_write_private(target, b"second")
+        assert target.read_bytes() == b"second"
+        assert len(created) == 2 and created[0] != created[1]
+        assert all(path.parent == target.parent and not path.exists() for path in created)
+        return
     created: list[tuple[Path, str, str, Path]] = []
     fsynced: list[int] = []
     real_mkstemp = publish.tempfile.mkstemp
@@ -78,7 +163,7 @@ def test_atomic_write_cleans_its_temp_after_replace_failure(
     def refuse_replace(_source: Path, _destination: Path) -> None:
         raise OSError(errno.EIO, "synthetic replace failure")
 
-    monkeypatch.setattr(publish.os, "replace", refuse_replace)
+    _replace_hook(monkeypatch, target, refuse_replace)
     with pytest.raises(OSError, match="synthetic replace failure"):
         publish.atomic_write_private(target, b"loser")
 
@@ -100,7 +185,7 @@ def test_atomic_write_never_cleans_a_substituted_temp(
         source.write_bytes(b"not-owned")
         raise OSError(errno.EIO, "synthetic post-substitution failure")
 
-    monkeypatch.setattr(publish.os, "replace", substitute_then_fail)
+    _replace_hook(monkeypatch, target, substitute_then_fail)
     with pytest.raises(OSError, match="post-substitution"):
         publish.atomic_write_private(target, b"owned")
 
@@ -114,6 +199,9 @@ def test_atomic_write_cleans_descriptor_and_temp_after_write_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if os.name == "nt":
+        _windows_metadata_or_write_failure(tmp_path, monkeypatch, "write")
+        return
     target = tmp_path / "private" / "payload.bin"
     created_descriptors: list[int] = []
     real_mkstemp = publish.tempfile.mkstemp
@@ -156,6 +244,9 @@ def test_atomic_write_cleans_descriptor_and_temp_after_identity_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if os.name == "nt":
+        _windows_metadata_or_write_failure(tmp_path, monkeypatch, "identity")
+        return
     target = tmp_path / "private" / "payload.bin"
     created: list[tuple[int, Path]] = []
     identity_events: list[str] = []
@@ -200,10 +291,13 @@ def test_atomic_write_cleans_descriptor_and_temp_after_identity_failure(
         real_fstat(descriptor)
 
 
-def test_atomic_write_cleans_descriptor_and_temp_after_name_identity_failure(
+def test_atomic_write_closes_descriptors_when_name_metadata_is_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    if os.name == "nt":
+        _windows_metadata_or_write_failure(tmp_path, monkeypatch, "cleanup_identity")
+        return
     target = tmp_path / "private" / "payload.bin"
     created: list[tuple[int, Path]] = []
     identity_events: list[str] = []
@@ -361,6 +455,49 @@ def test_atomic_write_tolerates_missing_fchmod(
     target = tmp_path / "private" / "payload.bin"
     publish.atomic_write_private(target, b"bytes")
     assert target.read_bytes() == b"bytes"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native private writer")
+def test_native_private_writer_hardens_owned_file_and_preserves_open_modes(tmp_path):
+    directory = tmp_path / "private"
+    publish.secure_private_directory(directory)
+    target = directory / "payload.bin"
+    # Private directory ACEs intentionally do not propagate: the constructor
+    # must harden this existing owned file before opening it for payload I/O.
+    target.write_bytes(b"old")
+    with os.fdopen(publish.open_private_descriptor(
+        target, os.O_WRONLY | os.O_CREAT | os.O_APPEND), "ab") as stream:
+        stream.write(b" appended")
+    assert target.read_bytes() == b"old appended"
+    publish.require_private_node(target, "file")
+    with pytest.raises(FileExistsError):
+        publish.open_private_descriptor(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL)
+    assert target.read_bytes() == b"old appended"
+    with os.fdopen(publish.open_private_descriptor(
+        target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC), "wb") as stream:
+        stream.write(b"replacement")
+    assert target.read_bytes() == b"replacement"
+    created = directory / "created"
+    with os.fdopen(publish.open_private_descriptor(
+        created, os.O_WRONLY | os.O_CREAT | os.O_EXCL), "wb") as stream:
+        stream.write(b"created")
+    publish.require_private_node(created, "file")
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native validation-sensitive writer")
+def test_native_strict_writer_refuses_broad_acl_before_truncating(tmp_path):
+    from test_windows_descriptor_backend import _set_test_dacl
+
+    target = tmp_path / "private" / "payload.bin"
+    publish.atomic_write_private(target, b"winner")
+    _set_test_dacl(target)
+    with pytest.raises(OSError):
+        publish.open_private_descriptor(
+            target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+            require_private_existing=True)
+    assert target.read_bytes() == b"winner"
+    with pytest.raises(OSError):
+        publish.require_private_node(target, "file")
 
 
 @pytest.mark.parametrize(
