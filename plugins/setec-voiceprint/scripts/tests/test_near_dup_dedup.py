@@ -30,6 +30,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import sqlite3
 import stat
 import shutil
@@ -404,7 +405,7 @@ def test_spec80_publication_requires_committed_producer_and_binds_three_artifact
     ).encode()
     record = _write_strict_source(root, payload)
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(json.dumps(record, separators=(",", ":")) + "\n")
+    manifest.write_bytes((json.dumps(record, separators=(",", ":")) + "\n").encode("utf-8"))
     repo = tmp_path / "repo"; repo.mkdir()
     producer = repo / "near_dup_dedup.py"
     shutil.copy2(Path(ndd.__file__), producer)
@@ -495,7 +496,7 @@ def test_spec80_refuses_invalid_author_row_before_source_open(tmp_path, monkeypa
     row["role"] = "source"
     row["text_path"] = "../outside.txt"
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    manifest.write_bytes((json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8"))
     opened = False
 
     def unexpected_open(*_args, **_kwargs):
@@ -504,6 +505,9 @@ def test_spec80_refuses_invalid_author_row_before_source_open(tmp_path, monkeypa
         raise AssertionError("source bytes opened before metadata validation")
 
     monkeypatch.setattr(ndd.source_commitment.os, "open", unexpected_open)
+    if os.name == "nt":
+        from setec.core import windows_descriptor_io as native
+        monkeypatch.setattr(native, "pin_directory_chain", unexpected_open)
     with pytest.raises(ndd.source_commitment.CommitmentError, match="record metadata"):
         ndd.source_commitment.load_strict_sources(manifest, root)
     assert not opened
@@ -518,7 +522,7 @@ def test_spec80_refuses_hardlinked_source(tmp_path):
     target.parent.mkdir(parents=True)
     target.hardlink_to(outside)
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    manifest.write_bytes((json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8"))
     with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
         ndd.source_commitment.load_strict_sources(manifest, root)
 
@@ -533,7 +537,7 @@ def test_spec80_refuses_symlinked_source_ancestor(tmp_path):
     target.parent.mkdir(parents=True)
     target.write_bytes(payload)
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    manifest.write_bytes((json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8"))
     with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
         ndd.source_commitment.load_strict_sources(manifest, root)
 
@@ -543,7 +547,7 @@ def test_spec80_refuses_source_tree_swap_after_preflight(tmp_path, monkeypatch):
     payload = b"private source"
     row = _write_strict_source(root, payload)
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    manifest.write_bytes((json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8"))
     original_preflight = ndd.source_commitment._preflight_sources
 
     def preflight_then_swap(manifest_path, source_root):
@@ -562,6 +566,8 @@ def test_spec80_refuses_source_tree_swap_after_preflight(tmp_path, monkeypatch):
     )
     with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
         ndd.source_commitment.load_strict_sources(manifest, root)
+
+    assert (root / "texts").is_symlink(), "swap injection never reached"
 
 
 def test_spec80_refuses_root_swap_during_atomic_pin(tmp_path, monkeypatch):
@@ -583,13 +589,14 @@ def test_spec80_refuses_root_swap_during_atomic_pin(tmp_path, monkeypatch):
     monkeypatch.setattr(ndd.source_commitment.os, "fstat", fstat_then_swap)
     with pytest.raises(ndd.source_commitment.CommitmentError, match="source root"):
         ndd.source_commitment._pin_source_root(root)
+    assert swapped, "root acquisition failed before the swap injection"
 
 
 def test_spec80_missing_source_refuses_without_raw_filesystem_error(tmp_path):
     root = tmp_path / "root"; root.mkdir()
     row = _strict_record(b"missing private source")
     manifest = tmp_path / "manifest.jsonl"
-    manifest.write_text(json.dumps(row, separators=(",", ":")) + "\n")
+    manifest.write_bytes((json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8"))
     with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
         ndd.source_commitment.load_strict_sources(manifest, root)
 
@@ -629,6 +636,26 @@ def test_spec80_manifest_refuses_crlf_framing(tmp_path):
     manifest.write_bytes(b'{"schema":"voicewright-author-corpus/1"}\r\n')
     with pytest.raises(ndd.source_commitment.CommitmentError, match="jsonl framing"):
         ndd.source_commitment._strict_jsonl(manifest)
+
+
+def test_spec80_source_descriptor_closes_after_failed_read(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    row = _write_strict_source(root, b"Synthetic source contents.")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_bytes((json.dumps(row) + "\n").encode("utf-8"))
+    attempted = []
+
+    def fail_read(descriptor, _size):
+        attempted.append(descriptor)
+        raise OSError("synthetic read fault")
+
+    monkeypatch.setattr(ndd.source_commitment.os, "read", fail_read)
+    with pytest.raises(ndd.source_commitment.CommitmentError, match="source file"):
+        ndd.source_commitment.load_strict_sources(manifest, root)
+    assert len(attempted) == 1
+    with pytest.raises(OSError):
+        os.fstat(attempted[0])
 
 
 # =====================================================================
@@ -1219,18 +1246,90 @@ def test_recovery_shards_are_private(tmp_path):
             "--checkpoint", str(checkpoint), "--json",
         ]) == 0
     recovery_path = ndd._recovery_store_path(checkpoint)
-    assert stat.S_IMODE(recovery_path.parent.stat().st_mode) == 0o700
-    assert stat.S_IMODE(recovery_path.stat().st_mode) == 0o600
+    if os.name == "nt":
+        from setec.core import atomic_publish
+        atomic_publish.require_private_node(recovery_path.parent, "directory")
+        atomic_publish.require_private_node(recovery_path, "file")
+        atomic_publish.require_private_node(recovery_path.with_name(recovery_path.name + "-journal"), "file")
+    else:
+        assert stat.S_IMODE(recovery_path.parent.stat().st_mode) == 0o700
+        assert stat.S_IMODE(recovery_path.stat().st_mode) == 0o600
 
 
 def test_recovery_store_does_not_chmod_user_owned_parent(tmp_path):
     user_parent = tmp_path / "project"
     user_parent.mkdir(mode=0o755)
     user_parent.chmod(0o755)
+    if os.name == "nt":
+        from setec.core import windows_descriptor_io as native, atomic_publish
+
+        def parent_security():
+            ancestor, handle, _ = native.pin_directory(user_parent, writable_final=False, security_only=True)
+            try:
+                return bytes(native._query_security(handle))
+            finally:
+                native.close(handle)
+                native.close(ancestor)
+
+        before = parent_security()
     with ndd._RecoveryStore(user_parent / "state.sqlite3"):
         pass
-    assert stat.S_IMODE(user_parent.stat().st_mode) == 0o755
-    assert stat.S_IMODE((user_parent / "state.sqlite3").stat().st_mode) == 0o600
+    if os.name == "nt":
+        assert parent_security() == before
+        atomic_publish.require_private_node(user_parent / "state.sqlite3", "file")
+    else:
+        assert stat.S_IMODE(user_parent.stat().st_mode) == 0o755
+        assert stat.S_IMODE((user_parent / "state.sqlite3").stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("suffix", ["-wal", "-shm"])
+def test_native_recovery_refuses_unsupported_sidecars_before_writes(tmp_path, monkeypatch, suffix):
+    from types import SimpleNamespace
+
+    database = tmp_path / "state.sqlite3"
+    sidecar = tmp_path / (database.name + suffix)
+    sidecar.write_bytes(b"synthetic unsupported state")
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    # On POSIX exercise the same pre-I/O refusal without loading native APIs;
+    # this replaces only this module's os binding, not Python's global os.name.
+    monkeypatch.setattr(ndd, "os", SimpleNamespace(**{**vars(os), "name": "nt"}))
+    with pytest.raises(ndd.PassageModeError, match="WAL/SHM sidecars"):
+        ndd._RecoveryStore(database)
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
+
+
+def test_recovery_restores_committed_data_after_process_exit(tmp_path):
+    database = tmp_path / "private" / "state.sqlite3"
+    with ndd._RecoveryStore(database) as store:
+        store.put("synthetic", "kept", "committed")
+    child_code = '''
+import json, os, sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+assert db.execute('PRAGMA journal_mode=PERSIST').fetchone() == ('persist',)
+db.execute('PRAGMA cache_size=1')
+db.execute('BEGIN IMMEDIATE')
+db.execute('UPDATE shards SET payload=? WHERE stage=? AND shard_key=?',
+           (json.dumps('uncommitted' * 30000), 'synthetic', 'kept'))
+os._exit(0)
+'''
+    result = subprocess.run([sys.executable, "-c", child_code, str(database)],
+                            capture_output=True, timeout=20)
+    assert result.returncode == 0, result.stderr
+    journal = database.with_name(database.name + "-journal")
+    assert journal.stat().st_size > 512
+    assert any(journal.read_bytes()[:8]), "probe did not leave a hot journal"
+    if os.name == "nt":
+        from setec.core import atomic_publish
+        atomic_publish.require_private_node(database, "file")
+        atomic_publish.require_private_node(journal, "file")
+    with ndd._RecoveryStore(database) as store:
+        assert store.get("synthetic", "kept") == "committed"
+        store.put("synthetic", "next", "resumed")
+        if os.name == "nt":
+            atomic_publish.require_private_node(database, "file")
+            atomic_publish.require_private_node(journal, "file")
+    with ndd._RecoveryStore(database) as store:
+        assert store.get("synthetic", "next") == "resumed"
 
 
 def test_corrupt_recovery_database_refuses_without_traceback(tmp_path):
@@ -1542,7 +1641,7 @@ def test_document_verifier_success_and_refusal_are_planted_write_clean(tmp_path)
             str(manifest), "--threshold", "0.6", "--num-perm", "128",
             "--shingle-size", "5", "--out", str(out), "--json",
         ]) == 0
-    report.write_text(sink.getvalue(), encoding="utf-8")
+    report.write_bytes(sink.getvalue().encode("utf-8"))
 
     def snapshot():
         return {str(path.relative_to(tmp_path)): path.read_bytes()
@@ -1563,6 +1662,32 @@ def test_document_verifier_success_and_refusal_are_planted_write_clean(tmp_path)
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
         assert ndd.main(verify_argv) == 2
     assert snapshot() == before_refusal
+
+
+@_needs_datasketch
+def test_document_cli_unicode_outputs_round_trip_through_exact_verifier(tmp_path):
+    manifest = tmp_path / "source.jsonl"
+    manifest.write_bytes((
+        json.dumps({"id": "caf\u00e9", "text": "Alpha beta gamma delta epsilon."}, ensure_ascii=False) + "\n"
+        + json.dumps({"id": "\u6587-copy", "text": "Alpha beta gamma delta epsilon."}, ensure_ascii=False) + "\n"
+    ).encode("utf-8"))
+    output, report = tmp_path / "kept.jsonl", tmp_path / "report.json"
+    command = [sys.executable, str(Path(__file__).resolve().parents[1] / "near_dup_dedup.py"),
+               str(manifest), "--threshold", "0.8", "--num-perm", "16", "--shingle-size", "2"]
+    produced = subprocess.run(command + ["--out", str(output), "--json"],
+                              capture_output=True, timeout=20)
+    assert produced.returncode == 0 and produced.stderr == b""
+    assert b"\r" not in produced.stdout and produced.stdout.endswith(b"\n")
+    assert b"\r" not in output.read_bytes()
+    assert json.loads(output.read_bytes())["id"] in {"caf\u00e9", "\u6587-copy"}
+    report.write_bytes(produced.stdout)
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    verified = subprocess.run(command + ["--dry-run", "--json", "--verify-out", str(output),
+                                        "--verify-report", str(report)],
+                              capture_output=True, timeout=20)
+    assert verified.returncode == 0 and verified.stderr == b""
+    assert verified.stdout == produced.stdout
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
 
 
 @pytest.mark.parametrize("extra, missing", [
@@ -1606,7 +1731,7 @@ def test_verify_mode_refuses_a_mismatched_report_alone(tmp_path):
             str(manifest), "--threshold", "0.6", "--num-perm", "128",
             "--shingle-size", "5", "--out", str(out), "--json",
         ]) == 0
-    report.write_text(sink.getvalue(), encoding="utf-8")
+    report.write_bytes(sink.getvalue().encode("utf-8"))
     verify_argv = [
         str(manifest), "--threshold", "0.6", "--num-perm", "128",
         "--shingle-size", "5", "--dry-run", "--json",
@@ -1616,7 +1741,7 @@ def test_verify_mode_refuses_a_mismatched_report_alone(tmp_path):
         assert ndd.main(verify_argv) == 0
     tampered = json.loads(report.read_text(encoding="utf-8"))
     tampered["threshold"] = 0.99
-    report.write_text(json.dumps(tampered) + "\n", encoding="utf-8")
+    report.write_bytes((json.dumps(tampered) + "\n").encode("utf-8"))
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
         assert ndd.main(verify_argv) == 2
 

@@ -142,10 +142,29 @@ _PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n+")
 _PASSAGE_ID_SUFFIX_RE = re.compile(r"#p\d+$")
 
 
+def _private_windows_recovery_file(path: Path) -> None:
+    """Protect owned recovery nodes without truncating a possible hot journal."""
+    from setec.core import atomic_publish
+
+    descriptor = atomic_publish.open_private_descriptor(path, os.O_RDWR | os.O_CREAT)
+    os.close(descriptor)
+
+
 class _RecoveryStore:
     """Safe, incremental SQLite shards for long passage-mode stages."""
 
     def __init__(self, path: Path, *, private_parent: bool = False) -> None:
+        native = os.name == "nt"
+        journal = path.with_name(f"{path.name}-journal")
+        if native:
+            from setec.core import atomic_publish
+
+            # This recovery writer uses rollback journaling. Do not let SQLite
+            # open an unsupported old WAL population or an indirect sidecar.
+            for suffix in ("-wal", "-shm"):
+                sidecar = path.with_name(f"{path.name}{suffix}")
+                if sidecar.exists() or sidecar.is_symlink():
+                    raise PassageModeError("native recovery WAL/SHM sidecars are unsupported")
         if path.parent.is_symlink():
             raise PassageModeError(
                 f"recovery shard directory must not be a symlink: {path.parent}"
@@ -163,7 +182,10 @@ class _RecoveryStore:
             )
         if private_parent or not parent_existed:
             try:
-                os.chmod(path.parent, 0o700)
+                if native:
+                    atomic_publish.secure_private_directory(path.parent)
+                else:
+                    os.chmod(path.parent, 0o700)
             except OSError as exc:
                 raise PassageModeError(
                     f"cannot make recovery shard directory private {path.parent}: {exc}"
@@ -175,31 +197,58 @@ class _RecoveryStore:
                     f"recovery shard path must be a regular non-symlink file: {path}"
                 )
             try:
-                os.chmod(path, 0o600)
+                if native:
+                    _private_windows_recovery_file(path)
+                else:
+                    os.chmod(path, 0o600)
             except OSError as exc:
                 raise PassageModeError(
                     f"cannot make recovery shard file private {path}: {exc}"
                 ) from None
         else:
             try:
-                descriptor = os.open(
-                    path,
-                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
-                    0o600,
-                )
+                if native:
+                    descriptor = atomic_publish.open_private_descriptor(
+                        path, os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    )
+                else:
+                    descriptor = os.open(
+                        path,
+                        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                        0o600,
+                    )
             except OSError as exc:
                 raise PassageModeError(
                     f"cannot create private recovery shard file {path}: {exc}"
                 ) from None
             os.close(descriptor)
         try:
+            if native:
+                _private_windows_recovery_file(journal)
             self._db = sqlite3.connect(path)
         except (OSError, sqlite3.Error) as exc:
             raise PassageModeError(
                 f"cannot open recovery shard database {path}: {exc}"
             ) from None
         try:
-            os.chmod(path, 0o600)
+            if native:
+                # Retain the protected journal across transactions: private
+                # directory ACEs deliberately do not propagate to new files.
+                mode = self._db.execute("PRAGMA journal_mode=PERSIST").fetchone()
+                if mode != ("persist",):
+                    raise OSError("private persistent recovery journal unavailable")
+                # Hot-journal recovery can delete the journal during mode
+                # selection. Reestablish it before any schema/data write.
+                _private_windows_recovery_file(journal)
+                atomic_publish.require_private_node(path, "file")
+                atomic_publish.require_private_node(journal, "file")
+            else:
+                os.chmod(path, 0o600)
+        except sqlite3.Error as exc:
+            self._db.close()
+            raise PassageModeError(
+                f"recovery shard database is unreadable or corrupt {path}: {exc}"
+            ) from None
         except OSError as exc:
             self._db.close()
             raise PassageModeError(
@@ -623,7 +672,7 @@ def dedup_manifest(
     kept_rows = [r["_row"] for r in rows if r["_id"] not in drop_ids]
     target = out_path or manifest_path
     target.parent.mkdir(parents=True, exist_ok=True)
-    with target.open("w", encoding="utf-8") as f:
+    with target.open("w", encoding="utf-8", newline="\n") as f:
         for row in kept_rows:
             f.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
     return result
@@ -2195,7 +2244,7 @@ def run(args: argparse.Namespace) -> int:
         except (OSError, RuntimeError, ValueError) as exc:
             sys.stderr.write("[near_dup_dedup] verification refused.\n")
             return 2
-        sys.stdout.write(json.dumps(result.to_dict(), indent=2) + "\n")
+        _write_data_stdout(json.dumps(result.to_dict(), indent=2) + "\n")
         return 0
     if getattr(args, "strict_spec80", False) and not getattr(args, "passages", False):
         sys.stderr.write("[near_dup_dedup] --strict-spec80 requires --passages.\n")
@@ -2211,7 +2260,7 @@ def run(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
     )
     if args.json:
-        sys.stdout.write(json.dumps(result.to_dict(), indent=2) + "\n")
+        _write_data_stdout(json.dumps(result.to_dict(), indent=2) + "\n")
     else:
         lines = [
             f"Near-dup dedup: {result.total} records -> "
@@ -2321,9 +2370,9 @@ def _run_passages(args: argparse.Namespace) -> int:
             return 2
     elif args.report_out:
         args.report_out.parent.mkdir(parents=True, exist_ok=True)
-        args.report_out.write_text(text + "\n", encoding="utf-8")
+        args.report_out.write_text(text + "\n", encoding="utf-8", newline="\n")
     if args.json:
-        sys.stdout.write(text + "\n")
+        _write_data_stdout(text + "\n")
     else:
         _write_human_stdout(_passage_summary(report))
 
@@ -2433,6 +2482,17 @@ def _publish_spec80_package(args: argparse.Namespace, inventory_bytes: bytes) ->
     finally:
         for temp in staged:
             temp.unlink(missing_ok=True)
+
+
+def _write_data_stdout(text: str) -> None:
+    """Emit existing JSON text as UTF-8/LF without native newline translation."""
+    stream = getattr(sys.stdout, "buffer", None)
+    if stream is None:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    else:
+        stream.write(text.encode("utf-8"))
+        stream.flush()
 
 
 def _write_human_stdout(text: str) -> None:

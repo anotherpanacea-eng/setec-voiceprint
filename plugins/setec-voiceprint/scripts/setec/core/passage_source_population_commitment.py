@@ -6,6 +6,7 @@ it has produced the complete frozen passage report.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager, ExitStack
 import hashlib
 import json
 import math
@@ -161,21 +162,48 @@ def _validate_algorithm_parameters(value: Any) -> dict[str, Any]:
     return json.loads(json.dumps(value, allow_nan=False))
 
 
+@contextmanager
+def _source_descriptor(path: Path, *, directory: bool = False):
+    """Keep native ancestors pinned while using the leaf's CRT identity/I/O."""
+    with ExitStack() as owned:
+        if os.name == "nt":
+            import msvcrt
+            from setec.core import windows_descriptor_io as native
+
+            handles = list(native.pin_directory_chain(
+                path if directory else path.parent, writable_final=False,
+            ))
+            leaf = handles.pop() if directory else 0
+            for handle in handles:
+                owned.callback(native.close, handle)
+            if not directory:
+                leaf = native.open_file(
+                    handles[-1], path.name, allow_multiple_links=False,
+                    share_write=False,
+                )
+            try:
+                descriptor = msvcrt.open_osfhandle(leaf, os.O_RDONLY | os.O_BINARY)
+            except BaseException:
+                native.close(leaf)
+                raise
+        else:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            if directory:
+                flags |= getattr(os, "O_DIRECTORY", 0)
+            descriptor = os.open(path, flags)
+        owned.callback(os.close, descriptor)
+        if os.name == "nt":
+            os.set_inheritable(descriptor, False)
+        yield descriptor
+
+
 def _pin_source_root(root: Path) -> tuple[Path, tuple[Path, int, int, int]]:
     """Acquire the supplied root once without following a final symlink."""
     pinned_root = root.absolute()
-    flags = (
-        os.O_RDONLY
-        | getattr(os, "O_DIRECTORY", 0)
-        | getattr(os, "O_NOFOLLOW", 0)
-    )
     try:
-        descriptor = os.open(pinned_root, flags)
-        try:
+        with _source_descriptor(pinned_root, directory=True) as descriptor:
             opened = os.fstat(descriptor)
             current = pinned_root.lstat()
-        finally:
-            os.close(descriptor)
     except OSError as exc:
         raise CommitmentError("source root") from exc
     identity = (
@@ -278,10 +306,8 @@ def load_strict_sources(
     loaded: list[tuple[int, bytes, dict[str, Any], bytes]] = []
     texts: dict[str, bytes] = {}
     for line, raw, row, target, identities in planned:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         try:
-            descriptor = os.open(target, flags)
-            try:
+            with _source_descriptor(target) as descriptor:
                 metadata = os.fstat(descriptor)
                 expected_target = identities[-1]
                 if (
@@ -303,8 +329,6 @@ def load_strict_sources(
                 while chunk := os.read(descriptor, 1024 * 1024):
                     chunks.append(chunk)
                 payload = b"".join(chunks)
-            finally:
-                os.close(descriptor)
         except OSError as exc:
             raise CommitmentError("source file") from exc
         texts.setdefault(row["content_sha256"], payload)
