@@ -1634,7 +1634,7 @@ def test_terminate_all_signals_active_pid(
 def test_kill_all_uses_sigkill(
     sharded_run, monkeypatch: pytest.MonkeyPatch,
 ):
-    """kill-all should send SIGKILL (not SIGTERM)."""
+    """Use SIGKILL on POSIX and the TerminateProcess route on Windows."""
     import signal as _sig
     base = sharded_run["base"]
     run_id = sharded_run["run_id"]
@@ -1665,9 +1665,8 @@ def test_kill_all_uses_sigkill(
         "--run-id", run_id,
     ])
     assert rc == 0
-    sigkill_calls = [
-        (pid, s) for pid, s in kill_calls if s == _sig.SIGKILL
-    ]
+    expected_signal = _sig.SIGTERM if os.name == "nt" else _sig.SIGKILL
+    sigkill_calls = [(pid, s) for pid, s in kill_calls if s == expected_signal]
     assert len(sigkill_calls) == 1
     assert sigkill_calls[0][0] == live_pid
 
@@ -1756,7 +1755,11 @@ class TestPidReuseIdentityCheck:
                 "(simulated sandbox refusal)"
             )
 
-        monkeypatch.setattr(_sp, "run", _raise_permission)
+        if os.name == "nt":
+            import ctypes
+            monkeypatch.setattr(ctypes, "WinDLL", _raise_permission)
+        else:
+            monkeypatch.setattr(_sp, "run", _raise_permission)
         # Must return None, not raise.
         result = ss.process_start_time_epoch(os.getpid())
         assert result is None
@@ -1776,7 +1779,11 @@ class TestPidReuseIdentityCheck:
                 "(simulated fork-bomb guard)"
             )
 
-        monkeypatch.setattr(_sp, "run", _raise_oserror)
+        if os.name == "nt":
+            import ctypes
+            monkeypatch.setattr(ctypes, "WinDLL", _raise_oserror)
+        else:
+            monkeypatch.setattr(_sp, "run", _raise_oserror)
         assert ss.process_start_time_epoch(os.getpid()) is None
 
     def test_try_claim_shard_atomically_works_in_sandbox(
@@ -1794,7 +1801,11 @@ class TestPidReuseIdentityCheck:
         def _raise_permission(*args, **kwargs):
             raise PermissionError("simulated sandbox refusal")
 
-        monkeypatch.setattr(_sp, "run", _raise_permission)
+        if os.name == "nt":
+            import ctypes
+            monkeypatch.setattr(ctypes, "WinDLL", _raise_permission)
+        else:
+            monkeypatch.setattr(_sp, "run", _raise_permission)
         claim_path = tmp_path / ".claim"
         won = ss.try_claim_shard_atomically(claim_path)
         assert won is True

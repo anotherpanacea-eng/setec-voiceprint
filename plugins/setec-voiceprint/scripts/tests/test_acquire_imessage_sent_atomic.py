@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 import acquire_imessage_sent_atomic as A  # noqa: E402
 import author_corpus_export as E  # noqa: E402
 import register_taxonomy as rt  # noqa: E402
+from setec.core import atomic_publish as private_io  # noqa: E402
 
 
 KEY = bytes(range(32))
@@ -614,8 +615,7 @@ def _offline_approved_case(
     chatless: bool = False,
 ) -> tuple[A.AtomicRunConfig, A.OfflineApprovedImport, Path, Path]:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    private_root.mkdir(mode=0o700)
-    os.chmod(private_root, 0o700)
+    private_io.create_private_directory(private_root)
     source = private_root / 'approved-source.db'
     conn, _schema = _candidate_fixture(source)
     if chatless:
@@ -624,8 +624,7 @@ def _offline_approved_case(
     conn.close()
 
     approved_root = private_root / 'approved-runs'
-    approved_root.mkdir(mode=0o700)
-    os.chmod(approved_root, 0o700)
+    private_io.create_private_directory(approved_root)
     approved_config = A.AtomicRunConfig(
         source_db=source,
         output_root=approved_root,
@@ -672,8 +671,7 @@ def _offline_approved_case(
         source_conn.close()
     os.chmod(archive, 0o600)
     output_root = private_root / 'offline-runs'
-    output_root.mkdir(mode=0o700)
-    os.chmod(output_root, 0o700)
+    private_io.create_private_directory(output_root)
     config = A.AtomicRunConfig(
         source_db=archive,
         output_root=output_root,
@@ -902,8 +900,7 @@ def test_offline_bootstrap_resumes_zero_byte_snapshot_prefix(tmp_path: Path) -> 
         )
     staging_name, _journal_name = A._offline_bootstrap_names(config.run_id)
     partial = config.output_root / staging_name / f'.{A.SNAPSHOT_FILENAME}.copying'
-    partial.write_bytes(b'')
-    os.chmod(partial, 0o600)
+    private_io.atomic_write_private(partial, b'')
     run_dir, _universe, _schema, _initialization = A._offline_approved_bootstrap(
         config,
         KEY,
@@ -958,11 +955,9 @@ def test_portable_row_write_contains_intermediate_symlink_replacement(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    root.mkdir(mode=0o700)
-    os.chmod(root, 0o700)
+    private_io.create_private_directory(root)
     outside = tmp_path / 'outside'
-    outside.mkdir(mode=0o700)
-    os.chmod(outside, 0o700)
+    private_io.create_private_directory(outside)
     sentinel = outside / 'sentinel.bin'
     sentinel.write_bytes(b'outside sentinel')
     os.chmod(sentinel, 0o600)
@@ -1013,8 +1008,7 @@ def test_offline_bootstrap_refuses_raced_empty_final_destination(
 
     def race(boundary: str) -> None:
         if boundary == f'initialization:{last_artifact}':
-            final.mkdir(mode=0o700)
-            os.chmod(final, 0o700)
+            private_io.create_private_directory(final)
 
     with pytest.raises(A.AtomicAcquisitionError, match='destination already exists'):
         A._offline_approved_bootstrap(
@@ -2675,14 +2669,12 @@ def test_live_row_io_publishes_owner_only_descriptor_relative_tree(
 
 def test_synthetic_database_runs_through_actual_atomic_producer(tmp_path: Path) -> None:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    private_root.mkdir(mode=0o700)
-    os.chmod(private_root, 0o700)
+    private_io.create_private_directory(private_root)
     source = private_root / "chat.db"
     conn, _schema = _candidate_fixture(source)
     conn.close()
     output_root = private_root / "runs"
-    output_root.mkdir(mode=0o700)
-    os.chmod(output_root, 0o700)
+    private_io.create_private_directory(output_root)
     config = A.AtomicRunConfig(
         source_db=source, output_root=output_root, run_id="synthetic-three",
         persona="joshua", author="Joshua Miller", register="personal",
@@ -2748,14 +2740,12 @@ def test_synthetic_database_runs_through_actual_atomic_producer(tmp_path: Path) 
 
 def _completed_private_smoke_run(tmp_path: Path) -> tuple[Path, Path, Path]:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    private_root.mkdir(mode=0o700)
-    os.chmod(private_root, 0o700)
+    private_io.create_private_directory(private_root)
     source = private_root / "chat.db"
     conn, _schema = _candidate_fixture(source)
     conn.close()
     output_root = private_root / "runs"
-    output_root.mkdir(mode=0o700)
-    os.chmod(output_root, 0o700)
+    private_io.create_private_directory(output_root)
     config = A.AtomicRunConfig(
         source_db=source,
         output_root=output_root,
@@ -2782,6 +2772,99 @@ def _completed_private_smoke_run(tmp_path: Path) -> tuple[Path, Path, Path]:
     return private_root, run_dir, run_dir / "acquisition-receipt.json"
 
 
+def _make_nonprivate(path: Path) -> None:
+    if os.name == "nt":
+        from test_windows_descriptor_backend import _set_test_dacl
+        _set_test_dacl(path)
+    else:
+        os.chmod(path, 0o755 if path.is_dir() else 0o640)
+
+
+@pytest.mark.parametrize("target_kind", ["private-root", "run-parent", "run", "row", "file"])
+def test_private_validator_refuses_unsafe_permissions_without_repair(
+    tmp_path: Path, target_kind: str,
+) -> None:
+    private_root, run_dir, _ = _completed_private_smoke_run(tmp_path)
+    sidecar = next((run_dir / A.ROWS_DIRNAME).glob("*/*.meta.json"))
+    target = {
+        "private-root": private_root,
+        "run-parent": run_dir.parent,
+        "run": run_dir,
+        "row": sidecar.parent,
+        "file": sidecar,
+    }[target_kind]
+    assert A.validate_atomic_run(run_dir)["status"] == "closed"
+    _make_nonprivate(target)
+    before = {path.relative_to(private_root).as_posix(): path.read_bytes()
+              for path in private_root.rglob("*") if path.is_file()}
+    with pytest.raises(A.AtomicAcquisitionError):
+        A.validate_atomic_run(run_dir)
+    assert {path.relative_to(private_root).as_posix(): path.read_bytes()
+            for path in private_root.rglob("*") if path.is_file()} == before
+    if os.name == "nt":
+        with pytest.raises(OSError):
+            private_io.require_private_node(target, "directory" if target.is_dir() else "file")
+    else:
+        assert stat.S_IMODE(target.stat().st_mode) == (0o755 if target.is_dir() else 0o640)
+
+
+@pytest.mark.parametrize("operation", ["overwrite", "rename", "unlink", "permission"])
+def test_private_reader_prevents_or_refuses_mutation_during_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,
+) -> None:
+    _private_root, run_dir, _ = _completed_private_smoke_run(tmp_path)
+    target = next((run_dir / A.ROWS_DIRNAME).glob("*/*.meta.json"))
+    moved = target.with_name("moved.meta.json")
+    original = target.read_bytes()
+
+    def mutate():
+        if operation == "overwrite":
+            target.write_bytes(b"changed\n")
+        elif operation == "rename":
+            target.rename(moved)
+        elif operation == "unlink":
+            target.unlink()
+        else:
+            _make_nonprivate(target)
+
+    if os.name == "nt":
+        import windows_portable_tree as backend
+        io_module = backend.W
+    else:
+        io_module = os
+    read = io_module.read
+    calls = 0
+
+    def read_with_mutation(handle, maximum):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            if os.name == "nt" and operation in {"overwrite", "rename", "unlink"}:
+                with pytest.raises(PermissionError):
+                    mutate()
+            else:
+                mutate()
+        return read(handle, maximum)
+
+    reader = A._PrivateReadOnlyRowIo(run_dir)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(io_module, "read", read_with_mutation)
+            if os.name == "nt" and operation in {"overwrite", "rename", "unlink"}:
+                assert reader.read_bytes(target.relative_to(run_dir).as_posix(), "sidecar") == original
+            else:
+                with pytest.raises(A.AtomicAcquisitionError):
+                    reader.read_bytes(target.relative_to(run_dir).as_posix(), "sidecar")
+        assert calls > 0
+        if os.name == "nt" and operation in {"overwrite", "rename", "unlink"}:
+            mutate()  # file handle is released before the reader itself closes
+        if operation == "permission":
+            assert target.read_bytes() == original
+            target.unlink()  # refusal also releases the file handle
+    finally:
+        reader.close()
+
+
 @pytest.mark.parametrize("mutation", ["mode", "hard-link", "symlink"])
 def test_private_validator_refuses_mode_link_and_no_follow_mutations(
     tmp_path: Path, mutation: str,
@@ -2792,7 +2875,7 @@ def test_private_validator_refuses_mode_link_and_no_follow_mutations(
     stem = next(row["row_stem"] for row in ledger["rows"] if row["row_stem"])
     target = run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json"
     if mutation == "mode":
-        os.chmod(target, 0o640)
+        _make_nonprivate(target)
     elif mutation == "hard-link":
         os.link(target, private_root / "hard-link-residue")
     else:
@@ -2860,14 +2943,12 @@ def test_live_smoke_receipt_requires_tty_and_one_row_run(
 ) -> None:
     _install_portable_live_smoke_writer(monkeypatch)
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    private_root.mkdir(mode=0o700)
-    os.chmod(private_root, 0o700)
+    private_io.create_private_directory(private_root)
     source = private_root / "chat.db"
     conn, _schema = _candidate_fixture(source)
     conn.close()
     output_root = private_root / "runs"
-    output_root.mkdir(mode=0o700)
-    os.chmod(output_root, 0o700)
+    private_io.create_private_directory(output_root)
     config = A.AtomicRunConfig(
         source_db=source, output_root=output_root, run_id="smoke-one",
         persona="joshua", author="Joshua Miller", register="personal",
@@ -2894,6 +2975,11 @@ def test_live_smoke_receipt_requires_tty_and_one_row_run(
         A.sys, "stdin", TtyBuffer("APPROVE IMESSAGE ATOMIC LIVE SMOKE\n")
     )
     monkeypatch.setattr(A.sys, "stdout", TtyBuffer())
+    if os.name == "nt":
+        with pytest.raises(A.BootstrapStateError, match="descriptor-relative private state is unavailable"):
+            A.mint_live_smoke_receipt(run_receipt, approval)
+        assert not approval.exists()
+        return
     minted = A.mint_live_smoke_receipt(run_receipt, approval)
     assert minted["retained_rows"] == 1
     assert approval.is_file()

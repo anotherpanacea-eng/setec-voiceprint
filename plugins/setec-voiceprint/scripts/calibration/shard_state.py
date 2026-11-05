@@ -386,6 +386,48 @@ def resumable_shard_ids(state: dict[str, Any]) -> list[str]:
 # claim correctness.
 
 
+def _windows_process_start_time_epoch(pid: int) -> float | None:
+    """Observe process creation time without requesting signal/write access."""
+    if not 0 < pid <= 0xFFFFFFFF:
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    try:
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetProcessTimes.argtypes = (
+            wintypes.HANDLE,
+            *([ctypes.POINTER(wintypes.FILETIME)] * 4),
+        )
+        kernel.GetProcessTimes.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.CloseHandle.restype = wintypes.BOOL
+        # PROCESS_QUERY_LIMITED_INFORMATION; no terminate or VM access.
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return None
+        start = None
+        try:
+            created, exited, kernel_time, user_time = (
+                wintypes.FILETIME() for _ in range(4)
+            )
+            if kernel.GetProcessTimes(
+                handle, ctypes.byref(created), ctypes.byref(exited),
+                ctypes.byref(kernel_time), ctypes.byref(user_time),
+            ):
+                ticks = (created.dwHighDateTime << 32) | created.dwLowDateTime
+                # FILETIME counts 100 ns since 1601-01-01 UTC.
+                start = ticks / 10_000_000 - 11_644_473_600
+        finally:
+            if not kernel.CloseHandle(handle):
+                start = None
+        return start
+    except (OSError, AttributeError, ctypes.ArgumentError):
+        return None
+
+
 def process_start_time_epoch(pid: int) -> float | None:
     """Return the start time (epoch seconds) of the process with
     the given pid, or ``None`` if it can't be determined.
@@ -398,7 +440,8 @@ def process_start_time_epoch(pid: int) -> float | None:
     the OS recycled into a different program could make
     ``terminate-all`` SIGTERM that unrelated program.
 
-    Implementation: ``ps -o lstart= -p PID``. The ``lstart`` column
+    Windows uses GetProcessTimes with query-only access. POSIX uses
+    ``ps -o lstart= -p PID``. The ``lstart`` column
     is the same human-readable BSD-style timestamp on macOS and
     Linux ("Wed Oct  1 14:30:00 2025"), and Python's strptime with
     ``%a %b %d %H:%M:%S %Y`` parses both. We normalize whitespace
@@ -413,6 +456,11 @@ def process_start_time_epoch(pid: int) -> float | None:
     Treat ``None`` as "couldn't verify identity"; callers should
     conservatively skip the signal rather than send blindly.
     """
+    if os.name == "nt":
+        try:
+            return _windows_process_start_time_epoch(int(pid))
+        except (TypeError, ValueError, OverflowError):
+            return None
     import subprocess as _sp
     try:
         result = _sp.run(
@@ -471,9 +519,9 @@ def try_claim_shard_atomically(
     process they're about to signal is the same process that
     claimed (defending against PID reuse — the reviewer P2 fix
     from 2026-05-14). Cross-platform: works on POSIX (the
-    calibration host) and on Windows-native (fallback environments;
-    start_time_epoch will be None there but the host/pid fields
-    still pin the claim's owner).
+    calibration host) and on Windows-native. An unavailable native
+    query or POSIX ps leaves start_time_epoch as None; such claims
+    remain valid work reservations but cannot authorize a signal.
 
     Parent directory must exist; the caller is responsible for
     creating ``shards/<id>/`` before calling this. We don't create
@@ -751,9 +799,8 @@ def state_update_lock(state_path: Path):
     ``fcntl.flock(LOCK_EX)`` on POSIX (which the calibration host
     runs as WSL2 Linux). Workers serialize on the lock; the actual
     state-file writes still go through ``write_state``'s atomic
-    rename. On Windows-native (a fallback environment SETEC does
-    not target as the calibration host), this is a no-op — accept
-    the race; per-shard claim files still coordinate correctly.
+    rename. Windows uses an exclusive byte-range lock on the same
+    lock file; it must never enter the update window without a lock.
 
     The lock file lives at ``state.json.lock`` next to state.json
     so the lock survives across processes.
@@ -768,15 +815,33 @@ def state_update_lock(state_path: Path):
     state_path = Path(state_path)
     lock_path = state_path.parent / f"{state_path.name}.lock"
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        import fcntl  # type: ignore  # POSIX only
-    except ImportError:
-        # Windows-native fallback: no locking, accept the race.
-        # The calibration host is WSL2 Linux per SPEC_embedding_
-        # model_choice.md §6.3, so this path is not exercised in
-        # the supported deployment.
-        yield
+    if os.name == "nt":
+        import errno
+        import msvcrt
+        import time
+
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+        try:
+            # Windows permits locking a byte beyond EOF; no content write
+            # is needed, including while another process owns that byte.
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as exc:
+                    if exc.errno not in {errno.EACCES, errno.EAGAIN, errno.EDEADLK}:
+                        raise
+                    time.sleep(0.05)
+            try:
+                yield
+            finally:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        finally:
+            os.close(fd)
         return
+    import fcntl  # type: ignore  # POSIX only
     # Open the lock file (creating if needed). LOCK_EX serializes
     # readers and writers; multiple workers block until they get
     # the lock in turn.

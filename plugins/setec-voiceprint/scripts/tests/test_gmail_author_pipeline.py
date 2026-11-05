@@ -31,6 +31,9 @@ spec.loader.exec_module(P)
 
 
 def _private_dir(path: Path) -> Path:
+    if os.name == "nt":
+        P._private_publish().secure_private_directory(path)
+        return path
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.chmod(0o700)
     return path
@@ -38,6 +41,9 @@ def _private_dir(path: Path) -> Path:
 
 def _private_file(path: Path, data: bytes = b"x") -> Path:
     _private_dir(path.parent)
+    if os.name == "nt":
+        P._private_publish().atomic_write_private(path, data)
+        return path
     path.write_bytes(data)
     path.chmod(0o600)
     return path
@@ -224,6 +230,86 @@ STANDARD_ENVELOPE_KEYS = {
     "baseline", "results", "claim_license", "claim_license_rendered",
     "warnings", "ai_status",
 }
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native Windows ACL enforcement")
+@pytest.mark.parametrize("location", ["root", "run", "input", "log", "receipt"])
+@pytest.mark.parametrize("inheritable", [False, True])
+def test_native_unsafe_state_refuses_before_child_without_hardening(
+    tmp_path, monkeypatch, capsys, location, inheritable,
+):
+    from setec.core import windows_descriptor_io as native
+    from test_windows_descriptor_backend import _set_test_dacl
+
+    case = _case(tmp_path)
+    request = _request(case, "01_source_smoke", "run", [])
+    locations = {"root": case.root, "run": case.run,
+                 "input": case.root / "source.mbox"}
+    if location == "log":
+        locations[location] = _private_file(
+            case.run / "logs" / "01_source_smoke.domain.stdout", b"old log")
+    elif location == "receipt":
+        locations[location] = _private_file(
+            case.run / "producer-receipts" / "01_source_smoke.json", b"old receipt")
+    node = locations[location]
+    before_payload = node.read_bytes() if node.is_file() else None
+    _set_test_dacl(node, inheritable=inheritable)
+    calls = []
+    monkeypatch.setattr(P.subprocess, "run", lambda *a, **k: calls.append(a))
+
+    def unexpected_hardening(*_args):
+        pytest.fail("admission must not change unsafe caller state")
+
+    monkeypatch.setattr(native.ntdll, "NtSetSecurityObject", unexpected_hardening)
+    expected_code = 3 if location in {"log", "receipt"} else 2
+    assert P.main(["--json", "--request", str(request)]) == expected_code
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["available"] is False and envelope["results"] == {}
+    assert envelope["reason_category"] == ("bad_input" if expected_code == 2 else "policy_refused")
+    assert calls == []
+    with pytest.raises(OSError):
+        P._private_publish().require_private_node(node, "directory" if node.is_dir() else "file")
+    if before_payload is not None:
+        assert node.read_bytes() == before_payload
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native Windows ACL enforcement")
+def test_native_backend_unavailability_refuses_before_child(tmp_path, monkeypatch, capsys):
+    case = _case(tmp_path)
+    request = _request(case, "01_source_smoke", "run", [])
+    calls = []
+    monkeypatch.setattr(P.subprocess, "run", lambda *a, **k: calls.append(a))
+
+    def unavailable(*_args, **_kwargs):
+        raise OSError("synthetic native backend unavailable")
+
+    monkeypatch.setattr(P._private_publish(), "_windows_io", unavailable)
+    assert P.main(["--json", "--request", str(request)]) == 2
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["reason_category"] == "bad_input"
+    assert envelope["available"] is False and envelope["results"] == {}
+    assert calls == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="native Windows indirection refusal")
+@pytest.mark.parametrize("indirection", ["junction", "hardlink"])
+def test_native_indirection_refuses_before_child(tmp_path, monkeypatch, capsys, indirection):
+    from test_windows_descriptor_backend import _junction
+
+    case = _case(tmp_path)
+    request = _request(case, "01_source_smoke", "run", [])
+    if indirection == "hardlink":
+        os.link(case.root / "source.mbox", case.root / "other-name.mbox")
+    else:
+        actual = tmp_path / "actual-run"
+        case.run.rename(actual)
+        _junction(case.run, actual)
+    calls = []
+    monkeypatch.setattr(P.subprocess, "run", lambda *a, **k: calls.append(a))
+    assert P.main(["--json", "--request", str(request)]) == 2
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["reason_category"] == "bad_input" and envelope["results"] == {}
+    assert calls == []
 
 
 def test_envelope_is_the_normalized_surface_contract(tmp_path, monkeypatch):
@@ -444,11 +530,14 @@ def test_private_child_streams_are_confined_to_owner_logs(tmp_path, monkeypatch)
     logs = case.run / "logs"
     assert secret in (logs / "01_source_smoke.domain.stdout").read_text()
     assert secret in (logs / "01_source_smoke.domain.stderr").read_text()
-    assert stat_mode(logs / "01_source_smoke.domain.stdout") == 0o600
-
-
-def stat_mode(path: Path) -> int:
-    return path.stat().st_mode & 0o777
+    for suffix in ("stdout", "stderr"):
+        path = logs / f"01_source_smoke.domain.{suffix}"
+        if os.name == "nt":
+            # Windows chmod bits do not express who can read the file. The
+            # unchanged descriptor predicate reads its actual token owner/DACL.
+            P._private_publish().require_private_node(path, "file")
+        else:
+            assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_stage03_missing_lineage_verify_is_read_only_and_resume_continues(tmp_path, monkeypatch):

@@ -1417,19 +1417,29 @@ def _write_console(value: Mapping[str, Any], *, error: bool = False) -> None:
     stream.flush()
 
 
+def _write_usage(stream: Any) -> None:
+    """Keep the fixed CLI text LF-framed on native Windows too."""
+    if hasattr(stream, "buffer"):
+        stream.buffer.write(_STATIC_USAGE.encode("utf-8"))
+        stream.buffer.flush()
+    else:
+        stream.write(_STATIC_USAGE)
+        stream.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     if raw_argv == ["--help"]:
-        sys.stdout.write(_STATIC_USAGE)
+        _write_usage(sys.stdout)
         return 0
     parser = _build_parser()
     try:
         args = parser.parse_args(raw_argv)
     except UsageError:
-        sys.stderr.write(_STATIC_USAGE)
+        _write_usage(sys.stderr)
         return 2
     if args.help:
-        sys.stdout.write(_STATIC_USAGE)
+        _write_usage(sys.stdout)
         return 0
     try:
         receipt = run(args)

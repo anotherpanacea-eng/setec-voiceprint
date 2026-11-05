@@ -70,6 +70,24 @@ def _load_contract(name: str) -> Any:
     return sys.modules[name]
 
 
+def _private_publish() -> Any:
+    # The existing L0 launcher provisions the real package namespace during a
+    # detached nested-script launch. Do not add another path/bootstrap scheme.
+    _load_contract("claim_license")
+    from setec.core import atomic_publish
+    return atomic_publish
+
+
+def _owner_permissions(path: Path, info: os.stat_result, kind: str) -> bool:
+    if os.name == "nt":
+        try:
+            _private_publish().require_private_node(path, kind)
+        except (OSError, ValueError, ImportError, AttributeError):
+            return False
+        return True
+    return info.st_uid == os.getuid() and not info.st_mode & 0o077
+
+
 REQUEST_SCHEMA = "setec-gmail-author-pipeline-request/1"
 TOOL_NAME = "gmail_author_pipeline"
 SCRIPT_VERSION = "1.0"
@@ -124,7 +142,7 @@ def _is_sha256(value: Any) -> bool:
 def _owner_file(path: Path, *, root: Path | None = None) -> None:
     try: st = path.lstat()
     except OSError as exc: raise Refusal("private artifact unavailable") from exc
-    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode) or not _owner_permissions(path, st, "file"):
         raise Refusal("private artifact policy refused")
     if root is not None:
         try: path.resolve().relative_to(root)
@@ -133,7 +151,7 @@ def _owner_file(path: Path, *, root: Path | None = None) -> None:
 def _owner_dir(path: Path, *, root: Path) -> None:
     try: st = path.lstat()
     except OSError as exc: raise Refusal("private directory unavailable") from exc
-    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or not _owner_permissions(path, st, "directory"):
         raise Refusal("private directory policy refused")
     try: path.resolve().relative_to(root)
     except ValueError as exc: raise Refusal("private directory escapes root") from exc
@@ -142,7 +160,11 @@ def _safe_dir(parent: Path, name: str, *, root: Path) -> Path:
     path = parent / name
     if path.exists(): _owner_dir(path, root=root)
     else:
-        try: path.mkdir(mode=0o700)
+        try:
+            if os.name == "nt":
+                _private_publish().create_private_directory(path)
+            else:
+                path.mkdir(mode=0o700)
         except OSError as exc: raise Refusal("private directory creation refused") from exc
         _owner_dir(path, root=root)
     return path
@@ -177,8 +199,11 @@ def _preflight_receipts(directory: Path, prior_stages: list[str], current_stage:
 
 def _append_log(path: Path, action: str, data: str) -> None:
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND |
-                     getattr(os, "O_NOFOLLOW", 0), 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0)
+        if os.name == "nt":
+            fd = _private_publish().open_private_descriptor(path, flags, require_private_existing=True)
+        else:
+            fd = os.open(path, flags, 0o600)
     except OSError as exc:
         raise Refusal("domain log policy refused") from exc
     with os.fdopen(fd, "ab") as fh:
@@ -203,7 +228,7 @@ def _private_root(raw: Any) -> Path:
     root = Path(raw)
     try: st = root.lstat()
     except OSError as exc: raise Refusal("private root unavailable") from exc
-    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o077:
+    if stat.S_ISLNK(st.st_mode) or not stat.S_ISDIR(st.st_mode) or not _owner_permissions(root, st, "directory"):
         raise Refusal("private root policy refused")
     return root.resolve()
 
@@ -230,7 +255,7 @@ def _validate(req: Any) -> tuple[Path, Path, dict[str, Any], dict[str, Any], str
     run_dir = _rel(root, req["run_root"])
     try: run_st = run_dir.lstat()
     except OSError as exc: raise Refusal("run root unavailable") from exc
-    if stat.S_ISLNK(run_st.st_mode) or not stat.S_ISDIR(run_st.st_mode) or run_st.st_uid != os.getuid() or run_st.st_mode & 0o077:
+    if stat.S_ISLNK(run_st.st_mode) or not stat.S_ISDIR(run_st.st_mode) or not _owner_permissions(run_dir, run_st, "directory"):
         raise Refusal("run root policy refused")
     config = req["config"]
     if not isinstance(config, dict) or set(config) != {"source", "corpus"}: raise Refusal("config shape refused")
@@ -399,7 +424,9 @@ def _write_receipt(run_dir: Path, stage: str, lineage: dict[str, Any]) -> str:
     target = directory / f"{stage}.json"
     payload = _canon(lineage)
     try:
-        fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        fd = (_private_publish().open_private_descriptor(target, flags)
+              if os.name == "nt" else os.open(target, flags, 0o600))
     except FileExistsError:
         _owner_file(target)
         if target.read_bytes() != payload: raise Refusal("existing lineage receipt mismatched")
@@ -519,13 +546,19 @@ def _publish_file_noreplace(path: Path, payload: bytes, *, root: Path) -> None:
         _owner_dir(path.parent, root=root)
     else:
         try:
-            path.parent.mkdir(mode=0o700, parents=True)
+            if os.name == "nt":
+                current = root
+                for component in path.parent.relative_to(root).parts:
+                    current = _safe_dir(current, component, root=root)
+            else:
+                path.parent.mkdir(mode=0o700, parents=True)
         except OSError as exc:
             raise Refusal("private output directory creation refused") from exc
         _owner_dir(path.parent, root=root)
     try:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
-                     getattr(os, "O_NOFOLLOW", 0), 0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        fd = (_private_publish().open_private_descriptor(path, flags)
+              if os.name == "nt" else os.open(path, flags, 0o600))
     except OSError as exc:
         raise Refusal("private output publication refused") from exc
     with os.fdopen(fd, "wb") as fh:

@@ -2217,7 +2217,7 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
         # Durable clean-close save (redundant with the per-growth loop saves, but
         # covers a map loaded from a prior run that grew by nothing this pass).
         recipients.save(fsync=True)
-        (opts.output_dir / "README.md").write_text(README_TEXT, encoding="utf-8")
+        atomic_publish.atomic_write_private(opts.output_dir / "README.md", README_TEXT)
         window = f"{opts.since}..{opts.until}"
         if mode == "smoke" and committed_ids and mbox_sha is not None:
             # `smoke` never mints approval; it records a descriptor that a
