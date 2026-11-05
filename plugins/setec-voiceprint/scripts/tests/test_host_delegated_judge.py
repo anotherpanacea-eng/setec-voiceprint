@@ -310,19 +310,31 @@ def test_entrypoint_transport_resolves_and_round_trips():
 
 # 12. subprocess transport: SETEC_HOST_JUDGE_CMD (a real stdlib command) resolves and round-trips.
 def test_subprocess_transport_resolves_and_round_trips():
+    import shlex
+    import subprocess
+    import tempfile
+
     prev = judge_backends._HOST_JUDGE_OVERRIDE
     saved = _clear_host_env()
     judge_backends._HOST_JUDGE_OVERRIDE = None
-    os.environ["SETEC_HOST_JUDGE_CMD"] = (
-        sys.executable
-        + " -c 'import sys, json; sys.stdin.read(); "
-        + "print(json.dumps({\"label\": \"resolved-via-cmd\"}))'"
-    )
     try:
-        transport = judge_backends._resolve_host_judge(nj.JudgeError)
-        assert json.loads(transport({"content": "x"}))["label"] == "resolved-via-cmd"
-        judge = _make("agent_host", None, build_result=lambda payload, raw, identity, ji: payload)
-        assert judge("x") == {"label": "resolved-via-cmd"}
+        with tempfile.TemporaryDirectory(prefix="setec host judge ") as directory:
+            helper = Path(directory) / "host judge.py"
+            helper.write_text(
+                "import json, sys\n"
+                "request = json.load(sys.stdin)\n"
+                "assert isinstance(request, dict)\n"
+                "print(json.dumps({'label': 'resolved-via-cmd'}))\n",
+                encoding="utf-8",
+            )
+            command = [sys.executable, str(helper)]
+            os.environ["SETEC_HOST_JUDGE_CMD"] = (
+                subprocess.list2cmdline(command) if os.name == "nt" else shlex.join(command)
+            )
+            transport = judge_backends._resolve_host_judge(nj.JudgeError)
+            assert json.loads(transport({"content": "x"}))["label"] == "resolved-via-cmd"
+            judge = _make("agent_host", None, build_result=lambda payload, raw, identity, ji: payload)
+            assert judge("x") == {"label": "resolved-via-cmd"}
     finally:
         _restore_host_env(prev, saved)
 

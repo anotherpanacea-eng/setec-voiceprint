@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -132,7 +134,7 @@ def test_changed_spec_gate_skips_a_true_no_spec_diff(tmp_path):
 
 def test_changed_spec_gate_preserves_whitespace_unicode_and_newline_path(tmp_path):
     repo, linter = _make_changed_gate_repo(tmp_path)
-    name = "98 probe-é\nline.md"
+    name = "98 probe-é line.md" if os.name == "nt" else "98 probe-é\nline.md"
     path = repo / "specs" / name
     path.write_text("# Spec 98\n", encoding="utf-8")
     base = _commit(repo, "base")
@@ -143,6 +145,34 @@ def test_changed_spec_gate_preserves_whitespace_unicode_and_newline_path(tmp_pat
     assert result.returncode == 0, result.stderr
     linted = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert linted == [str(path)]
+
+
+def test_changed_spec_gate_preserves_raw_newline_git_path(tmp_path, monkeypatch):
+    # Git can represent these names even on a host that cannot materialize
+    # them. Supply only the OS inputs; run the real parser/check/linter argv.
+    relative = "specs/98 probe-é\nline.md"
+    target = tmp_path / relative
+    linter = tmp_path / "linter.py"
+    invocations = []
+    real_lstat = Path.lstat
+
+    def metadata(path, *args, **kwargs):
+        if path == target:
+            return SimpleNamespace(st_mode=stat.S_IFREG | 0o600)
+        return real_lstat(path, *args, **kwargs)
+
+    def run(command, **_kwargs):
+        if command[0] == "git":
+            return subprocess.CompletedProcess(command, 0,
+                b"M\0" + relative.encode("utf-8") + b"\0", b"")
+        invocations.append(command)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(Path, "lstat", metadata)
+    monkeypatch.setattr(csa.subprocess, "run", run)
+    assert csa.check(repo=tmp_path, base="base", linter=linter) == 0
+    assert len(invocations) == 1
+    assert invocations[0][invocations[0].index("--spec") + 1] == str(target)
 
 
 @pytest.mark.parametrize(
@@ -245,7 +275,8 @@ def test_changed_spec_gate_rejects_deleted_spec_with_live_number_reference(tmp_p
 
 def test_dependency_error_escapes_workflow_commands_in_surviving_path(tmp_path):
     repo, linter = _make_changed_gate_repo(tmp_path)
-    consumer = repo / "specs" / "12\n::warning::pwn.md"
+    name = "12 warning pwn.md" if os.name == "nt" else "12\n::warning::pwn.md"
+    consumer = repo / "specs" / name
     consumer.write_text("Depends on spec 98.\n", encoding="utf-8")
     removed = repo / "specs" / "98-removed.md"
     removed.write_text("# Spec 98\n", encoding="utf-8")
@@ -257,7 +288,34 @@ def test_dependency_error_escapes_workflow_commands_in_surviving_path(tmp_path):
     )
     assert result.returncode == 1
     assert "\n::warning::" not in result.stderr
-    assert "\\n::warning::pwn.md" in result.stderr
+    assert json.dumps(consumer.relative_to(repo).as_posix()) in result.stderr
+    if os.name != "nt":
+        assert "\\n::warning::pwn.md" in result.stderr
+
+
+def test_dependency_diagnostic_escapes_raw_workflow_path(tmp_path, monkeypatch, capsys):
+    relative = "specs/12\n::warning::pwn.md"
+    consumer = tmp_path / relative
+    real_read = Path.read_text
+
+    def read(path, *args, **kwargs):
+        if path == consumer:
+            return "Depends on spec 98.\n"
+        return real_read(path, *args, **kwargs)
+
+    def git_input(command, **_kwargs):
+        assert command[0] == "git", "deleted spec must not reach the linter"
+        return subprocess.CompletedProcess(command, 0,
+            b"D\0specs/98-removed.md\0", b"")
+
+    monkeypatch.setattr(csa, "_surviving_specs", lambda _repo: [consumer])
+    monkeypatch.setattr(Path, "read_text", read)
+    monkeypatch.setattr(csa.subprocess, "run", git_input)
+    assert csa.check(repo=tmp_path, base="base", linter=tmp_path / "linter.py") == 1
+    diagnostic = capsys.readouterr().err
+    assert "\n::warning::" not in diagnostic
+    assert "\\n::warning::pwn.md" in diagnostic
+    assert json.dumps(relative) in diagnostic
 
 
 def test_changed_spec_gate_scans_nested_surviving_specs_for_old_paths(tmp_path):

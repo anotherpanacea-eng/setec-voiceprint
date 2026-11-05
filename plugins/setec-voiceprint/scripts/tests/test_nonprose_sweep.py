@@ -655,11 +655,17 @@ def test_source_mutation_or_replacement_during_read_refuses(
                 os.replace(document, tmp_path / "old.txt")
                 document.write_bytes(b"bravo")
             else:
+                before = document.stat()
                 document.write_bytes(b"bravo")
+                # A same-size overwrite can share a filesystem timestamp tick.
+                # Inject an observable metadata change without a timing sleep.
+                os.utime(document, ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000))
+                assert document.stat().st_mtime_ns != before.st_mtime_ns
 
     monkeypatch.setattr(N, "_FAULT_HOOK", mutate)
     report = tmp_path / "report.json"
     assert _run_main(manifest, report)[0] == 3
+    assert source_reads == 2
     assert not report.exists()
 
 
@@ -1155,8 +1161,13 @@ def test_long_valid_report_component_does_not_constrain_temporary_name(
     manifest = tmp_path / "manifest.jsonl"
     _write_manifest(manifest, [{"id": "a", "path": "a.txt"}])
     report = tmp_path / ("r" * 225)
+    observed_report = report
+    if os.name == "nt" and not str(report).startswith("\\\\?\\"):
+        # Native publication is handle-relative and can create this valid
+        # leaf even when its full path exceeds the legacy Win32 path limit.
+        observed_report = Path("\\\\?\\" + str(report))
     assert _run_main(manifest, report)[0] == 0
-    assert report.exists()
+    assert observed_report.exists()
     assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
 
 
