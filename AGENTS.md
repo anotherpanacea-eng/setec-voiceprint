@@ -302,8 +302,10 @@ of the pipeline is shared). The full build/test guide lives in
 ## Keeping docs current (the docs-freshness step)
 
 Shipping or changing a capability is not done until its paper trail moves with
-it. These travel together, and `tools/check_docs_freshness.py` gates the pair of
-them in CI:
+it. These travel together. Manifest/source and producer-fixture drift remain
+hosted through `tools/check_capabilities_drift.py`. Run
+`tools/check_docs_freshness.py` locally before delivery for changelog coverage,
+fragment validity and readiness freshness:
 
 - **`capabilities.d/`** — add/update the `<id>.yaml` fragment (one capability per
   file; the drift linter `tools/check_capabilities_drift.py` enforces the
@@ -319,8 +321,7 @@ them in CI:
   *and* these fragments; `tools/assemble_changelog.py` cuts them into a version
   section at release (#170).
 - **Calibration-readiness matrix** — auto-derived; run
-  `python3 tools/gen_calibration_readiness.py` and commit any change (CI runs
-  `--check`).
+  `python3 tools/gen_calibration_readiness.py` and commit any change; run `--check` in local preflight.
 - **`ROADMAP.md`** — update the dated status-reconciliation section when what's
   shipped/left changes.
 - **`references/signals-glossary.md`** — if a new signal was added.
