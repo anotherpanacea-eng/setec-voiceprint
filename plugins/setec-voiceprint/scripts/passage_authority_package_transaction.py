@@ -869,6 +869,38 @@ def _validated_names(names: PackageNames) -> tuple[str, str, str]:
     return raw_names
 
 
+def _read_existing_windows(
+    root: PinnedPrivateRoot,
+    name: str,
+    maximum: int,
+    raw: bytes,
+) -> bytes:
+    try:
+        from setec.core import windows_descriptor_io as native
+
+        root.barrier()
+        handle = native.open_file(
+            root.root_descriptor, name, share_write=False, share_delete=False,
+        )
+        try:
+            first = native.require_owner_private(handle, "file")
+            if first.size != len(raw) or first.size > maximum:
+                raise OSError("unsafe output")
+            repeated = root.read_private_member((name,), maximum)
+            second = native.require_owner_private(handle, "file")
+            if repeated != raw or first.identity != second.identity:
+                raise OSError("unstable output")
+            root.barrier()
+        finally:
+            native.close(handle)
+    except (
+        OSError, TypeError, ValueError, MemoryError, ImportError,
+        _PrivateIOError, _RootPolicyError, _OversizePrivateIOError,
+    ) as exc:
+        raise PackageTransactionError("output_recovery_required") from exc
+    return raw
+
+
 def _read_existing(
     root: PinnedPrivateRoot,
     name: str,
@@ -880,6 +912,8 @@ def _read_existing(
         return None
     except (_RootPolicyError, _OversizePrivateIOError) as exc:
         raise PackageTransactionError("output_recovery_required") from exc
+    if os.name == "nt":
+        return _read_existing_windows(root, name, maximum, raw)
     if os.name != "posix":
         raise PackageTransactionError("output_recovery_required")
     try:
