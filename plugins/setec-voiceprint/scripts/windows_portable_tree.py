@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import ExitStack, contextmanager
 import hashlib
 import os
 from pathlib import Path
@@ -30,8 +31,28 @@ def _same_node(first: W.NodeInfo, second: W.NodeInfo) -> bool:
     return (first.volume_serial, first.file_id) == (second.volume_serial, second.file_id)
 
 
+def _open_private_directory(parent: int, name: str, **options: Any) -> int:
+    handle = W.open_directory(parent, name, **options)
+    try:
+        W.require_owner_private(handle, "directory")
+        return handle
+    except BaseException:
+        W.close(handle)
+        raise
+
+
+def _verify_private_chain(root: Path, handles: tuple[int, ...]) -> None:
+    private_indices = [index for index, part in enumerate(root.parts)
+                       if part == A.PRIVATE_ROOT_COMPONENT]
+    if not private_indices:
+        raise A.BootstrapStateError("completed atomic run is outside the private root")
+    W.revalidate_directory_chain(root, handles)
+    for handle in handles[private_indices[-1]:]:
+        W.require_owner_private(handle, "directory")
+
+
 def _read_bounded(handle: int, ceiling: int, label: str) -> bytes:
-    before = W.require_direct(handle, "file")
+    before = W.require_owner_private(handle, "file")
     if before.size > ceiling:
         raise A.BootstrapStateError(f"{label} exceeds its size bound")
     W.seek(handle, 0)
@@ -43,7 +64,7 @@ def _read_bounded(handle: int, ceiling: int, label: str) -> bytes:
             break
         chunks.append(chunk)
         remaining -= len(chunk)
-    after = W.require_direct(handle, "file")
+    after = W.require_owner_private(handle, "file")
     raw = b"".join(chunks)
     if before.identity != after.identity or len(raw) > ceiling:
         raise A.BootstrapStateError(f"{label} changed while being read")
@@ -51,7 +72,7 @@ def _read_bounded(handle: int, ceiling: int, label: str) -> bytes:
 
 
 def _hash_file(handle: int) -> tuple[str, int, tuple[int, int, int, int, int, int, int, int]]:
-    before = W.require_direct(handle, "file")
+    before = W.require_owner_private(handle, "file")
     W.seek(handle, 0)
     digest = hashlib.sha256()
     size = 0
@@ -61,7 +82,7 @@ def _hash_file(handle: int) -> tuple[str, int, tuple[int, int, int, int, int, in
             break
         digest.update(chunk)
         size += len(chunk)
-    after = W.require_direct(handle, "file")
+    after = W.require_owner_private(handle, "file")
     if before.identity != after.identity or size != after.size:
         raise A.BootstrapStateError("private file changed while hashing")
     return "sha256:" + digest.hexdigest(), size, after.identity
@@ -85,33 +106,30 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         self.root = Path(root).absolute()
         self._pending_row_seal: _Seal | None = None
         self._closed = False
+        self._handles: tuple[int, ...] = ()
         if _trusted_parent is None:
             if _child_name is not None or A.PRIVATE_ROOT_COMPONENT not in self.root.parts:
                 raise A.BootstrapStateError("portable tree root authority is invalid")
-            try:
-                parent, final, name = W.pin_directory(self.root)
-            except OSError as exc:
-                raise A.BootstrapStateError("cannot pin Windows portable tree root") from exc
         else:
             if _child_name is None:
                 raise A.BootstrapStateError("portable tree child name is missing")
             _trusted_parent._verify_root()
             name = A._bootstrap_basename(_child_name, "portable tree child name")
-            parent = W.duplicate(_trusted_parent.final_fd)
-            try:
-                final = W.open_directory(parent, name, writable=True)
-            except BaseException:
-                W.close(parent)
-                raise
-        self.parent_fd = parent
-        self.final_fd = final
-        self.final_name = name
+            if self.root != _trusted_parent.root / name:
+                raise A.BootstrapStateError("portable tree child path is invalid")
         try:
+            self._handles = W.pin_directory_chain(self.root)
+            self.parent_fd, self.final_fd = self._handles[-2:]
+            self.final_name = self.root.name
             self._verify_root()
-        except BaseException:
-            self._closed = True
-            W.close(self.final_fd)
-            W.close(self.parent_fd)
+            if _trusted_parent is not None:
+                _trusted_parent._verify_root()
+                if not _same_node(W.info(self.parent_fd), W.info(_trusted_parent.final_fd)):
+                    raise A.BootstrapStateError("portable tree parent binding drifted")
+        except BaseException as exc:
+            self.close()
+            if isinstance(exc, OSError):
+                raise A.BootstrapStateError("cannot pin Windows portable tree root") from exc
             raise
 
     @classmethod
@@ -130,7 +148,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
             self._close_pending_row_seal()
         except BaseException as exc:
             first = exc
-        for handle in (self.final_fd, self.parent_fd):
+        for handle in reversed(self._handles):
             try:
                 W.close(handle)
             except BaseException as exc:
@@ -144,22 +162,17 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
     def _verify_root(self) -> None:
         if self._closed:
             raise A.BootstrapStateError("portable trusted root is closed")
-        opened = W.require_direct(self.final_fd, "directory")
-        named: int | None = None
         try:
-            named = W.open_directory(self.parent_fd, self.final_name)
-            if not _same_node(opened, W.require_direct(named, "directory")):
-                raise A.BootstrapStateError("portable trusted-root name drifted")
-        finally:
-            if named is not None:
-                W.close(named)
+            _verify_private_chain(self.root, self._handles)
+        except OSError as exc:
+            raise A.BootstrapStateError("portable trusted-root privacy or binding drifted") from exc
 
     def _open_directory(self, parts: tuple[str, ...]) -> int:
         self._verify_root()
         current = W.duplicate(self.final_fd)
         try:
             for part in parts:
-                following = W.open_directory(current, part, writable=True)
+                following = _open_private_directory(current, part, writable=True)
                 W.close(current)
                 current = following
             return current
@@ -180,7 +193,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         handle: int | None = None
         try:
             handle = self._open_directory(parts)
-            if W.require_direct(handle, "directory").identity[:2] != identity[:2]:
+            if W.require_owner_private(handle, "directory").identity[:2] != identity[:2]:
                 raise A.BootstrapRecoveryRequired(f"{label} parent binding drifted")
         except A.BootstrapRecoveryRequired:
             raise
@@ -406,18 +419,18 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         mutated = False
         try:
             for part in parts:
-                parent_identity = W.require_direct(current, "directory").identity
+                parent_identity = W.require_owner_private(current, "directory").identity
                 try:
-                    following = W.open_directory(current, part, writable=True)
+                    following = _open_private_directory(current, part, writable=True)
                 except FileNotFoundError:
                     mutated = True
-                    following = W.create_directory(current, part)
+                    following = W.create_owner_private_directory(current, part)
                     W.flush(following)
                     W.flush(current)
                     self._verify_directory_binding(
                         current_parts, parent_identity, "portable directory creation"
                     )
-                    child_identity = W.require_direct(following, "directory").identity
+                    child_identity = W.require_owner_private(following, "directory").identity
                     self._verify_directory_binding(
                         (*current_parts, part), child_identity, "portable directory creation"
                     )
@@ -482,7 +495,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         temporary: int | None = None
         mutated = False
         try:
-            parent_identity = W.require_direct(parent, "directory").identity
+            parent_identity = W.require_owner_private(parent, "directory").identity
             try:
                 existing = W.open_file(
                     parent,
@@ -500,7 +513,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                 if _read_bounded(existing, A.MAX_ROW_STATE_BYTES, label) != expected_existing:
                     raise A.BootstrapStateError(f"{label} compare-and-swap bytes drifted")
             temporary_name = f".{name}.{secrets.token_hex(16)}.tmp"
-            temporary = W.create_file(parent, temporary_name)
+            temporary = W.create_owner_private_file(parent, temporary_name)
             mutated = True
             view = memoryview(raw)
             written = 0
@@ -510,14 +523,14 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                     raise A.BootstrapStateError(f"{label} write was incomplete")
                 written += count
             W.flush(temporary)
-            temp_identity = W.require_direct(temporary, "file").identity
+            temp_identity = W.require_owner_private(temporary, "file").identity
             backup_name: str | None = None
             if existing is not None:
                 rebound_existing = W.open_file(parent, name)
                 try:
                     if not _same_node(
-                        W.require_direct(existing, "file"),
-                        W.require_direct(rebound_existing, "file"),
+                        W.require_owner_private(existing, "file"),
+                        W.require_owner_private(rebound_existing, "file"),
                     ):
                         raise A.BootstrapStateError(
                             f"{label} compare-and-swap binding drifted"
@@ -641,7 +654,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         mutated = False
         try:
             parent_identity = W.info(parent).identity
-            handle = W.open_directory(parent, name, delete_access=True)
+            handle = _open_private_directory(parent, name, delete_access=True)
             if W.list_names(handle):
                 raise A.BootstrapStateError("row staging directory is not empty")
             W.flush(handle)
@@ -715,7 +728,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         directory: int | None = None
         children: dict[str, tuple[int, tuple[int, int, int, int, int, int, int, int], str, int]] = {}
         try:
-            directory = W.open_directory(parent, name, writable=True, delete_access=True)
+            directory = _open_private_directory(parent, name, writable=True, delete_access=True)
             identity = W.info(directory).identity
             if set(W.list_names(directory)) != set(expected_files):
                 raise A.BootstrapStateError("atomic row directory inventory drifted")
@@ -818,7 +831,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         renamed = False
         try:
             self._verify_seal(seal)
-            source_named = W.open_directory(source_parent, source_parts[-1])
+            source_named = _open_private_directory(source_parent, source_parts[-1])
             try:
                 if W.info(source_named).identity[:2] != seal.identity[:2]:
                     raise A.BootstrapStateError("staged atomic row binding drifted")
@@ -856,7 +869,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                     except FileNotFoundError:
                         destination_named = None
                     try:
-                        source_named = W.open_directory(source_parent, source_parts[-1])
+                        source_named = _open_private_directory(source_parent, source_parts[-1])
                     except FileNotFoundError:
                         source_named = None
                     try:
@@ -885,7 +898,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                     self._release_seal_children(seal)
             self._rebind_seal_children(seal, closed_evidence)
             self._verify_seal(seal)
-            published = W.open_directory(destination_parent, destination_parts[-1])
+            published = _open_private_directory(destination_parent, destination_parts[-1])
             try:
                 if W.info(published).identity[:2] != seal.identity[:2]:
                     raise A.BootstrapRecoveryRequired("committed atomic row identity drifted")
@@ -1003,7 +1016,7 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
                     parent, temporary_name, writable=True, delete_access=True
                 )
             except FileNotFoundError:
-                partial = W.create_file(parent, temporary_name)
+                partial = W.create_owner_private_file(parent, temporary_name)
                 mutated = True
                 W.flush(parent)
             partial_size = W.info(partial).size
@@ -1074,109 +1087,83 @@ class WindowsPrivateReadOnlyRowIo:
     """Handle-pinned, no-reparse reader for a completed Windows private run."""
 
     def __init__(self, root: Path) -> None:
-        self.root = Path(root).absolute()
+        self.root = Path(root).expanduser().absolute()
         self._closed = False
+        self._resources = ExitStack()
         try:
-            parent, final, name = W.pin_directory(
-                self.root, writable_final=False
-            )
-        except OSError as exc:
-            raise A.BootstrapStateError(
-                "cannot pin completed Windows atomic run"
-            ) from exc
-        self.parent_fd = parent
-        self.final_fd = final
-        self.final_name = name
-        try:
+            self._handles = W.pin_directory_chain(self.root, writable_final=False)
+            for handle in self._handles:
+                self._resources.callback(W.close, handle)
+            self.parent_fd, self.final_fd = self._handles[-2:]
+            self.final_name = self.root.name
             self._verify_root()
-        except BaseException:
-            self._closed = True
-            W.close(self.final_fd)
-            W.close(self.parent_fd)
+        except BaseException as exc:
+            self.close()
+            if isinstance(exc, OSError):
+                raise A.BootstrapStateError("cannot pin completed Windows atomic run") from exc
             raise
 
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        first: BaseException | None = None
-        for handle in (self.final_fd, self.parent_fd):
-            try:
-                W.close(handle)
-            except BaseException as exc:
-                if first is None:
-                    first = exc
-        if first is not None:
-            raise A.BootstrapStateError(
-                "completed Windows atomic run reader close failed"
-            ) from first
+        try:
+            self._resources.close()
+        except OSError as exc:
+            raise A.BootstrapStateError("completed Windows atomic run reader close failed") from exc
 
     def _verify_root(self) -> None:
         if self._closed:
             raise A.BootstrapStateError("completed atomic run reader is closed")
-        opened = W.require_direct(self.final_fd, "directory")
-        named: int | None = None
         try:
-            named = W.open_directory(self.parent_fd, self.final_name)
-            if not _same_node(opened, W.require_direct(named, "directory")):
-                raise A.BootstrapStateError(
-                    "completed atomic run pathname drifted"
-                )
-        finally:
-            if named is not None:
-                W.close(named)
+            _verify_private_chain(self.root, self._handles)
+        except OSError as exc:
+            raise A.BootstrapStateError("completed atomic run privacy or pathname drifted") from exc
 
-    def _open_directory(self, parts: tuple[str, ...]) -> int:
-        self._verify_root()
-        current = W.duplicate(self.final_fd)
+    @contextmanager
+    def _directory(self, parts: tuple[str, ...]):
         try:
-            for part in parts:
-                following = W.open_directory(current, part)
-                W.close(current)
-                current = following
-            return current
-        except BaseException:
-            W.close(current)
-            raise
-
-    def _open_parent(self, relative: str) -> tuple[int, str]:
-        parts = A._row_relative_parts(relative)
-        return self._open_directory(parts[:-1]), parts[-1]
+            self._verify_root()
+            with ExitStack() as opened:
+                current = W.duplicate(self.final_fd)
+                opened.callback(W.close, current)
+                for part in parts:
+                    current = _open_private_directory(current, part)
+                    opened.callback(W.close, current)
+                    W.require_owner_private(current, "directory")
+                yield current
+            self._verify_root()
+        except OSError as exc:
+            raise A.BootstrapStateError("cannot read completed Windows atomic run") from exc
 
     def root_names(self) -> tuple[str, ...]:
-        self._verify_root()
-        names = W.list_names(self.final_fd)
-        self._verify_root()
-        return names
+        with self._directory(()) as directory:
+            return W.list_names(directory)
 
     def exists(self, relative: str) -> bool:
-        parent, name = self._open_parent(relative)
-        handle: int | None = None
-        try:
+        parts = A._row_relative_parts(relative)
+        with self._directory(parts[:-1]) as parent, ExitStack() as opened:
             try:
-                handle = W.open_node(parent, name)
+                handle = W.open_node(parent, parts[-1])
             except FileNotFoundError:
                 return False
+            opened.callback(W.close, handle)
+            W.require_owner_private(handle, W.info(handle).kind)
             return True
-        finally:
-            if handle is not None:
-                W.close(handle)
-            W.close(parent)
 
     def list_directory(self, relative: str) -> tuple[str, ...]:
-        directory = self._open_directory(A._row_relative_parts(relative))
-        try:
+        with self._directory(A._row_relative_parts(relative)) as directory:
             return W.list_names(directory)
-        finally:
-            W.close(directory)
 
     def read_bytes(self, relative: str, label: str) -> bytes:
-        parent, name = self._open_parent(relative)
-        handle: int | None = None
-        try:
-            handle = W.open_file(parent, name)
-            return _read_bounded(handle, A.MAX_ROW_STATE_BYTES, label)
-        finally:
-            if handle is not None:
-                W.close(handle)
-            W.close(parent)
+        parts = A._row_relative_parts(relative)
+        with self._directory(parts[:-1]) as parent, ExitStack() as opened:
+            handle = W.open_file(parent, parts[-1], share_write=False, share_delete=False)
+            opened.callback(W.close, handle)
+            before = W.require_owner_private(handle, "file")
+            raw = _read_bounded(handle, A.MAX_ROW_STATE_BYTES, label)
+            rebound = W.open_file(parent, parts[-1], share_write=False, share_delete=False)
+            opened.callback(W.close, rebound)
+            if before.identity != W.require_owner_private(rebound, "file").identity:
+                raise A.BootstrapStateError("completed atomic run file binding drifted")
+            return raw

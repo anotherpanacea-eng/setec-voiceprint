@@ -10,6 +10,7 @@ import pytest
 
 
 import acquire_imessage_sent_atomic as A  # noqa: E402
+from setec.core import atomic_publish as private_io  # noqa: E402
 
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows descriptor backend")
@@ -62,7 +63,8 @@ def test_directory_chain_pins_and_revalidates_local_handles(
 
 def _private_tree(tmp_path: Path) -> tuple[Path, A.PortableDurableRowIo]:
     root = tmp_path / A.PRIVATE_ROOT_COMPONENT / "output"
-    root.mkdir(parents=True)
+    private_io.create_private_directory(root.parent)
+    private_io.create_private_directory(root)
     return root, A.PortableDurableRowIo(root)
 
 
@@ -257,7 +259,7 @@ def test_windows_reopens_and_recovers_proven_journal_rewrite_residues(
     io.close()
     prepared = _journal_raw("prepared")
     temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'a' * 32}.tmp"
-    temporary.write_bytes(prepared)
+    private_io.atomic_write_private(temporary, prepared)
 
     io = A.PortableDurableRowIo(root)
     try:
@@ -272,9 +274,9 @@ def test_windows_reopens_and_recovers_proven_journal_rewrite_residues(
     checkpoint_closed = _journal_raw("checkpoint_closed", ledger_closed)
     backup = root / f".{A.ROW_JOURNAL_FILENAME}.{'b' * 32}.replaced"
     target.replace(backup)
-    target.write_bytes(ledger_closed)
+    private_io.atomic_write_private(target, ledger_closed)
     temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'c' * 32}.tmp"
-    temporary.write_bytes(checkpoint_closed)
+    private_io.atomic_write_private(temporary, checkpoint_closed)
 
     io = A.PortableDurableRowIo(root)
     try:
@@ -294,7 +296,7 @@ def test_windows_refuses_invalid_lone_journal_temporary_without_mutation(
     prepared = _journal_raw("prepared")
     invalid = _journal_raw("ledger_closed", prepared)
     temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'d' * 32}.tmp"
-    temporary.write_bytes(invalid)
+    private_io.atomic_write_private(temporary, invalid)
 
     io = A.PortableDurableRowIo(root)
     try:

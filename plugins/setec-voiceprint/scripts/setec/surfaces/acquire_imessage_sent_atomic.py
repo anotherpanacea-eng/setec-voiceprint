@@ -4758,8 +4758,12 @@ def materialize_consistent_snapshot(
     if staging.exists():
         raise SnapshotError("snapshot staging directory already exists")
     try:
-        staging.mkdir(parents=False, mode=0o700)
-        os.chmod(staging, 0o700)
+        if os.name == "nt":
+            from setec.core.atomic_publish import create_private_directory
+            create_private_directory(staging)
+        else:
+            staging.mkdir(parents=False, mode=0o700)
+            os.chmod(staging, 0o700)
     except OSError as exc:
         raise SnapshotError("cannot create private snapshot staging directory") from exc
     return _materialize_consistent_snapshot_in_precreated_staging(
@@ -4792,7 +4796,11 @@ def _materialize_consistent_snapshot_in_precreated_staging(
         raise SnapshotError("cannot inspect precreated snapshot staging directory") from exc
     snapshot = staging / SNAPSHOT_FILENAME
     try:
-        descriptor = os.open(snapshot, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        if os.name == "nt":
+            from setec.core.atomic_publish import open_private_descriptor
+            descriptor = open_private_descriptor(snapshot, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        else:
+            descriptor = os.open(snapshot, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         os.close(descriptor)
         os.chmod(snapshot, 0o600)
     except OSError as exc:
@@ -13682,7 +13690,17 @@ def plan_row_artifacts(
 def _write_new_file(path: Path, raw: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with path.open("xb") as handle:
+        if os.name == "nt":
+            from setec.core.atomic_publish import open_private_descriptor
+            descriptor = open_private_descriptor(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                handle = os.fdopen(descriptor, "wb")
+            except BaseException:
+                os.close(descriptor)
+                raise
+        else:
+            handle = path.open("xb")
+        with handle:
             if os.name != "nt":
                 os.fchmod(handle.fileno(), 0o600)
             handle.write(raw)
@@ -13801,8 +13819,11 @@ class _PathBasedSyntheticRowIo:
             if path.exists():
                 self._checked_directory(path, "portable row directory")
                 continue
-            path.mkdir(mode=0o700)
-            if os.name != "nt":
+            if os.name == "nt":
+                from setec.core.atomic_publish import create_private_directory
+                create_private_directory(path)
+            else:
+                path.mkdir(mode=0o700)
                 os.chmod(path, 0o700)
             _fsync_directory_portable(path.parent)
 
