@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""check_docs_freshness.py — CI gate against capability-doc staleness.
+"""check_docs_freshness.py — local capability-document preflight.
 
 The companion to tools/check_capabilities_drift.py. Where the drift linter keeps
 the capabilities manifest in sync with the *source*, this gate keeps the *docs* in
@@ -29,7 +29,7 @@ Usage:
     python3 tools/check_docs_freshness.py --manifest <path>
     python3 tools/check_docs_freshness.py --json
 
-Run in CI alongside check_capabilities_drift.py and the pytest suite.
+Run locally alongside check_capabilities_drift.py before delivery.
 """
 
 from __future__ import annotations
@@ -107,8 +107,8 @@ def readiness_freshness() -> tuple[str, str]:
 
 def changelog_fragment_problems() -> list[str]:
     """Malformed changelog.d/ fragments, validated with the SAME parser the
-    release assembler uses — so CI rejects a bad fragment at PR time instead of
-    only when `assemble_changelog.py` runs at release. Empty if the tool or the
+    release assembler uses — so local preflight rejects a bad fragment before
+    delivery instead of only when `assemble_changelog.py` runs at release. Empty if the tool or the
     dir is absent on this branch."""
     tools_dir = str(REPO_ROOT / "tools")
     if tools_dir not in sys.path:
