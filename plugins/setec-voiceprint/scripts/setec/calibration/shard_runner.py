@@ -1849,10 +1849,11 @@ def cmd_terminate_all(args: argparse.Namespace) -> int:
 
 
 def cmd_kill_all(args: argparse.Namespace) -> int:
-    """SIGKILL every active worker on this host that holds a claim
+    """Abruptly stop every active worker on this host that holds a claim
     on this run.
 
-    SIGKILL bypasses signal handlers — workers cannot flush
+    SIGKILL (POSIX) or TerminateProcess (Windows) bypasses signal
+    handlers — workers cannot flush
     partial state. Shards in progress will leave their cache files
     in whatever state the worker had reached, and state.json will
     still show them as ``claimed``. Recovery requires
@@ -1861,7 +1862,7 @@ def cmd_kill_all(args: argparse.Namespace) -> int:
     ignored).
 
     This is the last-resort path. Operators should try
-    ``terminate-all`` (cooperative) first and only escalate to
+    ``terminate-all`` (cooperative on POSIX) first and only escalate to
     ``kill-all`` if workers fail to exit within a reasonable
     timeout.
     """
@@ -1871,11 +1872,14 @@ def cmd_kill_all(args: argparse.Namespace) -> int:
         sys.stderr.write(f"State file not found: {sp}\n")
         return 2
     sys.stderr.write(
-        f"Sending SIGKILL to active workers on {_host()!r} "
+        f"Sending {'TerminateProcess' if os.name == 'nt' else 'SIGKILL'} "
+        f"to active workers on {_host()!r} "
         f"(last-resort path; partial state will NOT be flushed)...\n"
     )
     n_sig, n_remote, n_dead, n_identity = _signal_active_workers(
-        base, args.run_id, signal.SIGKILL, label="kill-all",
+        base, args.run_id,
+        signal.SIGTERM if os.name == "nt" else signal.SIGKILL,
+        label="kill-all",
     )
     sys.stderr.write(
         f"\nkill-all summary: {n_sig} pid(s) killed, "
