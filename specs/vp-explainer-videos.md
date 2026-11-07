@@ -16,7 +16,7 @@ No Voiceprint explainer video exists. Nothing below is a planned video already m
 |---|---|---|---|
 | **Glass-Box Stylometry explainer, BM-10** | Fleet Dropbox `blog-media/bm10-glass-box-2026-10-31/`; Motion films on the OCA seat | Two 90 s silent takes, built 2026-10-31 from the published blog sequence: distribution, craft patterns, voice drift, mirror test. SRTs and a claims ledger. The owner's pick and MP4 export are still owed. | Candidate for the orientation video (V0). Re-cut for the app: blog-specific cases come out, and handbook links go in. |
 | **Evidence-pack pages** | `docs/evidence-packs/magnifica-humanitas.html`, `docs/evidence-packs/nazir-serpent-in-the-grove.html` | Public case write-ups with rerunnable steps | Possible worked-example sources. Their use in videos is an owner call. |
-| **Capability cards** | `plugins/setec-voiceprint/capabilities.d/*.yaml` (146 entries) | `purpose`, `use_when`, `do_not_use_when`, the claim license | The source of each video's "what it can't tell you" |
+| **Capability cards** | `plugins/setec-voiceprint/capabilities.d/*.yaml` (147 entries) | `purpose`, `use_when`, `do_not_use_when`, the claim license | The source of each video's "what it can't tell you" |
 | **Signals glossary, scripts catalog** | `plugins/setec-voiceprint/references/signals-glossary.md`, `plugins/setec-voiceprint/scripts/README.md` | Prose definitions | The handbook's starting points. Videos link to handbook entries, not to these files. |
 
 ## Learning goals
@@ -36,13 +36,13 @@ Four videos, each 60–90 s, silent, with burned-in captions. The minimum candid
 | Video | Tools (capability ids) | Question shown | Limits it must show |
 |---|---|---|---|
 | **V0 Orientation: what a voiceprint measures** | none in particular | Measurements a reader can check, rather than a black-box score. The kinds of evidence. | A flag starts an investigation, never finishes it. There is no verdict. |
-| **V1 Style embeddings (LuAR)** | `voice_fingerprint` (surface `authorship_embedding`, default encoder LUAR), `cosine_explanation`, `embedding_attribution` | Does this read like the same writer as the baseline? Then, which named features carry the cosine? | Cosines from different encoders aren't comparable. Provisional, with no threshold. No identity verdict. Topic and register shift the cosine. |
+| **V1 Style embeddings (LuAR)** | `voice_fingerprint` (surface `authorship_embedding`, default encoder LUAR), `cosine_explanation`, `embedding_attribution` | Does this read like the same writer as the baseline? Then, where do named features agree or diverge (`cosine_explanation`)? | Cosines from different encoders aren't comparable. Provisional, with no threshold. No identity verdict. Topic and register shift the cosine. On real text, `embedding_attribution` abstains today: it has no production attribution fit, so contributions are null and the band is indeterminate. The video shows that abstention and gives no per-feature contribution numbers, unless one is labelled a non-production illustration. |
 | **V2 Surprisal** | `surprisal_audit` (family `surprisal`; default TinyLlama), with `variance_audit` as context | How predictable is the text to a language model, token by token, and how even is that? | Needs a user baseline. Bands are illustrative. Text in the model's training data reads as low-surprise. No AI-provenance verdict. |
 | **V3 LAPD** | not yet a registered capability | (waits) | V3 waits until VP-APP-1 reconciles LAPD with a registered consumer surface. No video describes a tool the app doesn't ship. |
 
 ## Later lessons (the full arsenal, by theme)
 
-The 146 capability entries group into nine teaching themes. A later lesson is one video per theme, not one per tool. The ids in brackets are examples, not exhaustive lists.
+The 147 capability entries group into nine teaching themes. A later lesson is one video per theme, not one per tool. The ids in brackets are examples, not exhaustive lists.
 1. **Distribution and variance:** `variance_audit`, `sliding_window_heatmap`, `punctuation_cadence_audit`, `paragraph_audit`, `dependency_distance_audit`.
 2. **Voice distance and function words:** `voice_distance`, `voice_profile`, `function_word_grammar_audit`, `function_word_adjacency_audit`, `general_imposters`, `lambdag_audit`, `rank_turbulence_audit`, `controls_audit`.
 3. **Model-probability signals beyond surprisal:** `binoculars_audit`, `fast_detect_curvature`, `rank_space_audit`, `structural_shuffle_audit`, `tocsin_audit`, `intrinsic_dimension_audit`.
