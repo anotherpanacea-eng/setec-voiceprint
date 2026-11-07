@@ -24,7 +24,11 @@ It never gives a verdict, only how the draft sits against the baseline and what 
 
 **Tool selection** after that: the app offers the existing `capabilities.py recommend --situation …` routing as a question-first picker, and lists only tools that can run offline in the installed tiers.
 
-**Interpretation:** each result renders through the existing `explain.py` plain-language renderer (spec 16), with a link to its handbook entry and video.
+**Interpretation:** `explain.py` (spec 16) supplies plain-language section names and the license text, but on its own it shows no measurements and omits warnings and `claim_license.additional_caveats`. So the app's result view shows four things, then links to the handbook entry and video:
+- the measurements themselves: for the first workflow, the baseline-consistency cosine distribution and the voice-distance and cadence figures against the baseline;
+- every warning in the envelope;
+- the claim license with its additional caveats;
+- the `explain.py` text.
 
 ## The arsenal by app tier
 
@@ -92,7 +96,7 @@ On a clean machine with networking **disabled** before install:
 
 **Pass** when four things hold:
 - every run returns a valid `build_output()` envelope with its claim license;
-- outputs match the reference envelopes recorded on the build machine (exact for stdlib tools; within a stated tolerance for model scores);
+- outputs match the reference envelopes recorded on the build machine, **after machine-specific fields are normalized**. Path-bearing fields such as `target.path` and any other input path are reduced to the file's name, and timestamps and run ids are dropped. Then deterministic measurements and claim licenses must match exactly, and model measurements within a stated tolerance;
 - a network monitor records zero outbound connections;
 - the user's text never leaves the app's data folder.
 
