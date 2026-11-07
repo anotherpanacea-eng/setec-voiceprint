@@ -17,9 +17,10 @@
 | `_select_candidate_docs` (line 681) and `_infer_candidate_register` (line 1033) | They select on that defaulted value, so a role-less row in the candidate's persona and register joins the candidate baseline. With no explicit baseline rows, it can **be** the whole pool. |
 | `run_gi` (line 501) | It takes `candidate_docs` from any caller and never checks their role. A programmatic caller can pass role-less or defaulted rows. |
 | `setec/surfaces/author_corpus_export.py` (line 489) | `entry.get("corpus_role", "identity_baseline")` accepts a role-less document-manifest row as a baseline |
+| `setec/surfaces/prepare_author_document_adapter.py` (lines 159–160, 180, 189) | Accepts a source row whose `corpus_role` is absent or null (only a *conflicting* declared value refuses), then **stamps** `identity_baseline` on the output row and attests the result. Undeclared rows thereby become attested baselines. |
 | `setec/core/manifest_core.py` (lines 778, 1091) | Defaults an absent role to `identity_baseline` **for validation warnings and statistics only**. That is profiling-side, not baseline construction. |
 
-The other baseline builders already require the explicit role: `normalize_author_registry` (line 213), `author_corpus_export` records (lines 334, 444), `prepare_author_document_adapter` (line 159) and `author_record` (line 180).
+The other baseline builders already require the explicit role: `normalize_author_registry` (line 213), `author_corpus_export` records (lines 334, 444) and `author_record` (line 180).
 
 ## The contract
 
@@ -30,7 +31,8 @@ The other baseline builders already require the explicit role: `normalize_author
    - The message gives counts only: "N candidate rows lack an explicit identity_baseline corpus_role; declare it in the manifest". It never prints a row id, path or text.
    - The CLI's existing `except ValueError` path turns this into its existing refusal. This is the guard a programmatic caller can't bypass.
 4. **Make the document-manifest path explicit too.** In `author_corpus_export`, an absent `corpus_role` on a `document_local` manifest row now refuses, like any other non-baseline role. Its error message names the resolution path below.
-5. **Leave profiling alone.**
+5. **The adapter requires a declared role.** `prepare_author_document_adapter` refuses a source row whose `corpus_role` is absent or null, as it already refuses a conflicting one, before it stamps or attests anything. This holds for its CLI and for any direct caller of its entry function.
+6. **Leave profiling alone.**
    - `manifest_core` keeps its warning and statistics default, and its docstring says it is profiling-only.
    - `voice_profile`, `voice_distance` and the other profiling surfaces are not touched.
    - The register-tier isolation guard (#369) in `run_gi` is not touched, and its tests pass verbatim.
@@ -40,6 +42,7 @@ The other baseline builders already require the explicit role: `normalize_author
 A refused row is resolved by **declaring its role in the manifest under owner review**, then rerunning. The owner-reviewed correction workflow (`apply_owner_corrections.py`, schema `setec-owner-correction/1` in `references/manifest-schema.md`) is the existing route for reviewed manifest corrections. Its closed schema rewrites **only `register` and `era`** today, so it cannot yet set a `corpus_role`.
 
 - **Today:** the operator edits the manifest by hand after owner review, and `manifest_validator` checks the result.
+- **A `document_local` manifest also needs fresh attestation.** Its attestation binds the original manifest bytes: `author_corpus_export` hashes the manifest (line 758) and rejects a mismatch (lines 429–430) before it reads any row, and `references/manifest-schema.md` (lines 94–96) requires a separately attested workflow for a corrected manifest. So a corrected source manifest goes back through `prepare_author_document_adapter`, which writes a new attestation bound to the corrected bytes, under owner review, before export is rerun.
 - **Owner call 1:** whether to extend `setec-owner-correction/1` so a reviewed correction may set `corpus_role`. That is a schema change with its own review. This contract doesn't make it.
 
 Nothing defaults, guesses or infers a role.
@@ -56,6 +59,8 @@ All tests use synthetic manifests and text. No private data is involved.
 | `test_run_gi_refuses_programmatic_role_less_candidates` | `run_gi` called directly with a `CorpusEntry(corpus_role=None)` candidate raises `ValueError` with counts only, before any feature computation |
 | `test_run_gi_refuses_non_impostor_in_impostor_pool` | The same for an impostor-pool entry without an explicit `"impostor"` |
 | `test_author_corpus_export_refuses_role_less_document_row` | A `document_local` manifest row with no `corpus_role` refuses |
+| `test_document_adapter_refuses_absent_or_null_role` | The adapter refuses a source row with an absent or null `corpus_role`, before any stamping or attestation, from the CLI and from a direct call |
+| updated adapter positive fixtures | The adapter's existing successful fixtures, which start from role-less rows today, are changed to declare `corpus_role: identity_baseline`. The change is deliberate and named in the PR. |
 | `test_manifest_validation_still_defaults_for_profiling` | `manifest_core` statistics and warnings are unchanged for role-less rows |
 | existing #369 register-isolation tests | pass verbatim |
 
@@ -68,4 +73,4 @@ All tests use synthetic manifests and text. No private data is involved.
 ## Owner calls
 
 1. Extend `setec-owner-correction/1` to cover `corpus_role`, or keep hand-editing under review.
-2. Whether any existing attested `document_local` manifest omits `corpus_role`. If one does, item 4 makes it refuse until it is corrected. The owner checks this locally, by count only.
+2. Whether any existing source manifest fed to the adapter, or any attested `document_local` manifest, omits `corpus_role`. If one does, items 4–5 make it refuse until it is corrected and re-attested. The owner checks this locally, by count only.
