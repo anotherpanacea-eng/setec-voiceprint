@@ -1,0 +1,57 @@
+{
+  "id": "text_distortion_distance",
+  "script_path": "plugins/setec-voiceprint/scripts/text_distortion_distance.py",
+  "surface": "voice_coherence",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "voice-distance",
+  "purpose": "Stamatatos (2017) text-distortion distance to a baseline. Masks every word outside the shared function-word list (or the baseline's top-k words), letter by letter (dv-ma, default) or one asterisk per word (dv-sa), turns digits to #, and keeps punctuation. Character 3-gram profiles of the masked target and baseline are compared by cosine distance over the most frequent baseline n-grams, pooled and per target document. With three or more baseline documents it adds a leave-one-out spread and a percentile for the target, and it lists the masked n-grams that differ most. Baseline documents identical to a target document are excluded. Stdlib only. Descriptive: says how close the masked structure is, not who wrote it.\n",
+  "use_when": [
+    "You want a topic-light structural distance from a draft or a model's output to an author or register baseline",
+    "You want to know whether a rewrite moved function-word placement, word-length rhythm and punctuation toward a target style",
+    "You want the text-distortion member of a style panel beside voice_distance (function-word Delta, POS n-grams)"
+  ],
+  "do_not_use_when": [
+    "You want an authorship or AI-provenance call",
+    "You want to check content or fidelity (masking removes it)",
+    "The target is under 300 words or the baseline under 1,000 words (it abstains)"
+  ],
+  "inputs": {
+    "target": "text file, directory of .txt/.md, or JSONL with a text field (and optional id)",
+    "baseline": "author or register baseline in the same formats"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH",
+      "results.text_distortion: distance, per_document, baseline_leave_one_out, target_over_baseline, target_under_baseline"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "Pure-Python masking and character n-gram counting; leave-one-out is linear in baseline documents.",
+    "length_floor_words": 300
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Distance of one draft to an author baseline directory",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/text_distortion_distance.py --target draft.txt --baseline author_baseline/ --json"
+    },
+    {
+      "description": "Per-item distances for many model outputs, single-asterisk masking, baseline top-200 words kept",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/text_distortion_distance.py --target outputs.jsonl --baseline originals.jsonl --mode dv-sa --keep baseline-top-k --top-k 200 --json"
+    }
+  ],
+  "references": [
+    "Stamatatos, E. (2017). Authorship Attribution Using Text Distortion. EACL 2017: https://aclanthology.org/E17-1107/"
+  ]
+}
