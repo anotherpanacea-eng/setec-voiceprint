@@ -4,7 +4,7 @@
 
 - **Status:** Draft, planning only. Fleet card VP-APP-1.
 - **Authority:**
-  - **Owner, Nov 6:** a usable offline app rather than a toolkit users must point Claude at. LuAR, LAPD and surprisal are minimum candidates, not the full arsenal or final acceptance.
+  - **Owner, Nov 6:** a usable offline app rather than a toolkit users must point Claude at. LuAR, LAPD and surprisal are minimum alpha requirements, not the full arsenal or final acceptance. Unresolved readiness blocks alpha acceptance; it does not move a required tool to Future.
   - **The card's gate:** planning only. No model runs, paid services, private-text egress, implementation, publication or release. Architecture and final alpha acceptance remain owner decisions.
 - **Linked specs:**
   - VP-HBK-1, `vp-offline-handbook.md`, the handbook
@@ -32,22 +32,22 @@ It never gives a verdict, only how the draft sits against the baseline and what 
 
 ## The arsenal by app tier
 
-The full inventory is the 147 capability entries in `capabilities.d/`. Their public coverage, minus the owner-hidden and internal entries, is set in the handbook spec. The app tiers rank them by utility, hardware and readiness.
+The full inventory is the 147 capability entries in `capabilities.d/`. Their public coverage, minus the owner-hidden and internal entries, is set in the handbook spec. The app tiers describe product scope; readiness is tracked separately. LuAR, LAPD and surprisal are required for alpha. The first workflow alone does not satisfy that minimum.
 
 | Tier | Rule | Members (proposed) |
 |---|---|---|
-| **Alpha** | Runs fully offline on a typical laptop; the model license allows redistribution, or no model is needed; the tool is not `todo` or blocked | **LuAR** (`voice_fingerprint`, `cosine_explanation`; card tier `optional`), **surprisal** (`surprisal_audit`; card tier `surprisal`), and the `core`-tier tools the first workflow uses (`voice_distance`, `punctuation_cadence_audit`) |
+| **Alpha** | Required scope. Before alpha acceptance, every member must run fully offline on the target hardware, have verified redistribution rights where needed, and have no unresolved implementation or registration blocker | **LuAR** (`voice_fingerprint`, `cosine_explanation`; card tier `optional`), **surprisal** (`surprisal_audit`; card tier `surprisal`), **LAPD** (required but blocked; see below), and the `core`-tier tools the first workflow uses (`voice_distance`, `punctuation_cadence_audit`) |
 | **Optional** | Offline, but a heavier install or a narrower use | Other `surprisal`-tier tools (`variance_audit`, `binoculars_audit`, `fast_detect_curvature`), the StyleDistance encoder for `voice_fingerprint`, and the rest of the `core` tools |
-| **Future** | Not yet ready: blocked `todo`, not registered, an unreleased checkpoint or an unverified license | **LAPD** (below), `muar` (no public checkpoint, `_UNRELEASED_MODEL_IDS`), STAR (no license; private research only), Wegmann (no license tag) |
+| **Future** | Outside the required alpha scope and not yet ready: an unreleased checkpoint or an unverified license | `muar` (no public checkpoint, `_UNRELEASED_MODEL_IDS`), STAR (no license; private research only), Wegmann (no license tag) |
 | **Not offline** | Needs a live API | Live-judge modes of `api_llm` tools. Their precomputed-manifest modes stay offline (handbook spec). |
 
-### The three minimum candidates
+### The three minimum alpha requirements
 
-| Candidate | What exists | Model and license | Weights on disk | Ready? |
+| Requirement | What exists | Model and license | Weights on disk | Ready? |
 |---|---|---|---|---|
 | **LuAR** | `voice_fingerprint`, surface `authorship_embedding`, default encoder `luar` → `rrivera1849/LUAR-MUD` | Apache-2.0 (from the model's Hugging Face license tag, read 2026-11-06) | about 330 MB (`model.safetensors`) | Yes, pending the hardware measurement below |
-| **Surprisal** | `surprisal_audit`, surface `smoothing_diagnosis`, default backend `tinyllama` → `TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T` | Apache-2.0 (Hugging Face tag, read 2026-11-06) | about 4.4 GB (`model.safetensors`) | Yes, but heavy: the largest download, and needs the `surprisal` dependency tier (torch, transformers) |
-| **LAPD** | **Not a registered capability.** There is no `capabilities.d` entry, script or surface in this repo. The card links arXiv:2604.16923. | unknown | unknown | **No.** Reconciling it is its own step (below). |
+| **Surprisal** | `surprisal_audit`, surface `smoothing_diagnosis`, default backend `tinyllama` → `TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T` | Apache-2.0 (Hugging Face tag, read 2026-11-06) | about 4.4 GB (`model.safetensors`) | Yes, but heavy: the largest currently quantified download, and needs the `surprisal` dependency tier (torch, transformers) |
+| **LAPD** | **Not a registered capability.** There is no `capabilities.d` entry, script or surface in this repo. The card links arXiv:2604.16923. | unknown | unknown | **No: required for alpha, blocked.** Capability registration, weights and licensing remain unresolved (below). |
 
 The license tags are read from each model's own Hugging Face metadata. Before any packaging, the builder re-verifies them against the model card and repository license, and records the result with the release. StyleDistance (`StyleDistance/styledistance`) carries an MIT tag and about 249 MB of weights.
 
@@ -58,15 +58,15 @@ LAPD becomes an app tool only through the normal capability path:
 2. a registered surface and `capabilities.d` entry;
 3. verified weights and license.
 
-Until then it is Future. No app screen, handbook entry or video describes it as available.
+Until these blockers are resolved and its offline implementation passes acceptance, LAPD remains **required for alpha but unavailable**. Alpha cannot be accepted without it; only an explicit owner scope change could remove that requirement. No app screen, handbook entry or video describes it as available. This planning correction does not implement or register LAPD.
 
 ## Installation and model setup
 
 - **Install:**
   - The app ships the Python runtime, Voiceprint, and the `core` dependency group with its spaCy model. The alpha set also needs the `surprisal` group (torch, transformers); `voice_fingerprint` needs `transformers` too (its card), and the LUAR checkpoint loads with `trust_remote_code` and `einops` (CHANGELOG, spec 02).
-  - Model weights install separately, by tier. Alpha needs LUAR-MUD (about 330 MB) and TinyLlama (about 4.4 GB).
+  - Model weights install separately, by tier. Alpha needs LUAR-MUD (about 330 MB), TinyLlama (about 4.4 GB), and the LAPD artifacts still to be identified and verified. LAPD pack size and dependencies are unresolved alpha blockers.
 - **Two install routes** (owner decision 2):
-  - **(a) Offline bundle:** everything in one installer, at roughly 5 GB or more.
+  - **(a) Offline bundle:** everything in one installer. The existing LUAR/TinyLlama estimates imply roughly 5 GB or more before unresolved LAPD artifacts and runtime overhead; a complete alpha bundle size cannot yet be stated.
   - **(b) Base app plus model packs:** a model pack is downloaded once, or copied from a file for machines that stay offline. The app verifies each pack's sha256 against the release manifest before use.
 - **Runtime:** no network. Models load from the app's local store only, never a remote hub at run time.
 - **Testing without models:** the built hermetic mode (`setec_hermetic_backend=stub`) already refuses the judge, embedding and surprisal backends before import, and CB-13 closes the remaining construction sites. App CI uses it. Hermetic tests prove refusals and plumbing, not real-model behavior.
@@ -79,6 +79,7 @@ This card authorizes no model runs, so every figure below is **unmeasured**. A s
 |---|---|---|---|---|
 | `voice_fingerprint` (LUAR-MUD) | weights about 330 MB, plus the runtime | unmeasured | unmeasured | an Apple-silicon laptop (Code-Mac class) and a Windows x86 desktop (Code-PC class) |
 | `surprisal_audit` (TinyLlama 1.1B) | weights about 4.4 GB, plus the runtime | unmeasured | unmeasured | same |
+| LAPD (required, blocked) | unknown pending verified artifacts | unmeasured | unmeasured | same; measurement awaits registration, weights and licensing resolution |
 | first-workflow `core` tools | small | unmeasured | unmeasured | same |
 
 **Measurement protocol** (for the authorized run):
@@ -89,10 +90,12 @@ This card authorizes no model runs, so every figure below is **unmeasured**. A s
 
 ## Disconnected real-model acceptance (the alpha bar, for the owner to ratify)
 
+**Prerequisite:** resolve the required LAPD capability registration, implementation, weights and licensing blockers. A LuAR-plus-surprisal subset is not an accepted alpha.
+
 On a clean machine with networking **disabled** before install:
 1. Install by the chosen route.
 2. Run the first workflow on a public-domain fixture.
-3. Run each alpha tool once.
+3. Run each alpha tool once, including LuAR, LAPD and surprisal. An unavailable required tool blocks acceptance rather than being skipped.
 
 **Pass** when four things hold:
 - every run returns a valid `build_output()` envelope with its claim license;
@@ -116,7 +119,7 @@ On a clean machine with networking **disabled** before install:
 |---|---|---|
 | 1 | Packaging | A, a desktop shell with a Python sidecar |
 | 2 | Install route | (b) base app plus model packs, with an offline file option |
-| 3 | Alpha membership | LuAR, surprisal and the first workflow's core tools; LAPD once reconciled |
+| 3 | Additional alpha membership | Minimum fixed by the owner: LuAR, LAPD and surprisal. Proposed additions: the first workflow's core tools. Resolve LAPD readiness before alpha acceptance; it is not deferred. |
 | 4 | Authorize the hardware measurement run | A separate go, public-domain text only |
 | 5 | Acceptance bar | Disconnected real-model acceptance as above |
 
