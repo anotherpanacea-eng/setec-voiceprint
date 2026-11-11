@@ -158,6 +158,30 @@ def test_cli_abstains_on_short_input_and_rejects_bad_jsonl(tmp_path):
     assert json.loads(result.stdout)["reason_category"] == "bad_input"
 
 
+@pytest.mark.parametrize("independent", ["short", "empty", "none"])
+def test_cli_abstains_when_baseline_is_short_after_excluding_target_copy(tmp_path, independent):
+    """A target copy in the baseline must not count toward the baseline word floor,
+    including when what is left is empty or has no usable text."""
+    rng = random.Random(17)
+    target_text = _periodic(rng, 30)
+    target = tmp_path / "target.txt"
+    target.write_text(target_text, encoding="utf-8")
+    base = tmp_path / "base.jsonl"
+    rows = [{"text": target_text}]
+    if independent == "short":
+        rows.append({"text": _periodic(rng, 3)})
+    elif independent == "empty":
+        rows.append({"text": ""})
+    base.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    words_with_copy = sum(len(r["text"].split()) for r in rows)
+    result = _run_cli("--target", target, "--baseline", base,
+                      "--min-baseline-words", str(words_with_copy), "--json")
+    assert result.returncode == 3
+    out = json.loads(result.stdout)
+    assert out["reason_category"] == "text_too_short"
+    assert "after excluding" in out["reason"]
+
+
 def test_copied_plugin_runs_without_install(tmp_path):
     """Zero-install contract: a copied plugin runs the CLI with no PYTHONPATH or site packages."""
     plugin = tmp_path / "plugin"

@@ -8,7 +8,7 @@ masked target and baseline, pooled and per target document. The default metric i
 Delta (mean absolute z against the baseline documents, three or more needed), because raw cosine is
 swamped by the commonest masked n-grams; `--metric cosine` (and baselines under three documents)
 use cosine to the pooled baseline. With three or more baseline documents it adds a leave-one-out
-spread and a target percentile, and it lists the masked n-grams that differ most. Baseline documents identical to a target are excluded. It abstains
+spread and a target percentile, and it lists the masked n-grams that differ most. Baseline documents identical to a target are excluded, and the baseline word floor applies after that exclusion. It abstains
 (`text_too_short`) below 300 target or 1,000 baseline words. Descriptive only: not an authorship or
 AI-provenance call. It completes voiceprint's coverage of the four-measure style panel
 (function-word Delta, text distortion, POS n-grams, surface features).
