@@ -158,13 +158,15 @@ def test_cli_abstains_on_short_input_and_rejects_bad_jsonl(tmp_path):
     assert json.loads(result.stdout)["reason_category"] == "bad_input"
 
 
-def test_cli_rejects_non_utf8_jsonl_as_bad_input(tmp_path):
+@pytest.mark.parametrize("bad_side", ["target", "baseline"])
+def test_cli_rejects_non_utf8_jsonl_as_bad_input(tmp_path, bad_side):
     rng = random.Random(17)
-    base = tmp_path / "base.txt"
-    base.write_text(_periodic(rng, 30), encoding="utf-8")
+    good = tmp_path / "good.txt"
+    good.write_text(_periodic(rng, 30), encoding="utf-8")
     bad = tmp_path / "latin1.jsonl"
     bad.write_bytes(b'\xff{"text": "not utf-8"}\n')
-    result = _run_cli("--target", bad, "--baseline", base, "--json")
+    target, baseline = (bad, good) if bad_side == "target" else (good, bad)
+    result = _run_cli("--target", target, "--baseline", baseline, "--json")
     assert result.returncode == 3, result.stderr
     assert "Traceback" not in result.stderr
     assert json.loads(result.stdout)["reason_category"] == "bad_input"
