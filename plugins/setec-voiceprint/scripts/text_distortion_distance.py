@@ -377,6 +377,10 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     except TextDistortionError as exc:
         return error(str(exc), "bad_input")
     block = results["text_distortion"]
+    if block["baseline_self_excluded"] and block["baseline_words"] < args.min_baseline_words:
+        return error(f"baseline has {block['baseline_words']} words after excluding "
+                     f"{block['baseline_self_excluded']} document(s) equal to the target, below "
+                     f"--min-baseline-words {args.min_baseline_words}", "text_too_short")
     warnings = []
     if block["distance"] is None:
         warnings.append("target shares no n-grams with the baseline feature set; distance undefined")
