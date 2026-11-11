@@ -65,19 +65,25 @@ def test_masking_keeps_function_words_punctuation_and_word_lengths():
 
 def test_content_words_of_equal_length_do_not_move_the_distance():
     """The point of text distortion: swapping topic words leaves the masked view unchanged."""
-    base = ["The candle, which was quiet, watched the bridge; and yet it was not so. " * 30] * 3
+    original = "The candle, which was quiet, watched the bridge; and yet it was not so. " * 30
     swapped = [{"id": "x", "text": "The harbor, which was blank, crossed the meadow; and yet it was not so. " * 30}]
-    block = tdd.compare(swapped, base)["text_distortion"]
-    assert block["distance"] == pytest.approx(0.0, abs=1e-12)
+    for metric in ("cosine", "delta"):
+        rng = random.Random(1)
+        varied = [_periodic(rng, 12) for _ in range(3)]
+        same = tdd.compare([{"id": "x", "text": original}], varied, metric=metric)["text_distortion"]
+        moved = tdd.compare(swapped, varied, metric=metric)["text_distortion"]
+        assert moved["distance"] == pytest.approx(same["distance"], abs=1e-12)
 
 
-def test_matching_structure_is_closer_than_different_structure():
+@pytest.mark.parametrize("metric", ["delta", "cosine"])
+def test_matching_structure_is_closer_than_different_structure(metric):
     rng = random.Random(7)
     baseline = [_periodic(rng, 15) for _ in range(5)]
     near = [{"id": "near", "text": _periodic(rng, 15)}]
     far = [{"id": "far", "text": _plain(rng, 40)}]
-    d_near = tdd.compare(near, baseline)["text_distortion"]
-    d_far = tdd.compare(far, baseline)["text_distortion"]
+    d_near = tdd.compare(near, baseline, metric=metric)["text_distortion"]
+    d_far = tdd.compare(far, baseline, metric=metric)["text_distortion"]
+    assert d_far["metric"] == metric
     assert d_near["distance"] < d_far["distance"]
     # The baseline's own spread brackets the matching target and not the plain one.
     loo = d_far["baseline_leave_one_out"]
@@ -102,6 +108,8 @@ def test_leave_one_out_needs_three_baseline_documents():
                         [_periodic(rng, 10), _periodic(rng, 10)])["text_distortion"]
     assert block["baseline_leave_one_out"]["available"] is False
     assert "percentile" not in block["per_document"][0]
+    # Delta needs a baseline spread; with two documents the surface says it used cosine.
+    assert block["metric"] == "cosine"
 
 
 def test_baseline_top_k_keep_set_comes_from_the_baseline():
