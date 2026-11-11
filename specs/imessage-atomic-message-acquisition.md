@@ -1,6 +1,6 @@
 # iMessage atomic-message acquisition
 
-Status: implementation contract, revision 4; initialization-layout amendment accepted
+Status: implementation contract, revision 4; initialization-layout amendment accepted; mixed-text object-replacement ruling recorded 2026-11-06 (owner, 2026-11-05)
 
 ## Goal and compatibility boundary
 
@@ -229,6 +229,14 @@ each reason and the precedence between them: joined attachment/no sender text
 is `attachment_only`; object-replacement/no usable sender text is
 `attachment_only`; no text, attributed-body content, object-replacement marker,
 or joined attachment is `missing_text`.
+
+**Mixed text with object-replacement markers** (owner ruling, 2026-11-05: "That's the correct handling"):
+- **Prose:** when a message has usable sender text *and* one or more U+FFFC object-replacement characters, every U+FFFC is removed from the sender text before step 4 preprocessing. Nothing else in the message text changes: no other character is removed, replaced or normalized by this rule. The content hash, word count and duplicate lock are computed on the stripped text.
+- **Attachments, recorded separately:** attachment information never enters the prose. Every retained row's sidecar records an `attachment_evidence` object with `join` (boolean: `message_attachment_join` evidence) and `object_replacement_markers` (integer: the number of U+FFFC removed); a row with neither records `false` and `0`.
+- **Implementation owed:** `acquire_imessage_sent_atomic` on `main` already removes U+FFFC from the plain `text` column before preprocessing, but text recovered from the attributed body keeps its markers. Adopting this ruling removes them on that path too, and adds `attachment_evidence` to the tool's closed sidecar key set (`setec-imessage-atomic-sidecar`) and regenerates the export-seam fixtures that carry sidecars.
+- **Unchanged:** a message with no usable sender text beyond markers or joined attachments stays `attachment_only` and excluded, as above. The legacy `acquire_imessage_sent.py` aggregate keeps its current behavior, so this ruling does not touch the compatibility boundary.
+- **Fixtures:** one fixture freezes a mixed message (text, U+FFFC, text) retained as the text with the marker removed, its sidecar's `attachment_evidence`, and its content hash. A second fixture freezes a joined attachment with text and no marker.
+- **Scope:** no existing corpus is re-imported or changed by this ruling. It governs runs from the implementation that adopts it.
 
 For a full run the processing equations are:
 
@@ -851,7 +859,8 @@ The sidecar fields include content hash, word count, integer Unix nanoseconds,
 local date, group status, `author_corpus_group_locator`,
 `author_corpus_entry_locator`, `author_corpus_unit_kind = "atomic_message"`,
 `author_corpus_unit_index = 0`, `author_corpus_unit_count = 1`, snapshot binding,
-semantic option hash, preprocessing metadata, HMAC key ID, and a fixed
+semantic option hash, preprocessing metadata, HMAC key ID, the
+`attachment_evidence` object (see "Mixed text with object-replacement markers"), and a fixed
 tool/version identifier. Downstream document identity equals the entry locator;
 there is no third private document-locator field.
 
