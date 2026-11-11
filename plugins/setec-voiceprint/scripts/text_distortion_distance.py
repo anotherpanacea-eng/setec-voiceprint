@@ -363,7 +363,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     try:
         target_docs = _read_docs(Path(args.target), args.text_field)
         baseline_docs = [d["text"] for d in _read_docs(Path(args.baseline), args.text_field)]
-    except (OSError, json.JSONDecodeError, TextDistortionError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TextDistortionError) as exc:
         return error(f"cannot read input: {exc}", "bad_input")
     target_words = sum(word_count(d["text"]) for d in target_docs)
     if target_words < args.min_target_words:
