@@ -188,6 +188,13 @@ def keep_set(baseline_docs: list[str], keep: str, top_k: int) -> frozenset[str]:
     raise TextDistortionError(f"unknown keep set {keep!r}; expected one of {KEEP_CHOICES}")
 
 
+def exclude_target_copies(target_docs: list[dict[str, str]], baseline_docs: list[str]) -> list[str]:
+    """Baseline texts left after dropping exact copies of any target document."""
+    target_hashes = {hashlib.sha256(d["text"].encode("utf-8")).hexdigest() for d in target_docs}
+    return [b for b in baseline_docs
+            if hashlib.sha256(b.encode("utf-8")).hexdigest() not in target_hashes]
+
+
 def compare(
     target_docs: list[dict[str, str]],
     baseline_docs: list[str],
@@ -203,11 +210,7 @@ def compare(
     """Score target documents (``{"id", "text"}``) against baseline texts."""
     if not target_docs:
         raise TextDistortionError("need at least one target document")
-    target_hashes = {hashlib.sha256(d["text"].encode("utf-8")).hexdigest() for d in target_docs}
-    kept_baseline = [
-        b for b in baseline_docs
-        if hashlib.sha256(b.encode("utf-8")).hexdigest() not in target_hashes
-    ]
+    kept_baseline = exclude_target_copies(target_docs, baseline_docs)
     n_self_excluded = len(baseline_docs) - len(kept_baseline)
     if not kept_baseline:
         raise TextDistortionError("no baseline documents left after removing copies of the target")
@@ -366,9 +369,13 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     if target_words < args.min_target_words:
         return error(f"target has {target_words} words, below --min-target-words "
                      f"{args.min_target_words}", "text_too_short")
-    baseline_words = sum(word_count(b) for b in baseline_docs)
+    effective_baseline = exclude_target_copies(target_docs, baseline_docs)
+    n_excluded = len(baseline_docs) - len(effective_baseline)
+    baseline_words = sum(word_count(b) for b in effective_baseline)
     if baseline_words < args.min_baseline_words:
-        return error(f"baseline has {baseline_words} words, below --min-baseline-words "
+        excluded = (f" after excluding {n_excluded} document(s) equal to the target"
+                    if n_excluded else "")
+        return error(f"baseline has {baseline_words} words{excluded}, below --min-baseline-words "
                      f"{args.min_baseline_words}", "text_too_short")
     try:
         results = compare(target_docs, baseline_docs, mode=args.mode, n=args.n,
@@ -377,10 +384,6 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     except TextDistortionError as exc:
         return error(str(exc), "bad_input")
     block = results["text_distortion"]
-    if block["baseline_self_excluded"] and block["baseline_words"] < args.min_baseline_words:
-        return error(f"baseline has {block['baseline_words']} words after excluding "
-                     f"{block['baseline_self_excluded']} document(s) equal to the target, below "
-                     f"--min-baseline-words {args.min_baseline_words}", "text_too_short")
     warnings = []
     if block["distance"] is None:
         warnings.append("target shares no n-grams with the baseline feature set; distance undefined")
