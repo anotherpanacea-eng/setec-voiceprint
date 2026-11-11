@@ -32,7 +32,7 @@ It never gives a verdict, only how the draft sits against the baseline and what 
 
 ## The arsenal by app tier
 
-The full inventory is the 147 capability entries in `capabilities.d/`. Their public coverage, minus the owner-hidden and internal entries, is set in the handbook spec. The app tiers describe product scope; readiness is tracked separately. LuAR, LAPD and surprisal are required for alpha. The first workflow alone does not satisfy that minimum.
+The full inventory is the capability entries in `capabilities.d/` (147 at this spec's base commit). Their public coverage, minus the owner-hidden and internal entries, is set in the handbook spec. The app tiers describe product scope; readiness is tracked separately. LuAR, LAPD and surprisal are required for alpha. The first workflow alone does not satisfy that minimum.
 
 | Tier | Rule | Members (proposed) |
 |---|---|---|

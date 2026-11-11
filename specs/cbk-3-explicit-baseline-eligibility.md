@@ -13,12 +13,12 @@
 
 | Place | What it does |
 |---|---|
-| `setec/surfaces/general_imposters.py` `_load_manifest` (line 200) | `corpus_role=str(row.get("corpus_role") or "identity_baseline")`: an absent role **becomes** `identity_baseline` |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/general_imposters.py` `_load_manifest` (line 200) | `corpus_role=str(row.get("corpus_role") or "identity_baseline")`: an absent role **becomes** `identity_baseline` |
 | `_select_candidate_docs` (line 681) and `_infer_candidate_register` (line 1033) | They select on that defaulted value, so a role-less row in the candidate's persona and register joins the candidate baseline. With no explicit baseline rows, it can **be** the whole pool. |
 | `run_gi` (line 501) | It takes `candidate_docs` from any caller and never checks their role. A programmatic caller can pass role-less or defaulted rows. |
-| `setec/surfaces/author_corpus_export.py` (line 489) | `entry.get("corpus_role", "identity_baseline")` accepts a role-less document-manifest row as a baseline |
-| `setec/surfaces/prepare_author_document_adapter.py` (lines 159–160, 180, 189) | Accepts a source row whose `corpus_role` is absent or null (only a *conflicting* declared value refuses), then **stamps** `identity_baseline` on the output row and attests the result. Undeclared rows thereby become attested baselines. |
-| `setec/core/manifest_core.py` (lines 778, 1091) | Defaults an absent role to `identity_baseline` **for validation warnings and statistics only**. That is profiling-side, not baseline construction. |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/author_corpus_export.py` (line 489) | `entry.get("corpus_role", "identity_baseline")` accepts a role-less document-manifest row as a baseline |
+| `plugins/setec-voiceprint/scripts/setec/surfaces/prepare_author_document_adapter.py` (lines 159–160, 180, 189) | Accepts a source row whose `corpus_role` is absent or null (only a *conflicting* declared value refuses), then **stamps** `identity_baseline` on the output row and attests the result. Undeclared rows thereby become attested baselines. |
+| `plugins/setec-voiceprint/scripts/setec/core/manifest_core.py` (lines 778, 1091) | Defaults an absent role to `identity_baseline` **for validation warnings and statistics only**. That is profiling-side, not baseline construction. |
 
 The other baseline builders already require the explicit role: `normalize_author_registry` (line 213), `author_corpus_export` records (lines 334, 444) and `author_record` (line 180).
 
@@ -39,10 +39,10 @@ The other baseline builders already require the explicit role: `normalize_author
 
 ## Resolving a missing or uncertain role
 
-A refused row is resolved by **declaring its role in the manifest under owner review**, then rerunning. The owner-reviewed correction workflow (`apply_owner_corrections.py`, schema `setec-owner-correction/1` in `references/manifest-schema.md`) is the existing route for reviewed manifest corrections. Its closed schema rewrites **only `register` and `era`** today, so it cannot yet set a `corpus_role`.
+A refused row is resolved by **declaring its role in the manifest under owner review**, then rerunning. The owner-reviewed correction workflow (`apply_owner_corrections.py`, schema `setec-owner-correction/1` in `plugins/setec-voiceprint/references/manifest-schema.md`) is the existing route for reviewed manifest corrections. Its closed schema rewrites **only `register` and `era`** today, so it cannot yet set a `corpus_role`.
 
 - **Today:** the operator edits the manifest by hand after owner review, and `manifest_validator` checks the result.
-- **A `document_local` manifest also needs fresh attestation.** Its attestation binds the original manifest bytes: `author_corpus_export` hashes the manifest (line 758) and rejects a mismatch (lines 429–430) before it reads any row, and `references/manifest-schema.md` (lines 94–96) requires a separately attested workflow for a corrected manifest. So a corrected source manifest goes back through `prepare_author_document_adapter`, which writes a new attestation bound to the corrected bytes, under owner review, before export is rerun.
+- **A `document_local` manifest also needs fresh attestation.** Its attestation binds the original manifest bytes: `author_corpus_export` hashes the manifest (line 758) and rejects a mismatch (lines 429–430) before it reads any row, and `plugins/setec-voiceprint/references/manifest-schema.md` (lines 94–96) requires a separately attested workflow for a corrected manifest. So a corrected source manifest goes back through `prepare_author_document_adapter`, which writes a new attestation bound to the corrected bytes, under owner review, before export is rerun.
 - **Owner call 1:** whether to extend `setec-owner-correction/1` so a reviewed correction may set `corpus_role`. That is a schema change with its own review. This contract doesn't make it.
 
 Nothing defaults, guesses or infers a role.

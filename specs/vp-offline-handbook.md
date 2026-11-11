@@ -6,13 +6,13 @@
 - **Authority:**
   - **Owner, Nov 6:** the app should include a stylometry handbook covering every tool in the arsenal.
   - **The card's gate:** inventory and reconcile the existing sources first; confirm the authoritative source and reuse rights; never publish private working prose; package for offline use and keep each method's limits; editorial and build approval come after this spec.
-- **Linked specs:** VP-APP-1 (the app; not written yet), VP-VID-1 (`vp-explainer-videos.md`; the videos link to handbook entries), CB-13 (hermetic mode).
+- **Linked specs:** VP-APP-1 (`vp-offline-app.md`, the app), VP-VID-1 (`vp-explainer-videos.md`; the videos link to handbook entries), CB-13 (hermetic mode).
 
 ## Sources today (inventory and reconciliation)
 
 | Source | Where | Covers | Role in the handbook |
 |---|---|---|---|
-| **Capability cards** | `plugins/setec-voiceprint/capabilities.d/*.yaml` | 147 entries: purpose, `use_when`, `do_not_use_when`, inputs, compute tier, dependencies, status, handoff | **Authoritative** for what each tool does, needs and refuses. Each entry's metadata is rendered from the card, never retyped. |
+| **Capability cards** | `plugins/setec-voiceprint/capabilities.d/*.yaml` | 147 entries at this spec's base commit: purpose, `use_when`, `do_not_use_when`, inputs, compute tier, dependencies, status, handoff | **Authoritative** for what each tool does, needs and refuses. Each entry's metadata is rendered from the card, never retyped. |
 | **Signals glossary** | `plugins/setec-voiceprint/references/signals-glossary.md` | Signal path, polarity, calibration status and provenance. The header says 105 signals in 24 families, but the family rows sum to 110: unreconciled. | Authoritative at the signal level. It becomes the handbook's signal index, linked from each tool entry. |
 | **Scripts catalog** | `plugins/setec-voiceprint/scripts/README.md` | About 16,000 words of CLI usage. Its introduction says five task surfaces, but it has six numbered sections: unreconciled. | The source for setup and CLI. The handbook links to it or condenses it, and keeps no second copy. |
 | **The maintainer's external primer** | private, in development (the glossary's own pointer) | Long-form teaching, partial | **Not published.** Its prose is used only with the owner's explicit reuse ruling (owner call 1). Entries are written fresh from public sources otherwise. |
@@ -56,7 +56,7 @@ Sections 3, 6 (in part) and 7 are rendered from the card and glossary at build t
 
 | Tier | Meaning | Proposed members |
 |---|---|---|
-| **Alpha** | Ships and works offline in the first app release | The minimum candidates LuAR (`voice_fingerprint`, with `cosine_explanation`) and surprisal (`surprisal_audit`), plus whatever `core`-tier tools VP-APP-1 includes. LAPD joins once it is a registered capability. Also a "How to read any result" chapter and a "No verdicts" chapter. |
+| **Alpha** | Ships and works offline in the first app release | The minimum candidates LuAR (`voice_fingerprint`, with `cosine_explanation`) and surprisal (`surprisal_audit`), plus whatever `core`-tier tools VP-APP-1 includes. LAPD is required for alpha (VP-APP-1) and gets its entry once it is a registered capability. Also a "How to read any result" chapter and a "No verdicts" chapter. |
 | **Optional** | Ships, but needs an installable dependency group | Entries name the `dependency_check` group and the measured footprint |
 | **Blocked** | A user-facing `todo` with a named fix owed | Entry shown as "doesn't run yet" |
 | **Future** | Spec'd in `specs/`, not yet built | Entry shown as "not yet available" |

@@ -6,7 +6,7 @@
 - **Authority:**
   - **Owner, Nov 6:** the offline app should include videos explaining what the tools do and why they matter.
   - **The card's gate:** planning only. No production, paid generation, purchases, publication or unapproved source sharing.
-- **Linked specs:** VP-APP-1 (offline app) and VP-HBK-1 (handbook), neither written yet, plus CB-13 (hermetic mode). This spec decides only what is the videos'. Bundling and the alpha minimum are settled jointly with the app and handbook specs (below).
+- **Linked specs:** VP-APP-1 (`vp-offline-app.md`, the offline app) and VP-HBK-1 (`vp-offline-handbook.md`, the handbook), plus CB-13 (hermetic mode). This spec decides only what is the videos'. Bundling and the alpha minimum are settled jointly with the app and handbook specs (below).
 
 ## What exists today (inventory)
 
@@ -16,7 +16,7 @@ No Voiceprint explainer video exists. Nothing below is a planned video already m
 |---|---|---|---|
 | **Glass-Box Stylometry explainer, BM-10** | Fleet Dropbox `blog-media/bm10-glass-box-2026-10-31/`; Motion films on the OCA seat | Two 90 s silent takes, built 2026-10-31 from the published blog sequence: distribution, craft patterns, voice drift, mirror test. SRTs and a claims ledger. The owner's pick and MP4 export are still owed. | Candidate for the orientation video (V0). Re-cut for the app: blog-specific cases come out, and handbook links go in. |
 | **Evidence-pack pages** | `docs/evidence-packs/magnifica-humanitas.html`, `docs/evidence-packs/nazir-serpent-in-the-grove.html` | Public case write-ups with rerunnable steps | Possible worked-example sources. Their use in videos is an owner call. |
-| **Capability cards** | `plugins/setec-voiceprint/capabilities.d/*.yaml` (147 entries) | `purpose`, `use_when`, `do_not_use_when`, the claim license | The source of each video's "what it can't tell you" |
+| **Capability cards** | `plugins/setec-voiceprint/capabilities.d/*.yaml` (147 entries at this spec's base commit) | `purpose`, `use_when`, `do_not_use_when`, the claim license | The source of each video's "what it can't tell you" |
 | **Signals glossary, scripts catalog** | `plugins/setec-voiceprint/references/signals-glossary.md`, `plugins/setec-voiceprint/scripts/README.md` | Prose definitions | The handbook's starting points. Videos link to handbook entries, not to these files. |
 
 ## Learning goals
@@ -42,7 +42,7 @@ Four videos, each 60–90 s, silent, with burned-in captions. The minimum candid
 
 ## Later lessons (the full arsenal, by theme)
 
-The 147 capability entries group into nine teaching themes. A later lesson is one video per theme, not one per tool. The ids in brackets are examples, not exhaustive lists.
+The capability entries group into nine teaching themes. A later lesson is one video per theme, not one per tool. The ids in brackets are examples, not exhaustive lists.
 1. **Distribution and variance:** `variance_audit`, `sliding_window_heatmap`, `punctuation_cadence_audit`, `paragraph_audit`, `dependency_distance_audit`.
 2. **Voice distance and function words:** `voice_distance`, `voice_profile`, `function_word_grammar_audit`, `function_word_adjacency_audit`, `general_imposters`, `lambdag_audit`, `rank_turbulence_audit`, `controls_audit`.
 3. **Model-probability signals beyond surprisal:** `binoculars_audit`, `fast_detect_curvature`, `rank_space_audit`, `structural_shuffle_audit`, `tocsin_audit`, `intrinsic_dimension_audit`.
