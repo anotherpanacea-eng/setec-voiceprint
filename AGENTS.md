@@ -19,9 +19,12 @@ them** — follow the surface-addition checklist (capabilities.d fragment + gold
 the `_golden_*` count bumps) and keep `references/contract_fixtures/` in sync; the
 consumers catch drift on their next weekly pull.
 
-**Shared workflow:** spec → review → build → review → merge. **Each review (spec and build) is a pass by a fresh reviewer that did not write the work,
-usually one subagent; iterate until everything is fixed.** One reviewer per pass is the
-default; add more only when the change is large or risky enough to need them. Then the fork:
+**Shared workflow:** spec → review → build → review → merge.
+**Each review (spec and build) is a pass by a fresh reviewer who did not write the
+work, usually one subagent; iterate until everything is fixed.** One reviewer per
+pass is the default; add more only when the change is large or risky enough to need
+them.
+Then the fork:
 **every change becomes a draft constituent PR** (don't merge out from under its
 review), then independently cleared exact heads are assembled into one fresh
 integration train. Only the frozen train becomes ready and runs hosted CI. Merge
