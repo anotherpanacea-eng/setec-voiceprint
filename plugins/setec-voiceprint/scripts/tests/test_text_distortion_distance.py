@@ -158,6 +158,20 @@ def test_cli_abstains_on_short_input_and_rejects_bad_jsonl(tmp_path):
     assert json.loads(result.stdout)["reason_category"] == "bad_input"
 
 
+@pytest.mark.parametrize("bad_side", ["target", "baseline"])
+def test_cli_rejects_non_utf8_jsonl_as_bad_input(tmp_path, bad_side):
+    rng = random.Random(17)
+    good = tmp_path / "good.txt"
+    good.write_text(_periodic(rng, 30), encoding="utf-8")
+    bad = tmp_path / "latin1.jsonl"
+    bad.write_bytes(b'\xff{"text": "not utf-8"}\n')
+    target, baseline = (bad, good) if bad_side == "target" else (good, bad)
+    result = _run_cli("--target", target, "--baseline", baseline, "--json")
+    assert result.returncode == 3, result.stderr
+    assert "Traceback" not in result.stderr
+    assert json.loads(result.stdout)["reason_category"] == "bad_input"
+
+
 @pytest.mark.parametrize("independent", ["short", "empty", "none"])
 def test_cli_abstains_when_baseline_is_short_after_excluding_target_copy(tmp_path, independent):
     """A target copy in the baseline must not count toward the baseline word floor,
