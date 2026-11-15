@@ -156,6 +156,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             # pre_ai_human: if the source row declares a corpus role / use / split / consent,
             # it must agree with the baseline stamping below, or we refuse rather than
             # silently converting excluded/impostor/test material into training material.
+            # A row that declares no corpus_role is not stamped either: the role is
+            # declared in the source manifest under owner review, never supplied here.
+            if entry.get("corpus_role") is None: raise ValueError(f"source entry {entry.get('id')} declares no corpus_role; refusing to stamp identity_baseline (declare the role in the source manifest, then rerun)")
             for field, expected in (("corpus_role", "identity_baseline"), ("split", "baseline"), ("consent_status", "author_consent"), ("use", ["voice_profile"])):
                 if entry.get(field) is not None and entry.get(field) != expected: raise ValueError(f"source entry {entry.get('id')} declares {field}={entry.get(field)!r}; refusing to relabel as identity_baseline")
             # Never launder a conflicting identity or an impostor marker into a clean

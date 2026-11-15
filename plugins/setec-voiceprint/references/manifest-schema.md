@@ -101,7 +101,7 @@ For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Req
 
 | Field | Type | Required when | Values / notes |
 |---|---|---|---|
-| `corpus_role` | string enum | always (default `identity_baseline` for backward compatibility when absent) | `identity_baseline`, `impostor`, `distractor`, `adversarial` |
+| `corpus_role` | string enum | always. When absent, the validator counts the row as `identity_baseline` in its warnings and statistics only; anything that builds an identity baseline (`general_imposters`, `author_corpus_export`, `prepare_author_document_adapter`) requires the role declared and never supplies it | `identity_baseline`, `impostor`, `distractor`, `adversarial` |
 | `impostor_for` | list[string] | `corpus_role: impostor` | persona slugs this entry serves as impostor against; one entry can serve multiple personas if registers match |
 | `register_match` | string enum | `corpus_role: impostor` | `high`, `medium`, `low` — closeness of register match to the impostor target |
 | `topic_match` | string enum | `corpus_role: impostor` | `high`, `medium`, `low` — closeness of topical overlap |

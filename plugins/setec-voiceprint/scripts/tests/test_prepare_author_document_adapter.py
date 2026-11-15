@@ -23,6 +23,7 @@ def test_adapter_builds_document_local_exact_byte_manifest(tmp_path: Path):
     (source / "draft_manifest.jsonl").write_text(json.dumps({
         "id": "legacy-piece", "path": "piece.txt", "register": "personal",
         "date_written": "2019", "ai_status": "pre_ai_human",
+        "corpus_role": "identity_baseline",
     }) + "\n" + json.dumps({
         "id": "later-piece", "path": "piece.txt", "register": "personal",
         "ai_status": "unknown",
@@ -105,7 +106,8 @@ def _adapter_run(
     source.mkdir(parents=True)
     (source / "piece.txt").write_bytes(b"A clean pre-AI document.\n")
     entry = {"id": "p1", "path": "piece.txt", "register": "personal",
-             "ai_status": "pre_ai_human", **entry_extra}
+             "ai_status": "pre_ai_human", "corpus_role": "identity_baseline",
+             **entry_extra}
     (source / "draft_manifest.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
     argv = [
         "--source-manifest", f"legacy={source / 'draft_manifest.jsonl'}",
@@ -126,6 +128,34 @@ def test_adapter_refuses_declared_nonbaseline_material(tmp_path: Path):
     )):
         with pytest.raises(ValueError, match="refusing to relabel as identity_baseline"):
             _adapter_run(tmp_path / str(index), extra)
+
+
+@pytest.mark.parametrize("null_role", [False, True])
+def test_document_adapter_refuses_absent_or_null_role(
+        tmp_path: Path, capsys, null_role: bool):
+    """CBK-3: a pre_ai_human source row that declares no `corpus_role` is not
+    stamped `identity_baseline` and nothing is attested, from a direct call and
+    from the CLI."""
+    root = tmp_path / "ai-prose-baselines-private"
+    source = root / "source"
+    source.mkdir(parents=True)
+    (source / "piece.txt").write_bytes(b"A clean pre-AI document.\n")
+    entry = {"id": "p1", "path": "piece.txt", "register": "personal",
+             "ai_status": "pre_ai_human"}
+    if null_role:
+        entry["corpus_role"] = None
+    manifest = source / "draft_manifest.jsonl"
+    manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    argv = [
+        "--source-manifest", f"legacy={manifest}",
+        "--register-map", "legacy:personal=blog.essay",
+        "--persona", "joshua", "--author-identity", "Joshua A. Miller",
+        "--output-dir", str(root / "adapter")]
+    with pytest.raises(ValueError, match="declares no corpus_role"):
+        _run_adapter(argv)
+    assert adapter.main(argv) == 2
+    assert capsys.readouterr().out == ""
+    assert not (root / "adapter").exists()
 
 
 def test_adapter_refuses_drifted_content_hash(tmp_path: Path):
@@ -173,7 +203,8 @@ def test_adapter_refuses_intermediate_symlink_source(tmp_path: Path):
     (root / "source" / "linkdir").symlink_to(outside, target_is_directory=True)
     (root / "source" / "draft_manifest.jsonl").write_text(json.dumps({
         "id": "p1", "path": "linkdir/piece.txt", "register": "personal",
-        "ai_status": "pre_ai_human"}) + "\n", encoding="utf-8")
+        "ai_status": "pre_ai_human", "corpus_role": "identity_baseline",
+    }) + "\n", encoding="utf-8")
     with pytest.raises(ValueError):
         _run_adapter([
             "--source-manifest", f"legacy={root / 'source' / 'draft_manifest.jsonl'}",
@@ -192,6 +223,7 @@ def test_adapter_persona_alias_is_scoped_to_one_source(tmp_path: Path):
         manifest.write_text(json.dumps({
             "id": source_name, "path": "piece.txt", "register": "personal",
             "persona": "legacy-joshua", "ai_status": "pre_ai_human",
+            "corpus_role": "identity_baseline",
         }) + "\n", encoding="utf-8")
         manifests.extend(("--source-manifest", f"{source_name}={manifest}"))
     with pytest.raises(ValueError, match="source 'second'"):
@@ -262,7 +294,7 @@ def test_adapter_refuses_invalid_utf8_and_forbidden_prose_controls(
     manifest = source / "draft_manifest.jsonl"
     manifest.write_text(json.dumps({
         "id": "p1", "path": "piece.txt", "register": "personal",
-        "ai_status": "pre_ai_human",
+        "ai_status": "pre_ai_human", "corpus_role": "identity_baseline",
     }) + "\n", encoding="utf-8")
     with pytest.raises((UnicodeError, ValueError)):
         _run_adapter([
@@ -284,7 +316,7 @@ def test_adapter_refuses_output_symlink_components_inside_private_tree(
     manifest = source / "draft_manifest.jsonl"
     manifest.write_text(json.dumps({
         "id": "p1", "path": "piece.txt", "register": "personal",
-        "ai_status": "pre_ai_human",
+        "ai_status": "pre_ai_human", "corpus_role": "identity_baseline",
     }) + "\n", encoding="utf-8")
     real = root / "real"
     real.mkdir()
@@ -345,7 +377,7 @@ def test_adapter_hardens_all_output_modes_under_permissive_umask(tmp_path: Path)
     manifest = source / "draft_manifest.jsonl"
     manifest.write_text(json.dumps({
         "id": "p1", "path": "piece.txt", "register": "personal",
-        "ai_status": "pre_ai_human",
+        "ai_status": "pre_ai_human", "corpus_role": "identity_baseline",
     }) + "\n", encoding="utf-8")
     out = root / "adapter"
     digest = adapter.sha(data)[7:]

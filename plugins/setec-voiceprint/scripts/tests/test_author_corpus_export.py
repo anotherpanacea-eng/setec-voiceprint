@@ -426,6 +426,32 @@ def test_document_local_rejects_identity_and_use_conflicts(private_root: Path):
         )
 
 
+@pytest.mark.parametrize("null_role", [False, True])
+def test_author_corpus_export_refuses_role_less_document_row(
+    private_root: Path, null_role: bool,
+):
+    """CBK-3: a `document_local` row that declares no `corpus_role` is not an
+    identity baseline, even under a valid attestation of the same bytes."""
+    manifest, document_map, attestation = _document_source(private_root)
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    if null_role:
+        rows[0]["corpus_role"] = None
+    else:
+        del rows[0]["corpus_role"]
+    manifest.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    data = json.loads(attestation.read_text())
+    data["source_manifest_sha256"] = E._sha(manifest.read_bytes())
+    attestation.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="declares no corpus_role.*fresh attestation"):
+        E.build_export(
+            sources={"document_local": manifest},
+            register_map={"document_local:literary_horror": "fiction.literary"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua",
+            hmac_key=b"d" * 32, document_map_path=document_map,
+            document_attestation_path=attestation,
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [

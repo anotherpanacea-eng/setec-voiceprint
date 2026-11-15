@@ -870,6 +870,97 @@ def test_register_selection_fails_closed_when_no_register_can_be_inferred():
     )
 
 
+# --- explicit baseline eligibility (CBK-3) -----------------------------------
+#
+# specs/cbk-3-explicit-baseline-eligibility.md: no identity baseline is built
+# from a row that does not explicitly declare `corpus_role: identity_baseline`.
+# A row with no role used to be read as a baseline by the loader.
+
+
+def _run_cli_without_roles(tmp_path: Path, role_less_ids: set[str]) -> dict:
+    """Run the CLI on the synthetic manifest after removing `corpus_role` from
+    the named rows. Returns the JSON envelope."""
+    manifest = _write_manifest(tmp_path)
+    rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()]
+    for row in rows:
+        if row["id"] in role_less_ids:
+            del row["corpus_role"]
+    manifest.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    target = tmp_path / "target.txt"
+    target.write_text("An unrelated target document about gardens. " * 30, encoding="utf-8")
+    out_json = tmp_path / "ai-prose-baselines-private" / "gi.json"
+    rc = gi.run(argparse.Namespace(
+        target=str(target), target_id=None, manifest=str(manifest),
+        candidate_persona="alice", register="blog_essay",
+        iterations=10, feature_fraction=0.5, top_n_features=200, seed=42,
+        out=None, json_out=str(out_json), allow_public_output=False,
+    ))
+    assert rc == 0
+    return json.loads(out_json.read_text(encoding="utf-8"))
+
+
+def test_gi_role_less_rows_cannot_form_baseline(tmp_path, capsys):
+    """Every row in the candidate's persona and register omits `corpus_role`:
+    the run ends in the existing no-candidate refusal, never a score."""
+    envelope = _run_cli_without_roles(tmp_path, {f"alice_{i}" for i in range(4)})
+    capsys.readouterr()
+    assert envelope["available"] is False
+    assert envelope["reason"] == "No candidate identity-baseline docs supplied."
+    assert envelope["results"] == {}
+
+
+def test_gi_role_less_rows_excluded_beside_explicit(tmp_path, capsys):
+    envelope = _run_cli_without_roles(tmp_path, {"alice_0", "alice_1"})
+    capsys.readouterr()
+    assert envelope["available"] is True
+    assert envelope["results"]["candidate_n_docs"] == 2
+
+
+def test_gi_explicit_baseline_still_scores(tmp_path, capsys):
+    """Control for the two tests above: same manifest, every role declared."""
+    envelope = _run_cli_without_roles(tmp_path, set())
+    capsys.readouterr()
+    assert envelope["available"] is True
+    assert envelope["results"]["candidate_n_docs"] == 4
+    assert 0.0 <= envelope["results"]["proportion"] <= 1.0
+
+
+def test_run_gi_refuses_programmatic_role_less_candidates():
+    """A caller that builds the pools by hand skips the CLI selectors, so
+    `run_gi` itself refuses. The message carries counts only."""
+    candidate = _candidate_docs()
+    candidate[0].corpus_role = None
+
+    with pytest.raises(ValueError) as excinfo:
+        gi.run_gi(
+            target_text=candidate[1].text, target_id="t",
+            candidate_docs=candidate, impostor_docs=_impostor_docs(),
+            iterations=5, seed=1,
+        )
+    message = str(excinfo.value)
+    assert "1 candidate rows lack an explicit identity_baseline corpus_role" in message
+    assert "declare it in the manifest" in message
+    assert candidate[0].id not in message
+    assert "discipline of attention" not in message
+
+
+@pytest.mark.parametrize("role", [None, "identity_baseline"])
+def test_run_gi_refuses_non_impostor_in_impostor_pool(role):
+    impostors = _impostor_docs()
+    impostors[0].corpus_role = role
+    candidate = _candidate_docs()
+
+    with pytest.raises(ValueError) as excinfo:
+        gi.run_gi(
+            target_text=candidate[0].text, target_id="t",
+            candidate_docs=candidate, impostor_docs=impostors,
+            iterations=5, seed=1,
+        )
+    message = str(excinfo.value)
+    assert "1 impostor rows lack an explicit impostor corpus_role" in message
+    assert impostors[0].id not in message
+
+
 def test_the_guard_does_not_drag_in_the_heavy_stylometry_stack():
     """Importing the lightweight harness must not load the model stack."""
     import subprocess
