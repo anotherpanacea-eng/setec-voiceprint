@@ -333,6 +333,28 @@ def test_ratchet_5_baseline_with_era_passes() -> None:
     assert era_warnings == []
 
 
+def test_manifest_validation_still_defaults_for_profiling(tmp_path) -> None:
+    """CBK-3 leaves profiling alone: the validator still counts a row with no
+    `corpus_role` as `identity_baseline` in its statistics and still gives it
+    the identity-baseline era recommendation. Only baseline builders require
+    the role declared."""
+    (tmp_path / "piece.txt").write_text("A short synthetic piece.\n", encoding="utf-8")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps({
+        "id": "role_less", "path": "piece.txt", "register": "blog_essay",
+        "ai_status": "pre_ai_human", "use": ["voice_profile"],
+        "split": "baseline", "privacy": "private",
+    }) + "\n", encoding="utf-8")
+    result = validate_manifest(manifest)
+    assert result["summary"]["by_corpus_role"] == {"identity_baseline": 1}
+    era_warnings = [
+        i for i in result["issues"]
+        if i.get("id") == "role_less" and i.get("severity") == "warning"
+        and i.get("field") == "era" and "identity_baseline" in i.get("message", "")
+    ]
+    assert len(era_warnings) == 1
+
+
 # ---- Summary block ----------------------------------------
 
 

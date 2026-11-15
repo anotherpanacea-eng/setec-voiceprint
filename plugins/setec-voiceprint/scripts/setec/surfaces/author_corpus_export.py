@@ -486,7 +486,13 @@ def _validate_document_entry(
         _require_string("author", entry["author"])
         if entry["author"] not in attestation["author_identities"]:
             raise ValueError("document manifest author is not an attested identity")
-    if entry.get("corpus_role", "identity_baseline") != "identity_baseline":
+    if entry.get("corpus_role") is None:
+        raise ValueError(
+            "document manifest row declares no corpus_role; declare it in the "
+            "source manifest under owner review, then rerun "
+            "prepare_author_document_adapter for a fresh attestation"
+        )
+    if entry["corpus_role"] != "identity_baseline":
         raise ValueError("document manifest is not an identity baseline")
     if entry.get("impostor_for") not in (None, ""):
         raise ValueError("document manifest carries an explicit impostor marker")
