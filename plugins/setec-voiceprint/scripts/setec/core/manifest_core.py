@@ -4,6 +4,11 @@ Moved verbatim from ``setec.surfaces.manifest_validator`` (CB-5) so calibration 
 surface modules can validate a manifest without importing that surface.
 ``manifest_validator`` re-exports every name here as the same object. Stdlib plus
 ``setec.core.register_taxonomy`` only.
+
+Profiling only: an absent ``corpus_role`` counts as ``identity_baseline`` here for
+validation warnings and summary statistics, and for nothing else. Code that builds
+an identity baseline does not use that default; it requires the row to declare the
+role (``specs/cbk-3-explicit-baseline-eligibility.md``).
 """
 
 from __future__ import annotations
@@ -70,8 +75,9 @@ ALLOWED_USE = {
 # corpus_role distinguishes the writer's own baseline material from
 # impostor-pool entries the General Imposters validation harness will
 # need (Koppel et al. 2014, Kestemont et al. 2016). identity_baseline
-# is the default for backward compatibility when the field is absent;
-# new acquisition scripts emit it explicitly.
+# is the default when the field is absent, for this module's warnings
+# and statistics only (see the module docstring); new acquisition
+# scripts emit it explicitly.
 ALLOWED_CORPUS_ROLE = {
     "identity_baseline", "impostor", "distractor", "adversarial",
 }

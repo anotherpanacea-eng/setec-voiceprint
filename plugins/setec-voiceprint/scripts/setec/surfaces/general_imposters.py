@@ -150,13 +150,16 @@ class CorpusEntry:
     proportion is meaningless if the target is also in the
     candidate / impostor pool (same self-normalization failure mode
     voice_distance.py already guards against).
+
+    ``corpus_role`` is the role the manifest row declares, or ``None`` when
+    the row declares none. An absent role is never read as a baseline.
     """
     id: str
     text: str
     persona: str
     register: str
     author: str
-    corpus_role: str
+    corpus_role: str | None
     impostor_for: list[str]
     word_count: int
     consent_status: str = "undocumented"
@@ -197,7 +200,7 @@ def _load_manifest(path: Path) -> list[CorpusEntry]:
             persona=str(row.get("persona") or ""),
             register=str(row.get("register") or ""),
             author=str(row.get("author") or ""),
-            corpus_role=str(row.get("corpus_role") or "identity_baseline"),
+            corpus_role=str(row["corpus_role"]) if row.get("corpus_role") else None,
             impostor_for=list(row.get("impostor_for") or []),
             word_count=int(row.get("word_count") or 0),
             consent_status=str(row.get("consent_status") or "undocumented"),
@@ -537,6 +540,21 @@ def run_gi(
     assert_personal_register_isolated(
         [{"register": d.register} for d in candidate_docs + impostor_docs]
     )
+    # Explicit baseline eligibility (CBK-3). Guarded here for the same reason
+    # as the register guard above: a caller that assembles the pools by hand
+    # never passes through the CLI's selectors. A row with no declared role is
+    # sent back to the manifest to be declared; it is never read as a baseline
+    # or as an impostor. Counts only: no row id, path or text.
+    for pool, role, docs in (
+        ("candidate", "identity_baseline", candidate_docs),
+        ("impostor", "impostor", impostor_docs),
+    ):
+        undeclared = sum(d.corpus_role != role for d in docs)
+        if undeclared:
+            raise ValueError(
+                f"{undeclared} {pool} rows lack an explicit {role} "
+                "corpus_role; declare it in the manifest"
+            )
     candidate_persona = (
         candidate_docs[0].persona if candidate_docs else "unknown"
     )
