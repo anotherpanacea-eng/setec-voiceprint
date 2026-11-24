@@ -1,0 +1,102 @@
+entries:
+- id: zero_shot_provenance_read
+  script_path: plugins/setec-voiceprint/scripts/zero_shot_provenance_read.py
+  surface: zero_shot_provenance_read
+  status: heuristic
+  handoff: experimental
+  consumers: []
+  family: discrimination-reader
+  purpose: 'Report one frontier reader''s zero-shot provenance account of a single text,
+    using the prompts of "Frontier models need only one text to unmask its human or AI
+    author" (arXiv:2611.26216), vendored verbatim under references/unmasking-authors-prompts/
+    (MIT). `--task ideas-prose` asks who originated the ideas and who wrote the prose and
+    returns the reader''s stated AI share (0-1) and label for each, with the evidence it
+    cites; `--task which-model` returns the model and lab it names with its stated confidence.
+    Every cited quote is checked against the target. The answer can be produced outside
+    SETEC (`--emit-prompt`, then `--response`) or sent to an Anthropic reader through the
+    shared judge backend (the OpenAI and Gemini backends force JSON replies, which would
+    change the prompt).
+    `--generator-lab` refuses a reader from a lab that wrote or edited the target. Emits
+    no verdict and does not apply the paper''s 0.5 cut; naming a human author (the paper''s
+    RQ3) is not wired.
+
+    '
+  use_when:
+  - You want an explainable second reader beside a trained detector, with quoted evidence
+    you can check
+  - You want to know whether a model-written or model-edited text still reads as a particular
+    lab's model (teacher-style leakage after training)
+  - You can run the prompt on a reader from a different lab than any model that touched
+    the text
+  do_not_use_when:
+  - You need a determination about a person (misconduct, disclosure, grading); one reader's
+    account is not evidence of that
+  - The reader's lab wrote or edited the target (self-assessment; declare --generator-lab
+    so it is refused)
+  - You want to name a human author from their text (not wired; see the vendored README)
+  inputs:
+  - flag: target
+    type: path
+    required: true
+  - flag: --task
+    type: enum
+    required: false
+    values:
+    - ideas-prose
+    - which-model
+  - flag: --reader
+    type: enum
+    required: false
+    values:
+    - response
+    - anthropic
+  - flag: --response
+    type: path
+    required: false
+  - flag: --reader-model
+    type: string
+    required: false
+  - flag: --generator-lab
+    type: string
+    required: false
+  - flag: --emit-prompt
+    type: bool
+    required: false
+  - flag: --json
+    type: bool
+    required: false
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: api_llm
+    cost_note: Free with --reader response (run the --emit-prompt output on any model,
+      e.g. through a subscription CLI); one Anthropic API call per text with --reader
+      anthropic (the paper reports about $27 per 1,000 documents on GPT-6.1 Sol)
+    length_floor_words: 25
+  registers:
+  - fiction
+  - op-ed
+  - blog_essay
+  dependencies:
+    python: []
+    python_optional: []
+    sdks_optional:
+    - anthropic
+  examples:
+  - description: Render the ideas/prose prompt to run on a reader outside SETEC
+    cmd: python3 plugins/setec-voiceprint/scripts/zero_shot_provenance_read.py draft.txt
+      --emit-prompt > prompt.json
+  - description: Parse the saved answer, refusing an Anthropic reader for a Claude-edited
+      draft
+    cmd: python3 plugins/setec-voiceprint/scripts/zero_shot_provenance_read.py draft.txt
+      --response answer.txt --reader-model gpt-6.1-sol --generator-lab anthropic --json
+  - description: Ask an Anthropic API reader which model wrote an OpenAI-edited text
+    cmd: python3 plugins/setec-voiceprint/scripts/zero_shot_provenance_read.py draft.txt
+      --task which-model --reader anthropic --reader-model claude-fable-5-2 --generator-lab
+      openai --json
+  references:
+  - plugins/setec-voiceprint/references/unmasking-authors-prompts/README.md
+  - 'Desai, Bölöni-Turgut et al., Frontier models need only one text to unmask its human
+    or AI author (arXiv:2611.26216): https://arxiv.org/abs/2611.26216'

@@ -1,0 +1,14 @@
+Below are groups of matched evidence items from two runs (A and B) of an AI-text detector on the same document. Each group is one point that both runs make, named after the group number. Each item gives which way the run thinks the evidence leans (human or AI) and the run's reason (WHY).
+
+For each group, decide whether run A and run B give the same justification: they name the same property of the evidence, even if they word it differently, regardless of which way they lean. When a run has several items in a group, take their reasons together. If an item makes more than one point, judge only the part about this group's point.
+
+Return only JSON:
+{
+  "ideas": [
+    {"group": 1, "same_reason": true},
+    {"group": 2, "same_reason": false}
+  ],
+  "prose": [
+    {"group": 1, "same_reason": true}
+  ]
+}

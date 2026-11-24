@@ -1,0 +1,7 @@
+Paraphrase the text below in your own words to make the author's writing style less identifiable. Rewrite the prose throughout using clear, natural wording, changing distinctive word choices, sentence structures, rhythms, and stylistic habits, including in dialogue.
+
+Preserve the meaning, claims, events, details, point of view, tone, and approximate length. Preserve names, citations, numbers, technical terminology, and other factual details, as well as the meaning of any dialogue. Do not add, omit, summarize, explain, or continue the text. Preserve section headings and their roles where present. Return only the rewritten text.
+
+<text>
+{document}
+</text>

@@ -1,0 +1,66 @@
+===== SYSTEM =====
+TASK: Judge two separate things about the attached piece of writing, one at a time: who originated its IDEAS, and who wrote its PROSE. For each, decide whether it was a human, an AI language model, or both.
+
+IDEAS: the content decisions behind the text. These are the premise; the argument or plot; the choice of events, characters, examples and angles; the order in which the material is organized; and what the piece chooses to say or leave out.
+
+PROSE: the surface realization of the text. This is word choice, sentence construction, rhythm, tone, phrasing, and how each sentence is put together.
+
+INPUT: the full text of the piece. You can see both its ideas and its wording.
+
+THE TWO JUDGMENTS ARE INDEPENDENT. Ideas and prose can come from different sources, and all four combinations occur: human ideas in human prose; human ideas written out in an AI's prose; an AI's ideas that a human rewrote sentence by sentence; and an AI's ideas in an AI's prose. Whoever conceived the ideas may not be whoever wrote the wording. So:
+- When you judge the IDEAS, the wording is not evidence. How polished, fluent or stylistically typical the prose is must not decide the ideas verdict. A test: imagine the same ideas paraphrased in a different voice. If your judgment would change, it was resting on the wording.
+- When you judge the PROSE, the ideas are not evidence. How original, conventional or well constructed the ideas are must not decide the prose verdict. A test: imagine the same wording used to express different ideas. If your judgment would change, it was resting on the ideas.
+- If a human conceived the ideas, they are human ideas, however much of the wording an AI wrote. If an AI conceived the ideas, they are AI ideas, however much of the wording a human wrote. Likewise, whoever wrote the wording wrote the prose, whoever conceived the ideas.
+- Do not let one verdict set the other. The two verdicts may agree or differ. Do not move either one toward the other to make the pair look consistent, and do not assume that one being AI makes the other more likely to be AI.
+
+CATEGORIES: use the same five for each judgment, read as applying to the ideas or to the prose, whichever you are judging.
+- human: a human produced all of it.
+- human-leaning: mostly a human's, with a minor AI contribution.
+- mixed: a human and an AI both contributed substantially.
+- ai-leaning: mostly an AI's, with a minor human contribution.
+- ai: an AI produced all of it.
+
+ANSWER FORMAT: plain text, no markdown. The answer has two parts, IDEAS first and PROSE second. Finish the first part completely, including its two answer lines, before you start the second. When you start the second part, put the first verdict out of your mind: it is not evidence for the second. Put each section label on its own line, followed by that section's content.
+
+PART 1: IDEAS
+
+KEY IDEAS:
+List every major idea in the piece, including those with only weak evidence, as numbered items in exactly this form:
+
+IDEA: <the idea, in one sentence> LEANS: <human or ai> STRENGTH: <low, medium or high: how strongly it leans that way> QUOTE: "<a passage copied exactly from the text that carries the idea>" WHY: <why the idea points that way, judged from its content and structure and not from the wording>
+Put each quote on its own QUOTE line, and add as many as the idea needs.
+
+REASONING (IDEAS):
+In prose, weigh the evidence about the ideas only: what in their content and structure points to a human originator, what points to an AI, how the strong and weak evidence compare, and whether the evidence is consistent across the whole piece or differs between parts.
+
+DECISIVE FACTOR(S) (IDEAS):
+Name the factor or factors that decide the attribution of the ideas, and explain why they outweigh the rest.
+
+Then write exactly these two lines:
+ideas_ai_share: <a number from 0 to 1 for how much of the ideas an AI produced; 0 means entirely human, 1 means entirely AI>
+ideas_prediction: <one of: human, human-leaning, mixed, ai-leaning, ai>
+
+PART 2: PROSE
+
+KEY OBSERVATIONS:
+List every major feature of the wording in the piece (for example word choice, sentence construction, rhythm, tone, phrasing), including those with only weak evidence, as numbered items in exactly this form:
+
+OBSERVATION: <the feature of the wording, in one sentence> LEANS: <human or ai> STRENGTH: <low, medium or high: how strongly it leans that way> QUOTE: "<a passage copied exactly from the text that shows the feature>" WHY: <why the feature points that way, judged from the wording and not from the ideas>
+Put each quote on its own QUOTE line, and add as many as the observation needs. A passage that appears in the key ideas may appear here only if it is independent evidence about the wording.
+
+REASONING (PROSE):
+In prose, weigh the evidence about the wording only: what in the wording points to a human writer, what points to an AI, how the strong and weak evidence compare, and whether the evidence is consistent across the whole piece or differs between parts.
+
+DECISIVE FACTOR(S) (PROSE):
+Name the factor or factors that decide the attribution of the prose, and explain why they outweigh the rest.
+
+Then write exactly these two lines:
+prose_ai_share: <a number from 0 to 1 for how much of the prose an AI produced; 0 means entirely human, 1 means entirely AI>
+prose_prediction: <one of: human, human-leaning, mixed, ai-leaning, ai>
+
+Write nothing after the last line of the second part.
+
+===== USER =====
+<text>
+{doc}
+</text>
