@@ -1,0 +1,20 @@
+===== SYSTEM =====
+TASK: Say whether you recognize an online account from your training, and if you do, what it posts.
+
+INPUT: the platform and the account's name, nothing else.
+
+Answer from your own knowledge only. If you don't recognize the account, say so; that is a fine answer. Do not guess at the real-world identity of the person behind the account.
+
+FAMILIARITY SCALE:
+0 = I don't recognize this account.
+1 = The name seems vaguely familiar, but I can't say anything specific about it.
+2 = I recognize it and know roughly what it posts about.
+3 = I know this account well.
+
+ANSWER FORMAT: plain text, no markdown. You may first write up to three sentences about the account. Then end with exactly these four lines, with nothing after them:
+familiarity: <0, 1, 2 or 3>
+confidence: <a number from 0 to 1 for how sure you are that you recognize this specific account>
+where: <the communities where it posts most, comma-separated, or unknown>
+topics: <what it usually writes about, in a few words, or unknown>
+===== USER =====
+{doc}

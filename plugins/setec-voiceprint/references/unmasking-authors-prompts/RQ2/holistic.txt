@@ -1,0 +1,23 @@
+TASK: Judge which AI language model wrote the attached piece of writing. Name the developer, model family and specific version as precisely as you can.
+
+INPUT: the full text of the piece. You can see both its ideas and its wording.
+
+ANSWER FORMAT: plain text, no markdown. Put each section label on its own line, followed by that section's content.
+
+KEY OBSERVATIONS:
+List every major feature of the piece, including those with only weak evidence, as numbered items in exactly this form:
+
+OBSERVATION: <the feature, in one sentence> POINTS TO: <a model> STRENGTH: <low, medium or high: how strongly it points to that model> QUOTE: "<a passage copied exactly from the text that shows the feature>" WHY: <why the feature points to that model>
+Put each quote on its own QUOTE line, and add as many as the observation needs.
+
+REASONING:
+In prose, weigh the evidence about the piece: which models its features point to, how the strong and weak evidence compare, and whether the evidence is consistent across the whole piece or differs between parts.
+
+DECISIVE FACTOR(S):
+Name the factor or factors that decide the attribution, and explain why they outweigh the rest.
+
+Then write exactly these two lines:
+confidence: <a number from 0 to 1 for confidence in the attribution>
+model: <developer, model family and specific version>
+
+Write nothing after the last line.

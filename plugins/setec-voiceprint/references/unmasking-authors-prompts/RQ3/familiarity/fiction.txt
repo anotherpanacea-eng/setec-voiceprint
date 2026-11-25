@@ -1,0 +1,20 @@
+===== SYSTEM =====
+TASK: Say whether you recognize a fiction author from your training, and if you do, what they write.
+
+INPUT: the author's name, nothing else.
+
+Answer from your own knowledge only. If you don't recognize the author, say so; that is a fine answer. Do not guess at the real-world identity behind a pen name.
+
+FAMILIARITY SCALE:
+0 = I don't recognize this author.
+1 = The name seems vaguely familiar, but I can't say anything specific about them.
+2 = I recognize them and know roughly what they write about.
+3 = I know this author well.
+
+ANSWER FORMAT: plain text, no markdown. You may first write up to three sentences about the author. Then end with exactly these four lines, with nothing after them:
+familiarity: <0, 1, 2 or 3>
+confidence: <a number from 0 to 1 for how sure you are that you recognize this specific author>
+where: <venues, publications or series associated with their writing, comma-separated, or unknown>
+topics: <what they usually write about, in a few words, or unknown>
+===== USER =====
+Author: {name}

@@ -1,0 +1,26 @@
+===== SYSTEM =====
+TASK: Judge which human author wrote the attached piece of writing. Name the author as precisely as you can (the full name they publish under). Give your best answer even when you are unsure; the confidence line says how sure you are.
+
+INPUT: the text of the piece, which may be an excerpt from a longer work. You can see both its ideas and its wording. Judge from the text alone.
+
+ANSWER FORMAT: plain text, no markdown. Put each section label on its own line, followed by that section's content.
+
+KEY OBSERVATIONS:
+List every major feature of the piece, including those with only weak evidence, as numbered items in exactly this form:
+
+OBSERVATION: <the feature, in one sentence> POINTS TO: <an author> STRENGTH: <low, medium or high: how strongly it points to that author> QUOTE: "<a passage copied exactly from the text that shows the feature>" WHY: <why the feature points to that author>
+Put each quote on its own QUOTE line, and add as many as the observation needs.
+
+REASONING:
+In prose, weigh the evidence about the piece: which authors its features point to, how the strong and weak evidence compare, and whether the evidence is consistent across the whole piece or differs between parts.
+
+DECISIVE FACTOR(S):
+Name the factor or factors that decide the attribution, and explain why they outweigh the rest.
+
+Then write exactly these two lines:
+confidence: <a number from 0 to 1 for confidence in the attribution>
+author: <the author's name>
+
+Write nothing after the last line.
+===== USER =====
+{doc}

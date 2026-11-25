@@ -1,0 +1,29 @@
+Below are two runs (A and B) of an AI-text detector on the same document. Each run lists numbered evidence items for the IDEAS and for the PROSE, then names its decisive factor. Refer to item n of run A as An and item n of run B as Bn.
+
+For IDEAS and PROSE separately:
+1. Group matching items by point. A group is one point that both runs make about the document: the same idea, or the same wording feature, even if they quote different passages or describe it in different words. Give each group a short label naming the point. Every group has at least one A item and one B item. A group can hold several items from one run when that run made the point across several items. An item that makes more than one point goes in the group for each point it shares with the other run. Leave out items the other run has nothing like.
+2. Decisive factor. For each run, list the groups (numbered from 1 in the order you listed them) whose points its decisive factor gives as reasons for its conclusion. Leave out points it mentions only to set them aside, such as counter-evidence or caveats. If the decisive factor gives as a reason a point the other run does not make, list the item that makes it under decisive_A_unmatched or decisive_B_unmatched. Use empty lists if the decisive factor only gives a vague summary.
+
+Return only JSON:
+{
+  "ideas": {
+    "groups": [
+      {"point": "short label", "A": ["A1", "A2"], "B": ["B3"]},
+      {"point": "short label", "A": ["A4"], "B": ["B1"]},
+      {"point": "short label", "A": ["A4"], "B": ["B2"]}
+    ],
+    "decisive_A": [1, 2],
+    "decisive_B": [1],
+    "decisive_A_unmatched": [],
+    "decisive_B_unmatched": ["B5"]
+  },
+  "prose": {
+    "groups": [
+      {"point": "short label", "A": ["A2"], "B": ["B1", "B2"]}
+    ],
+    "decisive_A": [1],
+    "decisive_B": [1],
+    "decisive_A_unmatched": [],
+    "decisive_B_unmatched": []
+  }
+}
