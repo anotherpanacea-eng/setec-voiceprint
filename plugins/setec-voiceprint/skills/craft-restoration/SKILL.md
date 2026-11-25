@@ -34,6 +34,7 @@ The four reference documents are at `${CLAUDE_PLUGIN_ROOT}/references/`:
 - **`aic-flags.md`** — Layer B reference. Seven flag families with distributional signatures, named subtypes (Negation hedge, Indefinite-pronoun gesture, Disguised correctio, Pseudo-aphorism, Manifesto cadence), nonfiction parallel pattern set, genre tolerance quick-reference table (7 flags × 6 genres with three tolerance bands plus footnotes), and pattern-synthesis flag compounds.
 - **`source-triage.md`** — Layer C reference. The earned / unearned / earned-by-frame triage methodology, voice-attribution work, voice-slip-vs-lost-callback distinction, multi-register-narrator handling.
 - **`rhetorical-countermoves.md`** — figure-by-flag pairings (fiction + nonfiction additions). Three universal principles: payoff test, soft n-gram preservation, variance reinjection.
+- **`aic-model-family-signatures.md`** — candidate tells keyed to the model family or revision pass that produces them (pilot, one Victorian-pastiche chapter, public-domain human control), with a de-tell substitution table and the popular tells that are period habits in that register. Read after `aic-flags.md` when the draft is pastiche, has a known model history, or is itself a de-tell revision.
 - **`distributional-diagnostics.md`** — Layer A reference. Eleven variance signals with formulas, calibration warnings, and the writer-specific calibration note. Cross-references the smoothing-diagnosis skill.
 
 ## Workflow

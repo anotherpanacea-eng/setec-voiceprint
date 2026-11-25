@@ -364,7 +364,15 @@ A draft can read as "Heavily smoothed" against general human prose while sitting
 
 A draft can also read as "Lightly smoothed" on Layer A while landing low-tolerance flags within its genre. A literary fiction draft with a foggy sensory layer reads "lightly smoothed" on the distributional metrics but flags AIC-2 on Layer B because the metrics it failed are not load-bearing for that genre. The Layer A band is necessary but not sufficient; Layer B and source triage adjudicate.
 
+**Victorian pastiche.** Against public-domain Victorian narrative (Trollope, Eliot, James, Oliphant), em-dashes, triads, "as if" clauses, negation-then-correction and explicitation all sit inside the human range. Treat them as period habits in this register: do not fire AIC-3, AIC-7 or AIC-8 on their raw density without a register-matched baseline. A pilot of tells that did clear that baseline is in `aic-model-family-signatures.md`.
+
 Genre tolerance is also writer-specific within a register. Some literary novelists tolerate high AIC-3 (Knausgaard's recursive paragraphs, Bernhard's spiraling repetitions) as a structural choice; some essayists tolerate high AIC-7 (Sebald's hedging) as voice. The table captures genre-typical tolerances; personal-baseline z-scores override them when the writer has a documented register.
+
+---
+
+## Model-Family Signatures (candidate)
+
+`aic-model-family-signatures.md` holds a pilot catalogue of tells keyed to the model family or revision pass that produced them, found by a three-vendor reader round robin on one Victorian-pastiche chapter and checked against a public-domain human control. Two findings bear on this taxonomy: tells are model- and pass-specific (a rewrite told to remove one family's tells grew its own, so audit a de-tell revision for substitution), and several popular tells are period habits in some registers. Its proposed new families (Impossible Witness, Period Costume, De-tell Overcorrection) are candidates only; the nine families above stand until a second source confirms them.
 
 ---
 
